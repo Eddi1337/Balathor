@@ -1,0 +1,34 @@
+{
+  "name": "balathor-client-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Windows desktop client for Balathor.",
+  "author": "Balathor",
+  "main": "main.cjs",
+  "scripts": {
+    "prepare:app": "node scripts/prepare-app.cjs",
+    "dev": "electron .",
+    "build:win:dir": "npm run prepare:app && node scripts/package-win-dir.cjs",
+    "prebuild:win": "npm run prepare:app",
+    "build:win": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "@electron/packager": "^18.4.4",
+    "electron": "^35.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "game.balathor.client",
+    "productName": "Balathor",
+    "files": [
+      "main.cjs",
+      "app/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis"
+    }
+  }
+}

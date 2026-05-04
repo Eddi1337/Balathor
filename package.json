@@ -1,0 +1,21 @@
+{
+  "name": "balathor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Authoritative server and sprite-canvas client prototype for Balathor.",
+  "scripts": {
+    "dev": "node tools/dev.js",
+    "server": "node server/src/index.js",
+    "client": "node client/dev-server.js",
+    "smoke": "node tests/smoke.mjs",
+    "server:docker:build": "docker build -t balathor-server ./server",
+    "server:docker:run": "docker run --rm --name balathor-server -p 8080:8080 balathor-server",
+    "client:desktop:install": "npm install --prefix client/desktop",
+    "client:desktop:dev": "npm run dev --prefix client/desktop",
+    "client:desktop:build:win-dir": "npm run build:win:dir --prefix client/desktop",
+    "client:desktop:build:win": "npm run build:win --prefix client/desktop"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

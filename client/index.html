@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Balathor</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <canvas id="game" width="1280" height="720" aria-label="Balathor game world"></canvas>
+
+    <section id="boot" class="panel">
+      <div class="brand">
+        <span class="mark"></span>
+        <h1>Balathor</h1>
+      </div>
+
+      <div id="status" class="status">Loading realm config</div>
+
+      <form id="connectionForm" class="connection hidden">
+        <label>
+          <span>Server</span>
+          <input id="serverUrlInput" autocomplete="off" spellcheck="false">
+        </label>
+
+        <button id="connectButton" class="connect" type="submit">Connect</button>
+      </form>
+
+      <form id="characterForm" class="character hidden">
+        <label>
+          <span>Name</span>
+          <input id="nameInput" maxlength="18" value="Wanderer" autocomplete="off">
+        </label>
+
+        <fieldset>
+          <legend>Class</legend>
+          <div class="segments" role="radiogroup" aria-label="Class">
+            <button type="button" class="segment selected" data-class="ranger">Ranger</button>
+            <button type="button" class="segment" data-class="mage">Mage</button>
+            <button type="button" class="segment" data-class="knight">Knight</button>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Primary</legend>
+          <div class="swatches" data-target="primary">
+            <button type="button" class="swatch selected" style="--swatch: #5cc8ff" data-color="#5cc8ff" aria-label="sky"></button>
+            <button type="button" class="swatch" style="--swatch: #8bd346" data-color="#8bd346" aria-label="leaf"></button>
+            <button type="button" class="swatch" style="--swatch: #f26d6d" data-color="#f26d6d" aria-label="ember"></button>
+            <button type="button" class="swatch" style="--swatch: #c79cff" data-color="#c79cff" aria-label="arcane"></button>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Accent</legend>
+          <div class="swatches" data-target="accent">
+            <button type="button" class="swatch selected" style="--swatch: #ffd166" data-color="#ffd166" aria-label="gold"></button>
+            <button type="button" class="swatch" style="--swatch: #ffffff" data-color="#ffffff" aria-label="white"></button>
+            <button type="button" class="swatch" style="--swatch: #2ef3c5" data-color="#2ef3c5" aria-label="teal"></button>
+            <button type="button" class="swatch" style="--swatch: #202437" data-color="#202437" aria-label="ink"></button>
+          </div>
+        </fieldset>
+
+        <button id="playButton" class="play" type="submit">Play</button>
+      </form>
+    </section>
+
+    <aside id="hud" class="hud hidden">
+      <strong>Balathor</strong>
+      <span id="population">0 online</span>
+      <span id="position">0, 0</span>
+    </aside>
+
+    <section id="chat" class="chat hidden" aria-label="Realm chat">
+      <div id="chatMessages" class="chat-messages"></div>
+      <form id="chatForm" class="chat-form">
+        <input id="chatInput" maxlength="180" placeholder="Message" autocomplete="off">
+        <button class="chat-send" type="submit">Send</button>
+      </form>
+    </section>
+
+    <script src="./src/main.js"></script>
+  </body>
+</html>

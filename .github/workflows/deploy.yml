@@ -1,0 +1,65 @@
+name: Build and Deploy Server
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+env:
+  REGISTRY: 192.168.10.155
+  IMAGE_REPOSITORY: balathor/server
+  DEPLOY_HOST: 192.168.10.222
+  DEPLOY_PATH: /root/balathor
+
+jobs:
+  build-and-deploy:
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - balathor
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Harbor
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.HARBOR_USERNAME }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
+
+      - name: Build server image
+        run: |
+          docker build \
+            -t "${REGISTRY}/${IMAGE_REPOSITORY}:${GITHUB_SHA}" \
+            -t "${REGISTRY}/${IMAGE_REPOSITORY}:latest" \
+            ./server
+
+      - name: Push server image
+        run: |
+          docker push "${REGISTRY}/${IMAGE_REPOSITORY}:${GITHUB_SHA}"
+          docker push "${REGISTRY}/${IMAGE_REPOSITORY}:latest"
+
+      - name: Install SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+
+      - name: Sync production compose file
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new root@${DEPLOY_HOST} "mkdir -p ${DEPLOY_PATH}"
+          scp -o StrictHostKeyChecking=accept-new docker-compose.prod.yml root@${DEPLOY_HOST}:${DEPLOY_PATH}/docker-compose.yml
+
+      - name: Deploy on remote host
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+        run: |
+          ssh -o StrictHostKeyChecking=accept-new root@${DEPLOY_HOST} "\
+            docker login ${REGISTRY} -u '${HARBOR_USERNAME}' -p '${HARBOR_PASSWORD}' && \
+            IMAGE_TAG='${IMAGE_TAG}' docker compose -f ${DEPLOY_PATH}/docker-compose.yml pull && \
+            IMAGE_TAG='${IMAGE_TAG}' docker compose -f ${DEPLOY_PATH}/docker-compose.yml up -d"

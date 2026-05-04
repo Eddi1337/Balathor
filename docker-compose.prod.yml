@@ -1,0 +1,15 @@
+services:
+  balathor-server:
+    image: 192.168.10.155/balathor/server:${IMAGE_TAG:-latest}
+    container_name: balathor-server
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8080
+    ports:
+      - "8082:8080"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
