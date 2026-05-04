@@ -49,6 +49,12 @@ The container exposes HTTP health at `/health` and WebSocket gameplay at `/ws`.
 
 Pushes to `main` or `master` build `./server` on the self-hosted Balathor runner, publish the image to Harbor as `192.168.10.155/balathor/server`, then deploy `docker-compose.prod.yml` to `/root/balathor` on `192.168.10.222`.
 
+The workflow expects the same repository secrets as the other deployed repos:
+
+- `HARBOR_USERNAME`
+- `HARBOR_PASSWORD`
+- `DEPLOY_SSH_PRIVATE_KEY`
+
 The production container maps host port `8082` to the server's internal `8080`.
 
 The client dev server reads `GAME_SERVER_URL`, so a custom endpoint can be used like this:
