@@ -87,6 +87,13 @@ async function start() {
 }
 
 async function loadConfig() {
+  const queryServerUrl = new URLSearchParams(location.search).get("gameServerUrl");
+  if (queryServerUrl) {
+    return {
+      gameServerUrl: queryServerUrl
+    };
+  }
+
   const fallbackUrl = PRODUCTION_SERVER_URL;
   const sources = ["/config.json", "./config.local.json"];
 
