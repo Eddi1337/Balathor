@@ -47,6 +47,12 @@ kenneyRpgBase.src = "./assets/kenney-rpg-base.png";
 const KENNEY_TILE_SIZE = 64;
 const KENNEY_SHEET_COLUMNS = 20;
 
+const kenneyRoguelike = new Image();
+kenneyRoguelike.src = "./assets/kenney-roguelike.png";
+const KRL_TILE = 16;
+const KRL_STEP = 17;
+const KRL_COLS = 57;
+
 const state = {
   socket: null,
   config: null,
@@ -831,6 +837,7 @@ function draw() {
 
   drawWorld();
   drawPlayers();
+  drawTreeCanopies();
   drawCombatFx();
   drawLighting();
   populationEl.textContent = `${state.population} online`;
@@ -934,7 +941,7 @@ function drawTile(tile, sx, sy, tx, ty) {
   }
 
   if (tile === TILE.TREE) {
-    drawGroundPatch(TILE.DARK_GRASS, sx, sy, tx, ty, tilePalette[TILE.DARK_GRASS]);
+    drawForestFloor(sx, sy, tx, ty);
     return;
   }
 
@@ -1454,6 +1461,44 @@ function drawCoveredBuildingGround(sx, sy, tx, ty) {
   scatterPixels(sx, sy, tx, ty, colors[1], 2, 2);
 }
 
+function drawForestFloor(sx, sy, tx, ty) {
+  const frost = isNearTile(tx, ty, TILE.SNOW);
+  const ember = tx > 80 && ty < -70;
+  const base = frost ? "#2a4a4e" : ember ? "#1e2c1a" : "#253c2a";
+  const mid = frost ? "#3a6468" : ember ? "#2a3c24" : "#315432";
+  const detail = frost ? "#4a7c7a" : ember ? "#3a4c30" : "#3e6840";
+  const moss = frost ? "#5a8a82" : ember ? "#4a5c3a" : "#4e7848";
+
+  ctx.fillStyle = base;
+  ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+
+  ctx.fillStyle = mid;
+  ctx.fillRect(sx + 4, sy + 4, 24, 24);
+
+  const r1 = hash2(tx, ty, 601);
+  const r2 = hash2(tx, ty, 602);
+  const r3 = hash2(tx, ty, 603);
+  const r4 = hash2(tx, ty, 604);
+
+  if (r1 > 0.3) {
+    ctx.fillStyle = detail;
+    ctx.fillRect(sx + (r1 * 20 | 0), sy + (r2 * 20 | 0), 6, 2);
+  }
+  if (r3 > 0.4) {
+    ctx.fillStyle = moss;
+    ctx.fillRect(sx + (r3 * 18 | 0) + 4, sy + (r4 * 18 | 0) + 4, 4, 4);
+  }
+  if (r2 > 0.55) {
+    ctx.fillStyle = detail;
+    ctx.fillRect(sx + (r4 * 22 | 0) + 2, sy + (r1 * 14 | 0) + 10, 3, 5);
+    ctx.fillRect(sx + (r4 * 22 | 0) + 5, sy + (r1 * 14 | 0) + 8, 3, 3);
+  }
+  if (hash2(tx, ty, 605) > 0.72) {
+    ctx.fillStyle = blend(moss, "#ffffff", 0.1);
+    ctx.fillRect(sx + (hash2(tx, ty, 606) * 22 | 0) + 2, sy + (hash2(tx, ty, 607) * 22 | 0) + 2, 2, 6);
+  }
+}
+
 function drawWorldAssets(minTileX, maxTileX, minTileY, maxTileY) {
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
@@ -1464,9 +1509,7 @@ function drawWorldAssets(minTileX, maxTileX, minTileY, maxTileY) {
       const sx = Math.floor(tx * TILE_SIZE - state.camera.x + halfW);
       const sy = Math.floor(ty * TILE_SIZE - state.camera.y + halfH);
 
-      if (tile === TILE.TREE) {
-        drawCuratedTree(sx, sy, tx, ty);
-      } else if ((tile === TILE.GRASS || tile === TILE.DARK_GRASS) && hash2(tx, ty, 501) > 0.93) {
+      if ((tile === TILE.GRASS || tile === TILE.DARK_GRASS) && hash2(tx, ty, 501) > 0.93) {
         drawCuratedBush(sx, sy, tx, ty, tile === TILE.DARK_GRASS);
       } else if ((tile === TILE.STONE || tile === TILE.SAND || tile === TILE.SNOW) && hash2(tx, ty, 502) > 0.9) {
         drawCuratedRock(sx, sy, tx, ty, tile === TILE.SAND);
@@ -1477,25 +1520,92 @@ function drawWorldAssets(minTileX, maxTileX, minTileY, maxTileY) {
   }
 }
 
-function drawCuratedTree(sx, sy, tx, ty) {
+function drawTreeCanopies() {
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const minTileX = Math.floor((state.camera.x - halfW) / TILE_SIZE) - 2;
+  const maxTileX = Math.ceil((state.camera.x + halfW) / TILE_SIZE) + 2;
+  const minTileY = Math.floor((state.camera.y - halfH) / TILE_SIZE) - 2;
+  const maxTileY = Math.ceil((state.camera.y + halfH) / TILE_SIZE) + 2;
+
+  for (let ty = minTileY; ty <= maxTileY; ty += 1) {
+    for (let tx = minTileX; tx <= maxTileX; tx += 1) {
+      if (getTile(tx, ty) === TILE.TREE) {
+        const sx = Math.floor(tx * TILE_SIZE - state.camera.x + halfW);
+        const sy = Math.floor(ty * TILE_SIZE - state.camera.y + halfH);
+        drawTreeCanopy(sx, sy, tx, ty);
+      }
+    }
+  }
+}
+
+function drawTreeCanopy(sx, sy, tx, ty) {
   const frost = isNearTile(tx, ty, TILE.SNOW);
   const ember = tx > 80 && ty < -70;
-  const leaf = frost ? "#6f9396" : ember ? "#315f45" : "#2f7a4e";
-  const leafLight = frost ? "#9fb9b8" : ember ? "#5f8552" : "#6ca85d";
-  const leafDark = frost ? "#46696e" : ember ? "#254a38" : "#215b3a";
-  const trunk = ember ? "#50312a" : "#6c4b2e";
+  const v = hash2(tx, ty, 200);
 
-  drawEllipseShadow(sx + 7, sy + 24, 18, 5, 0.24);
+  let leafDark, leafBase, leafMid, leafLight, trunk;
+  if (frost) {
+    leafDark = "#3a5e60"; leafBase = "#5a8284"; leafMid = "#6f9396"; leafLight = "#9fbab9"; trunk = "#556b52";
+  } else if (ember) {
+    leafDark = "#1e2d1a"; leafBase = "#2c4226"; leafMid = "#3c5b38"; leafLight = "#587950"; trunk = "#50312a";
+  } else if (v > 0.68) {
+    leafDark = "#17482a"; leafBase = "#1e6032"; leafMid = "#2a7a44"; leafLight = "#489a5e"; trunk = "#5b3b26";
+  } else if (v > 0.34) {
+    leafDark = "#1a5228"; leafBase = "#267a3c"; leafMid = "#359a52"; leafLight = "#55bc72"; trunk = "#6c4b2e";
+  } else {
+    leafDark = "#253822"; leafBase = "#3a5830"; leafMid = "#4e7044"; leafLight = "#6a9260"; trunk = "#5a4028";
+  }
+
+  const ox = Math.round((hash2(tx, ty, 15) - 0.5) * 7);
+  const rw = 14 + Math.round(hash2(tx, ty, 201) * 6);
+  const rh = 12 + Math.round(hash2(tx, ty, 202) * 5);
+  const cx = sx + 16 + ox;
+  const cy = sy + 13;
+
+  ctx.fillStyle = "rgba(0,0,0,0.22)";
+  ctx.beginPath();
+  ctx.ellipse(cx + 3, sy + 28, rw - 1, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
   ctx.fillStyle = trunk;
-  ctx.fillRect(sx + 13, sy + 17, 6, 11);
+  ctx.fillRect(cx - 3, sy + 21, 6, 9);
+  ctx.fillStyle = blend(trunk, "#000000", 0.3);
+  ctx.fillRect(cx - 1, sy + 21, 2, 9);
+
   ctx.fillStyle = leafDark;
-  ctx.fillRect(sx + 7, sy + 10, 18, 13);
-  ctx.fillStyle = leaf;
-  ctx.fillRect(sx + 5, sy + 14, 22, 9);
-  ctx.fillRect(sx + 10, sy + 5, 12, 9);
+  ctx.beginPath();
+  ctx.ellipse(cx + 2, cy + 3, rw + 2, rh + 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = leafBase;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rw, rh, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = leafMid;
+  ctx.beginPath();
+  ctx.ellipse(cx - rw * 0.38, cy - rh * 0.14, rw * 0.44, rh * 0.52, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(cx + rw * 0.31, cy - rh * 0.08, rw * 0.38, rh * 0.46, 0, 0, Math.PI * 2);
+  ctx.fill();
+
   ctx.fillStyle = leafLight;
-  ctx.fillRect(sx + 10, sy + 9, 6, 3);
-  ctx.fillRect(sx + 14, sy + 4, 5, 2);
+  ctx.beginPath();
+  ctx.ellipse(cx - rw * 0.14, cy - rh * 0.3, rw * 0.46, rh * 0.36, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = leafLight;
+  ctx.beginPath();
+  ctx.ellipse(cx - 2, cy - rh * 0.52, rw * 0.2, rh * 0.18, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+function drawCuratedTree(sx, sy, tx, ty) {
+  drawTreeCanopy(sx, sy, tx, ty);
 }
 
 function drawCuratedBush(sx, sy, tx, ty, dark) {
@@ -1575,9 +1685,13 @@ function drawBuildingSprite(building, sx, sy) {
 }
 
 function getBuildingVariant(building) {
-  const cold = building.name.includes("Frost") || building.name.includes("Snow") || building.name.includes("Pine");
-  const stone = building.name.includes("Town") || building.name.includes("Hall") || building.name.includes("Shrine");
-  return cold || stone ? "stone" : "timber";
+  const n = building.name;
+  if (n.includes("Frost") || n.includes("Snow") || n.includes("Pine")) return "stone";
+  if (n.includes("Town") || n.includes("Hall") || n.includes("Shrine")) return "stone";
+  if (n.includes("Oasis") || n.includes("Sun") || n.includes("Clay")) return "desert";
+  if (n.includes("Ember") || n.includes("Ash") || n.includes("Forge")) return "ember";
+  if (n.includes("Forest") || n.includes("Ranger") || n.includes("Woodland")) return "wood";
+  return "timber";
 }
 
 function drawKenneyHouse(building, sx, sy, w, h, variant) {
@@ -1589,10 +1703,12 @@ function drawKenneyHouse(building, sx, sy, w, h, variant) {
   const bodyRows = wide ? 3 : 2;
   const bodyY = Math.round(sy + h - bodyRows * tile - 12);
   const roofY = bodyY - (wide ? 100 : 80);
-  const doorIndex = variant === "stone" ? 214 : 189;
-  const wallIndex = variant === "stone" ? 60 : 83;
-  const wallDetailIndex = variant === "stone" ? 80 : 84;
-  const windowIndex = variant === "stone" ? 191 : 185;
+  const useStone = variant === "stone" || variant === "ember";
+  const doorIndex = useStone ? 214 : 189;
+  const wallIndex = useStone ? 60 : 83;
+  const wallDetailIndex = useStone ? 80 : 84;
+  const windowIndex = useStone ? 191 : 185;
+  const capTile = useStone ? 80 : 86;
 
   ctx.save();
   ctx.shadowColor = "rgba(0, 0, 0, 0.24)";
@@ -1606,12 +1722,12 @@ function drawKenneyHouse(building, sx, sy, w, h, variant) {
     }
   }
 
-  const capTile = variant === "stone" ? 80 : 86;
   for (let col = 0; col < cols; col += 1) {
     drawKenneyTile(capTile, houseX + col * tile, bodyY - 18, tile, tile);
   }
 
-  drawKenneyRoof(houseX, roofY, cols, variant);
+  const roofStyle = (variant === "stone" || variant === "ember") ? "stone" : "timber";
+  drawKenneyRoof(houseX, roofY, cols, roofStyle);
 
   const doorX = houseX + Math.floor(cols / 2) * tile;
   drawKenneyTile(doorIndex, doorX, bodyY + (bodyRows - 1) * tile, tile, tile);
@@ -1624,6 +1740,75 @@ function drawKenneyHouse(building, sx, sy, w, h, variant) {
   }
 
   ctx.restore();
+
+  drawBuildingChimney(houseX + Math.round(cols * tile * 0.62), roofY + 4, variant);
+  drawBuildingFrontDetail(houseX, houseX + houseW, bodyY + bodyRows * tile, variant);
+}
+
+function drawBuildingChimney(x, roofTopY, variant) {
+  const brick = variant === "stone" ? "#8a9296" :
+                variant === "ember" ? "#2a2020" :
+                variant === "desert" ? "#c09050" :
+                variant === "wood" ? "#6a3820" : "#7a3a28";
+  const top = variant === "ember" ? "#1a1212" : blend(brick, "#000000", 0.2);
+
+  ctx.fillStyle = top;
+  ctx.fillRect(x - 5, roofTopY - 14, 12, 4);
+  ctx.fillStyle = brick;
+  ctx.fillRect(x - 4, roofTopY - 10, 10, 16);
+  ctx.fillStyle = blend(brick, "#ffffff", 0.18);
+  ctx.fillRect(x - 4, roofTopY - 9, 3, 3);
+  ctx.fillRect(x - 4, roofTopY - 4, 3, 3);
+
+  if (variant !== "ember") {
+    ctx.fillStyle = "rgba(220, 220, 220, 0.35)";
+    ctx.beginPath();
+    ctx.ellipse(x + 1, roofTopY - 15, 4, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawBuildingFrontDetail(leftX, rightX, groundY, variant) {
+  const midX = (leftX + rightX) / 2;
+  const detailW = rightX - leftX - 12;
+
+  if (variant === "desert") {
+    ctx.fillStyle = "#d4a855";
+    ctx.fillRect(leftX + 6, groundY, detailW, 5);
+    ctx.fillStyle = "#c8e06a";
+    for (let i = 0; i < 3; i += 1) {
+      const bx = leftX + 14 + i * (detailW / 3) | 0;
+      ctx.fillRect(bx, groundY - 8, 3, 10);
+      ctx.fillRect(bx - 3, groundY - 4, 9, 3);
+    }
+    return;
+  }
+
+  if (variant === "ember") {
+    ctx.fillStyle = "#333028";
+    ctx.fillRect(leftX + 6, groundY, detailW, 5);
+    for (let i = 0; i < 4; i += 1) {
+      ctx.fillStyle = i % 2 === 0 ? "#8b3010" : "#6a2808";
+      ctx.fillRect(leftX + 10 + i * (detailW / 4) | 0, groundY - 3, 6, 4);
+    }
+    return;
+  }
+
+  ctx.fillStyle = variant === "stone" ? "#6e7a52" :
+                  variant === "wood" ? "#4a6a3a" : "#5a7a44";
+  ctx.fillRect(leftX + 6, groundY, detailW, 5);
+
+  const flowerColors = variant === "stone" ? ["#d0e8a0", "#b8d480"] :
+                        variant === "wood" ? ["#e8b840", "#c87830", "#90b820"] :
+                        ["#e86870", "#f8c840", "#78c8f0"];
+
+  for (let i = 0; i < 5; i += 1) {
+    const fx = leftX + 10 + i * (detailW / 5) | 0;
+    ctx.fillStyle = "#3a6030";
+    ctx.fillRect(fx, groundY - 5, 2, 6);
+    ctx.fillStyle = flowerColors[i % flowerColors.length];
+    ctx.fillRect(fx - 1, groundY - 8, 4, 4);
+  }
 }
 
 function drawKenneyRoof(x, y, cols, variant) {
