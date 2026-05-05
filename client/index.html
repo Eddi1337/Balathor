@@ -17,15 +17,6 @@
 
       <div id="status" class="status">Loading realm config</div>
 
-      <form id="connectionForm" class="connection hidden">
-        <label>
-          <span>Server</span>
-          <input id="serverUrlInput" autocomplete="off" spellcheck="false">
-        </label>
-
-        <button id="connectButton" class="connect" type="submit">Connect</button>
-      </form>
-
       <form id="characterForm" class="character hidden">
         <label>
           <span>Name</span>
@@ -78,6 +69,23 @@
         <button class="chat-send" type="submit">Send</button>
       </form>
     </section>
+
+    <aside id="menu" class="menu hidden" aria-hidden="true">
+      <div class="menu-panel">
+        <div class="menu-head">
+          <strong>Menu</strong>
+          <button id="resumeButton" class="menu-close" type="button">Resume</button>
+        </div>
+
+        <form id="serverForm" class="menu-section">
+          <label>
+            <span>Server URL</span>
+            <input id="menuServerUrlInput" autocomplete="off" spellcheck="false">
+          </label>
+          <button class="menu-apply" type="submit">Change Server</button>
+        </form>
+      </div>
+    </aside>
 
     <script src="./src/main.js"></script>
   </body>

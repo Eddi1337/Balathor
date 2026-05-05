@@ -3,6 +3,7 @@ const http = require("node:http");
 const {
   CHUNK_SIZE,
   generateChunk,
+  getPortalAt,
   isBlockedCircle,
   spawnPoint
 } = require("./world");
@@ -18,6 +19,7 @@ const MAX_NAME_LENGTH = 18;
 const MAX_CHAT_LENGTH = 180;
 const CHAT_HISTORY_LIMIT = 60;
 const CHAT_COOLDOWN_MS = 800;
+const PORTAL_COOLDOWN_MS = 1400;
 
 let nextClientId = 1;
 let nextSpawnIndex = 0;
@@ -76,6 +78,7 @@ server.on("upgrade", (req, socket) => {
     buffer: Buffer.alloc(0),
     alive: true,
     lastChatAt: 0,
+    lastPortalAt: 0,
     input: { up: false, down: false, left: false, right: false },
     player: null
   };
@@ -130,6 +133,8 @@ function simulate() {
     } else {
       client.player.moving = false;
     }
+
+    handlePortalTravel(client);
   }
 
   updateNpcs(dt, pushChat);
@@ -137,6 +142,33 @@ function simulate() {
   if (tick % Math.round(TICK_RATE / SNAPSHOT_RATE) === 0) {
     broadcastSnapshot();
   }
+}
+
+function handlePortalTravel(client) {
+  const now = Date.now();
+  if (now - client.lastPortalAt < PORTAL_COOLDOWN_MS) {
+    return;
+  }
+
+  const portal = getPortalAt(client.player.x, client.player.y);
+  if (!portal) {
+    return;
+  }
+
+  client.lastPortalAt = now;
+  client.player.x = portal.targetX;
+  client.player.y = portal.targetY + 1.2;
+  client.player.moving = false;
+  client.input = normalizeInput();
+
+  send(client, {
+    type: "teleport",
+    portalId: portal.id,
+    name: portal.name,
+    x: client.player.x,
+    y: client.player.y
+  });
+  streamChunks(client, nearbyChunks(client.player.x, client.player.y, 3));
 }
 
 function receive(client, data) {

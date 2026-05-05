@@ -2,9 +2,10 @@ const canvas = document.querySelector("#game");
 const ctx = canvas.getContext("2d", { alpha: false });
 const bootPanel = document.querySelector("#boot");
 const statusEl = document.querySelector("#status");
-const connectionForm = document.querySelector("#connectionForm");
-const serverUrlInput = document.querySelector("#serverUrlInput");
-const connectButton = document.querySelector("#connectButton");
+const menu = document.querySelector("#menu");
+const menuServerUrlInput = document.querySelector("#menuServerUrlInput");
+const resumeButton = document.querySelector("#resumeButton");
+const serverForm = document.querySelector("#serverForm");
 const form = document.querySelector("#characterForm");
 const playButton = document.querySelector("#playButton");
 const nameInput = document.querySelector("#nameInput");
@@ -32,6 +33,10 @@ const TILE = {
   WALL: 7,
   FLOOR: 8,
   DOOR: 9,
+  SAND: 10,
+  SNOW: 11,
+  LAVA: 12,
+  PORTAL: 13,
 };
 
 const state = {
@@ -46,12 +51,14 @@ const state = {
   players: new Map(),
   npcs: new Map(),
   chunks: new Map(),
+  portals: new Map(),
   requestedChunks: new Set(),
   population: 0,
   input: { up: false, down: false, left: false, right: false },
   inputSeq: 0,
   camera: { x: 0, y: 0 },
   activeServerUrl: "",
+  menuOpen: false,
   lastFrame: performance.now()
 };
 
@@ -77,6 +84,10 @@ const tilePalette = {
   [TILE.WALL]: ["#6b5040", "#8c7060", "#4a3028"],
   [TILE.FLOOR]: ["#9a7c5a", "#b09070", "#7a5c40"],
   [TILE.DOOR]: ["#5c3520", "#7a4a2a", "#3c2010"],
+  [TILE.SAND]: ["#b89352", "#d9b96d", "#8f6c3b"],
+  [TILE.SNOW]: ["#c8dcea", "#eef7ff", "#8faec3"],
+  [TILE.LAVA]: ["#4a1b20", "#e0582c", "#ffd06a"],
+  [TILE.PORTAL]: ["#241844", "#75f0ff", "#f87dff"],
 };
 
 resize();
@@ -88,9 +99,9 @@ setInterval(sendInput, 33);
 async function start() {
   setStatus("Loading realm config");
   state.config = await loadConfig();
-  serverUrlInput.value = localStorage.getItem(SERVER_URL_STORAGE_KEY) || state.config.gameServerUrl;
-  setStatus("Select a realm server");
-  connectionForm.classList.remove("hidden");
+  const serverUrl = localStorage.getItem(SERVER_URL_STORAGE_KEY) || state.config.gameServerUrl;
+  setStatus("Connecting to realm");
+  connect(serverUrl);
 }
 
 async function loadConfig() {
@@ -127,16 +138,15 @@ function connect(url) {
     normalizedUrl = normalizeServerUrl(url);
   } catch {
     setStatus("Enter a valid server address");
-    connectButton.disabled = false;
     return;
   }
 
   if (state.socket) {
+    state.ignoreNextClose = true;
     state.socket.close();
   }
 
   setStatus("Connecting to realm");
-  connectButton.disabled = true;
   state.activeServerUrl = normalizedUrl;
   const socket = new WebSocket(normalizedUrl);
   state.socket = socket;
@@ -145,8 +155,7 @@ function connect(url) {
     state.connected = true;
     localStorage.setItem(SERVER_URL_STORAGE_KEY, normalizedUrl);
     setStatus("Connected");
-    connectButton.disabled = false;
-    connectionForm.classList.add("hidden");
+    bootPanel.classList.remove("hidden");
     form.classList.remove("hidden");
     nameInput.focus();
   });
@@ -157,6 +166,10 @@ function connect(url) {
   });
 
   socket.addEventListener("close", () => {
+    if (state.ignoreNextClose) {
+      state.ignoreNextClose = false;
+      return;
+    }
     state.connected = false;
     resetToConnection(state.joined ? "Realm connection closed" : "Unable to connect");
   });
@@ -179,9 +192,34 @@ function handleServerMessage(message) {
     return;
   }
 
+  if (message.type === "teleport") {
+    const self = state.players.get(state.selfId);
+    if (self) {
+      self.x = message.x;
+      self.y = message.y;
+      self.targetX = message.x;
+      self.targetY = message.y;
+      self.renderX = message.x;
+      self.renderY = message.y;
+      self.renderMoving = false;
+    }
+    state.camera.x = message.x * TILE_SIZE;
+    state.camera.y = message.y * TILE_SIZE;
+    state.requestedChunks.clear();
+    clearMovementInput();
+    requestVisibleChunks();
+    appendChat({
+      kind: "system",
+      name: "Realm",
+      text: `Entered ${message.name}`
+    });
+    return;
+  }
+
   if (message.type === "chunk") {
     const key = chunkKey(message.cx, message.cy);
     state.chunks.set(key, message);
+    indexChunkPortals(message);
     state.requestedChunks.delete(key);
     return;
   }
@@ -230,6 +268,8 @@ function applySnapshot(players) {
         ...snapshot,
         renderX: snapshot.x,
         renderY: snapshot.y,
+        renderMoving: Boolean(snapshot.moving),
+        walkPhase: 0,
         targetX: snapshot.x,
         targetY: snapshot.y,
         lastSeen: now
@@ -241,6 +281,7 @@ function applySnapshot(players) {
     Object.assign(player, snapshot, {
       targetX: snapshot.x,
       targetY: snapshot.y,
+      renderMoving: Boolean(snapshot.moving),
       lastSeen: now
     });
   }
@@ -265,6 +306,8 @@ function applyNpcSnapshot(snapshotNpcs) {
         ...snap,
         renderX: snap.x,
         renderY: snap.y,
+        renderMoving: Boolean(snap.moving),
+        walkPhase: 0,
         targetX: snap.x,
         targetY: snap.y,
         lastSeen: now
@@ -276,6 +319,7 @@ function applyNpcSnapshot(snapshotNpcs) {
     Object.assign(npc, snap, {
       targetX: snap.x,
       targetY: snap.y,
+      renderMoving: Boolean(snap.moving),
       lastSeen: now
     });
   }
@@ -289,19 +333,29 @@ function applyNpcSnapshot(snapshotNpcs) {
 
 function updateSmoothPlayers(dt) {
   for (const player of state.players.values()) {
+    let isMoving = Boolean(player.moving);
+
     if (player.id === state.selfId) {
-      predictLocalPlayer(player, dt);
+      isMoving = predictLocalPlayer(player, dt) || isMoving;
     }
 
     const follow = player.id === state.selfId ? 1 - Math.pow(0.00002, dt) : 1 - Math.pow(0.0005, dt);
     player.renderX += (player.targetX - player.renderX) * follow;
     player.renderY += (player.targetY - player.renderY) * follow;
+    player.renderMoving = isMoving || Math.hypot(player.targetX - player.renderX, player.targetY - player.renderY) > 0.01;
+    if (player.renderMoving) {
+      player.walkPhase = (player.walkPhase || 0) + dt * 9;
+    }
   }
 
   const npcFollow = 1 - Math.pow(0.0005, dt);
   for (const npc of state.npcs.values()) {
     npc.renderX += (npc.targetX - npc.renderX) * npcFollow;
     npc.renderY += (npc.targetY - npc.renderY) * npcFollow;
+    npc.renderMoving = Boolean(npc.moving) || Math.hypot(npc.targetX - npc.renderX, npc.targetY - npc.renderY) > 0.01;
+    if (npc.renderMoving) {
+      npc.walkPhase = (npc.walkPhase || 0) + dt * 8;
+    }
   }
 }
 
@@ -311,21 +365,20 @@ function predictLocalPlayer(player, dt) {
   const length = Math.hypot(dx, dy);
 
   if (length === 0) {
-    return;
+    player.renderMoving = false;
+    return false;
   }
 
   dx /= length;
   dy /= length;
   player.renderX += dx * CLIENT_PLAYER_SPEED * dt;
   player.renderY += dy * CLIENT_PLAYER_SPEED * dt;
+  player.facing = Math.atan2(dy, dx);
+  player.renderMoving = true;
+  return true;
 }
 
 function wireUi() {
-  connectionForm.addEventListener("submit", (event) => {
-    event.preventDefault();
-    connect(serverUrlInput.value);
-  });
-
   document.querySelectorAll("[data-class]").forEach((button) => {
     button.addEventListener("click", () => {
       state.selectedClass = button.dataset.class;
@@ -365,6 +418,15 @@ function wireUi() {
     });
   });
 
+  serverForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    changeServer(menuServerUrlInput.value);
+  });
+
+  resumeButton.addEventListener("click", () => {
+    closeMenu();
+  });
+
   chatForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const text = chatInput.value.trim();
@@ -382,6 +444,18 @@ function wireUi() {
   window.addEventListener("resize", resize);
 
   window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      if (state.joined) {
+        toggleMenu();
+      }
+      return;
+    }
+
+    if (state.menuOpen) {
+      return;
+    }
+
     if (event.key === "Enter" && state.joined && !isTextEntryTarget(event.target)) {
       event.preventDefault();
       clearMovementInput();
@@ -395,7 +469,7 @@ function wireUi() {
 }
 
 function updateInput(event, pressed) {
-  if (isTextEntryTarget(event.target)) {
+  if (state.menuOpen || isTextEntryTarget(event.target)) {
     return;
   }
 
@@ -467,21 +541,45 @@ function resetToConnection(message) {
   state.joined = false;
   state.selfId = null;
   state.socket = null;
-  state.players.clear();
-  state.npcs.clear();
-  state.chunks.clear();
-  state.requestedChunks.clear();
-  state.population = 0;
+  clearWorldState();
+  state.menuOpen = false;
+  menu.classList.add("hidden");
+  menu.setAttribute("aria-hidden", "true");
   clearMovementInput();
-  connectButton.disabled = false;
   playButton.disabled = false;
   setStatus(message);
   bootPanel.classList.remove("hidden");
-  connectionForm.classList.remove("hidden");
   form.classList.add("hidden");
   hud.classList.add("hidden");
   chat.classList.add("hidden");
   chatMessages.replaceChildren();
+}
+
+function clearWorldState() {
+  state.players.clear();
+  state.npcs.clear();
+  state.chunks.clear();
+  state.portals.clear();
+  state.requestedChunks.clear();
+  state.population = 0;
+}
+
+function indexChunkPortals(chunk) {
+  const minX = chunk.cx * CHUNK_SIZE;
+  const minY = chunk.cy * CHUNK_SIZE;
+  const maxX = minX + CHUNK_SIZE;
+  const maxY = minY + CHUNK_SIZE;
+
+  for (const key of [...state.portals.keys()]) {
+    const [x, y] = key.split(",").map(Number);
+    if (x >= minX && x < maxX && y >= minY && y < maxY) {
+      state.portals.delete(key);
+    }
+  }
+
+  for (const portal of chunk.portals || []) {
+    state.portals.set(`${portal.x},${portal.y}`, portal);
+  }
 }
 
 function appendChat(message) {
@@ -503,6 +601,45 @@ function appendChat(message) {
     chatMessages.firstElementChild.remove();
   }
   chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function toggleMenu() {
+  if (state.menuOpen) {
+    closeMenu();
+  } else {
+    openMenu();
+  }
+}
+
+function openMenu() {
+  if (!state.joined) {
+    return;
+  }
+
+  state.menuOpen = true;
+  menu.classList.remove("hidden");
+  menu.setAttribute("aria-hidden", "false");
+  menuServerUrlInput.value = state.activeServerUrl || localStorage.getItem(SERVER_URL_STORAGE_KEY) || state.config.gameServerUrl;
+  menuServerUrlInput.focus();
+  menuServerUrlInput.select();
+  clearMovementInput();
+}
+
+function closeMenu() {
+  state.menuOpen = false;
+  menu.classList.add("hidden");
+  menu.setAttribute("aria-hidden", "true");
+}
+
+function changeServer(url) {
+  const normalizedUrl = normalizeServerUrl(url);
+  closeMenu();
+  clearWorldState();
+  form.classList.add("hidden");
+  playButton.disabled = false;
+  state.joined = false;
+  state.selfId = null;
+  connect(normalizedUrl);
 }
 
 function frame(now) {
@@ -570,6 +707,7 @@ function draw() {
 
   drawWorld();
   drawPlayers();
+  drawLighting();
   populationEl.textContent = `${state.population} online`;
 }
 
@@ -609,8 +747,16 @@ function drawTile(tile, sx, sy, tx, ty) {
   ctx.fillStyle = colors[0];
   ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
 
-  if (tile === TILE.GRASS || tile === TILE.DARK_GRASS) {
+  if (tile === TILE.GRASS || tile === TILE.DARK_GRASS || tile === TILE.SAND || tile === TILE.SNOW) {
     scatterPixels(sx, sy, tx, ty, colors[1], 4, 2);
+    if (tile === TILE.SAND) {
+      scatterPixels(sx, sy, tx + 7, ty - 3, colors[2], 2, 1);
+    }
+    if (tile === TILE.SNOW) {
+      ctx.fillStyle = "rgba(255, 255, 255, 0.45)";
+      ctx.fillRect(sx + 4, sy + 4, 9, 2);
+      ctx.fillRect(sx + 20, sy + 18, 7, 2);
+    }
     return;
   }
 
@@ -648,50 +794,41 @@ function drawTile(tile, sx, sy, tx, ty) {
     return;
   }
 
-  if (tile === TILE.TREE) {
-    ctx.fillStyle = "#2f5c36";
-    ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
-    ctx.fillStyle = colors[2];
-    ctx.fillRect(sx + 13, sy + 17, 6, 12);
+  if (tile === TILE.LAVA) {
     ctx.fillStyle = colors[1];
-    ctx.fillRect(sx + 7, sy + 4, 18, 18);
-    ctx.fillStyle = colors[0];
-    ctx.fillRect(sx + 4, sy + 9, 24, 13);
-    ctx.fillStyle = "#3c6b35";
-    ctx.fillRect(sx + 10, sy + 3, 12, 7);
+    for (let i = 0; i < 4; i += 1) {
+      const px = sx + ((hash2(tx, ty, i) * 24) | 0);
+      const py = sy + 5 + i * 6;
+      ctx.fillRect(px, py, 8, 2);
+    }
+    ctx.fillStyle = colors[2];
+    ctx.fillRect(sx + 9, sy + 13, 5, 3);
+    ctx.fillRect(sx + 20, sy + 23, 4, 2);
+    return;
+  }
+
+  if (tile === TILE.TREE) {
+    drawTree(sx, sy, tx, ty);
     return;
   }
 
   if (tile === TILE.WALL) {
-    // Rough stone wall with brick rows.
-    ctx.fillStyle = colors[1];
-    for (let row = 0; row < 4; row += 1) {
-      const offset = row % 2 === 0 ? 0 : 8;
-      for (let col = -1; col < 4; col += 1) {
-        ctx.fillRect(sx + offset + col * 16, sy + row * 8, 14, 6);
-      }
-    }
+    drawHouseWall(sx, sy, tx, ty, colors);
     return;
   }
 
   if (tile === TILE.FLOOR) {
-    // Wooden plank floor with horizontal grain lines.
-    scatterPixels(sx, sy, tx, ty, colors[1], 3, 2);
-    ctx.fillStyle = colors[2];
-    for (let i = 0; i < 4; i += 1) {
-      ctx.fillRect(sx, sy + 2 + i * 8, TILE_SIZE, 1);
-    }
+    drawHouseFloor(sx, sy, tx, ty, colors);
     return;
   }
 
   if (tile === TILE.DOOR) {
-    // Dark wood door with a frame and handle.
-    ctx.fillStyle = colors[1];
-    ctx.fillRect(sx + 7, sy + 1, 18, TILE_SIZE - 2);
-    ctx.fillStyle = colors[2];
-    ctx.fillRect(sx + 9, sy + 3, 14, TILE_SIZE - 6);
-    ctx.fillStyle = "#c8a040";
-    ctx.fillRect(sx + 9, sy + 15, 4, 4);
+    drawHouseDoor(sx, sy, tx, ty, colors);
+    return;
+  }
+
+  if (tile === TILE.PORTAL) {
+    drawPortal(sx, sy, tx, ty);
     return;
   }
 }
@@ -714,29 +851,59 @@ function drawPlayers() {
 
 function drawCharacter(entity, x, y, isNpc = false) {
   const scale = 2;
+  const phase = entity.walkPhase || 0;
+  const moving = Boolean(entity.renderMoving);
+  const bob = moving ? Math.round(Math.sin(phase * 1.6) * 1.5) : 0;
+  const stride = moving ? Math.sin(phase * 1.6) : 0;
+  const facing = Number.isFinite(entity.facing) ? entity.facing : Math.PI / 2;
+  const dirX = Math.cos(facing);
+  const dirY = Math.sin(facing);
+  const sideX = -dirY;
+  const sideY = dirX;
+  const forward = moving ? Math.round(stride * 2) : 0;
+  const travelX = Math.round(dirX * 2);
+  const travelY = Math.round(dirY * 2);
   const px = x - 8 * scale;
-  const py = y - 14 * scale;
+  const py = y - 14 * scale + bob;
   const primary = entity.primary || "#5cc8ff";
   const accent = entity.accent || "#ffd166";
 
-  ctx.fillStyle = "rgba(0, 0, 0, 0.28)";
-  ctx.fillRect(x - 11, y + 8, 22, 5);
+  drawEllipseShadow(x - 11, y + 8, 22, 5, 0.28);
 
-  pixel(px, py, 5, 2, 6, 2, accent, scale);
-  pixel(px, py, 4, 4, 8, 7, primary, scale);
-  pixel(px, py, 6, 5, 4, 3, "#f0c9a2", scale);
-  pixel(px, py, 5, 11, 3, 4, "#202437", scale);
-  pixel(px, py, 9, 11, 3, 4, "#202437", scale);
+  pixel(px, py, 5, 1, 6, 2, accent, scale);
+  pixel(px, py, 4, 3, 8, 7, primary, scale);
+  pixel(px, py, 6, 4, 4, 3, "#f0c9a2", scale);
+
+  const leftFootX = 4 + travelX - Math.round(sideX * forward);
+  const leftFootY = 10 + travelY - Math.round(sideY * forward);
+  const rightFootX = 10 + travelX + Math.round(sideX * forward);
+  const rightFootY = 10 + travelY + Math.round(sideY * forward);
+  const leftKneeX = 5 + Math.round(sideX * forward);
+  const leftKneeY = 7 + Math.round(sideY * forward);
+  const rightKneeX = 9 - Math.round(sideX * forward);
+  const rightKneeY = 7 - Math.round(sideY * forward);
+
+  pixel(px, py, leftKneeX, leftKneeY, 3, 4, "#202437", scale);
+  pixel(px, py, rightKneeX, rightKneeY, 3, 4, "#202437", scale);
+  pixel(px, py, leftFootX, leftFootY, 3, 2, "#111722", scale);
+  pixel(px, py, rightFootX, rightFootY, 3, 2, "#111722", scale);
+
+  const leftArmX = 3 + Math.round(-sideX * forward) + travelX;
+  const leftArmY = 6 + Math.round(-sideY * forward) + travelY;
+  const rightArmX = 11 + Math.round(sideX * forward) + travelX;
+  const rightArmY = 6 + Math.round(sideY * forward) + travelY;
+  pixel(px, py, leftArmX, leftArmY, 3, 4, accent, scale);
+  pixel(px, py, rightArmX, rightArmY, 3, 4, accent, scale);
 
   if (entity.classId === "mage") {
-    pixel(px, py, 3, 3, 10, 2, accent, scale);
-    pixel(px, py, 7, 0, 3, 4, primary, scale);
+    pixel(px, py, 3, 2, 10, 2, accent, scale);
+    pixel(px, py, 7, -1, 3, 4, primary, scale);
   } else if (entity.classId === "knight") {
-    pixel(px, py, 4, 3, 8, 2, "#d4dae2", scale);
-    pixel(px, py, 3, 8, 10, 4, "#8a929e", scale);
+    pixel(px, py, 4, 2, 8, 2, "#d4dae2", scale);
+    pixel(px, py, 3, 7, 10, 4, "#8a929e", scale);
   } else {
-    pixel(px, py, 2, 6, 3, 5, accent, scale);
-    pixel(px, py, 11, 6, 3, 5, accent, scale);
+    pixel(px, py, 2, 5, 3, 5, accent, scale);
+    pixel(px, py, 11, 5, 3, 5, accent, scale);
   }
 
   ctx.font = "12px ui-sans-serif, system-ui";
@@ -762,6 +929,186 @@ function scatterPixels(sx, sy, tx, ty, color, count, size) {
   }
 }
 
+function drawLighting() {
+  const self = state.players.get(state.selfId);
+  const lightX = self ? self.renderX * TILE_SIZE - state.camera.x + canvas.width / 2 : canvas.width / 2;
+  const lightY = self ? self.renderY * TILE_SIZE - state.camera.y + canvas.height / 2 : canvas.height / 2;
+  const radius = Math.max(canvas.width, canvas.height) * 0.82;
+  const gradient = ctx.createRadialGradient(lightX, lightY, 80, lightX, lightY, radius);
+
+  ctx.save();
+  ctx.globalCompositeOperation = "multiply";
+  gradient.addColorStop(0, "rgba(255, 244, 205, 0.98)");
+  gradient.addColorStop(0.45, "rgba(222, 214, 180, 0.94)");
+  gradient.addColorStop(1, "rgba(96, 95, 118, 0.72)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.globalCompositeOperation = "screen";
+  const glow = ctx.createRadialGradient(lightX - 140, lightY - 180, 0, lightX - 140, lightY - 180, 360);
+  glow.addColorStop(0, "rgba(255, 226, 132, 0.16)");
+  glow.addColorStop(1, "rgba(255, 226, 132, 0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
+}
+
+function drawPortal(sx, sy, tx, ty) {
+  const portal = getPortalAtTile(tx, ty);
+  const time = performance.now() / 1000;
+  const pulse = 0.5 + Math.sin(time * 4 + tx * 0.3) * 0.5;
+  const color = portal?.color || "#75f0ff";
+
+  drawEllipseShadow(sx + 2, sy + 23, TILE_SIZE - 4, 8, 0.42);
+  drawPortalPreview(sx, sy, portal);
+
+  ctx.save();
+  ctx.translate(sx + 16, sy + 16);
+  ctx.rotate(time * 1.8);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.globalAlpha = 0.85;
+  ctx.strokeRect(-10, -10, 20, 20);
+  ctx.rotate(-time * 3.1);
+  ctx.strokeStyle = "#f87dff";
+  ctx.globalAlpha = 0.42 + pulse * 0.35;
+  ctx.strokeRect(-7, -7, 14, 14);
+  ctx.restore();
+
+  ctx.fillStyle = "rgba(255, 255, 255, 0.68)";
+  ctx.fillRect(sx + 15, sy + 3 + Math.round(pulse * 3), 2, 5);
+  ctx.fillRect(sx + 25, sy + 15, 3, 2);
+}
+
+function drawPortalPreview(sx, sy, portal) {
+  if (!portal?.preview?.tiles) {
+    ctx.fillStyle = "#241844";
+    ctx.fillRect(sx + 8, sy + 8, 16, 16);
+    return;
+  }
+
+  const size = portal.preview.size;
+  const sampleSize = 4;
+  const startX = sx + 6;
+  const startY = sy + 6;
+
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const tile = portal.preview.tiles[y * size + x];
+      const colors = tilePalette[tile] || tilePalette[TILE.GRASS];
+      ctx.fillStyle = colors[0];
+      ctx.fillRect(startX + x * sampleSize, startY + y * sampleSize, sampleSize, sampleSize);
+    }
+  }
+
+  ctx.fillStyle = "rgba(255, 255, 255, 0.18)";
+  ctx.fillRect(startX + 4, startY + 4, 8, 3);
+}
+
+function drawTree(sx, sy, tx, ty) {
+  const crown = hash2(tx, ty, 11);
+  const leaf = crown > 0.5 ? "#355e39" : "#25492f";
+  const leafDark = crown > 0.5 ? "#24442d" : "#1d3826";
+  const leafLight = crown > 0.5 ? "#4b7b43" : "#39623a";
+  const trunk = "#5b3b26";
+
+  drawCastShadow(sx + 8, sy + 18, 26, 12, 0.35);
+  ctx.fillStyle = "#234124";
+  ctx.fillRect(sx, sy + 10, TILE_SIZE, 22);
+  ctx.fillStyle = leafDark;
+  ctx.fillRect(sx + 4, sy + 3, 24, 15);
+  ctx.fillStyle = leaf;
+  ctx.fillRect(sx + 2, sy + 7, 28, 14);
+  ctx.fillStyle = leafLight;
+  ctx.fillRect(sx + 7, sy + 1, 18, 9);
+  ctx.fillStyle = trunk;
+  ctx.fillRect(sx + 12, sy + 16, 8, 12);
+  ctx.fillStyle = "#7a5130";
+  ctx.fillRect(sx + 13, sy + 18, 2, 8);
+  ctx.fillRect(sx + 17, sy + 18, 2, 8);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.06)";
+  ctx.fillRect(sx + 7, sy + 4, 6, 3);
+}
+
+function drawHouseWall(sx, sy, tx, ty, colors) {
+  const northTile = getTile(tx, ty - 1);
+  const southTile = getTile(tx, ty + 1);
+  const isRoofEdge = northTile !== TILE.WALL && northTile !== TILE.FLOOR && northTile !== TILE.DOOR;
+
+  drawCastShadow(sx + 5, sy + 22, TILE_SIZE + 5, 8, 0.28);
+  ctx.fillStyle = colors[1];
+  ctx.fillRect(sx, sy + 4, TILE_SIZE, 24);
+  ctx.fillStyle = colors[0];
+  ctx.fillRect(sx + 2, sy + 10, TILE_SIZE - 4, 16);
+  ctx.fillStyle = colors[2];
+  ctx.fillRect(sx + 4, sy + 8, TILE_SIZE - 8, 2);
+  ctx.fillStyle = "#d7c09a";
+  ctx.fillRect(sx + 6, sy + 12, 4, 4);
+  ctx.fillRect(sx + 22, sy + 12, 4, 4);
+  ctx.fillStyle = "#9d5a39";
+  ctx.fillRect(sx + 11, sy + 18, 10, 5);
+
+  if (isRoofEdge) {
+    drawRoof(sx, sy, colors, southTile === TILE.WALL || southTile === TILE.FLOOR || southTile === TILE.DOOR);
+  }
+}
+
+function drawHouseFloor(sx, sy, tx, ty, colors) {
+  scatterPixels(sx, sy, tx, ty, colors[1], 4, 2);
+  ctx.fillStyle = colors[2];
+  for (let i = 0; i < 4; i += 1) {
+    ctx.fillRect(sx, sy + 3 + i * 7, TILE_SIZE, 1);
+  }
+}
+
+function drawHouseDoor(sx, sy, tx, ty, colors) {
+  drawCastShadow(sx + 5, sy + 22, TILE_SIZE + 5, 8, 0.3);
+  ctx.fillStyle = colors[1];
+  ctx.fillRect(sx + 8, sy + 2, 16, TILE_SIZE - 3);
+  ctx.fillStyle = colors[2];
+  ctx.fillRect(sx + 10, sy + 4, 12, TILE_SIZE - 7);
+  ctx.fillStyle = "#c8a040";
+  ctx.fillRect(sx + 20, sy + 15, 2, 2);
+  drawRoof(sx, sy, colors, true);
+  ctx.fillStyle = "#5f381e";
+  ctx.fillRect(sx + 11, sy + 19, 2, 9);
+  ctx.fillRect(sx + 17, sy + 19, 2, 9);
+}
+
+function drawRoof(sx, sy, colors, broad = false) {
+  ctx.fillStyle = "rgba(0, 0, 0, 0.18)";
+  ctx.fillRect(sx + 3, sy + 8, TILE_SIZE - 2, 4);
+  ctx.fillStyle = "#7c3f31";
+  ctx.fillRect(sx - 2, sy + 1, TILE_SIZE + 4, 7);
+  ctx.fillStyle = "#a1513f";
+  ctx.fillRect(sx, sy + 2, TILE_SIZE, 4);
+  if (broad) {
+    ctx.fillStyle = "#5d281f";
+    ctx.fillRect(sx + 4, sy, TILE_SIZE - 8, 2);
+  }
+  ctx.fillStyle = colors[2];
+  ctx.fillRect(sx + 2, sy + 4, 8, 1);
+  ctx.fillRect(sx + 22, sy + 4, 8, 1);
+  ctx.fillStyle = "#5f381e";
+  ctx.fillRect(sx + 13, sy - 1, 6, 4);
+  ctx.fillStyle = "#c96f4b";
+  ctx.fillRect(sx + 14, sy - 3, 4, 3);
+}
+
+function drawCastShadow(x, y, w, h, alpha) {
+  ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+  ctx.fillRect(x + 3, y + 2, w, h);
+  ctx.fillStyle = `rgba(0, 0, 0, ${alpha * 0.55})`;
+  ctx.fillRect(x + 7, y + h, Math.max(2, w - 8), 3);
+}
+
+function drawEllipseShadow(x, y, w, h, alpha) {
+  ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+  ctx.beginPath();
+  ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 function getTile(tileX, tileY) {
   const cx = Math.floor(tileX / CHUNK_SIZE);
   const cy = Math.floor(tileY / CHUNK_SIZE);
@@ -773,6 +1120,10 @@ function getTile(tileX, tileY) {
   const localX = modulo(tileX, CHUNK_SIZE);
   const localY = modulo(tileY, CHUNK_SIZE);
   return chunk.tiles[localY * CHUNK_SIZE + localX];
+}
+
+function getPortalAtTile(tileX, tileY) {
+  return state.portals.get(`${tileX},${tileY}`) || null;
 }
 
 function chunkKey(cx, cy) {

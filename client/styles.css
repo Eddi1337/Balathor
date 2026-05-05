@@ -271,6 +271,59 @@ button:focus-visible {
   padding: 0 10px;
 }
 
+.menu {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(8, 10, 16, 0.58);
+  backdrop-filter: blur(4px);
+}
+
+.menu-panel {
+  width: min(360px, calc(100vw - 32px));
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  background: rgba(24, 30, 43, 0.96);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
+}
+
+.menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.menu-head strong {
+  font-size: 16px;
+}
+
+.menu-section {
+  display: grid;
+  gap: 14px;
+}
+
+.menu-close,
+.menu-apply {
+  min-height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: var(--control);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.menu-apply {
+  border-color: #ffd166;
+  background: #ffd166;
+  color: #1d2430;
+  font-weight: 800;
+}
+
 @media (max-width: 520px) {
   .panel {
     min-height: min(500px, calc(100vh - 32px));
@@ -287,5 +340,10 @@ button:focus-visible {
     bottom: 8px;
     width: auto;
     grid-template-rows: minmax(84px, 132px) 42px;
+  }
+
+  .menu-panel {
+    width: calc(100vw - 20px);
+    padding: 16px;
   }
 }
