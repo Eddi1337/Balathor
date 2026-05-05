@@ -348,7 +348,8 @@ function generateChunk(cx, cy) {
     cy,
     size: CHUNK_SIZE,
     tiles,
-    portals: getPortalsInChunk(cx, cy)
+    portals: getPortalsInChunk(cx, cy),
+    buildings: getBuildingsInChunk(cx, cy)
   };
 }
 
@@ -393,6 +394,28 @@ function getPortalsInChunk(cx, cy) {
       targetY: portal.targetY,
       color: portal.color,
       preview: generatePortalPreview(portal.targetX, portal.targetY + 1)
+    }));
+}
+
+function getBuildingsInChunk(cx, cy) {
+  const startX = cx * CHUNK_SIZE;
+  const startY = cy * CHUNK_SIZE;
+  const endX = startX + CHUNK_SIZE;
+  const endY = startY + CHUNK_SIZE;
+
+  return BUILDINGS
+    .filter((building) => (
+      building.x < endX &&
+      building.x + building.w > startX &&
+      building.y < endY &&
+      building.y + building.h > startY
+    ))
+    .map((building) => ({
+      x: building.x,
+      y: building.y,
+      w: building.w,
+      h: building.h,
+      name: building.name
     }));
 }
 

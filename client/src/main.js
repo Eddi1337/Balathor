@@ -52,6 +52,7 @@ const state = {
   npcs: new Map(),
   chunks: new Map(),
   portals: new Map(),
+  buildings: new Map(),
   requestedChunks: new Set(),
   population: 0,
   input: { up: false, down: false, left: false, right: false },
@@ -220,6 +221,7 @@ function handleServerMessage(message) {
     const key = chunkKey(message.cx, message.cy);
     state.chunks.set(key, message);
     indexChunkPortals(message);
+    indexChunkBuildings(message);
     state.requestedChunks.delete(key);
     return;
   }
@@ -560,6 +562,7 @@ function clearWorldState() {
   state.npcs.clear();
   state.chunks.clear();
   state.portals.clear();
+  state.buildings.clear();
   state.requestedChunks.clear();
   state.population = 0;
 }
@@ -579,6 +582,28 @@ function indexChunkPortals(chunk) {
 
   for (const portal of chunk.portals || []) {
     state.portals.set(`${portal.x},${portal.y}`, portal);
+  }
+}
+
+function indexChunkBuildings(chunk) {
+  const minX = chunk.cx * CHUNK_SIZE;
+  const minY = chunk.cy * CHUNK_SIZE;
+  const maxX = minX + CHUNK_SIZE;
+  const maxY = minY + CHUNK_SIZE;
+
+  for (const [key, building] of [...state.buildings.entries()]) {
+    if (
+      building.x < maxX &&
+      building.x + building.w > minX &&
+      building.y < maxY &&
+      building.y + building.h > minY
+    ) {
+      state.buildings.delete(key);
+    }
+  }
+
+  for (const building of chunk.buildings || []) {
+    state.buildings.set(`${building.x},${building.y},${building.w},${building.h}`, building);
   }
 }
 
@@ -740,6 +765,8 @@ function drawWorld() {
       drawTile(tile, sx, sy, tx, ty);
     }
   }
+
+  drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY);
 }
 
 function drawTile(tile, sx, sy, tx, ty) {
@@ -748,7 +775,7 @@ function drawTile(tile, sx, sy, tx, ty) {
   ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
 
   if (tile === TILE.GRASS || tile === TILE.DARK_GRASS || tile === TILE.SAND || tile === TILE.SNOW) {
-    scatterPixels(sx, sy, tx, ty, colors[1], 4, 2);
+    drawGroundPatch(tile, sx, sy, tx, ty, colors);
     if (tile === TILE.SAND) {
       scatterPixels(sx, sy, tx + 7, ty - 3, colors[2], 2, 1);
     }
@@ -768,8 +795,7 @@ function drawTile(tile, sx, sy, tx, ty) {
   }
 
   if (tile === TILE.PATH) {
-    scatterPixels(sx, sy, tx, ty, colors[1], 5, 3);
-    scatterPixels(sx, sy, tx + 1, ty, colors[2], 2, 2);
+    drawPath(sx, sy, tx, ty, colors);
     return;
   }
 
@@ -785,12 +811,7 @@ function drawTile(tile, sx, sy, tx, ty) {
   }
 
   if (tile === TILE.WATER) {
-    ctx.fillStyle = colors[1];
-    for (let i = 0; i < 3; i += 1) {
-      const px = sx + ((hash2(tx, ty, i) * 22) | 0);
-      const py = sy + 7 + i * 8;
-      ctx.fillRect(px, py, 10, 2);
-    }
+    drawWater(sx, sy, tx, ty, colors);
     return;
   }
 
@@ -813,17 +834,17 @@ function drawTile(tile, sx, sy, tx, ty) {
   }
 
   if (tile === TILE.WALL) {
-    drawHouseWall(sx, sy, tx, ty, colors);
+    drawCoveredBuildingGround(sx, sy, tx, ty);
     return;
   }
 
   if (tile === TILE.FLOOR) {
-    drawHouseFloor(sx, sy, tx, ty, colors);
+    drawCoveredBuildingGround(sx, sy, tx, ty);
     return;
   }
 
   if (tile === TILE.DOOR) {
-    drawHouseDoor(sx, sy, tx, ty, colors);
+    drawCoveredBuildingGround(sx, sy, tx, ty);
     return;
   }
 
@@ -929,6 +950,186 @@ function scatterPixels(sx, sy, tx, ty, color, count, size) {
   }
 }
 
+function drawGroundPatch(tile, sx, sy, tx, ty, colors) {
+  const shade = hash2(tx, ty, 31);
+  ctx.fillStyle = shade > 0.5 ? colors[0] : blend(colors[0], "#000000", 0.06);
+  ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+
+  ctx.fillStyle = colors[1];
+  for (let i = 0; i < 4; i += 1) {
+    const px = sx + ((hash2(tx, ty, i + 60) * 26) | 0);
+    const py = sy + ((hash2(tx, ty, i + 80) * 24) | 0);
+    const w = 4 + ((hash2(tx, ty, i + 90) * 10) | 0);
+    ctx.fillRect(px, py, w, 2);
+  }
+
+  if (tile === TILE.GRASS || tile === TILE.DARK_GRASS) {
+    drawGrassTufts(sx, sy, tx, ty, tile === TILE.DARK_GRASS ? "#182f22" : "#5d8d42");
+  }
+}
+
+function drawGrassTufts(sx, sy, tx, ty, color) {
+  ctx.fillStyle = color;
+  for (let i = 0; i < 5; i += 1) {
+    const x = sx + 3 + ((hash2(tx, ty, i + 110) * 25) | 0);
+    const y = sy + 8 + ((hash2(tx, ty, i + 130) * 20) | 0);
+    ctx.fillRect(x, y, 2, 6);
+    ctx.fillRect(x + 2, y + 2, 2, 4);
+  }
+}
+
+function drawPath(sx, sy, tx, ty, colors) {
+  ctx.fillStyle = colors[0];
+  ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+  ctx.fillStyle = colors[1];
+  ctx.fillRect(sx + 1, sy + 5, TILE_SIZE - 2, 20);
+  scatterPixels(sx, sy, tx, ty, colors[2], 5, 2);
+  ctx.fillStyle = "rgba(255, 240, 180, 0.18)";
+  ctx.fillRect(sx + 4, sy + 8, 10, 2);
+}
+
+function drawWater(sx, sy, tx, ty, colors) {
+  ctx.fillStyle = colors[0];
+  ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+  ctx.fillStyle = "#1d8fb3";
+  ctx.fillRect(sx, sy + 3, TILE_SIZE, TILE_SIZE - 6);
+  ctx.fillStyle = colors[1];
+  for (let i = 0; i < 3; i += 1) {
+    const px = sx + ((hash2(tx, ty, i) * 22) | 0);
+    const py = sy + 7 + i * 8;
+    ctx.fillRect(px, py, 10, 2);
+  }
+
+  ctx.fillStyle = "rgba(186, 233, 214, 0.45)";
+  if (getTile(tx, ty - 1) !== TILE.WATER) {
+    ctx.fillRect(sx, sy, TILE_SIZE, 3);
+  }
+  if (getTile(tx, ty + 1) !== TILE.WATER) {
+    ctx.fillRect(sx, sy + TILE_SIZE - 3, TILE_SIZE, 3);
+  }
+  if (getTile(tx - 1, ty) !== TILE.WATER) {
+    ctx.fillRect(sx, sy, 3, TILE_SIZE);
+  }
+  if (getTile(tx + 1, ty) !== TILE.WATER) {
+    ctx.fillRect(sx + TILE_SIZE - 3, sy, 3, TILE_SIZE);
+  }
+}
+
+function drawCoveredBuildingGround(sx, sy, tx, ty) {
+  const colors = tilePalette[TILE.GRASS];
+  ctx.fillStyle = colors[0];
+  ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+  scatterPixels(sx, sy, tx, ty, colors[1], 2, 2);
+}
+
+function drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY) {
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const buildings = [...state.buildings.values()]
+    .filter((building) => (
+      building.x <= maxTileX &&
+      building.x + building.w >= minTileX &&
+      building.y <= maxTileY &&
+      building.y + building.h >= minTileY
+    ))
+    .sort((a, b) => (a.y + a.h) - (b.y + b.h));
+
+  for (const building of buildings) {
+    const sx = Math.floor(building.x * TILE_SIZE - state.camera.x + halfW);
+    const sy = Math.floor(building.y * TILE_SIZE - state.camera.y + halfH);
+    drawBuildingSprite(building, sx, sy);
+  }
+}
+
+function drawBuildingSprite(building, sx, sy) {
+  const w = building.w * TILE_SIZE;
+  const h = building.h * TILE_SIZE;
+  const roofColor = building.name.includes("Frost") || building.name.includes("Snow") || building.name.includes("Pine")
+    ? "#6f8790"
+    : building.name.includes("Oasis") || building.name.includes("Sun") || building.name.includes("Clay")
+      ? "#b6683b"
+      : "#a24d31";
+  const wallColor = building.name.includes("Ruin") || building.name.includes("Ancient")
+    ? "#76675b"
+    : building.name.includes("Oasis") || building.name.includes("Sun") || building.name.includes("Clay")
+      ? "#c49a64"
+      : "#8d674b";
+  const roofH = Math.max(26, Math.min(54, h * 0.32));
+  const bodyY = sy + roofH * 0.62;
+  const bodyH = h - roofH * 0.32;
+
+  drawCastShadow(sx + 12, sy + h - 18, w - 4, 20, 0.32);
+
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.38)";
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetX = 8;
+  ctx.shadowOffsetY = 10;
+  ctx.fillStyle = wallColor;
+  ctx.fillRect(sx + 10, bodyY, w - 20, bodyH - 10);
+  ctx.restore();
+
+  ctx.fillStyle = blend(wallColor, "#ffffff", 0.12);
+  ctx.fillRect(sx + 16, bodyY + 8, w - 32, bodyH - 24);
+  ctx.fillStyle = blend(wallColor, "#000000", 0.25);
+  ctx.fillRect(sx + 10, bodyY + bodyH - 22, w - 20, 12);
+
+  ctx.fillStyle = "#f0d8a7";
+  const windowCount = Math.max(1, Math.min(3, Math.floor(building.w / 4)));
+  for (let i = 0; i < windowCount; i += 1) {
+    const wx = sx + 24 + i * Math.max(36, (w - 56) / Math.max(1, windowCount - 1));
+    ctx.fillRect(wx, bodyY + 28, 12, 12);
+    ctx.fillStyle = "rgba(255, 247, 190, 0.26)";
+    ctx.fillRect(wx + 2, bodyY + 30, 8, 3);
+    ctx.fillStyle = "#f0d8a7";
+  }
+
+  ctx.fillStyle = "#5f3424";
+  const doorX = sx + w / 2 - 10;
+  ctx.fillRect(doorX, sy + h - 56, 20, 38);
+  ctx.fillStyle = "#d6a043";
+  ctx.fillRect(doorX + 14, sy + h - 38, 3, 3);
+
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.28)";
+  ctx.shadowBlur = 6;
+  ctx.shadowOffsetX = 5;
+  ctx.shadowOffsetY = 7;
+  drawBuildingRoof(sx, sy, w, roofH, roofColor);
+  ctx.restore();
+
+  ctx.fillStyle = "rgba(255, 226, 160, 0.22)";
+  ctx.fillRect(sx + 22, sy + roofH + 10, Math.max(20, w * 0.22), 4);
+}
+
+function drawBuildingRoof(sx, sy, w, roofH, color) {
+  ctx.fillStyle = blend(color, "#000000", 0.2);
+  ctx.beginPath();
+  ctx.moveTo(sx + 2, sy + roofH);
+  ctx.lineTo(sx + w / 2, sy);
+  ctx.lineTo(sx + w - 2, sy + roofH);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(sx + 12, sy + roofH - 4);
+  ctx.lineTo(sx + w / 2, sy + 6);
+  ctx.lineTo(sx + w - 12, sy + roofH - 4);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = blend(color, "#ffffff", 0.18);
+  for (let i = 0; i < 4; i += 1) {
+    ctx.fillRect(sx + 22 + i * Math.max(18, w / 6), sy + roofH - 14 - i * 3, Math.max(20, w / 7), 3);
+  }
+
+  ctx.fillStyle = "#5f381e";
+  ctx.fillRect(sx + w * 0.66, sy + roofH * 0.28, 12, 18);
+  ctx.fillStyle = "#c96f4b";
+  ctx.fillRect(sx + w * 0.66 + 2, sy + roofH * 0.18, 8, 8);
+}
+
 function drawLighting() {
   const self = state.players.get(state.selfId);
   const lightX = self ? self.renderX * TILE_SIZE - state.camera.x + canvas.width / 2 : canvas.width / 2;
@@ -1007,27 +1208,38 @@ function drawPortalPreview(sx, sy, portal) {
 
 function drawTree(sx, sy, tx, ty) {
   const crown = hash2(tx, ty, 11);
-  const leaf = crown > 0.5 ? "#355e39" : "#25492f";
-  const leafDark = crown > 0.5 ? "#24442d" : "#1d3826";
-  const leafLight = crown > 0.5 ? "#4b7b43" : "#39623a";
-  const trunk = "#5b3b26";
+  const frost = getTile(tx, ty + 1) === TILE.SNOW || getTile(tx, ty - 1) === TILE.SNOW;
+  const ember = getTile(tx, ty + 1) === TILE.DARK_GRASS && tx > 80 && ty < -70;
+  const leaf = frost ? "#5d8183" : ember ? "#244030" : crown > 0.5 ? "#2f6a45" : "#23583d";
+  const leafDark = frost ? "#365d62" : ember ? "#1b2f28" : "#194532";
+  const leafLight = frost ? "#8aa9a2" : ember ? "#496c3b" : "#5f8d4a";
+  const trunk = ember ? "#4b2d27" : "#5b3b26";
+  const offset = Math.round((hash2(tx, ty, 15) - 0.5) * 8);
+  const height = 36 + Math.round(hash2(tx, ty, 16) * 14);
+  const baseY = sy + 27;
 
-  drawCastShadow(sx + 8, sy + 18, 26, 12, 0.35);
-  ctx.fillStyle = "#234124";
-  ctx.fillRect(sx, sy + 10, TILE_SIZE, 22);
-  ctx.fillStyle = leafDark;
-  ctx.fillRect(sx + 4, sy + 3, 24, 15);
-  ctx.fillStyle = leaf;
-  ctx.fillRect(sx + 2, sy + 7, 28, 14);
-  ctx.fillStyle = leafLight;
-  ctx.fillRect(sx + 7, sy + 1, 18, 9);
+  drawCastShadow(sx + 6 + offset, sy + 21, 34, 12, 0.38);
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.36)";
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetX = 6;
+  ctx.shadowOffsetY = 8;
   ctx.fillStyle = trunk;
-  ctx.fillRect(sx + 12, sy + 16, 8, 12);
-  ctx.fillStyle = "#7a5130";
-  ctx.fillRect(sx + 13, sy + 18, 2, 8);
-  ctx.fillRect(sx + 17, sy + 18, 2, 8);
-  ctx.fillStyle = "rgba(255, 255, 255, 0.06)";
-  ctx.fillRect(sx + 7, sy + 4, 6, 3);
+  ctx.fillRect(sx + 13 + offset, baseY - 16, 8, 17);
+  ctx.fillStyle = leafDark;
+  ctx.fillRect(sx - 3 + offset, baseY - height + 12, 38, 20);
+  ctx.fillStyle = leaf;
+  ctx.fillRect(sx - 7 + offset, baseY - height + 19, 46, 18);
+  ctx.fillStyle = leafLight;
+  ctx.fillRect(sx + 1 + offset, baseY - height + 6, 30, 14);
+  ctx.fillStyle = leaf;
+  ctx.fillRect(sx + 5 + offset, baseY - height, 22, 10);
+  ctx.restore();
+
+  ctx.fillStyle = "rgba(255, 255, 255, 0.08)";
+  ctx.fillRect(sx + 5 + offset, baseY - height + 9, 9, 3);
+  ctx.fillStyle = "rgba(0, 0, 0, 0.14)";
+  ctx.fillRect(sx + 20 + offset, baseY - height + 24, 13, 4);
 }
 
 function drawHouseWall(sx, sy, tx, ty, colors) {
@@ -1139,6 +1351,22 @@ function hash2(x, y, seed) {
   h = (h ^ (h >>> 13)) >>> 0;
   h = Math.imul(h, 1274126177) >>> 0;
   return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+}
+
+function blend(hex, otherHex, amount) {
+  const a = parseHexColor(hex);
+  const b = parseHexColor(otherHex);
+  const mix = (from, to) => Math.round(from + (to - from) * amount);
+  return `rgb(${mix(a.r, b.r)}, ${mix(a.g, b.g)}, ${mix(a.b, b.b)})`;
+}
+
+function parseHexColor(hex) {
+  const value = hex.replace("#", "");
+  return {
+    r: Number.parseInt(value.slice(0, 2), 16),
+    g: Number.parseInt(value.slice(2, 4), 16),
+    b: Number.parseInt(value.slice(4, 6), 16)
+  };
 }
 
 function resize() {
