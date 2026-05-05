@@ -123,6 +123,7 @@ Client to server:
 - `hello`: sends player name and customization choices.
 - `input`: sends current movement key state.
 - `chat`: sends a player chat line to the server.
+- `attack`: uses the player's class weapon.
 - `requestChunks`: asks the server for world chunks around the camera.
 
 Server to client:
@@ -132,6 +133,7 @@ Server to client:
 - `chat`: broadcasts a server-accepted chat line to all clients.
 - `chunk`: streams generated tile data for one chunk.
 - `snapshot`: sends authoritative player positions.
+- `combat`: broadcasts sword swings, arrows, fireballs, hits, damage, and shield blocks.
 - `serverMessage`: sends connection or validation messages.
 
 ## Next Milestones

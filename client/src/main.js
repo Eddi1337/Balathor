@@ -466,7 +466,7 @@ function applyCombatEvent(event) {
   state.combatFx.push({
     ...event,
     createdAt: performance.now(),
-    ttl: event.hit ? 360 : 220
+    ttl: event.kind === "projectile" ? (event.projectileKind === "fireball" ? 560 : 420) : event.hit ? 360 : 220
   });
 }
 
@@ -1106,6 +1106,10 @@ function drawCharacter(entity, x, y, isNpc = false) {
     pixel(px, py, 11, 5, 3, 5, accent, scale);
   }
 
+  if (!isNpc) {
+    drawClassEquipment(entity, x, y + bob, dirX, dirY, sideX, sideY, accent);
+  }
+
   ctx.font = "12px ui-sans-serif, system-ui";
   ctx.textAlign = "center";
   ctx.lineWidth = 3;
@@ -1117,6 +1121,83 @@ function drawCharacter(entity, x, y, isNpc = false) {
   if (!isNpc && Number.isFinite(entity.hp) && Number.isFinite(entity.maxHp)) {
     drawHealthBar(x - 14, y - 22, 28, 4, entity.hp, entity.maxHp);
   }
+}
+
+function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent) {
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  if (entity.classId === "mage") {
+    const baseX = x - sideX * 12 - dirX * 2;
+    const baseY = y + 8 - sideY * 12 - dirY * 2;
+    const tipX = x - sideX * 15 + dirX * 9;
+    const tipY = y - 21 - sideY * 15 + dirY * 9;
+    ctx.strokeStyle = "#6b4428";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(baseX, baseY);
+    ctx.lineTo(tipX, tipY);
+    ctx.stroke();
+    ctx.fillStyle = "#ff7a45";
+    ctx.beginPath();
+    ctx.arc(tipX, tipY, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ffd166";
+    ctx.fillRect(tipX - 2, tipY - 2, 4, 4);
+  } else if (entity.classId === "knight") {
+    const swordBaseX = x + dirX * 8 + sideX * 4;
+    const swordBaseY = y - 5 + dirY * 8 + sideY * 4;
+    const swordTipX = x + dirX * 24 + sideX * 8;
+    const swordTipY = y - 12 + dirY * 24 + sideY * 8;
+    ctx.strokeStyle = "#edf3f7";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(swordBaseX, swordBaseY);
+    ctx.lineTo(swordTipX, swordTipY);
+    ctx.stroke();
+    ctx.strokeStyle = "#7b532f";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(swordBaseX - sideX * 5, swordBaseY - sideY * 5);
+    ctx.lineTo(swordBaseX + sideX * 5, swordBaseY + sideY * 5);
+    ctx.stroke();
+
+    const shieldX = x - sideX * 12 + dirX * 3;
+    const shieldY = y - 5 - sideY * 12 + dirY * 3;
+    ctx.fillStyle = "#3f4b5e";
+    ctx.beginPath();
+    ctx.ellipse(shieldX, shieldY, 8, 11, entity.facing || 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#d4dae2";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = accent;
+    ctx.fillRect(shieldX - 2, shieldY - 7, 4, 14);
+  } else {
+    const bowX = x - sideX * 13 + dirX * 2;
+    const bowY = y - 7 - sideY * 13 + dirY * 2;
+    ctx.strokeStyle = "#8b5a34";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(bowX - dirX * 9 - dirY * 4, bowY - dirY * 9 + dirX * 4);
+    ctx.quadraticCurveTo(bowX + sideX * 7, bowY + sideY * 7, bowX + dirX * 9 + dirY * 4, bowY + dirY * 9 - dirX * 4);
+    ctx.stroke();
+    ctx.strokeStyle = "#f4ead3";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(bowX - dirX * 9 - dirY * 4, bowY - dirY * 9 + dirX * 4);
+    ctx.lineTo(bowX + dirX * 9 + dirY * 4, bowY + dirY * 9 - dirX * 4);
+    ctx.stroke();
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x + sideX * 8 - dirX * 10, y - 12 + sideY * 8 - dirY * 10);
+    ctx.lineTo(x + sideX * 8 + dirX * 8, y - 3 + sideY * 8 + dirY * 8);
+    ctx.stroke();
+  }
+
+  ctx.restore();
 }
 
 function drawMob(entity, x, y) {
@@ -1156,8 +1237,15 @@ function drawCombatFx() {
     const pct = age / fx.ttl;
     const sx = Math.floor(fx.x * TILE_SIZE - state.camera.x + halfW);
     const sy = Math.floor(fx.y * TILE_SIZE - state.camera.y + halfH);
-    const reach = 28 + pct * 8;
     const angle = fx.facing || 0;
+
+    if (fx.kind === "projectile") {
+      drawProjectileFx(fx, sx, sy, pct, halfW, halfH);
+      drawDamageFx(fx, pct, halfW, halfH);
+      continue;
+    }
+
+    const reach = 28 + pct * 8;
 
     ctx.save();
     ctx.translate(sx, sy);
@@ -1170,20 +1258,93 @@ function drawCombatFx() {
     ctx.stroke();
     ctx.restore();
 
-    if (fx.hit && fx.targetId) {
-      const target = state.mobs.get(fx.targetId) || state.players.get(fx.targetId);
-      if (target) {
-        const tx = Math.floor(target.renderX * TILE_SIZE - state.camera.x + halfW);
-        const ty = Math.floor(target.renderY * TILE_SIZE - state.camera.y + halfH);
-        ctx.globalAlpha = 1 - pct;
-        ctx.fillStyle = "#ffdf7a";
-        ctx.font = "13px ui-sans-serif, system-ui";
-        ctx.textAlign = "center";
-        ctx.fillText(`-${fx.damage}`, tx, ty - 22 - pct * 18);
-        ctx.globalAlpha = 1;
-      }
-    }
+    drawDamageFx(fx, pct, halfW, halfH);
   }
+}
+
+function drawProjectileFx(fx, sx, sy, pct, halfW, halfH) {
+  const endWorldX = Number.isFinite(fx.endX) ? fx.endX : fx.x + Math.cos(fx.facing || 0) * (fx.range || 6);
+  const endWorldY = Number.isFinite(fx.endY) ? fx.endY : fx.y + Math.sin(fx.facing || 0) * (fx.range || 6);
+  const endX = endWorldX * TILE_SIZE - state.camera.x + halfW;
+  const endY = endWorldY * TILE_SIZE - state.camera.y + halfH;
+  const travel = Math.min(1, pct * 1.25);
+  const px = sx + (endX - sx) * travel;
+  const py = sy + (endY - sy) * travel;
+  const angle = Math.atan2(endY - sy, endX - sx);
+
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate(angle);
+
+  if (fx.projectileKind === "fireball") {
+    const glow = ctx.createRadialGradient(0, 0, 1, 0, 0, 18);
+    glow.addColorStop(0, "rgba(255, 209, 102, 0.95)");
+    glow.addColorStop(0.45, "rgba(255, 122, 69, 0.72)");
+    glow.addColorStop(1, "rgba(255, 69, 44, 0)");
+    ctx.globalAlpha = Math.max(0, 1 - pct * 0.35);
+    ctx.fillStyle = glow;
+    ctx.fillRect(-18, -18, 36, 36);
+    ctx.fillStyle = "#ffd166";
+    ctx.beginPath();
+    ctx.arc(0, 0, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ff5d2d";
+    ctx.fillRect(-13, -3, 10, 6);
+  } else {
+    ctx.globalAlpha = 1 - Math.max(0, pct - 0.75) * 4;
+    ctx.strokeStyle = "#f4ead3";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-14, 0);
+    ctx.lineTo(10, 0);
+    ctx.stroke();
+    ctx.fillStyle = "#d7e4ef";
+    ctx.beginPath();
+    ctx.moveTo(14, 0);
+    ctx.lineTo(6, -4);
+    ctx.lineTo(6, 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#8b5a34";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-12, -3);
+    ctx.lineTo(-17, 0);
+    ctx.lineTo(-12, 3);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+
+  if (fx.hit && pct > 0.72) {
+    ctx.globalAlpha = 1 - pct;
+    ctx.strokeStyle = fx.projectileKind === "fireball" ? "#ffb347" : "#ffd166";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(endX, endY - 4, fx.projectileKind === "fireball" ? 22 * pct : 12 * pct, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawDamageFx(fx, pct, halfW, halfH) {
+  if (!fx.hit || !fx.targetId) {
+    return;
+  }
+
+  const target = state.mobs.get(fx.targetId) || state.players.get(fx.targetId);
+  const tx = Number.isFinite(fx.endX) ? fx.endX * TILE_SIZE - state.camera.x + halfW : target?.renderX * TILE_SIZE - state.camera.x + halfW;
+  const ty = Number.isFinite(fx.endY) ? fx.endY * TILE_SIZE - state.camera.y + halfH : target?.renderY * TILE_SIZE - state.camera.y + halfH;
+  if (!Number.isFinite(tx) || !Number.isFinite(ty)) {
+    return;
+  }
+
+  ctx.globalAlpha = 1 - pct;
+  ctx.fillStyle = fx.blocked ? "#b9d7ff" : "#ffdf7a";
+  ctx.font = "13px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.fillText(fx.blocked ? `blocked -${fx.damage}` : `-${fx.damage}`, tx, ty - 22 - pct * 18);
+  ctx.globalAlpha = 1;
 }
 
 function drawHealthBar(x, y, w, h, hp, maxHp) {

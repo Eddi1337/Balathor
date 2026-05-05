@@ -23,12 +23,40 @@ const CHAT_HISTORY_LIMIT = 60;
 const CHAT_COOLDOWN_MS = 800;
 const PORTAL_COOLDOWN_MS = 1400;
 const DOOR_COOLDOWN_MS = 600;
-const ATTACK_COOLDOWN_MS = 420;
-const ATTACK_RANGE = 2.1;
-const ATTACK_ARC = Math.PI * 0.72;
 const PLAYER_MAX_HP = 100;
-const PLAYER_ATTACK_DAMAGE = 18;
 const MOB_RESPAWN_MS = 7000;
+const CLASS_IDS = ["ranger", "mage", "knight"];
+const CLASS_LOADOUTS = Object.freeze({
+  ranger: {
+    weapon: "bow",
+    kind: "projectile",
+    projectileKind: "arrow",
+    cooldownMs: 560,
+    range: 8.5,
+    arc: Math.PI * 0.36,
+    damage: 16
+  },
+  mage: {
+    weapon: "staff",
+    kind: "projectile",
+    projectileKind: "fireball",
+    cooldownMs: 780,
+    range: 7.2,
+    arc: Math.PI * 0.48,
+    damage: 24
+  },
+  knight: {
+    weapon: "sword_shield",
+    kind: "swing",
+    projectileKind: null,
+    cooldownMs: 420,
+    range: 2.1,
+    arc: Math.PI * 0.72,
+    damage: 22
+  }
+});
+const KNIGHT_SHIELD_ARC = Math.PI * 0.72;
+const KNIGHT_SHIELD_DAMAGE_MULTIPLIER = 0.45;
 
 let nextClientId = 1;
 let nextSpawnIndex = 0;
@@ -284,7 +312,7 @@ function joinWorld(client, message) {
   client.player = {
     id: client.id,
     name: sanitizeName(message.name),
-    classId: sanitizeChoice(message.classId, ["ranger", "mage", "knight"], "ranger"),
+    classId: sanitizeChoice(message.classId, CLASS_IDS, "ranger"),
     primary: sanitizeColor(message.primary, "#5cc8ff"),
     accent: sanitizeColor(message.accent, "#ffd166"),
     hp: PLAYER_MAX_HP,
@@ -324,8 +352,9 @@ function handleAttack(client) {
     return;
   }
 
+  const loadout = CLASS_LOADOUTS[client.player.classId] || CLASS_LOADOUTS.ranger;
   const now = Date.now();
-  if (now - client.lastAttackAt < ATTACK_COOLDOWN_MS) {
+  if (now - client.lastAttackAt < loadout.cooldownMs) {
     return;
   }
 
@@ -336,52 +365,42 @@ function handleAttack(client) {
     return;
   }
 
-  let hit = null;
-  let hitKind = null;
-
-  for (const mob of mobs) {
-    if (mob.dead) {
-      continue;
-    }
-    if (!isAttackTarget(client.player, mob)) {
-      continue;
-    }
-    if (!hit || distance(client.player, mob) < distance(client.player, hit)) {
-      hit = mob;
-      hitKind = "mob";
-    }
-  }
-
-  for (const other of clients.values()) {
-    if (!other.player || other === client || other.player.hp <= 0) {
-      continue;
-    }
-    if (!canAttackAt(other.player.x, other.player.y) || !isAttackTarget(client.player, other.player)) {
-      continue;
-    }
-    if (!hit || distance(client.player, other.player) < distance(client.player, hit)) {
-      hit = other.player;
-      hitKind = "player";
-    }
-  }
+  const target = findAttackTarget(client, loadout);
 
   const event = {
     type: "combat",
-    kind: "swing",
+    kind: loadout.kind,
+    weapon: loadout.weapon,
+    projectileKind: loadout.projectileKind,
     attackerId: client.player.id,
     x: Number(client.player.x.toFixed(3)),
     y: Number(client.player.y.toFixed(3)),
     facing: Number(client.player.facing.toFixed(3)),
+    range: loadout.range,
     hit: false
   };
 
-  if (hit) {
-    hit.hp = Math.max(0, hit.hp - PLAYER_ATTACK_DAMAGE);
+  if (loadout.kind === "projectile") {
+    event.endX = Number((client.player.x + Math.cos(client.player.facing) * loadout.range).toFixed(3));
+    event.endY = Number((client.player.y + Math.sin(client.player.facing) * loadout.range).toFixed(3));
+  }
+
+  if (target) {
+    const { entity: hit, kind: hitKind } = target;
+    const hitX = hit.x;
+    const hitY = hit.y;
+    const blocked = hitKind === "player" && isShieldBlocking(hit, client.player);
+    const damage = blocked ? Math.max(1, Math.round(loadout.damage * KNIGHT_SHIELD_DAMAGE_MULTIPLIER)) : loadout.damage;
+
+    hit.hp = Math.max(0, hit.hp - damage);
     event.hit = true;
     event.targetId = hit.id;
     event.targetKind = hitKind;
-    event.damage = PLAYER_ATTACK_DAMAGE;
+    event.damage = damage;
+    event.blocked = blocked;
     event.targetHp = hit.hp;
+    event.endX = Number(hitX.toFixed(3));
+    event.endY = Number(hitY.toFixed(3));
 
     if (hitKind === "mob" && hit.hp <= 0) {
       hit.dead = true;
@@ -400,6 +419,43 @@ function handleAttack(client) {
 
   broadcastCombat(event);
   broadcastSnapshot();
+}
+
+function findAttackTarget(client, loadout) {
+  let hit = null;
+  let hitKind = null;
+
+  for (const mob of mobs) {
+    if (mob.dead) {
+      continue;
+    }
+    if (!isAttackTarget(client.player, mob, loadout)) {
+      continue;
+    }
+    if (!hit || distance(client.player, mob) < distance(client.player, hit)) {
+      hit = mob;
+      hitKind = "mob";
+    }
+  }
+
+  for (const other of clients.values()) {
+    if (!other.player || other === client || other.player.hp <= 0) {
+      continue;
+    }
+    if (!canAttackAt(other.player.x, other.player.y) || !isAttackTarget(client.player, other.player, loadout)) {
+      continue;
+    }
+    if (!hit || distance(client.player, other.player) < distance(client.player, hit)) {
+      hit = other.player;
+      hitKind = "player";
+    }
+  }
+
+  if (!hit) {
+    return null;
+  }
+
+  return { entity: hit, kind: hitKind };
 }
 
 function handleChat(client, message) {
@@ -526,17 +582,27 @@ function broadcastCombat(event) {
   }
 }
 
-function isAttackTarget(attacker, target) {
+function isAttackTarget(attacker, target, loadout) {
   const dx = target.x - attacker.x;
   const dy = target.y - attacker.y;
   const dist = Math.hypot(dx, dy);
-  if (dist > ATTACK_RANGE || dist < 0.01) {
+  if (dist > loadout.range || dist < 0.01) {
     return false;
   }
 
   const targetAngle = Math.atan2(dy, dx);
   const delta = Math.abs(normalizeAngle(targetAngle - attacker.facing));
-  return delta <= ATTACK_ARC / 2;
+  return delta <= loadout.arc / 2;
+}
+
+function isShieldBlocking(target, attacker) {
+  if (target.classId !== "knight") {
+    return false;
+  }
+
+  const angleToAttacker = Math.atan2(attacker.y - target.y, attacker.x - target.x);
+  const delta = Math.abs(normalizeAngle(angleToAttacker - target.facing));
+  return delta <= KNIGHT_SHIELD_ARC / 2;
 }
 
 function distance(a, b) {
