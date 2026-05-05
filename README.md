@@ -90,6 +90,8 @@ The client owns:
 - chunk cache and draw order
 - chat display and input
 
+Client house sprites use Kenney's `RPG Base` asset pack under CC0. The copied license is in `client/assets/kenney-rpg-base-license.txt`.
+
 The packaged client defaults to:
 
 ```text

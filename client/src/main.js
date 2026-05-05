@@ -42,6 +42,11 @@ const TILE = {
   TABLE: 16,
 };
 
+const kenneyRpgBase = new Image();
+kenneyRpgBase.src = "./assets/kenney-rpg-base.png";
+const KENNEY_TILE_SIZE = 64;
+const KENNEY_SHEET_COLUMNS = 20;
+
 const state = {
   socket: null,
   config: null,
@@ -1557,90 +1562,114 @@ function drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY) {
 function drawBuildingSprite(building, sx, sy) {
   const w = building.w * TILE_SIZE;
   const h = building.h * TILE_SIZE;
-  const roofColor = building.name.includes("Frost") || building.name.includes("Snow") || building.name.includes("Pine")
-    ? "#6f8790"
-    : building.name.includes("Oasis") || building.name.includes("Sun") || building.name.includes("Clay")
-      ? "#b6683b"
-      : "#a24d31";
-  const wallColor = building.name.includes("Ruin") || building.name.includes("Ancient")
-    ? "#76675b"
-    : building.name.includes("Oasis") || building.name.includes("Sun") || building.name.includes("Clay")
-      ? "#c49a64"
-      : "#8d674b";
-  const roofH = Math.max(26, Math.min(54, h * 0.32));
-  const bodyY = sy + roofH * 0.62;
-  const bodyH = h - roofH * 0.32;
+  const variant = getBuildingVariant(building);
 
   drawCastShadow(sx + 12, sy + h - 18, w - 4, 20, 0.32);
 
-  ctx.save();
-  ctx.shadowColor = "rgba(0, 0, 0, 0.38)";
-  ctx.shadowBlur = 10;
-  ctx.shadowOffsetX = 8;
-  ctx.shadowOffsetY = 10;
-  ctx.fillStyle = wallColor;
-  ctx.fillRect(sx + 10, bodyY, w - 20, bodyH - 10);
-  ctx.restore();
-
-  ctx.fillStyle = blend(wallColor, "#ffffff", 0.12);
-  ctx.fillRect(sx + 16, bodyY + 8, w - 32, bodyH - 24);
-  ctx.fillStyle = blend(wallColor, "#000000", 0.25);
-  ctx.fillRect(sx + 10, bodyY + bodyH - 22, w - 20, 12);
-
-  ctx.fillStyle = "#f0d8a7";
-  const windowCount = Math.max(1, Math.min(3, Math.floor(building.w / 4)));
-  for (let i = 0; i < windowCount; i += 1) {
-    const wx = sx + 24 + i * Math.max(36, (w - 56) / Math.max(1, windowCount - 1));
-    ctx.fillRect(wx, bodyY + 28, 12, 12);
-    ctx.fillStyle = "rgba(255, 247, 190, 0.26)";
-    ctx.fillRect(wx + 2, bodyY + 30, 8, 3);
-    ctx.fillStyle = "#f0d8a7";
+  if (!kenneyRpgBase.complete || kenneyRpgBase.naturalWidth === 0) {
+    drawBuildingFallback(sx, sy, w, h, variant);
+    return;
   }
 
-  ctx.fillStyle = "#5f3424";
-  const doorX = sx + w / 2 - 10;
-  ctx.fillRect(doorX, sy + h - 56, 20, 38);
-  ctx.fillStyle = "#d6a043";
-  ctx.fillRect(doorX + 14, sy + h - 38, 3, 3);
-
-  ctx.save();
-  ctx.shadowColor = "rgba(0, 0, 0, 0.28)";
-  ctx.shadowBlur = 6;
-  ctx.shadowOffsetX = 5;
-  ctx.shadowOffsetY = 7;
-  drawBuildingRoof(sx, sy, w, roofH, roofColor);
-  ctx.restore();
-
-  ctx.fillStyle = "rgba(255, 226, 160, 0.22)";
-  ctx.fillRect(sx + 22, sy + roofH + 10, Math.max(20, w * 0.22), 4);
+  drawKenneyHouse(building, sx, sy, w, h, variant);
 }
 
-function drawBuildingRoof(sx, sy, w, roofH, color) {
-  ctx.fillStyle = blend(color, "#000000", 0.2);
-  ctx.beginPath();
-  ctx.moveTo(sx + 2, sy + roofH);
-  ctx.lineTo(sx + w / 2, sy);
-  ctx.lineTo(sx + w - 2, sy + roofH);
-  ctx.closePath();
-  ctx.fill();
+function getBuildingVariant(building) {
+  const cold = building.name.includes("Frost") || building.name.includes("Snow") || building.name.includes("Pine");
+  const stone = building.name.includes("Town") || building.name.includes("Hall") || building.name.includes("Shrine");
+  return cold || stone ? "stone" : "timber";
+}
 
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(sx + 12, sy + roofH - 4);
-  ctx.lineTo(sx + w / 2, sy + 6);
-  ctx.lineTo(sx + w - 12, sy + roofH - 4);
-  ctx.closePath();
-  ctx.fill();
+function drawKenneyHouse(building, sx, sy, w, h, variant) {
+  const wide = building.w >= 11;
+  const cols = wide ? 5 : 4;
+  const tile = 64;
+  const houseW = cols * tile;
+  const houseX = Math.round(sx + (w - houseW) / 2);
+  const bodyRows = wide ? 3 : 2;
+  const bodyY = Math.round(sy + h - bodyRows * tile - 12);
+  const roofY = bodyY - (wide ? 100 : 80);
+  const doorIndex = variant === "stone" ? 214 : 189;
+  const wallIndex = variant === "stone" ? 60 : 83;
+  const wallDetailIndex = variant === "stone" ? 80 : 84;
+  const windowIndex = variant === "stone" ? 191 : 185;
 
-  ctx.fillStyle = blend(color, "#ffffff", 0.18);
-  for (let i = 0; i < 4; i += 1) {
-    ctx.fillRect(sx + 22 + i * Math.max(18, w / 6), sy + roofH - 14 - i * 3, Math.max(20, w / 7), 3);
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.24)";
+  ctx.shadowBlur = 6;
+  ctx.shadowOffsetX = 5;
+  ctx.shadowOffsetY = 8;
+
+  for (let row = 0; row < bodyRows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      drawKenneyTile((row + col) % 2 === 0 ? wallIndex : wallDetailIndex, houseX + col * tile, bodyY + row * tile, tile, tile);
+    }
   }
 
-  ctx.fillStyle = "#5f381e";
-  ctx.fillRect(sx + w * 0.66, sy + roofH * 0.28, 12, 18);
-  ctx.fillStyle = "#c96f4b";
-  ctx.fillRect(sx + w * 0.66 + 2, sy + roofH * 0.18, 8, 8);
+  const capTile = variant === "stone" ? 80 : 86;
+  for (let col = 0; col < cols; col += 1) {
+    drawKenneyTile(capTile, houseX + col * tile, bodyY - 18, tile, tile);
+  }
+
+  drawKenneyRoof(houseX, roofY, cols, variant);
+
+  const doorX = houseX + Math.floor(cols / 2) * tile;
+  drawKenneyTile(doorIndex, doorX, bodyY + (bodyRows - 1) * tile, tile, tile);
+
+  if (cols > 3) {
+    drawKenneyTile(windowIndex, houseX + tile, bodyY + tile * 0.35, tile, tile);
+    drawKenneyTile(windowIndex, houseX + (cols - 2) * tile, bodyY + tile * 0.35, tile, tile);
+  } else {
+    drawKenneyTile(windowIndex, houseX + tile, bodyY + tile * 0.35, tile, tile);
+  }
+
+  ctx.restore();
+}
+
+function drawKenneyRoof(x, y, cols, variant) {
+  const tan = variant !== "stone";
+  const roofLeft = tan ? 101 : 110;
+  const roofRight = tan ? 102 : 111;
+  const gableLeft = tan ? 103 : 112;
+  const gableRight = tan ? 104 : 113;
+  const gableCenter = tan ? 105 : 114;
+  const roofMid = tan ? 106 : 115;
+  const tile = 64;
+
+  drawKenneyTile(roofLeft, x, y + tile, tile, tile);
+  drawKenneyTile(roofRight, x + (cols - 1) * tile, y + tile, tile, tile);
+
+  for (let col = 1; col < cols - 1; col += 1) {
+    drawKenneyTile(roofMid, x + col * tile, y + tile, tile, tile);
+  }
+
+  const center = Math.floor(cols / 2);
+  drawKenneyTile(gableLeft, x + (center - 1) * tile, y + tile * 0.2, tile, tile);
+  drawKenneyTile(gableRight, x + center * tile, y + tile * 0.2, tile, tile);
+  drawKenneyTile(gableCenter, x + center * tile - tile / 2, y + tile * 0.9, tile, tile);
+}
+
+function drawKenneyTile(index, dx, dy, dw = KENNEY_TILE_SIZE, dh = KENNEY_TILE_SIZE) {
+  const sx = (index % KENNEY_SHEET_COLUMNS) * KENNEY_TILE_SIZE;
+  const sy = Math.floor(index / KENNEY_SHEET_COLUMNS) * KENNEY_TILE_SIZE;
+  ctx.drawImage(kenneyRpgBase, sx, sy, KENNEY_TILE_SIZE, KENNEY_TILE_SIZE, Math.round(dx), Math.round(dy), Math.round(dw), Math.round(dh));
+}
+
+function drawBuildingFallback(sx, sy, w, h, variant) {
+  const roofColor = variant === "stone" ? "#5f6c72" : "#b97438";
+  const wallColor = variant === "stone" ? "#9eb0b2" : "#e1d1a1";
+  const roofH = Math.max(42, Math.min(72, h * 0.35));
+  const bodyY = sy + roofH * 0.72;
+
+  ctx.fillStyle = wallColor;
+  ctx.fillRect(sx + 16, bodyY, w - 32, h - roofH);
+  ctx.fillStyle = roofColor;
+  ctx.beginPath();
+  ctx.moveTo(sx + 4, bodyY + 6);
+  ctx.lineTo(sx + w / 2, sy + 4);
+  ctx.lineTo(sx + w - 4, bodyY + 6);
+  ctx.closePath();
+  ctx.fill();
 }
 
 function drawLighting() {
