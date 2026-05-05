@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, dialog } = require("electron");
 const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
@@ -13,10 +13,69 @@ const MIME_TYPES = {
 };
 
 let staticServer;
+let logPath;
+
+function log(msg) {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  process.stdout.write(line);
+  try {
+    if (logPath) {
+      fs.appendFileSync(logPath, line);
+    }
+  } catch {
+    // best-effort
+  }
+}
+
+function setupLog() {
+  try {
+    const logDir = app.getPath("userData");
+    fs.mkdirSync(logDir, { recursive: true });
+    logPath = path.join(logDir, "startup.log");
+    // Truncate on each launch so the file stays small.
+    fs.writeFileSync(logPath, "");
+    log(`Balathor ${app.getVersion()} starting — platform=${process.platform} packaged=${app.isPackaged}`);
+    log(`resourcesPath=${process.resourcesPath}`);
+    log(`__dirname=${__dirname}`);
+    log(`logPath=${logPath}`);
+  } catch (err) {
+    process.stderr.write(`log setup failed: ${err}\n`);
+  }
+}
+
+process.on("uncaughtException", (err) => {
+  log(`uncaughtException: ${err.stack || err}`);
+  dialog.showErrorBox("Balathor — startup error", String(err.stack || err));
+  app.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  log(`unhandledRejection: ${reason}`);
+  dialog.showErrorBox("Balathor — startup error", String(reason));
+  app.exit(1);
+});
 
 app.whenReady().then(async () => {
-  const clientRoot = fsPathForClientRoot();
-  const clientUrl = await startClientServer(clientRoot);
+  setupLog();
+
+  let clientRoot;
+  try {
+    clientRoot = fsPathForClientRoot();
+    log(`clientRoot=${clientRoot}`);
+    log(`index.html exists=${fs.existsSync(path.join(clientRoot, "index.html"))}`);
+  } catch (err) {
+    log(`fsPathForClientRoot failed: ${err}`);
+    throw err;
+  }
+
+  let clientUrl;
+  try {
+    clientUrl = await startClientServer(clientRoot);
+    log(`HTTP server listening at ${clientUrl}`);
+  } catch (err) {
+    log(`startClientServer failed: ${err}`);
+    throw err;
+  }
 
   const window = new BrowserWindow({
     width: 1280,
@@ -31,7 +90,21 @@ app.whenReady().then(async () => {
     }
   });
 
-  await window.loadURL(clientUrl);
+  window.webContents.on("did-fail-load", (_event, code, desc, url) => {
+    log(`did-fail-load: code=${code} desc=${desc} url=${url}`);
+  });
+
+  window.webContents.on("render-process-gone", (_event, details) => {
+    log(`render-process-gone: reason=${details.reason} exitCode=${details.exitCode}`);
+  });
+
+  try {
+    await window.loadURL(clientUrl);
+    log("loadURL completed OK");
+  } catch (err) {
+    log(`loadURL failed: ${err}`);
+    throw err;
+  }
 });
 
 app.on("window-all-closed", () => {
@@ -81,6 +154,7 @@ async function startClientServer(clientRoot) {
 
     fs.readFile(filePath, (error, contents) => {
       if (error) {
+        log(`readFile failed: ${filePath} — ${error.code}`);
         send(res, 404, "text/plain; charset=utf-8", "Not found");
         return;
       }
