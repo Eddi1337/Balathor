@@ -2,6 +2,7 @@ const crypto = require("node:crypto");
 const http = require("node:http");
 const {
   CHUNK_SIZE,
+  canAttackAt,
   generateChunk,
   getDoorTransitionAt,
   getPortalAt,
@@ -22,6 +23,12 @@ const CHAT_HISTORY_LIMIT = 60;
 const CHAT_COOLDOWN_MS = 800;
 const PORTAL_COOLDOWN_MS = 1400;
 const DOOR_COOLDOWN_MS = 600;
+const ATTACK_COOLDOWN_MS = 420;
+const ATTACK_RANGE = 2.1;
+const ATTACK_ARC = Math.PI * 0.72;
+const PLAYER_MAX_HP = 100;
+const PLAYER_ATTACK_DAMAGE = 18;
+const MOB_RESPAWN_MS = 7000;
 
 let nextClientId = 1;
 let nextSpawnIndex = 0;
@@ -30,6 +37,7 @@ let tick = 0;
 const clients = new Map();
 const chunkCache = new Map();
 const chatHistory = [];
+const mobs = createMobs();
 
 const server = http.createServer((req, res) => {
   if (req.url === "/health") {
@@ -80,6 +88,7 @@ server.on("upgrade", (req, socket) => {
     buffer: Buffer.alloc(0),
     alive: true,
     lastChatAt: 0,
+    lastAttackAt: 0,
     lastDoorAt: 0,
     lastPortalAt: 0,
     input: { up: false, down: false, left: false, right: false },
@@ -142,6 +151,7 @@ function simulate() {
   }
 
   updateNpcs(dt, pushChat);
+  updateMobs(dt);
 
   if (tick % Math.round(TICK_RATE / SNAPSHOT_RATE) === 0) {
     broadcastSnapshot();
@@ -255,6 +265,11 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "attack") {
+    handleAttack(client);
+    return;
+  }
+
   if (message.type === "requestChunks") {
     streamChunks(client, message.chunks);
   }
@@ -272,6 +287,8 @@ function joinWorld(client, message) {
     classId: sanitizeChoice(message.classId, ["ranger", "mage", "knight"], "ranger"),
     primary: sanitizeColor(message.primary, "#5cc8ff"),
     accent: sanitizeColor(message.accent, "#ffd166"),
+    hp: PLAYER_MAX_HP,
+    maxHp: PLAYER_MAX_HP,
     x: spawn.x,
     y: spawn.y,
     facing: 0,
@@ -299,6 +316,89 @@ function joinWorld(client, message) {
     name: "Realm",
     text: `${client.player.name} entered the hub`
   });
+  broadcastSnapshot();
+}
+
+function handleAttack(client) {
+  if (!client.player) {
+    return;
+  }
+
+  const now = Date.now();
+  if (now - client.lastAttackAt < ATTACK_COOLDOWN_MS) {
+    return;
+  }
+
+  client.lastAttackAt = now;
+
+  if (!canAttackAt(client.player.x, client.player.y)) {
+    send(client, { type: "serverMessage", message: "combat_protected" });
+    return;
+  }
+
+  let hit = null;
+  let hitKind = null;
+
+  for (const mob of mobs) {
+    if (mob.dead) {
+      continue;
+    }
+    if (!isAttackTarget(client.player, mob)) {
+      continue;
+    }
+    if (!hit || distance(client.player, mob) < distance(client.player, hit)) {
+      hit = mob;
+      hitKind = "mob";
+    }
+  }
+
+  for (const other of clients.values()) {
+    if (!other.player || other === client || other.player.hp <= 0) {
+      continue;
+    }
+    if (!canAttackAt(other.player.x, other.player.y) || !isAttackTarget(client.player, other.player)) {
+      continue;
+    }
+    if (!hit || distance(client.player, other.player) < distance(client.player, hit)) {
+      hit = other.player;
+      hitKind = "player";
+    }
+  }
+
+  const event = {
+    type: "combat",
+    kind: "swing",
+    attackerId: client.player.id,
+    x: Number(client.player.x.toFixed(3)),
+    y: Number(client.player.y.toFixed(3)),
+    facing: Number(client.player.facing.toFixed(3)),
+    hit: false
+  };
+
+  if (hit) {
+    hit.hp = Math.max(0, hit.hp - PLAYER_ATTACK_DAMAGE);
+    event.hit = true;
+    event.targetId = hit.id;
+    event.targetKind = hitKind;
+    event.damage = PLAYER_ATTACK_DAMAGE;
+    event.targetHp = hit.hp;
+
+    if (hitKind === "mob" && hit.hp <= 0) {
+      hit.dead = true;
+      hit.respawnAt = now + MOB_RESPAWN_MS;
+    }
+
+    if (hitKind === "player" && hit.hp <= 0) {
+      const spawn = spawnPoint(nextSpawnIndex++);
+      hit.hp = hit.maxHp;
+      hit.x = spawn.x;
+      hit.y = spawn.y;
+      hit.moving = false;
+      event.defeated = true;
+    }
+  }
+
+  broadcastCombat(event);
   broadcastSnapshot();
 }
 
@@ -397,6 +497,8 @@ function broadcastSnapshot() {
       classId: client.player.classId,
       primary: client.player.primary,
       accent: client.player.accent,
+      hp: client.player.hp,
+      maxHp: client.player.maxHp,
       x: Number(client.player.x.toFixed(3)),
       y: Number(client.player.y.toFixed(3)),
       facing: Number(client.player.facing.toFixed(3)),
@@ -409,12 +511,131 @@ function broadcastSnapshot() {
     tick,
     population: players.length,
     players,
-    npcs: getNpcSnapshot()
+    npcs: getNpcSnapshot(),
+    mobs: getMobSnapshot()
   };
 
   for (const client of clients.values()) {
     send(client, snapshot);
   }
+}
+
+function broadcastCombat(event) {
+  for (const client of clients.values()) {
+    send(client, event);
+  }
+}
+
+function isAttackTarget(attacker, target) {
+  const dx = target.x - attacker.x;
+  const dy = target.y - attacker.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist > ATTACK_RANGE || dist < 0.01) {
+    return false;
+  }
+
+  const targetAngle = Math.atan2(dy, dx);
+  const delta = Math.abs(normalizeAngle(targetAngle - attacker.facing));
+  return delta <= ATTACK_ARC / 2;
+}
+
+function distance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function normalizeAngle(value) {
+  let angle = value;
+  while (angle > Math.PI) {
+    angle -= Math.PI * 2;
+  }
+  while (angle < -Math.PI) {
+    angle += Math.PI * 2;
+  }
+  return angle;
+}
+
+function createMobs() {
+  return [
+    { id: "mob_slime_oasis_1", name: "Oasis Slime", homeX: 137, homeY: 113, primary: "#56b88f", accent: "#c7f5b0" },
+    { id: "mob_slime_oasis_2", name: "Oasis Slime", homeX: 163, homeY: 126, primary: "#56b88f", accent: "#c7f5b0" },
+    { id: "mob_wisp_frost_1", name: "Frost Wisp", homeX: -139, homeY: -113, primary: "#88d8ff", accent: "#f0fbff" },
+    { id: "mob_wisp_frost_2", name: "Frost Wisp", homeX: -162, homeY: -132, primary: "#88d8ff", accent: "#f0fbff" },
+    { id: "mob_imp_ember_1", name: "Ember Imp", homeX: 134, homeY: -121, primary: "#d85b35", accent: "#ffd06a" },
+    { id: "mob_imp_ember_2", name: "Ember Imp", homeX: 158, homeY: -142, primary: "#d85b35", accent: "#ffd06a" },
+  ].map((mob) => ({
+    ...mob,
+    x: mob.homeX,
+    y: mob.homeY,
+    hp: 60,
+    maxHp: 60,
+    dead: false,
+    respawnAt: 0,
+    facing: Math.random() * Math.PI * 2,
+    _targetX: mob.homeX,
+    _targetY: mob.homeY,
+    _nextMoveAt: Date.now() + Math.random() * 3000
+  }));
+}
+
+function updateMobs(dt) {
+  const now = Date.now();
+
+  for (const mob of mobs) {
+    if (mob.dead) {
+      if (now >= mob.respawnAt) {
+        mob.dead = false;
+        mob.hp = mob.maxHp;
+        mob.x = mob.homeX;
+        mob.y = mob.homeY;
+      }
+      continue;
+    }
+
+    const dx = mob._targetX - mob.x;
+    const dy = mob._targetY - mob.y;
+    const dist = Math.hypot(dx, dy);
+
+    if (dist < 0.08) {
+      if (now >= mob._nextMoveAt) {
+        const angle = Math.random() * Math.PI * 2;
+        const radius = Math.random() * 5;
+        mob._targetX = mob.homeX + Math.cos(angle) * radius;
+        mob._targetY = mob.homeY + Math.sin(angle) * radius;
+        mob._nextMoveAt = now + 1500 + Math.random() * 3500;
+      }
+      continue;
+    }
+
+    const nx = dx / dist;
+    const ny = dy / dist;
+    const step = 1.7 * dt;
+    const nextX = mob.x + nx * step;
+    const nextY = mob.y + ny * step;
+
+    if (!isBlockedCircle(nextX, mob.y)) {
+      mob.x = nextX;
+    }
+    if (!isBlockedCircle(mob.x, nextY)) {
+      mob.y = nextY;
+    }
+    mob.facing = Math.atan2(ny, nx);
+  }
+}
+
+function getMobSnapshot() {
+  return mobs
+    .filter((mob) => !mob.dead)
+    .map((mob) => ({
+      id: mob.id,
+      name: mob.name,
+      primary: mob.primary,
+      accent: mob.accent,
+      hp: mob.hp,
+      maxHp: mob.maxHp,
+      x: Number(mob.x.toFixed(3)),
+      y: Number(mob.y.toFixed(3)),
+      facing: Number(mob.facing.toFixed(3)),
+    }));
 }
 
 function send(client, message) {

@@ -28,6 +28,7 @@ const INTERIOR_BASE_Y = 10000;
 const INTERIOR_SPACING = 40;
 const INTERIOR_WIDTH = 12;
 const INTERIOR_HEIGHT = 10;
+const STARTING_AREA = { x: 0, y: 4, radius: 34 };
 
 // Hand-crafted buildings: {x, y, w, h, name}
 // Each building gets a south door at center-x of its south wall, and a north door.
@@ -179,6 +180,14 @@ function getInteriorTile(x, y) {
 
 function isInteriorCoordinate(x, y) {
   return getInteriorAt(Math.floor(x), Math.floor(y)) !== null;
+}
+
+function isProtectedStartingArea(x, y) {
+  return Math.hypot(x - STARTING_AREA.x, y - STARTING_AREA.y) <= STARTING_AREA.radius;
+}
+
+function canAttackAt(x, y) {
+  return !isInteriorCoordinate(x, y) && !isProtectedStartingArea(x, y);
 }
 
 function isInteriorDistrict(x, y) {
@@ -557,10 +566,12 @@ module.exports = {
   generateChunk,
   generateTile,
   getBiome,
+  canAttackAt,
   getDoorTransitionAt,
   getPortalAt,
   hash2,
   isInteriorCoordinate,
+  isProtectedStartingArea,
   isBlocked,
   isBlockedCircle,
   spawnPoint

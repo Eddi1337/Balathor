@@ -53,6 +53,8 @@ const state = {
   accent: "#ffd166",
   players: new Map(),
   npcs: new Map(),
+  mobs: new Map(),
+  combatFx: [],
   chunks: new Map(),
   portals: new Map(),
   buildings: new Map(),
@@ -236,6 +238,12 @@ function handleServerMessage(message) {
     state.population = message.population;
     applySnapshot(message.players);
     applyNpcSnapshot(message.npcs || []);
+    applyMobSnapshot(message.mobs || []);
+    return;
+  }
+
+  if (message.type === "combat") {
+    applyCombatEvent(message);
     return;
   }
 
@@ -258,6 +266,12 @@ function handleServerMessage(message) {
         kind: "system",
         name: "Realm",
         text: "Slow down before sending another message"
+      });
+    } else if (message.message === "combat_protected") {
+      appendChat({
+        kind: "system",
+        name: "Realm",
+        text: "Combat is disabled inside houses and the starting area"
       });
     }
   }
@@ -339,6 +353,50 @@ function applyNpcSnapshot(snapshotNpcs) {
   }
 }
 
+function applyMobSnapshot(snapshotMobs) {
+  const now = performance.now();
+  const seen = new Set();
+
+  for (const snap of snapshotMobs) {
+    seen.add(snap.id);
+    let mob = state.mobs.get(snap.id);
+
+    if (!mob) {
+      mob = {
+        ...snap,
+        renderX: snap.x,
+        renderY: snap.y,
+        targetX: snap.x,
+        targetY: snap.y,
+        lastSeen: now,
+        walkPhase: 0
+      };
+      state.mobs.set(snap.id, mob);
+      continue;
+    }
+
+    Object.assign(mob, snap, {
+      targetX: snap.x,
+      targetY: snap.y,
+      lastSeen: now
+    });
+  }
+
+  for (const [id] of state.mobs) {
+    if (!seen.has(id)) {
+      state.mobs.delete(id);
+    }
+  }
+}
+
+function applyCombatEvent(event) {
+  state.combatFx.push({
+    ...event,
+    createdAt: performance.now(),
+    ttl: event.hit ? 360 : 220
+  });
+}
+
 function updateSmoothPlayers(dt) {
   for (const player of state.players.values()) {
     let isMoving = Boolean(player.moving);
@@ -365,6 +423,15 @@ function updateSmoothPlayers(dt) {
       npc.walkPhase = (npc.walkPhase || 0) + dt * 8;
     }
   }
+
+  for (const mob of state.mobs.values()) {
+    mob.renderX += (mob.targetX - mob.renderX) * npcFollow;
+    mob.renderY += (mob.targetY - mob.renderY) * npcFollow;
+    mob.walkPhase = (mob.walkPhase || 0) + dt * 7;
+  }
+
+  const now = performance.now();
+  state.combatFx = state.combatFx.filter((fx) => now - fx.createdAt < fx.ttl);
 }
 
 function predictLocalPlayer(player, dt) {
@@ -451,6 +518,14 @@ function wireUi() {
 
   window.addEventListener("resize", resize);
 
+  canvas.addEventListener("pointerdown", (event) => {
+    if (!state.joined || state.menuOpen || isTextEntryTarget(event.target)) {
+      return;
+    }
+    event.preventDefault();
+    sendAttack();
+  });
+
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -461,6 +536,12 @@ function wireUi() {
     }
 
     if (state.menuOpen) {
+      return;
+    }
+
+    if ((event.code === "Space" || event.key.toLowerCase() === "f") && state.joined && !isTextEntryTarget(event.target)) {
+      event.preventDefault();
+      sendAttack();
       return;
     }
 
@@ -566,11 +647,17 @@ function resetToConnection(message) {
 function clearWorldState() {
   state.players.clear();
   state.npcs.clear();
+  state.mobs.clear();
+  state.combatFx = [];
   state.chunks.clear();
   state.portals.clear();
   state.buildings.clear();
   state.requestedChunks.clear();
   state.population = 0;
+}
+
+function sendAttack() {
+  send({ type: "attack" });
 }
 
 function indexChunkPortals(chunk) {
@@ -693,7 +780,8 @@ function updateCamera(dt) {
   const follow = 1 - Math.pow(0.001, dt);
   state.camera.x += (targetX - state.camera.x) * follow;
   state.camera.y += (targetY - state.camera.y) * follow;
-  positionEl.textContent = `${Math.round(self.renderX)}, ${Math.round(self.renderY)}`;
+  const hpText = Number.isFinite(self.hp) ? ` HP ${self.hp}/${self.maxHp}` : "";
+  positionEl.textContent = `${Math.round(self.renderX)}, ${Math.round(self.renderY)}${hpText}`;
   requestVisibleChunks();
 }
 
@@ -738,6 +826,7 @@ function draw() {
 
   drawWorld();
   drawPlayers();
+  drawCombatFx();
   drawLighting();
   populationEl.textContent = `${state.population} online`;
 }
@@ -872,12 +961,17 @@ function drawPlayers() {
   const entities = [
     ...[...state.players.values()].map((p) => ({ entity: p, isNpc: false })),
     ...[...state.npcs.values()].map((n) => ({ entity: n, isNpc: true })),
+    ...[...state.mobs.values()].map((m) => ({ entity: m, isMob: true })),
   ].sort((a, b) => a.entity.renderY - b.entity.renderY);
 
-  for (const { entity, isNpc } of entities) {
+  for (const { entity, isNpc, isMob } of entities) {
     const sx = Math.floor(entity.renderX * TILE_SIZE - state.camera.x + halfW);
     const sy = Math.floor(entity.renderY * TILE_SIZE - state.camera.y + halfH);
-    drawCharacter(entity, sx, sy, isNpc);
+    if (isMob) {
+      drawMob(entity, sx, sy);
+    } else {
+      drawCharacter(entity, sx, sy, isNpc);
+    }
   }
 }
 
@@ -945,6 +1039,87 @@ function drawCharacter(entity, x, y, isNpc = false) {
   ctx.fillStyle = isNpc ? "#ffd27a" : "#f7f3df";
   ctx.strokeText(entity.name, x, y - 28);
   ctx.fillText(entity.name, x, y - 28);
+
+  if (!isNpc && Number.isFinite(entity.hp) && Number.isFinite(entity.maxHp)) {
+    drawHealthBar(x - 14, y - 22, 28, 4, entity.hp, entity.maxHp);
+  }
+}
+
+function drawMob(entity, x, y) {
+  const phase = entity.walkPhase || 0;
+  const bounce = Math.round(Math.sin(phase * 3) * 2);
+  const primary = entity.primary || "#56b88f";
+  const accent = entity.accent || "#c7f5b0";
+
+  drawEllipseShadow(x - 12, y + 8, 24, 6, 0.28);
+  ctx.fillStyle = blend(primary, "#000000", 0.25);
+  ctx.fillRect(x - 12, y - 1 + bounce, 24, 10);
+  ctx.fillStyle = primary;
+  ctx.fillRect(x - 10, y - 8 + bounce, 20, 14);
+  ctx.fillStyle = accent;
+  ctx.fillRect(x - 5, y - 4 + bounce, 3, 3);
+  ctx.fillRect(x + 3, y - 4 + bounce, 3, 3);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.22)";
+  ctx.fillRect(x - 7, y - 7 + bounce, 6, 2);
+
+  ctx.font = "12px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(8, 12, 18, 0.82)";
+  ctx.fillStyle = "#ffc0a0";
+  ctx.strokeText(entity.name, x, y - 26);
+  ctx.fillText(entity.name, x, y - 26);
+  drawHealthBar(x - 16, y - 20, 32, 4, entity.hp, entity.maxHp);
+}
+
+function drawCombatFx() {
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const now = performance.now();
+
+  for (const fx of state.combatFx) {
+    const age = now - fx.createdAt;
+    const pct = age / fx.ttl;
+    const sx = Math.floor(fx.x * TILE_SIZE - state.camera.x + halfW);
+    const sy = Math.floor(fx.y * TILE_SIZE - state.camera.y + halfH);
+    const reach = 28 + pct * 8;
+    const angle = fx.facing || 0;
+
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(angle);
+    ctx.globalAlpha = 1 - pct;
+    ctx.strokeStyle = fx.hit ? "#ffd166" : "rgba(255, 255, 255, 0.75)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(16, 0, reach, -0.5, 0.5);
+    ctx.stroke();
+    ctx.restore();
+
+    if (fx.hit && fx.targetId) {
+      const target = state.mobs.get(fx.targetId) || state.players.get(fx.targetId);
+      if (target) {
+        const tx = Math.floor(target.renderX * TILE_SIZE - state.camera.x + halfW);
+        const ty = Math.floor(target.renderY * TILE_SIZE - state.camera.y + halfH);
+        ctx.globalAlpha = 1 - pct;
+        ctx.fillStyle = "#ffdf7a";
+        ctx.font = "13px ui-sans-serif, system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText(`-${fx.damage}`, tx, ty - 22 - pct * 18);
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+}
+
+function drawHealthBar(x, y, w, h, hp, maxHp) {
+  const pct = Math.max(0, Math.min(1, hp / Math.max(1, maxHp)));
+  ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+  ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
+  ctx.fillStyle = "#481b24";
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = pct > 0.5 ? "#6ee36f" : pct > 0.25 ? "#ffd166" : "#f26d6d";
+  ctx.fillRect(x, y, Math.round(w * pct), h);
 }
 
 function pixel(originX, originY, x, y, w, h, color, scale) {
