@@ -5,6 +5,13 @@ const path = require("node:path");
 
 const GAME_SERVER_URL = process.env.GAME_SERVER_URL || "wss://balathor.edmundmurphy.com/ws";
 
+// Chromium cannot fork a sandboxed renderer from a UNC path (\\server\...).
+// This happens when the exe is run directly from the WSL filesystem on Windows.
+// Disabling the sandbox lets the renderer start normally in that case.
+if (process.execPath.startsWith("\\\\")) {
+  app.commandLine.appendSwitch("no-sandbox");
+}
+
 const MIME_TYPES = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
