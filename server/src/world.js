@@ -264,11 +264,11 @@ function isInVillage(x, y) {
 function isStreet(x, y) {
   for (const s of STREET_SEGMENTS) {
     if (s.y1 === s.y2) {
-      if (y === s.y1 && x >= Math.min(s.x1, s.x2) && x <= Math.max(s.x1, s.x2)) {
+      if (Math.abs(y - s.y1) <= 1 && x >= Math.min(s.x1, s.x2) && x <= Math.max(s.x1, s.x2)) {
         return true;
       }
     } else {
-      if (x === s.x1 && y >= Math.min(s.y1, s.y2) && y <= Math.max(s.y1, s.y2)) {
+      if (Math.abs(x - s.x1) <= 1 && y >= Math.min(s.y1, s.y2) && y <= Math.max(s.y1, s.y2)) {
         return true;
       }
     }
@@ -365,12 +365,12 @@ function generateTile(x, y) {
   const dist = Math.hypot(x, y);
 
   // Central stone plaza.
-  if (ax <= 7 && ay <= 5) {
+  if (ax <= 8 && ay <= 6) {
     return TILE.STONE;
   }
 
   // Main cross-paths, extended to reach the four villages.
-  if ((ax <= 1 && ay <= 90) || (ay <= 1 && ax <= 90)) {
+  if ((ax <= 2 && ay <= 90) || (ay <= 2 && ax <= 90)) {
     return TILE.PATH;
   }
 
@@ -381,22 +381,22 @@ function generateTile(x, y) {
 
   // Central grass clearing.
   if (dist <= 16) {
-    return hash2(x, y, 44) > 0.83 ? TILE.FLOWERS : TILE.GRASS;
+    return hash2(x, y, 44) > 0.9 ? TILE.FLOWERS : TILE.GRASS;
   }
 
   // Village clearings: suppress forest and water, keep it open.
   if (isInVillage(x, y)) {
     const biome = getBiome(x, y);
     if (biome === "desert") {
-      return hash2(x, y, 55) > 0.88 ? TILE.FLOWERS : TILE.SAND;
+      return hash2(x, y, 55) > 0.94 ? TILE.FLOWERS : TILE.SAND;
     }
     if (biome === "frost") {
-      return hash2(x, y, 55) > 0.9 ? TILE.STONE : TILE.SNOW;
+      return hash2(x, y, 55) > 0.94 ? TILE.STONE : TILE.SNOW;
     }
     if (biome === "ember") {
-      return hash2(x, y, 55) > 0.9 ? TILE.STONE : TILE.DARK_GRASS;
+      return hash2(x, y, 55) > 0.94 ? TILE.STONE : TILE.DARK_GRASS;
     }
-    return hash2(x, y, 55) > 0.88 ? TILE.FLOWERS : TILE.GRASS;
+    return hash2(x, y, 55) > 0.94 ? TILE.FLOWERS : TILE.GRASS;
   }
 
   // Outer world noise generation.
@@ -406,56 +406,56 @@ function generateTile(x, y) {
   const detail = hash2(x, y, 9);
 
   if (biome === "desert") {
-    if (water > 0.82) {
+    if (water > 0.86) {
       return TILE.WATER;
     }
-    if (detail > 0.91) {
+    if (detail > 0.96) {
       return TILE.STONE;
     }
     return TILE.SAND;
   }
 
   if (biome === "frost") {
-    if (water > 0.79) {
+    if (water > 0.84) {
       return TILE.WATER;
     }
-    if (forest > 0.62 || detail > 0.9) {
+    if (forest > 0.72 || detail > 0.97) {
       return TILE.TREE;
     }
-    return detail > 0.82 ? TILE.STONE : TILE.SNOW;
+    return detail > 0.9 ? TILE.STONE : TILE.SNOW;
   }
 
   if (biome === "ember") {
-    if (water > 0.76 || detail > 0.92) {
+    if (water > 0.82 || detail > 0.96) {
       return TILE.LAVA;
     }
-    if (forest > 0.66) {
+    if (forest > 0.76) {
       return TILE.TREE;
     }
-    return forest < 0.36 ? TILE.STONE : TILE.DARK_GRASS;
+    return forest < 0.3 ? TILE.STONE : TILE.DARK_GRASS;
   }
 
   if (biome === "meadow") {
-    return detail > 0.72 ? TILE.FLOWERS : TILE.GRASS;
+    return detail > 0.84 ? TILE.FLOWERS : TILE.GRASS;
   }
 
-  if (water > 0.76 && dist > 24) {
+  if (water > 0.82 && dist > 24) {
     return TILE.WATER;
   }
 
-  if (water > 0.68 && dist > 24) {
+  if (water > 0.74 && dist > 24) {
     return TILE.SAND;
   }
 
-  if (forest > 0.48 || detail > 0.82) {
+  if (forest > 0.64 || detail > 0.94) {
     return TILE.TREE;
   }
 
-  if (forest < 0.24) {
+  if (forest < 0.2) {
     return TILE.DARK_GRASS;
   }
 
-  if (detail > 0.77) {
+  if (detail > 0.88) {
     return TILE.FLOWERS;
   }
 

@@ -42,79 +42,6 @@ const TILE = {
   TABLE: 16,
 };
 
-const worldAtlas = new Image();
-worldAtlas.src = "./assets/world-atlas.png";
-
-const ATLAS_SPRITES = {
-  trees: [
-    { x: 30, y: 21, w: 68, h: 124, scale: 0.62 },
-    { x: 125, y: 27, w: 105, h: 134, scale: 0.58 },
-    { x: 274, y: 18, w: 139, h: 146, scale: 0.58 },
-    { x: 450, y: 15, w: 148, h: 151, scale: 0.58 },
-    { x: 623, y: 23, w: 143, h: 143, scale: 0.58 },
-    { x: 925, y: 18, w: 116, h: 151, scale: 0.62 },
-    { x: 1083, y: 18, w: 107, h: 154, scale: 0.62 },
-    { x: 56, y: 188, w: 137, h: 197, scale: 0.7 },
-    { x: 238, y: 188, w: 126, h: 195, scale: 0.7 },
-    { x: 454, y: 211, w: 111, h: 171, scale: 0.68 },
-  ],
-  massiveTrees: [
-    { x: 54, y: 433, w: 276, h: 250, scale: 1.0 },
-    { x: 454, y: 411, w: 306, h: 278, scale: 1.02 },
-    { x: 847, y: 405, w: 306, h: 287, scale: 1.0 },
-  ],
-  bushes: [
-    { x: 38, y: 729, w: 76, h: 70, scale: 0.55 },
-    { x: 158, y: 725, w: 76, h: 74, scale: 0.55 },
-    { x: 286, y: 721, w: 82, h: 76, scale: 0.55 },
-    { x: 433, y: 719, w: 76, h: 79, scale: 0.55 },
-    { x: 538, y: 719, w: 78, h: 78, scale: 0.55 },
-    { x: 674, y: 715, w: 78, h: 82, scale: 0.55 },
-    { x: 802, y: 714, w: 84, h: 84, scale: 0.55 },
-  ],
-  grass: [
-    { x: 34, y: 846, w: 86, h: 64, scale: 0.42 },
-    { x: 154, y: 835, w: 78, h: 78, scale: 0.42 },
-    { x: 279, y: 842, w: 76, h: 70, scale: 0.42 },
-    { x: 398, y: 836, w: 78, h: 78, scale: 0.42 },
-    { x: 505, y: 846, w: 55, h: 61, scale: 0.42 },
-    { x: 601, y: 832, w: 69, h: 78, scale: 0.42 },
-  ],
-  rocks: [
-    { x: 38, y: 946, w: 51, h: 42, scale: 0.45 },
-    { x: 135, y: 925, w: 82, h: 68, scale: 0.5 },
-    { x: 255, y: 935, w: 90, h: 57, scale: 0.5 },
-    { x: 382, y: 926, w: 100, h: 70, scale: 0.5 },
-    { x: 537, y: 915, w: 65, h: 88, scale: 0.5 },
-  ],
-  logs: [
-    { x: 676, y: 906, w: 75, h: 91, scale: 0.46 },
-    { x: 782, y: 914, w: 70, h: 87, scale: 0.46 },
-    { x: 903, y: 916, w: 143, h: 66, scale: 0.42 },
-    { x: 1059, y: 921, w: 120, h: 60, scale: 0.42 },
-    { x: 1124, y: 1036, w: 112, h: 55, scale: 0.4 },
-  ],
-  beach: [
-    { x: 26, y: 1046, w: 118, h: 65, scale: 0.72 },
-    { x: 172, y: 1044, w: 117, h: 68, scale: 0.72 },
-    { x: 339, y: 1044, w: 117, h: 68, scale: 0.72 },
-    { x: 514, y: 1046, w: 118, h: 63, scale: 0.72 },
-    { x: 875, y: 1046, w: 81, h: 53, scale: 0.5 },
-    { x: 986, y: 1047, w: 89, h: 51, scale: 0.45 },
-  ],
-  water: [
-    { x: 28, y: 1148, w: 121, h: 70, scale: 0.72 },
-    { x: 193, y: 1137, w: 125, h: 78, scale: 0.72 },
-    { x: 385, y: 1135, w: 125, h: 80, scale: 0.72 },
-    { x: 574, y: 1136, w: 128, h: 82, scale: 0.72 },
-    { x: 760, y: 1131, w: 104, h: 88, scale: 0.62 },
-  ],
-  planks: [
-    { x: 974, y: 1134, w: 122, h: 82, scale: 0.5 },
-    { x: 1128, y: 1144, w: 94, h: 67, scale: 0.48 },
-  ],
-};
-
 const state = {
   socket: null,
   config: null,
@@ -153,18 +80,18 @@ const keys = new Map([
 ]);
 
 const tilePalette = {
-  [TILE.GRASS]: ["#376d3b", "#438044", "#2f5c36"],
-  [TILE.DARK_GRASS]: ["#244c33", "#2d5b3b", "#1f3d2e"],
-  [TILE.TREE]: ["#23402a", "#31552e", "#6c4b2e"],
-  [TILE.WATER]: ["#23618f", "#2f7db5", "#174b70"],
-  [TILE.STONE]: ["#7f8792", "#9aa1a8", "#596271"],
-  [TILE.PATH]: ["#826b45", "#a18454", "#5f4e35"],
-  [TILE.FLOWERS]: ["#3f7a3d", "#f7d46b", "#dd6f99"],
+  [TILE.GRASS]: ["#4f8b49", "#6ba85c", "#35723d"],
+  [TILE.DARK_GRASS]: ["#315f45", "#49775a", "#254a38"],
+  [TILE.TREE]: ["#315f45", "#2f7a4e", "#6c4b2e"],
+  [TILE.WATER]: ["#2f7ea7", "#4aa6c7", "#1f5a82"],
+  [TILE.STONE]: ["#858d92", "#b5b8b2", "#5d6870"],
+  [TILE.PATH]: ["#9c7c4a", "#c3a069", "#6f5537"],
+  [TILE.FLOWERS]: ["#4f8b49", "#f2d46f", "#de6f99"],
   [TILE.WALL]: ["#6b5040", "#8c7060", "#4a3028"],
   [TILE.FLOOR]: ["#9a7c5a", "#b09070", "#7a5c40"],
   [TILE.DOOR]: ["#5c3520", "#7a4a2a", "#3c2010"],
-  [TILE.SAND]: ["#b89352", "#d9b96d", "#8f6c3b"],
-  [TILE.SNOW]: ["#c8dcea", "#eef7ff", "#8faec3"],
+  [TILE.SAND]: ["#caa35e", "#e0c782", "#9b7745"],
+  [TILE.SNOW]: ["#d7e7ee", "#f7fbff", "#9eb9c8"],
   [TILE.LAVA]: ["#4a1b20", "#e0582c", "#ffd06a"],
   [TILE.PORTAL]: ["#241844", "#75f0ff", "#f87dff"],
   [TILE.CARPET]: ["#7b2e3a", "#b84f58", "#53212b"],
@@ -962,9 +889,8 @@ function drawTile(tile, sx, sy, tx, ty) {
   }
 
   if (tile === TILE.FLOWERS) {
-    scatterPixels(sx, sy, tx, ty, colors[0], 4, 2);
-    scatterPixels(sx, sy, tx + 3, ty - 2, colors[1], 3, 3);
-    scatterPixels(sx, sy, tx - 5, ty + 4, colors[2], 2, 3);
+    drawGroundPatch(TILE.GRASS, sx, sy, tx, ty, tilePalette[TILE.GRASS]);
+    drawFlowerPatch(sx, sy, tx, ty);
     return;
   }
 
@@ -1443,29 +1369,36 @@ function drawInteriorTile(tile, sx, sy, tx, ty) {
 
 function drawGroundPatch(tile, sx, sy, tx, ty, colors) {
   const shade = hash2(tx, ty, 31);
-  ctx.fillStyle = shade > 0.5 ? colors[0] : blend(colors[0], "#000000", 0.06);
+  ctx.fillStyle = shade > 0.56 ? colors[0] : blend(colors[0], "#000000", 0.04);
   ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
 
-  ctx.fillStyle = colors[1];
-  for (let i = 0; i < 4; i += 1) {
-    const px = sx + ((hash2(tx, ty, i + 60) * 26) | 0);
-    const py = sy + ((hash2(tx, ty, i + 80) * 24) | 0);
-    const w = 4 + ((hash2(tx, ty, i + 90) * 10) | 0);
-    ctx.fillRect(px, py, w, 2);
+  if (shade > 0.42) {
+    ctx.fillStyle = colors[1];
+    ctx.fillRect(sx + 5, sy + 7, 8, 2);
+    ctx.fillRect(sx + 19, sy + 21, 7, 2);
   }
 
-  if (tile === TILE.GRASS || tile === TILE.DARK_GRASS) {
-    drawGrassTufts(sx, sy, tx, ty, tile === TILE.DARK_GRASS ? "#182f22" : "#5d8d42");
+  if ((tile === TILE.GRASS || tile === TILE.DARK_GRASS) && hash2(tx, ty, 95) > 0.72) {
+    drawGrassTuft(sx + 7 + ((hash2(tx, ty, 96) * 16) | 0), sy + 8 + ((hash2(tx, ty, 97) * 14) | 0), tile === TILE.DARK_GRASS ? "#254a38" : "#35723d");
   }
 }
 
-function drawGrassTufts(sx, sy, tx, ty, color) {
+function drawGrassTuft(x, y, color) {
   ctx.fillStyle = color;
+  ctx.fillRect(x, y + 2, 2, 5);
+  ctx.fillRect(x + 3, y, 2, 7);
+  ctx.fillRect(x + 6, y + 3, 2, 4);
+}
+
+function drawFlowerPatch(sx, sy, tx, ty) {
+  const colors = ["#f2d46f", "#ffffff", "#de6f99"];
   for (let i = 0; i < 5; i += 1) {
-    const x = sx + 3 + ((hash2(tx, ty, i + 110) * 25) | 0);
-    const y = sy + 8 + ((hash2(tx, ty, i + 130) * 20) | 0);
-    ctx.fillRect(x, y, 2, 6);
-    ctx.fillRect(x + 2, y + 2, 2, 4);
+    const x = sx + 6 + ((hash2(tx, ty, i + 161) * 19) | 0);
+    const y = sy + 7 + ((hash2(tx, ty, i + 171) * 17) | 0);
+    ctx.fillStyle = "#35723d";
+    ctx.fillRect(x, y + 2, 2, 4);
+    ctx.fillStyle = colors[i % colors.length];
+    ctx.fillRect(x - 1, y, 3, 3);
   }
 }
 
@@ -1473,10 +1406,13 @@ function drawPath(sx, sy, tx, ty, colors) {
   ctx.fillStyle = colors[0];
   ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
   ctx.fillStyle = colors[1];
-  ctx.fillRect(sx + 1, sy + 5, TILE_SIZE - 2, 20);
-  scatterPixels(sx, sy, tx, ty, colors[2], 5, 2);
+  ctx.fillRect(sx, sy + 5, TILE_SIZE, 22);
+  ctx.fillStyle = colors[2];
+  ctx.fillRect(sx, sy + 5, TILE_SIZE, 2);
+  ctx.fillRect(sx, sy + 25, TILE_SIZE, 2);
   ctx.fillStyle = "rgba(255, 240, 180, 0.18)";
-  ctx.fillRect(sx + 4, sy + 8, 10, 2);
+  ctx.fillRect(sx + 5, sy + 11, 10, 2);
+  ctx.fillRect(sx + 18, sy + 19, 8, 2);
 }
 
 function drawWater(sx, sy, tx, ty, colors) {
@@ -1524,112 +1460,79 @@ function drawWorldAssets(minTileX, maxTileX, minTileY, maxTileY) {
       const sy = Math.floor(ty * TILE_SIZE - state.camera.y + halfH);
 
       if (tile === TILE.TREE) {
-        drawGeneratedTreeAsset(sx, sy, tx, ty);
-      } else if (tile === TILE.GRASS || tile === TILE.DARK_GRASS || tile === TILE.FLOWERS) {
-        drawGeneratedGroundAsset(tile, sx, sy, tx, ty);
-      } else if (tile === TILE.SAND) {
-        drawGeneratedBeachAsset(sx, sy, tx, ty);
-      } else if (tile === TILE.WATER) {
-        drawGeneratedWaterAsset(sx, sy, tx, ty);
-      } else if (tile === TILE.STONE && hash2(tx, ty, 932) > 0.86) {
-        drawAtlasSprite(pickSprite(ATLAS_SPRITES.rocks, tx, ty, 901), sx + 16, sy + 24, 0.45);
+        drawCuratedTree(sx, sy, tx, ty);
+      } else if ((tile === TILE.GRASS || tile === TILE.DARK_GRASS) && hash2(tx, ty, 501) > 0.93) {
+        drawCuratedBush(sx, sy, tx, ty, tile === TILE.DARK_GRASS);
+      } else if ((tile === TILE.STONE || tile === TILE.SAND || tile === TILE.SNOW) && hash2(tx, ty, 502) > 0.9) {
+        drawCuratedRock(sx, sy, tx, ty, tile === TILE.SAND);
+      } else if (tile === TILE.PATH && hash2(tx, ty, 503) > 0.985) {
+        drawCuratedSign(sx, sy);
       }
     }
   }
 }
 
-function drawGeneratedTreeAsset(sx, sy, tx, ty) {
-  const forestNeighbors = countNeighborTiles(tx, ty, TILE.TREE);
-  const huge = forestNeighbors >= 5 && hash2(tx, ty, 401) > 0.93;
-  const sprites = huge ? ATLAS_SPRITES.massiveTrees : ATLAS_SPRITES.trees;
-  const sprite = pickSprite(sprites, tx, ty, huge ? 402 : 403);
-  const scale = huge ? 0.6 + hash2(tx, ty, 404) * 0.18 : sprite.scale + hash2(tx, ty, 405) * 0.12;
-  const offsetX = Math.round((hash2(tx, ty, 406) - 0.5) * (huge ? 22 : 10));
-  const offsetY = Math.round((hash2(tx, ty, 407) - 0.5) * 8);
+function drawCuratedTree(sx, sy, tx, ty) {
+  const frost = isNearTile(tx, ty, TILE.SNOW);
+  const ember = tx > 80 && ty < -70;
+  const leaf = frost ? "#6f9396" : ember ? "#315f45" : "#2f7a4e";
+  const leafLight = frost ? "#9fb9b8" : ember ? "#5f8552" : "#6ca85d";
+  const leafDark = frost ? "#46696e" : ember ? "#254a38" : "#215b3a";
+  const trunk = ember ? "#50312a" : "#6c4b2e";
 
-  if (worldAtlas.complete && worldAtlas.naturalWidth > 0) {
-    drawAtlasSprite(sprite, sx + 16 + offsetX, sy + 32 + offsetY, scale);
-    return;
-  }
-
-  drawTree(sx, sy, tx, ty);
+  drawEllipseShadow(sx + 7, sy + 24, 18, 5, 0.24);
+  ctx.fillStyle = trunk;
+  ctx.fillRect(sx + 13, sy + 17, 6, 11);
+  ctx.fillStyle = leafDark;
+  ctx.fillRect(sx + 7, sy + 10, 18, 13);
+  ctx.fillStyle = leaf;
+  ctx.fillRect(sx + 5, sy + 14, 22, 9);
+  ctx.fillRect(sx + 10, sy + 5, 12, 9);
+  ctx.fillStyle = leafLight;
+  ctx.fillRect(sx + 10, sy + 9, 6, 3);
+  ctx.fillRect(sx + 14, sy + 4, 5, 2);
 }
 
-function drawGeneratedGroundAsset(tile, sx, sy, tx, ty) {
-  const detail = hash2(tx, ty, 501);
-  if (detail > 0.9) {
-    drawAtlasSprite(pickSprite(ATLAS_SPRITES.logs, tx, ty, 502), sx + 16, sy + 26, 0.38);
-    return;
-  }
-  if (detail > 0.8) {
-    drawAtlasSprite(pickSprite(ATLAS_SPRITES.rocks, tx, ty, 503), sx + 16, sy + 24, 0.34);
-    return;
-  }
-  if (detail > 0.58 || tile === TILE.FLOWERS) {
-    const group = detail > 0.72 ? ATLAS_SPRITES.bushes : ATLAS_SPRITES.grass;
-    drawAtlasSprite(pickSprite(group, tx, ty, 504), sx + 16, sy + 28, tile === TILE.FLOWERS ? 0.5 : 0.4);
-  }
+function drawCuratedBush(sx, sy, tx, ty, dark) {
+  const base = dark ? "#315f45" : "#3f8c4f";
+  const light = dark ? "#5b8366" : "#78b96a";
+  const x = sx + 6 + ((hash2(tx, ty, 521) * 9) | 0);
+  const y = sy + 18 + ((hash2(tx, ty, 522) * 4) | 0);
+
+  drawEllipseShadow(x - 1, y + 8, 18, 4, 0.16);
+  ctx.fillStyle = base;
+  ctx.fillRect(x, y + 3, 18, 8);
+  ctx.fillRect(x + 4, y, 10, 6);
+  ctx.fillStyle = light;
+  ctx.fillRect(x + 4, y + 2, 5, 2);
+  ctx.fillRect(x + 11, y + 5, 4, 2);
 }
 
-function drawGeneratedBeachAsset(sx, sy, tx, ty) {
-  if (isNearTile(tx, ty, TILE.WATER)) {
-    drawAtlasSprite(pickSprite(ATLAS_SPRITES.beach, tx, ty, 601), sx + 16, sy + 25, 0.64);
-    return;
-  }
+function drawCuratedRock(sx, sy, tx, ty, warm) {
+  const base = warm ? "#8f6c3b" : "#6d767d";
+  const light = warm ? "#d1a968" : "#b5b8b2";
+  const x = sx + 8 + ((hash2(tx, ty, 531) * 8) | 0);
+  const y = sy + 19 + ((hash2(tx, ty, 532) * 4) | 0);
 
-  if (hash2(tx, ty, 602) > 0.76) {
-    drawAtlasSprite(pickSprite(ATLAS_SPRITES.beach, tx, ty, 603), sx + 16, sy + 25, 0.42);
-  }
+  drawEllipseShadow(x - 2, y + 8, 17, 4, 0.18);
+  ctx.fillStyle = base;
+  ctx.fillRect(x, y + 4, 15, 7);
+  ctx.fillRect(x + 3, y, 9, 6);
+  ctx.fillStyle = light;
+  ctx.fillRect(x + 4, y + 2, 5, 2);
 }
 
-function drawGeneratedWaterAsset(sx, sy, tx, ty) {
-  const edge = isNearNonWater(tx, ty);
-  const detail = hash2(tx, ty, 701);
-  if (edge && detail > 0.55) {
-    drawAtlasSprite(pickSprite(ATLAS_SPRITES.water, tx, ty, 702), sx + 16, sy + 25, 0.56);
-    return;
-  }
-  if (detail > 0.9) {
-    drawAtlasSprite(pickSprite(ATLAS_SPRITES.water, tx, ty, 703), sx + 16, sy + 25, 0.48);
-  }
-}
-
-function pickSprite(sprites, tx, ty, seed) {
-  return sprites[Math.floor(hash2(tx, ty, seed) * sprites.length) % sprites.length];
-}
-
-function drawAtlasSprite(sprite, anchorX, anchorY, scaleOverride = null) {
-  if (!sprite || !worldAtlas.complete || worldAtlas.naturalWidth === 0) {
-    return;
-  }
-
-  const scale = scaleOverride ?? sprite.scale ?? 1;
-  const w = Math.round(sprite.w * scale);
-  const h = Math.round(sprite.h * scale);
-  ctx.drawImage(worldAtlas, sprite.x, sprite.y, sprite.w, sprite.h, Math.round(anchorX - w / 2), Math.round(anchorY - h), w, h);
-}
-
-function countNeighborTiles(tx, ty, tile) {
-  let count = 0;
-  for (let y = -1; y <= 1; y += 1) {
-    for (let x = -1; x <= 1; x += 1) {
-      if (x === 0 && y === 0) {
-        continue;
-      }
-      if (getTile(tx + x, ty + y) === tile) {
-        count += 1;
-      }
-    }
-  }
-  return count;
+function drawCuratedSign(sx, sy) {
+  ctx.fillStyle = "#6c4b2e";
+  ctx.fillRect(sx + 15, sy + 15, 3, 13);
+  ctx.fillStyle = "#b98b4f";
+  ctx.fillRect(sx + 9, sy + 10, 15, 8);
+  ctx.fillStyle = "#5f3c27";
+  ctx.fillRect(sx + 11, sy + 13, 10, 2);
 }
 
 function isNearTile(tx, ty, tile) {
   return getTile(tx - 1, ty) === tile || getTile(tx + 1, ty) === tile || getTile(tx, ty - 1) === tile || getTile(tx, ty + 1) === tile;
-}
-
-function isNearNonWater(tx, ty) {
-  return getTile(tx - 1, ty) !== TILE.WATER || getTile(tx + 1, ty) !== TILE.WATER || getTile(tx, ty - 1) !== TILE.WATER || getTile(tx, ty + 1) !== TILE.WATER;
 }
 
 function drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY) {
