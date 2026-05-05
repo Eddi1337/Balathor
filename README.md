@@ -43,11 +43,17 @@ Or with Compose:
 docker compose up --build balathor-server
 ```
 
-The container exposes HTTP health at `/health` and WebSocket gameplay at `/ws`.
+The web client can be built and run the same way:
+
+```bash
+docker compose up --build balathor-client
+```
+
+The server container exposes HTTP health at `/health` and WebSocket gameplay at `/ws`. The client container exposes HTTP health at `/health` and serves the browser client from `/`.
 
 ## Server Deployment
 
-Pushes to `main` or `master` build `./server` on the self-hosted Balathor runner, publish the image to Harbor as `192.168.10.155/balathor/server`, then deploy `docker-compose.prod.yml` to `/root/balathor` on `192.168.10.222`.
+Pushes to `main` or `master` build `./server` and `./client` on the self-hosted Balathor runner, publish the images to Harbor as `192.168.10.155/balathor/server` and `192.168.10.155/balathor/client`, then deploy `docker-compose.prod.yml` to `/root/balathor` on `192.168.10.222`.
 
 The workflow expects the same repository secrets as the other deployed repos:
 
@@ -55,7 +61,7 @@ The workflow expects the same repository secrets as the other deployed repos:
 - `HARBOR_PASSWORD`
 - `DEPLOY_SSH_PRIVATE_KEY`
 
-The production container maps host port `8082` to the server's internal `8080`.
+The production server container maps host port `8082` to the server's internal `8080`. The production web client container maps host port `8083` to the client's internal `3000`.
 
 The client dev server reads `GAME_SERVER_URL`, so a custom endpoint can be used like this:
 

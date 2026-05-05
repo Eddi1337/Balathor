@@ -8,7 +8,8 @@ on:
 
 env:
   REGISTRY: 192.168.10.155
-  IMAGE_REPOSITORY: balathor/server
+  SERVER_IMAGE_REPOSITORY: balathor/server
+  CLIENT_IMAGE_REPOSITORY: balathor/client
   DEPLOY_HOST: 192.168.10.222
   DEPLOY_PATH: /root/balathor
 
@@ -34,14 +35,26 @@ jobs:
       - name: Build server image
         run: |
           docker build \
-            -t "${REGISTRY}/${IMAGE_REPOSITORY}:${GITHUB_SHA}" \
-            -t "${REGISTRY}/${IMAGE_REPOSITORY}:latest" \
+            -t "${REGISTRY}/${SERVER_IMAGE_REPOSITORY}:${GITHUB_SHA}" \
+            -t "${REGISTRY}/${SERVER_IMAGE_REPOSITORY}:latest" \
             ./server
+
+      - name: Build client image
+        run: |
+          docker build \
+            -t "${REGISTRY}/${CLIENT_IMAGE_REPOSITORY}:${GITHUB_SHA}" \
+            -t "${REGISTRY}/${CLIENT_IMAGE_REPOSITORY}:latest" \
+            ./client
 
       - name: Push server image
         run: |
-          docker push "${REGISTRY}/${IMAGE_REPOSITORY}:${GITHUB_SHA}"
-          docker push "${REGISTRY}/${IMAGE_REPOSITORY}:latest"
+          docker push "${REGISTRY}/${SERVER_IMAGE_REPOSITORY}:${GITHUB_SHA}"
+          docker push "${REGISTRY}/${SERVER_IMAGE_REPOSITORY}:latest"
+
+      - name: Push client image
+        run: |
+          docker push "${REGISTRY}/${CLIENT_IMAGE_REPOSITORY}:${GITHUB_SHA}"
+          docker push "${REGISTRY}/${CLIENT_IMAGE_REPOSITORY}:latest"
 
       - name: Install SSH key
         uses: webfactory/ssh-agent@v0.9.0

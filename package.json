@@ -10,6 +10,8 @@
     "smoke": "node tests/smoke.mjs",
     "server:docker:build": "docker build -t balathor-server ./server",
     "server:docker:run": "docker run --rm --name balathor-server -p 8080:8080 balathor-server",
+    "client:docker:build": "docker build -t balathor-client ./client",
+    "client:docker:run": "docker run --rm --name balathor-client -p 3000:3000 -e GAME_SERVER_URL=ws://localhost:8080/ws balathor-client",
     "client:desktop:install": "npm install --prefix client/desktop",
     "client:desktop:dev": "npm run dev --prefix client/desktop",
     "client:desktop:build:win-dir": "npm run build:win:dir --prefix client/desktop",

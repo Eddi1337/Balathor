@@ -19,6 +19,14 @@ const MIME_TYPES = {
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://localhost");
 
+  if (url.pathname === "/health") {
+    send(res, 200, "application/json; charset=utf-8", JSON.stringify({
+      ok: true,
+      gameServerUrl: GAME_SERVER_URL
+    }));
+    return;
+  }
+
   if (url.pathname === "/config.json") {
     send(res, 200, "application/json; charset=utf-8", JSON.stringify({
       gameServerUrl: GAME_SERVER_URL
