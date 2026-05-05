@@ -439,15 +439,19 @@ function generateTile(x, y) {
     return detail > 0.72 ? TILE.FLOWERS : TILE.GRASS;
   }
 
-  if (water > 0.78 && dist > 24) {
+  if (water > 0.76 && dist > 24) {
     return TILE.WATER;
   }
 
-  if (forest > 0.57 || detail > 0.86) {
+  if (water > 0.68 && dist > 24) {
+    return TILE.SAND;
+  }
+
+  if (forest > 0.48 || detail > 0.82) {
     return TILE.TREE;
   }
 
-  if (forest < 0.28) {
+  if (forest < 0.24) {
     return TILE.DARK_GRASS;
   }
 

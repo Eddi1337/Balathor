@@ -42,6 +42,79 @@ const TILE = {
   TABLE: 16,
 };
 
+const worldAtlas = new Image();
+worldAtlas.src = "./assets/world-atlas.png";
+
+const ATLAS_SPRITES = {
+  trees: [
+    { x: 30, y: 21, w: 68, h: 124, scale: 0.62 },
+    { x: 125, y: 27, w: 105, h: 134, scale: 0.58 },
+    { x: 274, y: 18, w: 139, h: 146, scale: 0.58 },
+    { x: 450, y: 15, w: 148, h: 151, scale: 0.58 },
+    { x: 623, y: 23, w: 143, h: 143, scale: 0.58 },
+    { x: 925, y: 18, w: 116, h: 151, scale: 0.62 },
+    { x: 1083, y: 18, w: 107, h: 154, scale: 0.62 },
+    { x: 56, y: 188, w: 137, h: 197, scale: 0.7 },
+    { x: 238, y: 188, w: 126, h: 195, scale: 0.7 },
+    { x: 454, y: 211, w: 111, h: 171, scale: 0.68 },
+  ],
+  massiveTrees: [
+    { x: 54, y: 433, w: 276, h: 250, scale: 1.0 },
+    { x: 454, y: 411, w: 306, h: 278, scale: 1.02 },
+    { x: 847, y: 405, w: 306, h: 287, scale: 1.0 },
+  ],
+  bushes: [
+    { x: 38, y: 729, w: 76, h: 70, scale: 0.55 },
+    { x: 158, y: 725, w: 76, h: 74, scale: 0.55 },
+    { x: 286, y: 721, w: 82, h: 76, scale: 0.55 },
+    { x: 433, y: 719, w: 76, h: 79, scale: 0.55 },
+    { x: 538, y: 719, w: 78, h: 78, scale: 0.55 },
+    { x: 674, y: 715, w: 78, h: 82, scale: 0.55 },
+    { x: 802, y: 714, w: 84, h: 84, scale: 0.55 },
+  ],
+  grass: [
+    { x: 34, y: 846, w: 86, h: 64, scale: 0.42 },
+    { x: 154, y: 835, w: 78, h: 78, scale: 0.42 },
+    { x: 279, y: 842, w: 76, h: 70, scale: 0.42 },
+    { x: 398, y: 836, w: 78, h: 78, scale: 0.42 },
+    { x: 505, y: 846, w: 55, h: 61, scale: 0.42 },
+    { x: 601, y: 832, w: 69, h: 78, scale: 0.42 },
+  ],
+  rocks: [
+    { x: 38, y: 946, w: 51, h: 42, scale: 0.45 },
+    { x: 135, y: 925, w: 82, h: 68, scale: 0.5 },
+    { x: 255, y: 935, w: 90, h: 57, scale: 0.5 },
+    { x: 382, y: 926, w: 100, h: 70, scale: 0.5 },
+    { x: 537, y: 915, w: 65, h: 88, scale: 0.5 },
+  ],
+  logs: [
+    { x: 676, y: 906, w: 75, h: 91, scale: 0.46 },
+    { x: 782, y: 914, w: 70, h: 87, scale: 0.46 },
+    { x: 903, y: 916, w: 143, h: 66, scale: 0.42 },
+    { x: 1059, y: 921, w: 120, h: 60, scale: 0.42 },
+    { x: 1124, y: 1036, w: 112, h: 55, scale: 0.4 },
+  ],
+  beach: [
+    { x: 26, y: 1046, w: 118, h: 65, scale: 0.72 },
+    { x: 172, y: 1044, w: 117, h: 68, scale: 0.72 },
+    { x: 339, y: 1044, w: 117, h: 68, scale: 0.72 },
+    { x: 514, y: 1046, w: 118, h: 63, scale: 0.72 },
+    { x: 875, y: 1046, w: 81, h: 53, scale: 0.5 },
+    { x: 986, y: 1047, w: 89, h: 51, scale: 0.45 },
+  ],
+  water: [
+    { x: 28, y: 1148, w: 121, h: 70, scale: 0.72 },
+    { x: 193, y: 1137, w: 125, h: 78, scale: 0.72 },
+    { x: 385, y: 1135, w: 125, h: 80, scale: 0.72 },
+    { x: 574, y: 1136, w: 128, h: 82, scale: 0.72 },
+    { x: 760, y: 1131, w: 104, h: 88, scale: 0.62 },
+  ],
+  planks: [
+    { x: 974, y: 1134, w: 122, h: 82, scale: 0.5 },
+    { x: 1128, y: 1144, w: 94, h: 67, scale: 0.48 },
+  ],
+};
+
 const state = {
   socket: null,
   config: null,
@@ -861,6 +934,7 @@ function drawWorld() {
     }
   }
 
+  drawWorldAssets(minTileX, maxTileX, minTileY, maxTileY);
   drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY);
 }
 
@@ -929,7 +1003,7 @@ function drawTile(tile, sx, sy, tx, ty) {
   }
 
   if (tile === TILE.TREE) {
-    drawTree(sx, sy, tx, ty);
+    drawGroundPatch(TILE.DARK_GRASS, sx, sy, tx, ty, tilePalette[TILE.DARK_GRASS]);
     return;
   }
 
@@ -1276,6 +1350,125 @@ function drawCoveredBuildingGround(sx, sy, tx, ty) {
   ctx.fillStyle = colors[0];
   ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
   scatterPixels(sx, sy, tx, ty, colors[1], 2, 2);
+}
+
+function drawWorldAssets(minTileX, maxTileX, minTileY, maxTileY) {
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+
+  for (let ty = minTileY; ty <= maxTileY; ty += 1) {
+    for (let tx = minTileX; tx <= maxTileX; tx += 1) {
+      const tile = getTile(tx, ty);
+      const sx = Math.floor(tx * TILE_SIZE - state.camera.x + halfW);
+      const sy = Math.floor(ty * TILE_SIZE - state.camera.y + halfH);
+
+      if (tile === TILE.TREE) {
+        drawGeneratedTreeAsset(sx, sy, tx, ty);
+      } else if (tile === TILE.GRASS || tile === TILE.DARK_GRASS || tile === TILE.FLOWERS) {
+        drawGeneratedGroundAsset(tile, sx, sy, tx, ty);
+      } else if (tile === TILE.SAND) {
+        drawGeneratedBeachAsset(sx, sy, tx, ty);
+      } else if (tile === TILE.WATER) {
+        drawGeneratedWaterAsset(sx, sy, tx, ty);
+      } else if (tile === TILE.STONE && hash2(tx, ty, 932) > 0.86) {
+        drawAtlasSprite(pickSprite(ATLAS_SPRITES.rocks, tx, ty, 901), sx + 16, sy + 24, 0.45);
+      }
+    }
+  }
+}
+
+function drawGeneratedTreeAsset(sx, sy, tx, ty) {
+  const forestNeighbors = countNeighborTiles(tx, ty, TILE.TREE);
+  const huge = forestNeighbors >= 5 && hash2(tx, ty, 401) > 0.93;
+  const sprites = huge ? ATLAS_SPRITES.massiveTrees : ATLAS_SPRITES.trees;
+  const sprite = pickSprite(sprites, tx, ty, huge ? 402 : 403);
+  const scale = huge ? 0.6 + hash2(tx, ty, 404) * 0.18 : sprite.scale + hash2(tx, ty, 405) * 0.12;
+  const offsetX = Math.round((hash2(tx, ty, 406) - 0.5) * (huge ? 22 : 10));
+  const offsetY = Math.round((hash2(tx, ty, 407) - 0.5) * 8);
+
+  if (worldAtlas.complete && worldAtlas.naturalWidth > 0) {
+    drawAtlasSprite(sprite, sx + 16 + offsetX, sy + 32 + offsetY, scale);
+    return;
+  }
+
+  drawTree(sx, sy, tx, ty);
+}
+
+function drawGeneratedGroundAsset(tile, sx, sy, tx, ty) {
+  const detail = hash2(tx, ty, 501);
+  if (detail > 0.9) {
+    drawAtlasSprite(pickSprite(ATLAS_SPRITES.logs, tx, ty, 502), sx + 16, sy + 26, 0.38);
+    return;
+  }
+  if (detail > 0.8) {
+    drawAtlasSprite(pickSprite(ATLAS_SPRITES.rocks, tx, ty, 503), sx + 16, sy + 24, 0.34);
+    return;
+  }
+  if (detail > 0.58 || tile === TILE.FLOWERS) {
+    const group = detail > 0.72 ? ATLAS_SPRITES.bushes : ATLAS_SPRITES.grass;
+    drawAtlasSprite(pickSprite(group, tx, ty, 504), sx + 16, sy + 28, tile === TILE.FLOWERS ? 0.5 : 0.4);
+  }
+}
+
+function drawGeneratedBeachAsset(sx, sy, tx, ty) {
+  if (isNearTile(tx, ty, TILE.WATER)) {
+    drawAtlasSprite(pickSprite(ATLAS_SPRITES.beach, tx, ty, 601), sx + 16, sy + 25, 0.64);
+    return;
+  }
+
+  if (hash2(tx, ty, 602) > 0.76) {
+    drawAtlasSprite(pickSprite(ATLAS_SPRITES.beach, tx, ty, 603), sx + 16, sy + 25, 0.42);
+  }
+}
+
+function drawGeneratedWaterAsset(sx, sy, tx, ty) {
+  const edge = isNearNonWater(tx, ty);
+  const detail = hash2(tx, ty, 701);
+  if (edge && detail > 0.55) {
+    drawAtlasSprite(pickSprite(ATLAS_SPRITES.water, tx, ty, 702), sx + 16, sy + 25, 0.56);
+    return;
+  }
+  if (detail > 0.9) {
+    drawAtlasSprite(pickSprite(ATLAS_SPRITES.water, tx, ty, 703), sx + 16, sy + 25, 0.48);
+  }
+}
+
+function pickSprite(sprites, tx, ty, seed) {
+  return sprites[Math.floor(hash2(tx, ty, seed) * sprites.length) % sprites.length];
+}
+
+function drawAtlasSprite(sprite, anchorX, anchorY, scaleOverride = null) {
+  if (!sprite || !worldAtlas.complete || worldAtlas.naturalWidth === 0) {
+    return;
+  }
+
+  const scale = scaleOverride ?? sprite.scale ?? 1;
+  const w = Math.round(sprite.w * scale);
+  const h = Math.round(sprite.h * scale);
+  ctx.drawImage(worldAtlas, sprite.x, sprite.y, sprite.w, sprite.h, Math.round(anchorX - w / 2), Math.round(anchorY - h), w, h);
+}
+
+function countNeighborTiles(tx, ty, tile) {
+  let count = 0;
+  for (let y = -1; y <= 1; y += 1) {
+    for (let x = -1; x <= 1; x += 1) {
+      if (x === 0 && y === 0) {
+        continue;
+      }
+      if (getTile(tx + x, ty + y) === tile) {
+        count += 1;
+      }
+    }
+  }
+  return count;
+}
+
+function isNearTile(tx, ty, tile) {
+  return getTile(tx - 1, ty) === tile || getTile(tx + 1, ty) === tile || getTile(tx, ty - 1) === tile || getTile(tx, ty + 1) === tile;
+}
+
+function isNearNonWater(tx, ty) {
+  return getTile(tx - 1, ty) !== TILE.WATER || getTile(tx + 1, ty) !== TILE.WATER || getTile(tx, ty - 1) !== TILE.WATER || getTile(tx, ty + 1) !== TILE.WATER;
 }
 
 function drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY) {

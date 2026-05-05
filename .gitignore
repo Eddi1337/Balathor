@@ -5,3 +5,4 @@ client/desktop/app/
 .env
 .DS_Store
 *.log
+client/assets/*-source.png

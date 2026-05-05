@@ -16,4 +16,12 @@ fs.cpSync(path.join(clientRoot, "src"), path.join(appRoot, "src"), {
   recursive: true
 });
 
+const assetsRoot = path.join(clientRoot, "assets");
+if (fs.existsSync(assetsRoot)) {
+  fs.cpSync(assetsRoot, path.join(appRoot, "assets"), {
+    recursive: true,
+    filter: (source) => !source.endsWith("-source.png")
+  });
+}
+
 console.log(`Prepared desktop client assets in ${path.relative(process.cwd(), appRoot)}`);
