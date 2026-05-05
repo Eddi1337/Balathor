@@ -6,6 +6,7 @@ const {
   isBlockedCircle,
   spawnPoint
 } = require("./world");
+const { updateNpcs, getNpcSnapshot } = require("./npcs");
 
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 8080);
@@ -130,6 +131,8 @@ function simulate() {
       client.player.moving = false;
     }
   }
+
+  updateNpcs(dt, pushChat);
 
   if (tick % Math.round(TICK_RATE / SNAPSHOT_RATE) === 0) {
     broadcastSnapshot();
@@ -342,7 +345,8 @@ function broadcastSnapshot() {
     serverTime: Date.now(),
     tick,
     population: players.length,
-    players
+    players,
+    npcs: getNpcSnapshot()
   };
 
   for (const client of clients.values()) {

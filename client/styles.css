@@ -242,6 +242,15 @@ button:focus-visible {
   color: #b9c0bf;
 }
 
+.chat-line.npc .chat-name {
+  color: #ffd27a;
+  font-weight: 800;
+}
+
+.chat-line.npc {
+  color: #e8dfc0;
+}
+
 .chat-name {
   color: #ffd166;
   font-weight: 800;

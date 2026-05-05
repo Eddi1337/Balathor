@@ -28,7 +28,10 @@ const TILE = {
   STONE: 3,
   PATH: 4,
   FLOWERS: 5,
-  DARK_GRASS: 6
+  DARK_GRASS: 6,
+  WALL: 7,
+  FLOOR: 8,
+  DOOR: 9,
 };
 
 const state = {
@@ -41,6 +44,7 @@ const state = {
   primary: "#5cc8ff",
   accent: "#ffd166",
   players: new Map(),
+  npcs: new Map(),
   chunks: new Map(),
   requestedChunks: new Set(),
   population: 0,
@@ -69,7 +73,10 @@ const tilePalette = {
   [TILE.WATER]: ["#23618f", "#2f7db5", "#174b70"],
   [TILE.STONE]: ["#7f8792", "#9aa1a8", "#596271"],
   [TILE.PATH]: ["#826b45", "#a18454", "#5f4e35"],
-  [TILE.FLOWERS]: ["#3f7a3d", "#f7d46b", "#dd6f99"]
+  [TILE.FLOWERS]: ["#3f7a3d", "#f7d46b", "#dd6f99"],
+  [TILE.WALL]: ["#6b5040", "#8c7060", "#4a3028"],
+  [TILE.FLOOR]: ["#9a7c5a", "#b09070", "#7a5c40"],
+  [TILE.DOOR]: ["#5c3520", "#7a4a2a", "#3c2010"],
 };
 
 resize();
@@ -182,6 +189,7 @@ function handleServerMessage(message) {
   if (message.type === "snapshot") {
     state.population = message.population;
     applySnapshot(message.players);
+    applyNpcSnapshot(message.npcs || []);
     return;
   }
 
@@ -244,6 +252,41 @@ function applySnapshot(players) {
   }
 }
 
+function applyNpcSnapshot(snapshotNpcs) {
+  const now = performance.now();
+  const seen = new Set();
+
+  for (const snap of snapshotNpcs) {
+    seen.add(snap.id);
+    let npc = state.npcs.get(snap.id);
+
+    if (!npc) {
+      npc = {
+        ...snap,
+        renderX: snap.x,
+        renderY: snap.y,
+        targetX: snap.x,
+        targetY: snap.y,
+        lastSeen: now
+      };
+      state.npcs.set(snap.id, npc);
+      continue;
+    }
+
+    Object.assign(npc, snap, {
+      targetX: snap.x,
+      targetY: snap.y,
+      lastSeen: now
+    });
+  }
+
+  for (const [id] of state.npcs) {
+    if (!seen.has(id)) {
+      state.npcs.delete(id);
+    }
+  }
+}
+
 function updateSmoothPlayers(dt) {
   for (const player of state.players.values()) {
     if (player.id === state.selfId) {
@@ -253,6 +296,12 @@ function updateSmoothPlayers(dt) {
     const follow = player.id === state.selfId ? 1 - Math.pow(0.00002, dt) : 1 - Math.pow(0.0005, dt);
     player.renderX += (player.targetX - player.renderX) * follow;
     player.renderY += (player.targetY - player.renderY) * follow;
+  }
+
+  const npcFollow = 1 - Math.pow(0.0005, dt);
+  for (const npc of state.npcs.values()) {
+    npc.renderX += (npc.targetX - npc.renderX) * npcFollow;
+    npc.renderY += (npc.targetY - npc.renderY) * npcFollow;
   }
 }
 
@@ -419,6 +468,7 @@ function resetToConnection(message) {
   state.selfId = null;
   state.socket = null;
   state.players.clear();
+  state.npcs.clear();
   state.chunks.clear();
   state.requestedChunks.clear();
   state.population = 0;
@@ -436,7 +486,8 @@ function resetToConnection(message) {
 
 function appendChat(message) {
   const line = document.createElement("div");
-  line.className = `chat-line ${message.kind === "system" ? "system" : "player"}`;
+  const kindClass = message.kind === "system" ? "system" : message.kind === "npc" ? "npc" : "player";
+  line.className = `chat-line ${kindClass}`;
 
   if (message.kind === "system") {
     line.textContent = message.text;
@@ -608,27 +659,65 @@ function drawTile(tile, sx, sy, tx, ty) {
     ctx.fillRect(sx + 4, sy + 9, 24, 13);
     ctx.fillStyle = "#3c6b35";
     ctx.fillRect(sx + 10, sy + 3, 12, 7);
+    return;
+  }
+
+  if (tile === TILE.WALL) {
+    // Rough stone wall with brick rows.
+    ctx.fillStyle = colors[1];
+    for (let row = 0; row < 4; row += 1) {
+      const offset = row % 2 === 0 ? 0 : 8;
+      for (let col = -1; col < 4; col += 1) {
+        ctx.fillRect(sx + offset + col * 16, sy + row * 8, 14, 6);
+      }
+    }
+    return;
+  }
+
+  if (tile === TILE.FLOOR) {
+    // Wooden plank floor with horizontal grain lines.
+    scatterPixels(sx, sy, tx, ty, colors[1], 3, 2);
+    ctx.fillStyle = colors[2];
+    for (let i = 0; i < 4; i += 1) {
+      ctx.fillRect(sx, sy + 2 + i * 8, TILE_SIZE, 1);
+    }
+    return;
+  }
+
+  if (tile === TILE.DOOR) {
+    // Dark wood door with a frame and handle.
+    ctx.fillStyle = colors[1];
+    ctx.fillRect(sx + 7, sy + 1, 18, TILE_SIZE - 2);
+    ctx.fillStyle = colors[2];
+    ctx.fillRect(sx + 9, sy + 3, 14, TILE_SIZE - 6);
+    ctx.fillStyle = "#c8a040";
+    ctx.fillRect(sx + 9, sy + 15, 4, 4);
+    return;
   }
 }
 
 function drawPlayers() {
-  const players = [...state.players.values()].sort((a, b) => a.renderY - b.renderY);
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
 
-  for (const player of players) {
-    const sx = Math.floor(player.renderX * TILE_SIZE - state.camera.x + halfW);
-    const sy = Math.floor(player.renderY * TILE_SIZE - state.camera.y + halfH);
-    drawCharacter(player, sx, sy);
+  const entities = [
+    ...[...state.players.values()].map((p) => ({ entity: p, isNpc: false })),
+    ...[...state.npcs.values()].map((n) => ({ entity: n, isNpc: true })),
+  ].sort((a, b) => a.entity.renderY - b.entity.renderY);
+
+  for (const { entity, isNpc } of entities) {
+    const sx = Math.floor(entity.renderX * TILE_SIZE - state.camera.x + halfW);
+    const sy = Math.floor(entity.renderY * TILE_SIZE - state.camera.y + halfH);
+    drawCharacter(entity, sx, sy, isNpc);
   }
 }
 
-function drawCharacter(player, x, y) {
+function drawCharacter(entity, x, y, isNpc = false) {
   const scale = 2;
   const px = x - 8 * scale;
   const py = y - 14 * scale;
-  const primary = player.primary || "#5cc8ff";
-  const accent = player.accent || "#ffd166";
+  const primary = entity.primary || "#5cc8ff";
+  const accent = entity.accent || "#ffd166";
 
   ctx.fillStyle = "rgba(0, 0, 0, 0.28)";
   ctx.fillRect(x - 11, y + 8, 22, 5);
@@ -639,10 +728,10 @@ function drawCharacter(player, x, y) {
   pixel(px, py, 5, 11, 3, 4, "#202437", scale);
   pixel(px, py, 9, 11, 3, 4, "#202437", scale);
 
-  if (player.classId === "mage") {
+  if (entity.classId === "mage") {
     pixel(px, py, 3, 3, 10, 2, accent, scale);
     pixel(px, py, 7, 0, 3, 4, primary, scale);
-  } else if (player.classId === "knight") {
+  } else if (entity.classId === "knight") {
     pixel(px, py, 4, 3, 8, 2, "#d4dae2", scale);
     pixel(px, py, 3, 8, 10, 4, "#8a929e", scale);
   } else {
@@ -654,9 +743,9 @@ function drawCharacter(player, x, y) {
   ctx.textAlign = "center";
   ctx.lineWidth = 3;
   ctx.strokeStyle = "rgba(8, 12, 18, 0.82)";
-  ctx.fillStyle = "#f7f3df";
-  ctx.strokeText(player.name, x, y - 34);
-  ctx.fillText(player.name, x, y - 34);
+  ctx.fillStyle = isNpc ? "#ffd27a" : "#f7f3df";
+  ctx.strokeText(entity.name, x, y - 34);
+  ctx.fillText(entity.name, x, y - 34);
 }
 
 function pixel(originX, originY, x, y, w, h, color, scale) {
