@@ -37,6 +37,9 @@ const TILE = {
   SNOW: 11,
   LAVA: 12,
   PORTAL: 13,
+  CARPET: 14,
+  BED: 15,
+  TABLE: 16,
 };
 
 const state = {
@@ -89,6 +92,9 @@ const tilePalette = {
   [TILE.SNOW]: ["#c8dcea", "#eef7ff", "#8faec3"],
   [TILE.LAVA]: ["#4a1b20", "#e0582c", "#ffd06a"],
   [TILE.PORTAL]: ["#241844", "#75f0ff", "#f87dff"],
+  [TILE.CARPET]: ["#7b2e3a", "#b84f58", "#53212b"],
+  [TILE.BED]: ["#4b6d88", "#8fb8d8", "#2d3e56"],
+  [TILE.TABLE]: ["#6c4528", "#9b6a3e", "#3f291c"],
 };
 
 resize();
@@ -770,6 +776,11 @@ function drawWorld() {
 }
 
 function drawTile(tile, sx, sy, tx, ty) {
+  if (isInteriorTileCoordinate(tx, ty)) {
+    drawInteriorTile(tile, sx, sy, tx, ty);
+    return;
+  }
+
   const colors = tilePalette[tile] || tilePalette[TILE.GRASS];
   ctx.fillStyle = colors[0];
   ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
@@ -885,11 +896,11 @@ function drawCharacter(entity, x, y, isNpc = false) {
   const travelX = Math.round(dirX * 2);
   const travelY = Math.round(dirY * 2);
   const px = x - 8 * scale;
-  const py = y - 14 * scale + bob;
+  const py = y - 10 * scale + bob;
   const primary = entity.primary || "#5cc8ff";
   const accent = entity.accent || "#ffd166";
 
-  drawEllipseShadow(x - 11, y + 8, 22, 5, 0.28);
+  drawEllipseShadow(x - 11, y + 7, 22, 5, 0.28);
 
   pixel(px, py, 5, 1, 6, 2, accent, scale);
   pixel(px, py, 4, 3, 8, 7, primary, scale);
@@ -932,8 +943,8 @@ function drawCharacter(entity, x, y, isNpc = false) {
   ctx.lineWidth = 3;
   ctx.strokeStyle = "rgba(8, 12, 18, 0.82)";
   ctx.fillStyle = isNpc ? "#ffd27a" : "#f7f3df";
-  ctx.strokeText(entity.name, x, y - 34);
-  ctx.fillText(entity.name, x, y - 34);
+  ctx.strokeText(entity.name, x, y - 28);
+  ctx.fillText(entity.name, x, y - 28);
 }
 
 function pixel(originX, originY, x, y, w, h, color, scale) {
@@ -947,6 +958,76 @@ function scatterPixels(sx, sy, tx, ty, color, count, size) {
     const x = (hash2(tx, ty, i) * (TILE_SIZE - size)) | 0;
     const y = (hash2(tx, ty, i + 20) * (TILE_SIZE - size)) | 0;
     ctx.fillRect(sx + x, sy + y, size, size);
+  }
+}
+
+function drawInteriorTile(tile, sx, sy, tx, ty) {
+  const colors = tilePalette[tile] || tilePalette[TILE.FLOOR];
+
+  if (tile === TILE.WALL) {
+    ctx.fillStyle = "#2b2630";
+    ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+    ctx.fillStyle = "#5d4b46";
+    ctx.fillRect(sx, sy + 8, TILE_SIZE, 24);
+    ctx.fillStyle = "#7b655b";
+    ctx.fillRect(sx, sy + 10, TILE_SIZE, 4);
+    ctx.fillStyle = "rgba(0, 0, 0, 0.24)";
+    ctx.fillRect(sx, sy + 28, TILE_SIZE, 4);
+    return;
+  }
+
+  ctx.fillStyle = tile === TILE.CARPET ? colors[0] : "#9d7954";
+  ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+
+  if (tile === TILE.FLOOR) {
+    ctx.fillStyle = "#b48b60";
+    ctx.fillRect(sx, sy + 2, TILE_SIZE, 2);
+    ctx.fillRect(sx, sy + 14, TILE_SIZE, 2);
+    ctx.fillRect(sx, sy + 26, TILE_SIZE, 2);
+    ctx.fillStyle = "rgba(73, 45, 26, 0.28)";
+    ctx.fillRect(sx + 2, sy, 2, TILE_SIZE);
+    return;
+  }
+
+  if (tile === TILE.DOOR) {
+    ctx.fillStyle = "#9d7954";
+    ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+    ctx.fillStyle = "#4e2d1b";
+    ctx.fillRect(sx + 7, sy + 4, 18, 25);
+    ctx.fillStyle = "#c89338";
+    ctx.fillRect(sx + 21, sy + 16, 3, 3);
+    return;
+  }
+
+  if (tile === TILE.CARPET) {
+    ctx.fillStyle = colors[1];
+    ctx.fillRect(sx + 3, sy + 3, TILE_SIZE - 6, TILE_SIZE - 6);
+    ctx.fillStyle = colors[2];
+    ctx.fillRect(sx + 7, sy + 7, TILE_SIZE - 14, TILE_SIZE - 14);
+    return;
+  }
+
+  if (tile === TILE.BED) {
+    drawEllipseShadow(sx + 4, sy + 23, 24, 6, 0.24);
+    ctx.fillStyle = "#5e3b28";
+    ctx.fillRect(sx + 4, sy + 6, 24, 22);
+    ctx.fillStyle = colors[1];
+    ctx.fillRect(sx + 6, sy + 8, 20, 17);
+    ctx.fillStyle = "#eef2df";
+    ctx.fillRect(sx + 7, sy + 9, 18, 6);
+    return;
+  }
+
+  if (tile === TILE.TABLE) {
+    drawEllipseShadow(sx + 4, sy + 22, 24, 7, 0.25);
+    ctx.fillStyle = colors[2];
+    ctx.fillRect(sx + 7, sy + 19, 4, 9);
+    ctx.fillRect(sx + 21, sy + 19, 4, 9);
+    ctx.fillStyle = colors[1];
+    ctx.fillRect(sx + 5, sy + 9, 22, 13);
+    ctx.fillStyle = "#d2a963";
+    ctx.fillRect(sx + 10, sy + 12, 5, 3);
+    return;
   }
 }
 
@@ -1336,6 +1417,10 @@ function getTile(tileX, tileY) {
 
 function getPortalAtTile(tileX, tileY) {
   return state.portals.get(`${tileX},${tileY}`) || null;
+}
+
+function isInteriorTileCoordinate(tileX, tileY) {
+  return tileX >= 9996 && tileY >= 9996 && tileY < 10014;
 }
 
 function chunkKey(cx, cy) {

@@ -15,43 +15,40 @@ const TILE = {
   SNOW: 11,
   LAVA: 12,
   PORTAL: 13,
+  CARPET: 14,
+  BED: 15,
+  TABLE: 16,
 };
 
-const BLOCKED_TILES = new Set([TILE.TREE, TILE.WATER, TILE.WALL, TILE.LAVA]);
+const BLOCKED_TILES = new Set([TILE.TREE, TILE.WATER, TILE.WALL, TILE.LAVA, TILE.BED, TILE.TABLE]);
 const PORTAL_RADIUS = 0.58;
+const DOOR_RADIUS = 0.52;
+const INTERIOR_BASE_X = 10000;
+const INTERIOR_BASE_Y = 10000;
+const INTERIOR_SPACING = 40;
+const INTERIOR_WIDTH = 12;
+const INTERIOR_HEIGHT = 10;
 
 // Hand-crafted buildings: {x, y, w, h, name}
 // Each building gets a south door at center-x of its south wall, and a north door.
 const BUILDINGS = [
-  // North Village (center ~0, -65)
-  { x:   4, y: -70, w: 14, h: 10, name: "Crossroads Inn" },
-  { x: -17, y: -70, w: 14, h: 10, name: "Travellers Hall" },
-  { x:   4, y: -60, w:  8, h:  7, name: "House" },
-  { x: -11, y: -60, w:  8, h:  7, name: "House" },
-  { x:  19, y: -60, w:  7, h:  6, name: "Cottage" },
-  { x: -24, y: -60, w:  7, h:  6, name: "Cottage" },
+  // Central village around the starting house.
+  { x: -5,  y: -12, w: 10, h:  8, name: "Home" },
+  { x: -21, y: -14, w: 10, h:  8, name: "Blue Roof House" },
+  { x:  12, y: -14, w: 10, h:  8, name: "Red Roof House" },
+  { x: -28, y:   5, w: 12, h:  8, name: "Market House" },
+  { x:  16, y:   5, w: 12, h:  8, name: "Garden House" },
+  { x: -6,  y:  15, w: 12, h:  9, name: "Town Hall" },
 
-  // East Town (center ~62, 0)
-  { x: 52, y: -16, w: 16, h: 10, name: "Market Hall" },
-  { x: 52, y:   5, w: 16, h: 10, name: "Blacksmith" },
-  { x: 68, y: -15, w:  8, h:  7, name: "House" },
-  { x: 68, y:   5, w:  8, h:  7, name: "House" },
-  { x: 79, y:  -6, w:  7, h:  6, name: "Cottage" },
-  { x: 79, y:  14, w:  7, h:  6, name: "Cottage" },
+  // River hamlet.
+  { x: -62, y:  34, w: 10, h:  7, name: "Fisher House" },
+  { x: -79, y:  48, w: 10, h:  7, name: "Bridge Cottage" },
+  { x: -48, y:  52, w: 11, h:  8, name: "Riverside Inn" },
 
-  // South Hamlet (center ~0, 65)
-  { x:   4, y: 56, w: 10, h:  8, name: "Farmhouse" },
-  { x: -13, y: 56, w: 10, h:  8, name: "Farmhouse" },
-  { x:   4, y: 66, w: 11, h:  9, name: "Barn" },
-  { x: -14, y: 66, w: 11, h:  9, name: "Barn" },
-  { x:  18, y: 58, w:  7, h:  6, name: "Cottage" },
-  { x: -25, y: 58, w:  7, h:  6, name: "Cottage" },
-
-  // West Ruins (center ~-65, 0)
-  { x: -76, y: -15, w: 18, h: 12, name: "Ancient Hall" },
-  { x: -57, y: -13, w:  9, h:  8, name: "Ruin" },
-  { x: -76, y:   5, w: 18, h: 12, name: "Ruin Hall" },
-  { x: -57, y:   5, w:  9, h:  8, name: "Ruin" },
+  // Woodland edge.
+  { x:  48, y: -48, w: 10, h:  7, name: "Forest Cottage" },
+  { x:  66, y: -39, w: 11, h:  8, name: "Ranger Lodge" },
+  { x:  39, y: -27, w:  9, h:  7, name: "Shrine House" },
 
   // Desert Oasis (center ~150, 118)
   { x: 142, y: 109, w: 12, h:  8, name: "Oasis House" },
@@ -71,10 +68,9 @@ const BUILDINGS = [
 
 // Village clearing zones: forest and water are suppressed inside these circles.
 const VILLAGES = [
-  { cx:   0, cy: -65, r: 26 }, // North Village
-  { cx:  62, cy:   0, r: 26 }, // East Town
-  { cx:   0, cy:  65, r: 24 }, // South Hamlet
-  { cx: -65, cy:   0, r: 26 }, // West Ruins
+  { cx:   0, cy:   4, r: 36 }, // Central Village
+  { cx: -62, cy:  45, r: 24 }, // River Hamlet
+  { cx:  58, cy: -39, r: 24 }, // Woodland Edge
   { cx: 150, cy: 118, r: 24 }, // Desert Oasis
   { cx: -150, cy: -120, r: 24 }, // Frost Village
   { cx: 145, cy: -130, r: 24 }, // Ember Camp
@@ -82,10 +78,13 @@ const VILLAGES = [
 
 // Village internal roads (horizontal or vertical line segments).
 const STREET_SEGMENTS = [
-  { x1: -17, y1: -62, x2: 17,  y2: -62 }, // North village cross-street
-  { x1:  52, y1: -17, x2: 52,  y2:  15 }, // East town cross-street
-  { x1: -14, y1:  65, x2: 15,  y2:  65 }, // South hamlet cross-street
-  { x1: -57, y1: -14, x2: -57, y2:  14 }, // West ruins cross-street
+  { x1: -24, y1:   0, x2: 24,  y2:   0 }, // Central village lane
+  { x1:   0, y1: -12, x2:  0,  y2:  25 }, // Central village lane
+  { x1: -28, y1:  13, x2: 28,  y2:  13 }, // Southern lane
+  { x1: -65, y1:  42, x2: -38, y2:  42 }, // River lane
+  { x1: -62, y1:  34, x2: -62, y2:  58 }, // River lane
+  { x1:  42, y1: -37, x2: 74,  y2: -37 }, // Woodland lane
+  { x1:  58, y1: -50, x2: 58,  y2: -25 }, // Woodland lane
   { x1: 135, y1: 118, x2: 169, y2: 118 }, // Oasis lane
   { x1: 150, y1: 103, x2: 150, y2: 132 }, // Oasis lane
   { x1: -166, y1: -120, x2: -132, y2: -120 }, // Frost lane
@@ -102,6 +101,16 @@ const PORTALS = [
   { id: "portal_hub_frost", name: "Hub Gate", x: -150, y: -120, targetX: 0, targetY: 0, color: "#8fe388" },
   { id: "portal_hub_ember", name: "Hub Gate", x: 145, y: -130, targetX: 0, targetY: 0, color: "#8fe388" },
 ];
+
+const BUILDING_INTERIORS = BUILDINGS.map((building, index) => ({
+  building,
+  x: INTERIOR_BASE_X + index * INTERIOR_SPACING,
+  y: INTERIOR_BASE_Y,
+  w: INTERIOR_WIDTH,
+  h: INTERIOR_HEIGHT
+}));
+
+const START_INTERIOR = BUILDING_INTERIORS[0];
 
 function getBuildingTile(x, y) {
   for (const b of BUILDINGS) {
@@ -127,6 +136,105 @@ function getBuildingTile(x, y) {
     }
 
     return TILE.FLOOR;
+  }
+
+  return null;
+}
+
+function getInteriorTile(x, y) {
+  for (const interior of BUILDING_INTERIORS) {
+    if (x < interior.x || x >= interior.x + interior.w || y < interior.y || y >= interior.y + interior.h) {
+      continue;
+    }
+
+    const localX = x - interior.x;
+    const localY = y - interior.y;
+    const doorX = Math.floor(interior.w / 2);
+
+    if (localX === doorX && localY === interior.h - 1) {
+      return TILE.DOOR;
+    }
+
+    if (localX === 0 || localX === interior.w - 1 || localY === 0 || localY === interior.h - 1) {
+      return TILE.WALL;
+    }
+
+    if (localX >= 2 && localX <= 4 && localY >= 2 && localY <= 3) {
+      return TILE.BED;
+    }
+
+    if (localX >= 7 && localX <= 8 && localY >= 4 && localY <= 5) {
+      return TILE.TABLE;
+    }
+
+    if (localX >= 4 && localX <= 7 && localY >= 5 && localY <= 7) {
+      return TILE.CARPET;
+    }
+
+    return TILE.FLOOR;
+  }
+
+  return null;
+}
+
+function isInteriorCoordinate(x, y) {
+  return getInteriorAt(Math.floor(x), Math.floor(y)) !== null;
+}
+
+function isInteriorDistrict(x, y) {
+  return (
+    x >= INTERIOR_BASE_X - 4 &&
+    x < INTERIOR_BASE_X + BUILDING_INTERIORS.length * INTERIOR_SPACING + INTERIOR_WIDTH + 4 &&
+    y >= INTERIOR_BASE_Y - 4 &&
+    y < INTERIOR_BASE_Y + INTERIOR_HEIGHT + 4
+  );
+}
+
+function getInteriorAt(x, y) {
+  return BUILDING_INTERIORS.find((interior) => (
+    x >= interior.x &&
+    x < interior.x + interior.w &&
+    y >= interior.y &&
+    y < interior.y + interior.h
+  )) || null;
+}
+
+function getBuildingDoor(building) {
+  return {
+    x: building.x + Math.floor(building.w / 2),
+    y: building.y + building.h - 1
+  };
+}
+
+function getInteriorDoor(interior) {
+  return {
+    x: interior.x + Math.floor(interior.w / 2),
+    y: interior.y + interior.h - 1
+  };
+}
+
+function getDoorTransitionAt(x, y) {
+  for (const interior of BUILDING_INTERIORS) {
+    const door = getInteriorDoor(interior);
+    if (Math.hypot(x - door.x, y - door.y) <= DOOR_RADIUS) {
+      const exit = getBuildingDoor(interior.building);
+      return {
+        type: "door",
+        name: interior.building.name,
+        x: exit.x,
+        y: exit.y + 1.15
+      };
+    }
+
+    const entrance = getBuildingDoor(interior.building);
+    if (Math.hypot(x - entrance.x, y - entrance.y) <= DOOR_RADIUS) {
+      return {
+        type: "door",
+        name: interior.building.name,
+        x: door.x,
+        y: door.y - 1.15
+      };
+    }
   }
 
   return null;
@@ -223,6 +331,15 @@ function getBiome(x, y) {
 }
 
 function generateTile(x, y) {
+  const interiorTile = getInteriorTile(x, y);
+  if (interiorTile !== null) {
+    return interiorTile;
+  }
+
+  if (isInteriorDistrict(x, y)) {
+    return TILE.WALL;
+  }
+
   const portal = getPortalAtTile(x, y);
   if (portal) {
     return TILE.PORTAL;
@@ -370,10 +487,10 @@ function isBlockedCircle(x, y, radius = 0.28) {
 
 function spawnPoint(index = 0) {
   const angle = index * 2.399963229728653;
-  const radius = 1.6 + (index % 6) * 0.55;
+  const radius = (index % 4) * 0.2;
   return {
-    x: Math.cos(angle) * radius,
-    y: Math.sin(angle) * radius
+    x: START_INTERIOR.x + Math.floor(START_INTERIOR.w / 2) + Math.cos(angle) * radius,
+    y: START_INTERIOR.y + 5 + Math.sin(angle) * radius
   };
 }
 
@@ -440,8 +557,10 @@ module.exports = {
   generateChunk,
   generateTile,
   getBiome,
+  getDoorTransitionAt,
   getPortalAt,
   hash2,
+  isInteriorCoordinate,
   isBlocked,
   isBlockedCircle,
   spawnPoint
