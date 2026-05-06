@@ -33,6 +33,8 @@ const MAX_CHAT_LENGTH = 180;
 const CHAT_HISTORY_LIMIT = 60;
 const CHAT_COOLDOWN_MS = 800;
 const CHAT_VIEW_MARGIN_TILES = 4;
+/** Extra tiles beyond snapshot view union — mob AI + roam so critters/off-screen camps still simulate near players */
+const MOB_ACTIVITY_MARGIN_TILES = 52;
 const PORTAL_COOLDOWN_MS = 1400;
 const DOOR_COOLDOWN_MS = 600;
 const HOME_COOLDOWN_MS = 2000;
@@ -299,14 +301,40 @@ server.listen(PORT, HOST, () => {
   console.log(`Balathor server listening on ${HOST}:${PORT}`);
 });
 
-setInterval(simulate, 1000 / TICK_RATE).unref();
+/** Single-threaded clock: never overlap simulate(); avoids setInterval piling callbacks when ticks overrun. */
+let simulateTimer = null;
+function queueSimulate() {
+  const elapsed = simulateCore();
+  const delay = Math.max(0, 1000 / TICK_RATE - elapsed);
+  simulateTimer = setTimeout(queueSimulate, delay);
+  if (typeof simulateTimer.unref === "function") {
+    simulateTimer.unref();
+  }
+}
+
+function simulateCore() {
+  const t0 = Date.now();
+  simulate();
+  return Date.now() - t0;
+}
+
+queueSimulate();
+
+function clearSimulateTimer() {
+  if (simulateTimer !== null && simulateTimer !== undefined) {
+    clearTimeout(simulateTimer);
+    simulateTimer = null;
+  }
+}
 
 process.on("SIGTERM", () => {
+  clearSimulateTimer();
   saveAllActiveCharacters();
   process.exit(0);
 });
 
 process.on("SIGINT", () => {
+  clearSimulateTimer();
   saveAllActiveCharacters();
   process.exit(0);
 });
@@ -469,9 +497,8 @@ function getMeasuredSimHz() {
   return avgMs > 0 ? 1000 / avgMs : null;
 }
 
-/** Union of all logged-in players' snapshot view rectangles — used to tick NPC AI only near anyone who could see them. */
-function computeNpcActivationBounds() {
-  const margin = CHAT_VIEW_MARGIN_TILES;
+/** Union of all logged-in players' view rectangles inflated by tileMargin on each edge (snapshot / AI culling). */
+function computePlayerViewUnionBounds(tileMargin) {
   let minX = Infinity;
   let maxX = -Infinity;
   let minY = Infinity;
@@ -483,15 +510,40 @@ function computeNpcActivationBounds() {
     }
     any = true;
     const view = client.view || defaultViewForPlayer(client.player);
-    minX = Math.min(minX, view.x - view.halfW - margin);
-    maxX = Math.max(maxX, view.x + view.halfW + margin);
-    minY = Math.min(minY, view.y - view.halfH - margin);
-    maxY = Math.max(maxY, view.y + view.halfH + margin);
+    minX = Math.min(minX, view.x - view.halfW - tileMargin);
+    maxX = Math.max(maxX, view.x + view.halfW + tileMargin);
+    minY = Math.min(minY, view.y - view.halfH - tileMargin);
+    maxY = Math.max(maxY, view.y + view.halfH + tileMargin);
   }
   if (!any) {
     return null;
   }
   return { minX, maxX, minY, maxY };
+}
+
+function computeNpcActivationBounds() {
+  return computePlayerViewUnionBounds(CHAT_VIEW_MARGIN_TILES);
+}
+
+function mobShouldSimulate(mob, activityBounds) {
+  if (!activityBounds) {
+    return false;
+  }
+  const pad = (mob.roamRadius || 5) + 4;
+  const hx0 = mob.homeX - pad;
+  const hx1 = mob.homeX + pad;
+  const hy0 = mob.homeY - pad;
+  const hy1 = mob.homeY + pad;
+  const homeOverlaps = !(hx1 < activityBounds.minX || hx0 > activityBounds.maxX || hy1 < activityBounds.minY || hy0 > activityBounds.maxY);
+  if (homeOverlaps) {
+    return true;
+  }
+  return (
+    mob.x >= activityBounds.minX - pad &&
+    mob.x <= activityBounds.maxX + pad &&
+    mob.y >= activityBounds.minY - pad &&
+    mob.y <= activityBounds.maxY + pad
+  );
 }
 
 function simulate() {
@@ -535,7 +587,7 @@ function simulate() {
   }
 
   updateNpcs(dt, pushChat, computeNpcActivationBounds());
-  updateMobs(dt);
+  updateMobs(dt, computePlayerViewUnionBounds(CHAT_VIEW_MARGIN_TILES + MOB_ACTIVITY_MARGIN_TILES));
 
   if (tick % Math.round(TICK_RATE / SNAPSHOT_RATE) === 0) {
     broadcastSnapshot();
@@ -945,7 +997,6 @@ function handleAttack(client, message = {}) {
   }
 
   broadcastCombat(event);
-  broadcastSnapshot();
 }
 
 function handleHomeTeleport(client) {
@@ -1472,6 +1523,7 @@ function snapshotForEachCellInWorldRect(minX, maxX, minY, maxY, cellSize, visito
 function broadcastSnapshot() {
   const margin = CHAT_VIEW_MARGIN_TILES;
   const cellSize = CHUNK_SIZE;
+  const mobCullBounds = computePlayerViewUnionBounds(CHAT_VIEW_MARGIN_TILES);
 
   // Helper: is a point inside a client's view (with optional margin)
   function isInView(view, x, y) {
@@ -1485,10 +1537,16 @@ function broadcastSnapshot() {
     );
   }
 
-  // Build a compact representation for a player entity
+  const playerSnapCache = new Map();
+
+  // Build a compact representation for a player entity (cached per snapshot pass)
   function playerSnapshot(p) {
+    let snap = playerSnapCache.get(p.id);
+    if (snap) {
+      return snap;
+    }
     const appearance = getPlayerAppearance(p);
-    return {
+    snap = {
       id: p.id,
       name: p.name,
       classId: p.classId,
@@ -1515,10 +1573,12 @@ function broadcastSnapshot() {
       moving: p.moving,
       isMod: p.isMod || false
     };
+    playerSnapCache.set(p.id, snap);
+    return snap;
   }
 
   const npcsAll = getNpcSnapshot();
-  const mobsAll = getMobSnapshot();
+  const mobsAll = getMobSnapshot(mobCullBounds);
 
   const mobBuckets = new Map();
   for (const m of mobsAll) {
@@ -2175,7 +2235,7 @@ function findOpenMobHome(x, y, fallbackX, fallbackY) {
   return { x: fallbackX, y: fallbackY };
 }
 
-function updateMobs(dt) {
+function updateMobs(dt, activityBounds) {
   const now = Date.now();
 
   for (const mob of mobs) {
@@ -2186,6 +2246,10 @@ function updateMobs(dt) {
         mob.x = mob.homeX;
         mob.y = mob.homeY;
       }
+      continue;
+    }
+
+    if (!mobShouldSimulate(mob, activityBounds)) {
       continue;
     }
 
@@ -2297,7 +2361,6 @@ function attackPlayerWithMob(mob, player, now) {
   }
 
   broadcastCombat(event);
-  broadcastSnapshot();
 }
 
 function respawnPlayer(player) {
@@ -2308,10 +2371,25 @@ function respawnPlayer(player) {
   player.moving = false;
 }
 
-function getMobSnapshot() {
-  return mobs
-    .filter((mob) => !mob.dead)
-    .map((mob) => ({
+function getMobSnapshot(viewBounds) {
+  if (!viewBounds) {
+    return [];
+  }
+  const out = [];
+  for (const mob of mobs) {
+    if (mob.dead) {
+      continue;
+    }
+    if (
+      viewBounds &&
+      (mob.x < viewBounds.minX ||
+        mob.x > viewBounds.maxX ||
+        mob.y < viewBounds.minY ||
+        mob.y > viewBounds.maxY)
+    ) {
+      continue;
+    }
+    out.push({
       id: mob.id,
       name: mob.name,
       primary: mob.primary,
@@ -2324,8 +2402,10 @@ function getMobSnapshot() {
       isCritter: Boolean(mob.isCritter),
       x: Number(mob.x.toFixed(3)),
       y: Number(mob.y.toFixed(3)),
-      facing: Number(mob.facing.toFixed(3)),
-    }));
+      facing: Number(mob.facing.toFixed(3))
+    });
+  }
+  return out;
 }
 
 function send(client, message) {

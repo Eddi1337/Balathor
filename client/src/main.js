@@ -655,6 +655,19 @@ function applyMobSnapshot(snapshotMobs) {
 }
 
 function applyCombatEvent(event) {
+  if (event.hit && event.targetId && Number.isFinite(event.targetHp)) {
+    if (event.targetKind === "player") {
+      const player = state.players.get(event.targetId);
+      if (player) {
+        player.hp = event.targetHp;
+      }
+    } else if (event.targetKind === "mob") {
+      const mob = state.mobs.get(event.targetId);
+      if (mob) {
+        mob.hp = event.targetHp;
+      }
+    }
+  }
   state.combatFx.push({
     ...event,
     createdAt: performance.now(),
