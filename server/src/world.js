@@ -30,62 +30,42 @@ const INTERIOR_WIDTH = 12;
 const INTERIOR_HEIGHT = 10;
 const STARTING_AREA = { x: 0, y: 4, radius: 34 };
 
-// Hand-crafted buildings: {x, y, w, h, name}
-// Each building gets a south door at center-x of its south wall, and a north door.
+// Hand-crafted buildings: starting town + portal destinations only.
 const BUILDINGS = [
-  // Central village around the starting house.
-  { x: -5,  y: -12, w: 10, h:  8, name: "Home" },
-  { x: -21, y: -14, w: 10, h:  8, name: "Blue Roof House" },
-  { x:  12, y: -14, w: 10, h:  8, name: "Red Roof House" },
-  { x: -28, y:   5, w: 12, h:  8, name: "Market House" },
-  { x:  16, y:   5, w: 12, h:  8, name: "Garden House" },
-  { x: -6,  y:  15, w: 12, h:  9, name: "Town Hall" },
-
-  // River hamlet.
-  { x: -62, y:  34, w: 10, h:  7, name: "Fisher House" },
-  { x: -79, y:  48, w: 10, h:  7, name: "Bridge Cottage" },
-  { x: -48, y:  52, w: 11, h:  8, name: "Riverside Inn" },
-
-  // Woodland edge.
-  { x:  48, y: -48, w: 10, h:  7, name: "Forest Cottage" },
-  { x:  66, y: -39, w: 11, h:  8, name: "Ranger Lodge" },
-  { x:  39, y: -27, w:  9, h:  7, name: "Shrine House" },
-
-  // Desert Oasis (center ~150, 118)
-  { x: 142, y: 109, w: 12, h:  8, name: "Oasis House" },
-  { x: 159, y: 110, w: 10, h:  7, name: "Sun House" },
-  { x: 148, y: 122, w:  9, h:  7, name: "Clay House" },
-
-  // Frost Village (center ~-150, -120)
-  { x: -158, y: -128, w: 12, h:  8, name: "Frost Lodge" },
-  { x: -141, y: -127, w: 10, h:  7, name: "Snow House" },
-  { x: -153, y: -116, w:  9, h:  7, name: "Pine Cabin" },
-
-  // Ember Camp (center ~145, -130)
-  { x: 137, y: -138, w: 12, h:  8, name: "Ember Hall" },
-  { x: 154, y: -137, w: 10, h:  7, name: "Ash House" },
-  { x: 143, y: -126, w:  9, h:  7, name: "Forge Hut" },
+  // Central village
+  { x:  -5, y: -12, w: 10, h: 8, name: "Home" },
+  { x: -21, y: -14, w: 10, h: 8, name: "Blue Roof House" },
+  { x:  12, y: -14, w: 10, h: 8, name: "Red Roof House" },
+  { x: -28, y:   5, w: 12, h: 8, name: "Market House" },
+  { x:  16, y:   5, w: 12, h: 8, name: "Garden House" },
+  { x:  -6, y:  15, w: 12, h: 9, name: "Town Hall" },
+  // Desert Oasis (portal destination)
+  { x: 142, y: 109, w: 12, h: 8, name: "Oasis House" },
+  { x: 159, y: 110, w: 10, h: 7, name: "Sun House" },
+  { x: 148, y: 122, w:  9, h: 7, name: "Clay House" },
+  // Frost Village (portal destination)
+  { x: -158, y: -128, w: 12, h: 8, name: "Frost Lodge" },
+  { x: -141, y: -127, w: 10, h: 7, name: "Snow House" },
+  { x: -153, y: -116, w:  9, h: 7, name: "Pine Cabin" },
+  // Ember Camp (portal destination)
+  { x: 137, y: -138, w: 12, h: 8, name: "Ember Hall" },
+  { x: 154, y: -137, w: 10, h: 7, name: "Ash House" },
+  { x: 143, y: -126, w:  9, h: 7, name: "Forge Hut" },
 ];
 
-// Village clearing zones: forest and water are suppressed inside these circles.
+// Fixed village clearing zones — only starting town + portal destinations.
 const VILLAGES = [
-  { cx:   0, cy:   4, r: 36 }, // Central Village
-  { cx: -62, cy:  45, r: 24 }, // River Hamlet
-  { cx:  58, cy: -39, r: 24 }, // Woodland Edge
+  { cx:   0, cy:   4, r: 38 }, // Central Village (slightly expanded)
   { cx: 150, cy: 118, r: 24 }, // Desert Oasis
   { cx: -150, cy: -120, r: 24 }, // Frost Village
   { cx: 145, cy: -130, r: 24 }, // Ember Camp
 ];
 
-// Village internal roads (horizontal or vertical line segments).
+// Road segments for fixed villages only.
 const STREET_SEGMENTS = [
-  { x1: -24, y1:   0, x2: 24,  y2:   0 }, // Central village lane
-  { x1:   0, y1: -12, x2:  0,  y2:  25 }, // Central village lane
-  { x1: -28, y1:  13, x2: 28,  y2:  13 }, // Southern lane
-  { x1: -65, y1:  42, x2: -38, y2:  42 }, // River lane
-  { x1: -62, y1:  34, x2: -62, y2:  58 }, // River lane
-  { x1:  42, y1: -37, x2: 74,  y2: -37 }, // Woodland lane
-  { x1:  58, y1: -50, x2: 58,  y2: -25 }, // Woodland lane
+  { x1: -26, y1:   0, x2: 26,  y2:   0 }, // Central east-west lane
+  { x1:   0, y1: -14, x2:  0,  y2:  26 }, // Central north-south lane
+  { x1: -30, y1:  13, x2: 30,  y2:  13 }, // Southern lane past Town Hall
   { x1: 135, y1: 118, x2: 169, y2: 118 }, // Oasis lane
   { x1: 150, y1: 103, x2: 150, y2: 132 }, // Oasis lane
   { x1: -166, y1: -120, x2: -132, y2: -120 }, // Frost lane
@@ -112,6 +92,115 @@ const BUILDING_INTERIORS = BUILDINGS.map((building, index) => ({
 }));
 
 const START_INTERIOR = BUILDING_INTERIORS[0];
+
+// ---------------------------------------------------------------------------
+// Procedural settlement system
+// ---------------------------------------------------------------------------
+const SETTLE_GRID = 80;
+
+// Fixed relative building positions within a procedural settlement.
+const SETTLE_SLOTS = [
+  { dx: -19, dy: -13, w: 9, h: 7 },
+  { dx:   7, dy: -13, w: 9, h: 7 },
+  { dx: -20, dy:   5, w: 10, h: 7 },
+  { dx:   7, dy:   5, w: 10, h: 7 },
+  { dx:  -8, dy:  -4, w: 8,  h: 6 },
+];
+
+const SETTLE_NAMES = {
+  forest: ["Forest Hut", "Woodland Rest", "Ranger Shelter", "Forest Cabin", "Woodsman Hut"],
+  meadow: ["Meadow Hut", "Field Cottage", "Farm Rest", "Pasture Shelter", "Meadow Cabin"],
+  desert: ["Sun Hut", "Oasis Rest", "Sand Cabin", "Clay Shelter", "Desert Hut"],
+  frost:  ["Frost Hut", "Snow Cabin", "Pine Shelter", "Frost Cabin", "Ice Hut"],
+  ember:  ["Ember Hut", "Ash Cabin", "Forge Shelter", "Ember Cabin", "Cinder Hut"],
+};
+
+function getSettlementAt(gx, gy) {
+  if (hash2(gx * 7919, gy * 6271, 9991) > 0.18) return null;
+
+  const cx = gx * SETTLE_GRID + 10 + Math.floor(hash2(gx, gy, 201) * (SETTLE_GRID - 20));
+  const cy = gy * SETTLE_GRID + 10 + Math.floor(hash2(gx, gy, 202) * (SETTLE_GRID - 20));
+
+  // Stay clear of starting town and portal destinations.
+  if (Math.hypot(cx, cy) < 82) return null;
+  if (Math.hypot(cx - 150, cy - 118) < 46) return null;
+  if (Math.hypot(cx + 150, cy + 120) < 46) return null;
+  if (Math.hypot(cx - 145, cy + 130) < 46) return null;
+
+  const numSlots = 2 + Math.floor(hash2(gx, gy, 203) * 4);
+  const clearRadius = 20 + Math.floor(hash2(gx, gy, 204) * 12);
+
+  return { cx, cy, gx, gy, numSlots, clearRadius };
+}
+
+function getSettlementBuildingList(s) {
+  const biome = getBiome(s.cx, s.cy);
+  const names = SETTLE_NAMES[biome] || SETTLE_NAMES.forest;
+  const count = Math.min(s.numSlots, SETTLE_SLOTS.length);
+  const result = [];
+  for (let i = 0; i < count; i++) {
+    const slot = SETTLE_SLOTS[i];
+    result.push({
+      x: s.cx + slot.dx,
+      y: s.cy + slot.dy,
+      w: slot.w,
+      h: slot.h,
+      name: names[i % names.length],
+    });
+  }
+  return result;
+}
+
+function getNearbySettlements(x, y) {
+  const gx = Math.floor(x / SETTLE_GRID);
+  const gy = Math.floor(y / SETTLE_GRID);
+  const result = [];
+  for (let dg = -1; dg <= 1; dg++) {
+    for (let dh = -1; dh <= 1; dh++) {
+      const s = getSettlementAt(gx + dg, gy + dh);
+      if (s) result.push(s);
+    }
+  }
+  return result;
+}
+
+function getProceduralSettlementTile(x, y) {
+  for (const s of getNearbySettlements(x, y)) {
+    const dist = Math.hypot(x - s.cx, y - s.cy);
+    if (dist > s.clearRadius + 5) continue;
+
+    // Buildings take priority.
+    for (const b of getSettlementBuildingList(s)) {
+      if (x < b.x || x >= b.x + b.w || y < b.y || y >= b.y + b.h) continue;
+      const doorX = b.x + Math.floor(b.w / 2);
+      const southWall = b.y + b.h - 1;
+      const northWall = b.y;
+      if (x === doorX && (y === southWall || y === northWall)) return TILE.DOOR;
+      if (x === b.x || x === b.x + b.w - 1 || y === northWall || y === southWall) return TILE.WALL;
+      return TILE.FLOOR;
+    }
+
+    // Cross roads through settlement center.
+    const dx = Math.abs(x - s.cx);
+    const dy = Math.abs(y - s.cy);
+    if ((dy <= 1 && dx <= s.clearRadius) || (dx <= 1 && dy <= s.clearRadius)) {
+      return TILE.PATH;
+    }
+
+    // Clearing ground.
+    if (dist <= s.clearRadius) {
+      const biome = getBiome(x, y);
+      if (biome === "desert") return hash2(x, y, 77) > 0.93 ? TILE.STONE : TILE.SAND;
+      if (biome === "frost")  return hash2(x, y, 77) > 0.92 ? TILE.STONE : TILE.SNOW;
+      if (biome === "ember")  return hash2(x, y, 77) > 0.92 ? TILE.STONE : TILE.DARK_GRASS;
+      const r = hash2(x, y, 77);
+      return r > 0.86 ? TILE.FLOWERS : r > 0.70 ? TILE.DARK_GRASS : TILE.GRASS;
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 
 function getBuildingTile(x, y) {
   for (const b of BUILDINGS) {
@@ -354,7 +443,7 @@ function generateTile(x, y) {
     return TILE.PORTAL;
   }
 
-  // Buildings override everything.
+  // Fixed buildings override everything.
   const buildingTile = getBuildingTile(x, y);
   if (buildingTile !== null) {
     return buildingTile;
@@ -369,7 +458,7 @@ function generateTile(x, y) {
     return TILE.STONE;
   }
 
-  // Main cross-paths, extended to reach the four villages.
+  // Main cross-paths, extended to reach the portal villages.
   if ((ax <= 2 && ay <= 90) || (ay <= 2 && ax <= 90)) {
     return TILE.PATH;
   }
@@ -379,12 +468,21 @@ function generateTile(x, y) {
     return TILE.PATH;
   }
 
-  // Central grass clearing.
-  if (dist <= 16) {
-    return hash2(x, y, 44) > 0.9 ? TILE.FLOWERS : TILE.GRASS;
+  // Flower borders alongside main roads within the starting town.
+  if (dist <= 36) {
+    if (ax >= 3 && ax <= 5 && ay >= 7 && ay <= 28) return TILE.FLOWERS;
+    if (ay >= 3 && ay <= 5 && ax >= 9 && ax <= 28) return TILE.FLOWERS;
   }
 
-  // Village clearings: suppress forest and water, keep it open.
+  // Central grass clearing — richer variety of ground cover.
+  if (dist <= 16) {
+    const r = hash2(x, y, 44);
+    if (r > 0.82) return TILE.FLOWERS;
+    if (r > 0.60) return TILE.DARK_GRASS;
+    return TILE.GRASS;
+  }
+
+  // Village clearings: suppress forest and water.
   if (isInVillage(x, y)) {
     const biome = getBiome(x, y);
     if (biome === "desert") {
@@ -396,7 +494,16 @@ function generateTile(x, y) {
     if (biome === "ember") {
       return hash2(x, y, 55) > 0.94 ? TILE.STONE : TILE.DARK_GRASS;
     }
-    return hash2(x, y, 55) > 0.94 ? TILE.FLOWERS : TILE.GRASS;
+    const r = hash2(x, y, 55);
+    if (r > 0.84) return TILE.FLOWERS;
+    if (r > 0.66) return TILE.DARK_GRASS;
+    return TILE.GRASS;
+  }
+
+  // Procedural settlements scattered across the world.
+  const settleTile = getProceduralSettlementTile(x, y);
+  if (settleTile !== null) {
+    return settleTile;
   }
 
   // Outer world noise generation.
@@ -533,20 +640,26 @@ function getBuildingsInChunk(cx, cy) {
   const endX = startX + CHUNK_SIZE;
   const endY = startY + CHUNK_SIZE;
 
-  return BUILDINGS
-    .filter((building) => (
-      building.x < endX &&
-      building.x + building.w > startX &&
-      building.y < endY &&
-      building.y + building.h > startY
-    ))
-    .map((building) => ({
-      x: building.x,
-      y: building.y,
-      w: building.w,
-      h: building.h,
-      name: building.name
-    }));
+  const result = BUILDINGS
+    .filter((b) => b.x < endX && b.x + b.w > startX && b.y < endY && b.y + b.h > startY)
+    .map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h, name: b.name }));
+
+  const seen = new Set(result.map((b) => `${b.x},${b.y}`));
+  const chunkMidX = startX + CHUNK_SIZE / 2;
+  const chunkMidY = startY + CHUNK_SIZE / 2;
+
+  for (const s of getNearbySettlements(chunkMidX, chunkMidY)) {
+    for (const b of getSettlementBuildingList(s)) {
+      if (b.x >= endX || b.x + b.w <= startX || b.y >= endY || b.y + b.h <= startY) continue;
+      const key = `${b.x},${b.y}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push(b);
+      }
+    }
+  }
+
+  return result;
 }
 
 function generatePortalPreview(centerX, centerY, radius = 2) {

@@ -1415,16 +1415,36 @@ function drawFlowerPatch(sx, sy, tx, ty) {
 }
 
 function drawPath(sx, sy, tx, ty, colors) {
+  // Mortar base
   ctx.fillStyle = colors[0];
   ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
-  ctx.fillStyle = colors[1];
-  ctx.fillRect(sx, sy + 5, TILE_SIZE, 22);
-  ctx.fillStyle = colors[2];
-  ctx.fillRect(sx, sy + 5, TILE_SIZE, 2);
-  ctx.fillRect(sx, sy + 25, TILE_SIZE, 2);
-  ctx.fillStyle = "rgba(255, 240, 180, 0.18)";
-  ctx.fillRect(sx + 5, sy + 11, 10, 2);
-  ctx.fillRect(sx + 18, sy + 19, 8, 2);
+
+  // Staggered cobblestone blocks (3 per row, 2px mortar gaps)
+  const sW = 10; const sH = 7; const gap = 2; const step = sW + gap;
+  for (let row = 0; row < 4; row++) {
+    const by = sy + 2 + row * (sH + gap);
+    if (by + sH > sy + TILE_SIZE) break;
+    const shift = row % 2 === 0 ? 0 : 6;
+    for (let col = -1; col < 4; col++) {
+      const bx = sx + col * step + shift;
+      const x1 = Math.max(bx, sx);
+      const x2 = Math.min(bx + sW, sx + TILE_SIZE);
+      if (x2 <= x1) continue;
+      ctx.fillStyle = hash2(tx + col * 7, ty + row * 3, 701) > 0.5 ? colors[1] : blend(colors[0], colors[1], 0.65);
+      ctx.fillRect(x1, by, x2 - x1, sH);
+      ctx.fillStyle = "rgba(255,255,255,0.10)";
+      ctx.fillRect(x1, by, x2 - x1, 1);
+      ctx.fillStyle = "rgba(0,0,0,0.08)";
+      ctx.fillRect(x1, by + sH - 1, x2 - x1, 1);
+    }
+  }
+
+  // Curb edges where path meets soft ground
+  const soft = new Set([TILE.GRASS, TILE.DARK_GRASS, TILE.FLOWERS, TILE.SAND, TILE.SNOW]);
+  if (soft.has(getTile(tx, ty - 1))) { ctx.fillStyle = colors[2]; ctx.fillRect(sx, sy, TILE_SIZE, 2); }
+  if (soft.has(getTile(tx, ty + 1))) { ctx.fillStyle = colors[2]; ctx.fillRect(sx, sy + TILE_SIZE - 2, TILE_SIZE, 2); }
+  if (soft.has(getTile(tx - 1, ty))) { ctx.fillStyle = colors[2]; ctx.fillRect(sx, sy, 2, TILE_SIZE); }
+  if (soft.has(getTile(tx + 1, ty))) { ctx.fillStyle = colors[2]; ctx.fillRect(sx + TILE_SIZE - 2, sy, 2, TILE_SIZE); }
 }
 
 function drawWater(sx, sy, tx, ty, colors) {
@@ -1515,8 +1535,43 @@ function drawWorldAssets(minTileX, maxTileX, minTileY, maxTileY) {
         drawCuratedRock(sx, sy, tx, ty, tile === TILE.SAND);
       } else if (tile === TILE.PATH && hash2(tx, ty, 503) > 0.985) {
         drawCuratedSign(sx, sy);
+      } else if (tile === TILE.FLOWERS) {
+        // Potted plants / decorative shrubs on flower strips alongside roads
+        const nearPath = getTile(tx - 1, ty) === TILE.PATH || getTile(tx + 1, ty) === TILE.PATH ||
+                         getTile(tx, ty - 1) === TILE.PATH || getTile(tx, ty + 1) === TILE.PATH;
+        if (nearPath && hash2(tx, ty, 504) > 0.55) {
+          drawTownPlanter(sx, sy, tx, ty);
+        }
       }
     }
+  }
+}
+
+function drawTownPlanter(sx, sy, tx, ty) {
+  const r = hash2(tx, ty, 550);
+  const x = sx + 8 + ((r * 10) | 0);
+  const y = sy + 14 + ((hash2(tx, ty, 551) * 6) | 0);
+
+  // Planter pot
+  ctx.fillStyle = "#7a4a22";
+  ctx.fillRect(x, y + 7, 14, 8);
+  ctx.fillStyle = "#9c6030";
+  ctx.fillRect(x + 1, y + 7, 12, 2);
+
+  // Soil
+  ctx.fillStyle = "#3a2010";
+  ctx.fillRect(x + 1, y + 6, 12, 3);
+
+  // Plant stems and petals
+  const colors = r > 0.66 ? ["#e86870", "#c83050"] : r > 0.33 ? ["#f8c840", "#d0a020"] : ["#78c8f0", "#4898d0"];
+  for (let i = 0; i < 3; i++) {
+    const fx = x + 2 + i * 4;
+    ctx.fillStyle = "#3a6030";
+    ctx.fillRect(fx, y + 1, 2, 7);
+    ctx.fillStyle = colors[0];
+    ctx.fillRect(fx - 1, y - 2, 4, 4);
+    ctx.fillStyle = colors[1];
+    ctx.fillRect(fx, y - 1, 2, 2);
   }
 }
 
