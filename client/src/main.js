@@ -21,6 +21,12 @@ const statSpeed = document.querySelector("#statSpeed");
 const statStrength = document.querySelector("#statStrength");
 const statArmour = document.querySelector("#statArmour");
 const statHealth = document.querySelector("#statHealth");
+const inventoryPanel = document.querySelector("#inventoryPanel");
+const inventoryToggle = document.querySelector("#inventoryToggle");
+const inventorySlots = document.querySelector("#inventorySlots");
+const equippedWeapon = document.querySelector("#equippedWeapon");
+const equippedArmor = document.querySelector("#equippedArmor");
+const interactButton = document.querySelector("#interactButton");
 const chat = document.querySelector("#chat");
 const chatMessages = document.querySelector("#chatMessages");
 const chatForm = document.querySelector("#chatForm");
@@ -78,6 +84,10 @@ const state = {
   players: new Map(),
   npcs: new Map(),
   mobs: new Map(),
+  chests: [],
+  groundItems: [],
+  inventory: Array(10).fill(null),
+  equipment: { weapon: null, armor: null },
   combatFx: [],
   chunks: new Map(),
   portals: new Map(),
@@ -90,6 +100,7 @@ const state = {
   activeServerUrl: "",
   menuOpen: false,
   chatMinimized: false,
+  inventoryMinimized: false,
   lastFrame: performance.now()
 };
 
@@ -220,6 +231,7 @@ function handleServerMessage(message) {
     bootPanel.classList.add("hidden");
     hud.classList.remove("hidden");
     progression.classList.remove("hidden");
+    inventoryPanel.classList.remove("hidden");
     chat.classList.remove("hidden");
     mobileControls.classList.remove("hidden");
     state.camera.x = message.spawn.x * TILE_SIZE;
@@ -266,6 +278,10 @@ function handleServerMessage(message) {
     applySnapshot(message.players);
     applyNpcSnapshot(message.npcs || []);
     applyMobSnapshot(message.mobs || []);
+    state.chests = message.chests || [];
+    state.groundItems = message.groundItems || [];
+    updateSelfInventory();
+    renderInventory();
     return;
   }
 
@@ -315,6 +331,10 @@ function handleServerMessage(message) {
         name: "Realm",
         text: `Added a point to ${message.stat}`
       });
+    } else if (message.message === "inventory_full") {
+      appendChat({ kind: "system", name: "Realm", text: "Inventory is full" });
+    } else if (message.itemName) {
+      appendChat({ kind: "system", name: "Realm", text: `${message.itemName}` });
     }
   }
 }
@@ -355,6 +375,17 @@ function applySnapshot(players) {
       state.players.delete(id);
     }
   }
+}
+
+function updateSelfInventory() {
+  const self = state.players.get(state.selfId);
+  if (!self) {
+    state.inventory = Array(10).fill(null);
+    state.equipment = { weapon: null, armor: null };
+    return;
+  }
+  state.inventory = Array.isArray(self.inventory) ? self.inventory : Array(10).fill(null);
+  state.equipment = self.equipment || { weapon: null, armor: null };
 }
 
 function applyNpcSnapshot(snapshotNpcs) {
@@ -569,6 +600,30 @@ function wireUi() {
     });
   });
 
+  inventoryToggle.addEventListener("click", () => {
+    setInventoryMinimized(!state.inventoryMinimized);
+  });
+
+  interactButton.addEventListener("click", () => {
+    sendInteract();
+  });
+
+  inventorySlots.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-inventory-action]");
+    if (!button) {
+      return;
+    }
+    const slot = Number(button.dataset.slot);
+    const action = button.dataset.inventoryAction;
+    if (action === "equip") {
+      send({ type: "equipItem", slot });
+    } else if (action === "use") {
+      send({ type: "useItem", slot });
+    } else if (action === "drop") {
+      send({ type: "dropItem", slot });
+    }
+  });
+
   resumeButton.addEventListener("click", () => {
     closeMenu();
   });
@@ -623,6 +678,12 @@ function wireUi() {
     if (event.key.toLowerCase() === "h" && state.joined && !isTextEntryTarget(event.target)) {
       event.preventDefault();
       sendHome();
+      return;
+    }
+
+    if (event.key.toLowerCase() === "e" && state.joined && !isTextEntryTarget(event.target)) {
+      event.preventDefault();
+      sendInteract();
       return;
     }
 
@@ -690,6 +751,13 @@ function sendHome() {
   }
   clearMovementInput();
   send({ type: "home" });
+}
+
+function sendInteract() {
+  if (!state.joined) {
+    return;
+  }
+  send({ type: "interact" });
 }
 
 function wireMobileControls() {
@@ -782,9 +850,11 @@ function resetToConnection(message) {
   form.classList.add("hidden");
   hud.classList.add("hidden");
   progression.classList.add("hidden");
+  inventoryPanel.classList.add("hidden");
   chat.classList.add("hidden");
   mobileControls.classList.add("hidden");
   setChatMinimized(false);
+  setInventoryMinimized(false);
   chatMessages.replaceChildren();
 }
 
@@ -792,6 +862,10 @@ function clearWorldState() {
   state.players.clear();
   state.npcs.clear();
   state.mobs.clear();
+  state.chests = [];
+  state.groundItems = [];
+  state.inventory = Array(10).fill(null);
+  state.equipment = { weapon: null, armor: null };
   state.combatFx = [];
   state.chunks.clear();
   state.portals.clear();
@@ -968,6 +1042,77 @@ function renderProgression(self) {
   });
 }
 
+function renderInventory() {
+  equippedWeapon.textContent = state.equipment.weapon?.name || "None";
+  equippedArmor.textContent = state.equipment.armor?.name || "None";
+  inventorySlots.replaceChildren();
+
+  state.inventory.forEach((item, slot) => {
+    const cell = document.createElement("div");
+    cell.className = `inventory-slot ${item ? item.rarity || "common" : "empty"}`;
+
+    if (!item) {
+      cell.textContent = slot + 1;
+      inventorySlots.append(cell);
+      return;
+    }
+
+    const icon = document.createElement("span");
+    icon.className = `item-icon ${item.icon || item.type}`;
+    icon.style.setProperty("--item-color", item.color || "#d7e4ef");
+
+    const name = document.createElement("strong");
+    name.textContent = item.name;
+
+    const stats = document.createElement("span");
+    stats.className = "item-stats";
+    stats.textContent = formatItemStats(item);
+
+    const actions = document.createElement("div");
+    actions.className = "item-actions";
+    if (item.type === "weapon" || item.type === "armor") {
+      actions.append(itemActionButton("equip", slot, "Equip"));
+    }
+    if (item.type === "potion") {
+      actions.append(itemActionButton("use", slot, "Use"));
+    }
+    actions.append(itemActionButton("drop", slot, "Drop"));
+    cell.append(icon, name, stats, actions);
+    inventorySlots.append(cell);
+  });
+}
+
+function itemActionButton(action, slot, label) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.dataset.inventoryAction = action;
+  button.dataset.slot = String(slot);
+  button.textContent = label;
+  return button;
+}
+
+function formatItemStats(item) {
+  const labels = {
+    damage: "dmg",
+    strength: "str",
+    armour: "arm",
+    health: "hp",
+    speed: "spd",
+    healing: "heal"
+  };
+  return Object.entries(item.stats || {})
+    .filter(([, value]) => value)
+    .map(([key, value]) => `+${value} ${labels[key] || key}`)
+    .join(" ");
+}
+
+function setInventoryMinimized(minimized) {
+  state.inventoryMinimized = minimized;
+  inventoryPanel.classList.toggle("minimized", minimized);
+  inventoryToggle.setAttribute("aria-expanded", String(!minimized));
+  inventoryToggle.textContent = minimized ? "Expand" : "Minimize";
+}
+
 function requestVisibleChunks() {
   if (!state.joined) {
     return;
@@ -1046,6 +1191,7 @@ function drawWorld() {
   }
 
   drawWorldAssets(minTileX, maxTileX, minTileY, maxTileY);
+  drawWorldLoot();
   drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY);
 }
 
@@ -1157,6 +1303,72 @@ function drawPlayers() {
       drawCharacter(entity, sx, sy, isNpc);
     }
   }
+}
+
+function drawWorldLoot() {
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+
+  for (const chest of state.chests) {
+    if (chest.opened) {
+      continue;
+    }
+    const sx = Math.floor(chest.x * TILE_SIZE - state.camera.x + halfW);
+    const sy = Math.floor(chest.y * TILE_SIZE - state.camera.y + halfH);
+    if (sx < -40 || sy < -40 || sx > canvas.width + 40 || sy > canvas.height + 40) {
+      continue;
+    }
+    drawChest(sx, sy);
+  }
+
+  for (const ground of state.groundItems) {
+    const sx = Math.floor(ground.x * TILE_SIZE - state.camera.x + halfW);
+    const sy = Math.floor(ground.y * TILE_SIZE - state.camera.y + halfH);
+    if (sx < -40 || sy < -40 || sx > canvas.width + 40 || sy > canvas.height + 40) {
+      continue;
+    }
+    drawItemIcon(ground.item, sx, sy);
+  }
+}
+
+function drawChest(x, y) {
+  drawEllipseShadow(x - 11, y + 7, 22, 5, 0.22);
+  ctx.fillStyle = "#6c4528";
+  ctx.fillRect(x - 10, y - 5, 20, 12);
+  ctx.fillStyle = "#9b6a3e";
+  ctx.fillRect(x - 10, y - 10, 20, 7);
+  ctx.fillStyle = "#ffd166";
+  ctx.fillRect(x - 2, y - 8, 4, 13);
+  ctx.fillStyle = "#3f291c";
+  ctx.fillRect(x - 10, y - 2, 20, 2);
+}
+
+function drawItemIcon(item, x, y) {
+  const color = item?.color || "#d7e4ef";
+  drawEllipseShadow(x - 8, y + 7, 16, 4, 0.18);
+  ctx.fillStyle = color;
+
+  if (item?.icon === "potion") {
+    ctx.fillStyle = "#d7e4ef";
+    ctx.fillRect(x - 2, y - 10, 4, 4);
+    ctx.fillStyle = "#f26d6d";
+    ctx.fillRect(x - 5, y - 6, 10, 12);
+    return;
+  }
+
+  if (item?.type === "armor") {
+    ctx.fillRect(x - 7, y - 8, 14, 14);
+    ctx.fillStyle = "rgba(255,255,255,0.34)";
+    ctx.fillRect(x - 4, y - 5, 8, 2);
+    return;
+  }
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(x - 8, y + 6);
+  ctx.lineTo(x + 8, y - 10);
+  ctx.stroke();
 }
 
 function drawCharacter(entity, x, y, isNpc = false) {

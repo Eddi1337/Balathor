@@ -283,6 +283,115 @@ button:focus-visible {
   opacity: 0.62;
 }
 
+.inventory-panel {
+  position: fixed;
+  right: 16px;
+  top: 174px;
+  width: min(360px, calc(100vw - 32px));
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(15, 19, 28, 0.72);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.inventory-head,
+.equipment-grid {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.equipment-grid > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.equipment-grid span,
+.item-stats {
+  color: var(--muted);
+}
+
+.inventory-toggle,
+.interact-button,
+.item-actions button {
+  min-height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: var(--control);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.inventory-toggle,
+.interact-button {
+  padding: 0 10px;
+}
+
+.inventory-slots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.inventory-slot {
+  min-height: 82px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 4px 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(17, 24, 39, 0.72);
+}
+
+.inventory-slot.empty {
+  place-items: center;
+  color: var(--muted);
+}
+
+.item-icon {
+  width: 24px;
+  height: 24px;
+  display: block;
+  grid-row: span 3;
+  background: var(--item-color);
+  clip-path: polygon(50% 0, 90% 22%, 80% 100%, 20% 100%, 10% 22%);
+}
+
+.item-icon.potion {
+  border-radius: 8px 8px 10px 10px;
+  clip-path: none;
+}
+
+.item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.item-actions button {
+  min-height: 24px;
+  padding: 0 6px;
+  font-size: 12px;
+}
+
+.inventory-panel.minimized {
+  width: min(210px, calc(100vw - 32px));
+}
+
+.inventory-panel.minimized .equipment-grid,
+.inventory-panel.minimized .inventory-slots,
+.inventory-panel.minimized .interact-button {
+  display: none;
+}
+
 .chat {
   position: fixed;
   left: 16px;
@@ -457,6 +566,19 @@ button:focus-visible {
     right: auto;
     top: 96px;
     width: min(240px, calc(100vw - 16px));
+  }
+
+  .inventory-panel {
+    left: 8px;
+    right: auto;
+    top: 214px;
+    width: min(300px, calc(100vw - 16px));
+  }
+
+  .inventory-slots {
+    grid-template-columns: 1fr;
+    max-height: 220px;
+    overflow-y: auto;
   }
 
   .menu-panel {

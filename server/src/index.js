@@ -29,6 +29,9 @@ const DOOR_COOLDOWN_MS = 600;
 const HOME_COOLDOWN_MS = 2000;
 const PLAYER_MAX_HP = 100;
 const MOB_RESPAWN_MS = 7000;
+const INVENTORY_SIZE = 10;
+const INTERACT_RADIUS = 1.8;
+const MAX_GROUND_ITEMS = 140;
 const XP_BASE_TO_LEVEL = 100;
 const XP_LEVEL_STEP = 55;
 const STAT_IDS = ["speed", "strength", "armour", "health"];
@@ -122,11 +125,16 @@ const WILDERNESS_BOSSES = Object.freeze([
 
 let nextClientId = 1;
 let nextSpawnIndex = 0;
+let nextItemId = 1;
+let nextGroundItemId = 1;
 let tick = 0;
 
 const clients = new Map();
 const chunkCache = new Map();
 const chatHistory = [];
+const itemDatabase = createItemDatabase();
+const chests = createChests();
+const groundItems = [];
 const mobs = createMobs();
 
 const server = http.createServer((req, res) => {
@@ -372,6 +380,26 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "interact") {
+    handleInteract(client);
+    return;
+  }
+
+  if (message.type === "equipItem") {
+    handleEquipItem(client, message);
+    return;
+  }
+
+  if (message.type === "useItem") {
+    handleUseItem(client, message);
+    return;
+  }
+
+  if (message.type === "dropItem") {
+    handleDropItem(client, message);
+    return;
+  }
+
   if (message.type === "requestChunks") {
     streamChunks(client, message.chunks);
   }
@@ -385,12 +413,16 @@ function joinWorld(client, message) {
   const spawn = spawnPoint(nextSpawnIndex++);
   const torsoColor = sanitizeColor(message.torsoColor || message.primary, "#5cc8ff");
   const weaponColor = sanitizeColor(message.weaponColor || message.accent, "#ffd166");
+  const baseTorsoStyle = sanitizeChoice(message.torsoStyle, TORSO_STYLE_IDS, "tunic");
+  const baseWeaponStyle = sanitizeChoice(message.weaponStyle, WEAPON_STYLE_IDS, "classic");
   client.player = {
     id: client.id,
     name: sanitizeName(message.name),
     classId: sanitizeChoice(message.classId, CLASS_IDS, "ranger"),
-    torsoStyle: sanitizeChoice(message.torsoStyle, TORSO_STYLE_IDS, "tunic"),
-    weaponStyle: sanitizeChoice(message.weaponStyle, WEAPON_STYLE_IDS, "classic"),
+    baseTorsoStyle,
+    baseWeaponStyle,
+    torsoStyle: baseTorsoStyle,
+    weaponStyle: baseWeaponStyle,
     torsoColor,
     weaponColor,
     primary: torsoColor,
@@ -402,6 +434,8 @@ function joinWorld(client, message) {
     xpToNext: xpForNextLevel(1),
     statPoints: 0,
     stats: createBaseStats(),
+    inventory: Array(INVENTORY_SIZE).fill(null),
+    equipment: { weapon: null, armor: null },
     x: spawn.x,
     y: spawn.y,
     facing: 0,
@@ -500,6 +534,7 @@ function handleAttack(client) {
       const progress = awardXp(client.player, xpForMob(hit));
       event.xpGained = progress.xpGained;
       event.levelsGained = progress.levelsGained;
+      dropLootForMob(hit);
     }
 
     if (hitKind === "player" && hit.hp <= 0) {
@@ -573,6 +608,100 @@ function handleSpendStat(client, message) {
   broadcastSnapshot();
 }
 
+function handleInteract(client) {
+  if (!client.player) {
+    return;
+  }
+
+  const chest = nearestClosedChest(client.player);
+  if (chest) {
+    if (!addItemToInventory(client.player, cloneItem(chest.item))) {
+      send(client, { type: "serverMessage", message: "inventory_full" });
+      return;
+    }
+    chest.opened = true;
+    send(client, { type: "serverMessage", message: "chest_looted", itemName: chest.item.name });
+    broadcastSnapshot();
+    return;
+  }
+
+  const ground = nearestGroundItem(client.player);
+  if (!ground) {
+    send(client, { type: "serverMessage", message: "nothing_nearby" });
+    return;
+  }
+
+  if (!addItemToInventory(client.player, ground.item)) {
+    send(client, { type: "serverMessage", message: "inventory_full" });
+    return;
+  }
+
+  const index = groundItems.findIndex((item) => item.id === ground.id);
+  if (index !== -1) {
+    groundItems.splice(index, 1);
+  }
+  send(client, { type: "serverMessage", message: "item_picked_up", itemName: ground.item.name });
+  broadcastSnapshot();
+}
+
+function handleEquipItem(client, message) {
+  if (!client.player) {
+    return;
+  }
+
+  const slot = clampInteger(message.slot, 0, INVENTORY_SIZE - 1);
+  const item = client.player.inventory[slot];
+  if (!item || (item.type !== "weapon" && item.type !== "armor")) {
+    return;
+  }
+
+  const equipSlot = item.type === "weapon" ? "weapon" : "armor";
+  const oldMaxHp = client.player.maxHp;
+  client.player.inventory[slot] = client.player.equipment[equipSlot];
+  client.player.equipment[equipSlot] = item;
+  applyDerivedPlayerStats(client.player);
+  if (equipSlot === "armor") {
+    client.player.hp = Math.min(client.player.maxHp, client.player.hp + Math.max(0, client.player.maxHp - oldMaxHp));
+  }
+  send(client, { type: "serverMessage", message: "item_equipped", itemName: item.name });
+  broadcastSnapshot();
+}
+
+function handleUseItem(client, message) {
+  if (!client.player) {
+    return;
+  }
+
+  const slot = clampInteger(message.slot, 0, INVENTORY_SIZE - 1);
+  const item = client.player.inventory[slot];
+  if (!item || item.type !== "potion") {
+    return;
+  }
+
+  const heal = item.stats?.healing || 30;
+  client.player.hp = Math.min(client.player.maxHp, client.player.hp + heal);
+  client.player.inventory[slot] = null;
+  send(client, { type: "serverMessage", message: "item_used", itemName: item.name });
+  broadcastSnapshot();
+}
+
+function handleDropItem(client, message) {
+  if (!client.player) {
+    return;
+  }
+
+  const slot = clampInteger(message.slot, 0, INVENTORY_SIZE - 1);
+  const item = client.player.inventory[slot];
+  if (!item) {
+    return;
+  }
+
+  client.player.inventory[slot] = null;
+  addGroundItem(item, client.player.x, client.player.y);
+  send(client, { type: "serverMessage", message: "item_dropped", itemName: item.name });
+  broadcastSnapshot();
+}
+
 function createBaseStats() {
   return {
     speed: 0,
@@ -613,21 +742,35 @@ function awardXp(player, amount) {
 }
 
 function applyDerivedPlayerStats(player) {
-  player.maxHp = PLAYER_MAX_HP + player.stats.health * STAT_POINT_HP;
+  const equipment = getEquipmentStats(player);
+  player.maxHp = PLAYER_MAX_HP + player.stats.health * STAT_POINT_HP + equipment.health;
   player.hp = Math.min(player.hp, player.maxHp);
 }
 
 function getPlayerSpeed(player) {
-  return PLAYER_SPEED + player.stats.speed * STAT_POINT_SPEED;
+  return PLAYER_SPEED + player.stats.speed * STAT_POINT_SPEED + getEquipmentStats(player).speed;
 }
 
 function getAttackDamage(player, loadout) {
-  return loadout.damage + player.stats.strength * STAT_POINT_STRENGTH_DAMAGE;
+  const equipment = getEquipmentStats(player);
+  return loadout.damage + player.stats.strength * STAT_POINT_STRENGTH_DAMAGE + equipment.strength + equipment.damage;
 }
 
 function applyArmourReduction(player, damage) {
-  const reduction = Math.min(STAT_POINT_ARMOUR_CAP, player.stats.armour * STAT_POINT_ARMOUR_REDUCTION);
+  const armour = player.stats.armour + getEquipmentStats(player).armour;
+  const reduction = Math.min(STAT_POINT_ARMOUR_CAP, armour * STAT_POINT_ARMOUR_REDUCTION);
   return Math.max(1, Math.round(damage * (1 - reduction)));
+}
+
+function getEquipmentStats(player) {
+  const totals = { health: 0, speed: 0, strength: 0, armour: 0, damage: 0 };
+  for (const item of Object.values(player.equipment || {})) {
+    if (!item?.stats) continue;
+    for (const key of Object.keys(totals)) {
+      totals[key] += Number(item.stats[key] || 0);
+    }
+  }
+  return totals;
 }
 
 function findAttackTarget(client, loadout) {
@@ -756,29 +899,34 @@ function streamChunks(client, chunks) {
 function broadcastSnapshot() {
   const players = [...clients.values()]
     .filter((client) => client.player)
-    .map((client) => ({
-      id: client.player.id,
-      name: client.player.name,
-      classId: client.player.classId,
-      torsoStyle: client.player.torsoStyle,
-      weaponStyle: client.player.weaponStyle,
-      torsoColor: client.player.torsoColor,
-      weaponColor: client.player.weaponColor,
-      primary: client.player.primary,
-      accent: client.player.accent,
-      hp: client.player.hp,
-      maxHp: client.player.maxHp,
-      xp: client.player.xp,
-      level: client.player.level,
-      xpToNext: client.player.xpToNext,
-      statPoints: client.player.statPoints,
-      stats: client.player.stats,
-      moveSpeed: Number(getPlayerSpeed(client.player).toFixed(2)),
-      x: Number(client.player.x.toFixed(3)),
-      y: Number(client.player.y.toFixed(3)),
-      facing: Number(client.player.facing.toFixed(3)),
-      moving: client.player.moving
-    }));
+    .map((client) => {
+      const appearance = getPlayerAppearance(client.player);
+      return {
+        id: client.player.id,
+        name: client.player.name,
+        classId: client.player.classId,
+        torsoStyle: appearance.torsoStyle,
+        weaponStyle: appearance.weaponStyle,
+        torsoColor: appearance.torsoColor,
+        weaponColor: appearance.weaponColor,
+        primary: appearance.torsoColor,
+        accent: appearance.weaponColor,
+        hp: client.player.hp,
+        maxHp: client.player.maxHp,
+        xp: client.player.xp,
+        level: client.player.level,
+        xpToNext: client.player.xpToNext,
+        statPoints: client.player.statPoints,
+        stats: client.player.stats,
+        inventory: client.player.inventory,
+        equipment: client.player.equipment,
+        moveSpeed: Number(getPlayerSpeed(client.player).toFixed(2)),
+        x: Number(client.player.x.toFixed(3)),
+        y: Number(client.player.y.toFixed(3)),
+        facing: Number(client.player.facing.toFixed(3)),
+        moving: client.player.moving
+      };
+    });
 
   const snapshot = {
     type: "snapshot",
@@ -787,7 +935,19 @@ function broadcastSnapshot() {
     population: players.length,
     players,
     npcs: getNpcSnapshot(),
-    mobs: getMobSnapshot()
+    mobs: getMobSnapshot(),
+    chests: chests.map((chest) => ({
+      id: chest.id,
+      x: chest.x,
+      y: chest.y,
+      opened: chest.opened
+    })),
+    groundItems: groundItems.map((ground) => ({
+      id: ground.id,
+      x: ground.x,
+      y: ground.y,
+      item: ground.item
+    }))
   };
 
   for (const client of clients.values()) {
@@ -826,6 +986,165 @@ function isShieldBlocking(target, attacker) {
 
 function distance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function createItemDatabase() {
+  const types = ["weapon", "armor", "potion"];
+  const rarities = [
+    { id: "common", label: "Common", multiplier: 1, color: "#d7e4ef" },
+    { id: "uncommon", label: "Uncommon", multiplier: 1.35, color: "#8fe388" },
+    { id: "rare", label: "Rare", multiplier: 1.8, color: "#5cc8ff" },
+    { id: "epic", label: "Epic", multiplier: 2.35, color: "#c79cff" },
+  ];
+  const result = [];
+
+  for (let i = 0; i < 96; i += 1) {
+    const type = types[i % types.length];
+    const rarity = rarities[Math.min(rarities.length - 1, Math.floor(hash2(i, 11, 700) * rarities.length))];
+    result.push(createItemTemplate(type, rarity, i));
+  }
+
+  return result;
+}
+
+function createItemTemplate(type, rarity, index) {
+  if (type === "weapon") {
+    const weaponKinds = ["Bow", "Staff", "Sword"];
+    const visualStyles = ["classic", "heavy", "ornate"];
+    const kind = weaponKinds[index % weaponKinds.length];
+    const damage = Math.round((4 + hash2(index, 2, 711) * 8) * rarity.multiplier);
+    const strength = hash2(index, 3, 712) > 0.68 ? Math.ceil(rarity.multiplier) : 0;
+    return {
+      templateId: `weapon_${index}`,
+      type,
+      name: `${rarity.label} ${kind}`,
+      icon: kind.toLowerCase(),
+      rarity: rarity.id,
+      color: rarity.color,
+      visual: {
+        weaponStyle: visualStyles[index % visualStyles.length],
+        weaponColor: rarity.color
+      },
+      stats: { damage, strength }
+    };
+  }
+
+  if (type === "armor") {
+    const armorKinds = ["Jerkin", "Chestplate", "Robe"];
+    const visualStyles = ["tunic", "armor", "robe"];
+    const kind = armorKinds[index % armorKinds.length];
+    const health = Math.round((8 + hash2(index, 4, 713) * 22) * rarity.multiplier);
+    const armour = Math.max(1, Math.round((1 + hash2(index, 5, 714) * 3) * rarity.multiplier));
+    return {
+      templateId: `armor_${index}`,
+      type,
+      name: `${rarity.label} ${kind}`,
+      icon: "armor",
+      rarity: rarity.id,
+      color: rarity.color,
+      visual: {
+        torsoStyle: visualStyles[index % visualStyles.length],
+        torsoColor: rarity.color
+      },
+      stats: { health, armour }
+    };
+  }
+
+  const healing = Math.round((30 + hash2(index, 6, 715) * 45) * rarity.multiplier);
+  return {
+    templateId: `potion_${index}`,
+    type,
+    name: `${rarity.label} Health Potion`,
+    icon: "potion",
+    rarity: rarity.id,
+    color: "#f26d6d",
+    stats: { healing }
+  };
+}
+
+function createChests() {
+  return ENEMY_CAMPS.map((camp, index) => {
+    const item = createLootItem(camp.x, camp.y, camp.boss ? 0.7 : 0.25);
+    return {
+      id: `chest_${camp.id}`,
+      x: Number((camp.x + 1.5 + (index % 2)).toFixed(2)),
+      y: Number((camp.y + 1.5).toFixed(2)),
+      opened: false,
+      item
+    };
+  });
+}
+
+function createLootItem(seedX, seedY, qualityBias = 0) {
+  const roll = hash2(seedX + nextItemId, seedY - nextItemId, 820) + qualityBias;
+  const highQuality = roll > 0.92 ? "epic" : roll > 0.74 ? "rare" : roll > 0.46 ? "uncommon" : null;
+  const candidates = highQuality
+    ? itemDatabase.filter((item) => item.rarity === highQuality)
+    : itemDatabase;
+  const template = candidates[Math.floor(hash2(seedY, seedX, 821 + nextItemId) * candidates.length)] || itemDatabase[0];
+  return cloneItem(template);
+}
+
+function cloneItem(template) {
+  return {
+    ...template,
+    id: `item_${nextItemId++}`,
+    stats: { ...(template.stats || {}) },
+    visual: { ...(template.visual || {}) }
+  };
+}
+
+function addItemToInventory(player, item) {
+  const index = player.inventory.findIndex((slot) => slot === null);
+  if (index === -1) {
+    return false;
+  }
+  player.inventory[index] = item;
+  return true;
+}
+
+function dropLootForMob(mob) {
+  const chance = mob.isBoss ? 1 : 0.62;
+  if (Math.random() > chance) {
+    return;
+  }
+  const item = createLootItem(mob.homeX, mob.homeY, mob.isBoss ? 0.65 : 0);
+  addGroundItem(item, mob.x, mob.y);
+}
+
+function addGroundItem(item, x, y) {
+  groundItems.push({
+    id: `ground_${nextGroundItemId++}`,
+    item,
+    x: Number(x.toFixed(3)),
+    y: Number(y.toFixed(3))
+  });
+  while (groundItems.length > MAX_GROUND_ITEMS) {
+    groundItems.shift();
+  }
+}
+
+function nearestClosedChest(player) {
+  return chests
+    .filter((chest) => !chest.opened && Math.hypot(chest.x - player.x, chest.y - player.y) <= INTERACT_RADIUS)
+    .sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0] || null;
+}
+
+function nearestGroundItem(player) {
+  return groundItems
+    .filter((ground) => Math.hypot(ground.x - player.x, ground.y - player.y) <= INTERACT_RADIUS)
+    .sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0] || null;
+}
+
+function getPlayerAppearance(player) {
+  const armor = player.equipment?.armor;
+  const weapon = player.equipment?.weapon;
+  return {
+    torsoStyle: armor?.visual?.torsoStyle || player.baseTorsoStyle || player.torsoStyle,
+    weaponStyle: weapon?.visual?.weaponStyle || player.baseWeaponStyle || player.weaponStyle,
+    torsoColor: armor?.visual?.torsoColor || player.torsoColor,
+    weaponColor: weapon?.visual?.weaponColor || player.weaponColor
+  };
 }
 
 function normalizeAngle(value) {

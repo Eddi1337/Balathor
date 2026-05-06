@@ -172,6 +172,8 @@ Client to server:
 - `attack`: uses the player's class weapon.
 - `home`: teleports the player back to the spawn square.
 - `spendStat`: spends a level-up point on speed, strength, armour, or health.
+- `interact`: opens a nearby chest or picks up nearby loot.
+- `equipItem`, `useItem`, `dropItem`: manages inventory items.
 - `requestChunks`: asks the server for world chunks around the camera.
 
 Server to client:

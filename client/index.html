@@ -97,6 +97,25 @@
       </div>
     </aside>
 
+    <aside id="inventoryPanel" class="inventory-panel hidden" aria-label="Inventory">
+      <div class="inventory-head">
+        <strong>Character</strong>
+        <button id="inventoryToggle" class="inventory-toggle" type="button" aria-expanded="true">Minimize</button>
+      </div>
+      <div class="equipment-grid">
+        <div>
+          <span>Weapon</span>
+          <strong id="equippedWeapon">None</strong>
+        </div>
+        <div>
+          <span>Armour</span>
+          <strong id="equippedArmor">None</strong>
+        </div>
+      </div>
+      <div id="inventorySlots" class="inventory-slots"></div>
+      <button id="interactButton" class="interact-button" type="button">Open / Pick Up</button>
+    </aside>
+
     <section id="chat" class="chat hidden" aria-label="Realm chat">
       <div class="chat-head">
         <strong>Chat</strong>

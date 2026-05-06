@@ -61,11 +61,16 @@ try {
   assert.equal(messages.some((message) => message.type === "teleport" && message.portalId === "home"), true);
   assert.equal(messages.some((message) => message.type === "chunk"), true);
   assert.equal(messages.some((message) => message.type === "snapshot" && message.mobs?.some((mob) => mob.isBoss)), true);
+  assert.equal(messages.some((message) => message.type === "snapshot" && message.chests?.length >= 10), true);
   assert.equal(messages.some((message) => message.type === "snapshot" && message.players?.some((player) => (
     player.level === 1 &&
     player.xp === 0 &&
     player.xpToNext > 0 &&
     player.statPoints === 0 &&
+    Array.isArray(player.inventory) &&
+    player.inventory.length === 10 &&
+    player.equipment?.weapon === null &&
+    player.equipment?.armor === null &&
     player.torsoStyle === "robe" &&
     player.weaponStyle === "ornate" &&
     player.torsoColor === "#c79cff" &&
@@ -184,9 +189,12 @@ async function joinViaWebSocket(port) {
         messages.some((message) => message.type === "teleport" && message.portalId === "home") &&
         messages.some((message) => message.type === "chunk") &&
         messages.some((message) => message.type === "snapshot" && message.mobs?.some((mob) => mob.isBoss)) &&
+        messages.some((message) => message.type === "snapshot" && message.chests?.length >= 10) &&
         messages.some((message) => message.type === "snapshot" && message.players?.some((player) => (
           player.level === 1 &&
           player.stats?.speed === 0 &&
+          Array.isArray(player.inventory) &&
+          player.inventory.length === 10 &&
           player.torsoStyle === "robe" &&
           player.weaponStyle === "ornate"
         ))) &&
