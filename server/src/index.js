@@ -46,6 +46,7 @@ const MAX_GROUND_ITEMS = 140;
 const TRADER_INTERACT_RADIUS = 3.5;
 const SELL_PRICE_RATIO = 0.5;
 const STARTER_GOLD = 50;
+const RARITY_VALUE = { common: 1, uncommon: 2.5, rare: 6, epic: 15 };
 const MOB_AGGRO_RADIUS = 7.5;
 const MOB_ATTACK_RADIUS = 1.15;
 const MOB_ATTACK_COOLDOWN_MS = 1300;
@@ -1925,6 +1926,29 @@ function createStarterEquipment(classId, appearance) {
   };
 }
 
+function itemValue(item) {
+  if (!item) return 0;
+  const base = item.type === "potion" ? 8 : item.type === "ring" ? 20 : item.type === "armor" ? 15 : 12;
+  const mult = RARITY_VALUE[item.rarity] || 1;
+  return Math.round(base * mult);
+}
+
+function itemSellPrice(item) {
+  return Math.max(1, Math.round(itemValue(item) * SELL_PRICE_RATIO));
+}
+
+function createTraderStock(traderId, seed) {
+  const stock = [];
+  const count = 8;
+  for (let i = 0; i < count; i += 1) {
+    const roll = hash2(seed + i, traderId.length + i, 900);
+    const qualityBias = roll > 0.85 ? 0.8 : roll > 0.55 ? 0.5 : roll > 0.3 ? 0.25 : 0;
+    const item = createLootItem(seed + i * 7, traderId.length * 13 + i, qualityBias);
+    stock.push({ item, price: itemValue(item) });
+  }
+  return stock;
+}
+
 function createItemDatabase() {
   const types = ["weapon", "armor", "ring", "potion"];
   const rarities = [
@@ -2050,31 +2074,6 @@ function cloneItem(template) {
     stats: { ...(template.stats || {}) },
     visual: { ...(template.visual || {}) }
   };
-}
-
-const RARITY_VALUE = { common: 1, uncommon: 2.5, rare: 6, epic: 15 };
-
-function itemValue(item) {
-  if (!item) return 0;
-  const base = item.type === "potion" ? 8 : item.type === "ring" ? 20 : item.type === "armor" ? 15 : 12;
-  const mult = RARITY_VALUE[item.rarity] || 1;
-  return Math.round(base * mult);
-}
-
-function itemSellPrice(item) {
-  return Math.max(1, Math.round(itemValue(item) * SELL_PRICE_RATIO));
-}
-
-function createTraderStock(traderId, seed) {
-  const stock = [];
-  const count = 8;
-  for (let i = 0; i < count; i += 1) {
-    const roll = hash2(seed + i, traderId.length + i, 900);
-    const qualityBias = roll > 0.85 ? 0.8 : roll > 0.55 ? 0.5 : roll > 0.3 ? 0.25 : 0;
-    const item = createLootItem(seed + i * 7, traderId.length * 13 + i, qualityBias);
-    stock.push({ item, price: itemValue(item) });
-  }
-  return stock;
 }
 
 function addItemToInventory(player, item) {
