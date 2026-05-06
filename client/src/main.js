@@ -5,6 +5,7 @@ const statusEl = document.querySelector("#status");
 const menu = document.querySelector("#menu");
 const menuServerUrlInput = document.querySelector("#menuServerUrlInput");
 const resumeButton = document.querySelector("#resumeButton");
+const debugToggleButton = document.querySelector("#debugToggleButton");
 const serverForm = document.querySelector("#serverForm");
 const accountForm = document.querySelector("#accountForm");
 const usernameInput = document.querySelector("#usernameInput");
@@ -49,6 +50,7 @@ const CHUNK_SIZE = 16;
 const CLIENT_PLAYER_SPEED = 10.4;
 const PRODUCTION_SERVER_URL = "wss://balathor.edmundmurphy.com/ws";
 const SERVER_URL_STORAGE_KEY = "balathor.serverUrl";
+const DEBUG_HUD_STORAGE_KEY = "balathor.debugHud";
 const TILE = {
   GRASS: 0,
   TREE: 1,
@@ -116,11 +118,110 @@ const state = {
   chatMinimized: false,
   activeWindow: null,
   lastViewSentAt: 0,
-  lastFrame: performance.now()
+  lastFrame: performance.now(),
+  debugHud: localStorage.getItem(DEBUG_HUD_STORAGE_KEY) === "1",
+  clientFps: 0,
+  debugRttMs: null,
+  debugServerSimHz: null,
+  debugTickRate: null,
+  debugSnapshotRate: null,
+  debugServerTick: null,
+  _debugFpsFrames: 0,
+  _debugFpsWindowStart: performance.now(),
+  _debugLastPingAt: 0
 };
 
 const SPEECH_BUBBLE_MS = 5200;
 const VIEW_SEND_INTERVAL_MS = 350;
+
+function syncDebugToggleButton() {
+  if (!debugToggleButton) {
+    return;
+  }
+  debugToggleButton.setAttribute("aria-pressed", String(state.debugHud));
+  debugToggleButton.textContent = state.debugHud ? "Debug overlay: On" : "Debug overlay: Off";
+}
+
+function updateClientFps(now) {
+  state._debugFpsFrames += 1;
+  const elapsed = now - state._debugFpsWindowStart;
+  if (elapsed >= 450) {
+    state.clientFps = Math.round((state._debugFpsFrames * 1000) / elapsed);
+    state._debugFpsFrames = 0;
+    state._debugFpsWindowStart = now;
+  }
+}
+
+function maybeSendDebugPing(now) {
+  if (!state.socket || state.socket.readyState !== WebSocket.OPEN || !state.debugHud) {
+    return;
+  }
+  if (now - state._debugLastPingAt < 850) {
+    return;
+  }
+  state._debugLastPingAt = now;
+  send({ type: "ping", t: performance.now() });
+}
+
+function drawDebugHud() {
+  if (!state.debugHud) {
+    return;
+  }
+
+  const simLabel =
+    typeof state.debugServerSimHz === "number" && Number.isFinite(state.debugServerSimHz)
+      ? `${state.debugServerSimHz.toFixed(1)} Hz`
+      : "—";
+
+  const targetSim =
+    typeof state.debugTickRate === "number"
+      ? ` (target ${state.debugTickRate} Hz)`
+      : "";
+
+  const snapLabel =
+    typeof state.debugSnapshotRate === "number" ? `${state.debugSnapshotRate}/s` : "—";
+
+  const rtt =
+    typeof state.debugRttMs === "number" && Number.isFinite(state.debugRttMs)
+      ? `${Math.round(state.debugRttMs)} ms`
+      : "—";
+
+  const tickLabel =
+    typeof state.debugServerTick === "number" ? String(state.debugServerTick) : "—";
+
+  const lines = [
+    `FPS (client): ${state.clientFps || "—"}`,
+    `Sim rate (srv): ${simLabel}${targetSim}`,
+    `Snapshots (srv): ${snapLabel}`,
+    `RTT: ${rtt}`,
+    `Server tick: ${tickLabel}`
+  ];
+
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const pad = 14;
+  const lineHeight = 18;
+  const w = 292;
+  const h = pad * 2 + lines.length * lineHeight;
+  ctx.fillStyle = "rgba(12, 16, 24, 0.78)";
+  ctx.strokeStyle = "rgba(255, 209, 102, 0.35)";
+  ctx.lineWidth = 1;
+  const bx = 12;
+  const by = 12;
+  ctx.fillRect(bx, by, w, h);
+  ctx.strokeRect(bx, by, w, h);
+
+  ctx.fillStyle = "#e8eef8";
+  ctx.font = "13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  let y = by + pad;
+  for (const line of lines) {
+    ctx.fillText(line, bx + pad, y);
+    y += lineHeight;
+  }
+  ctx.restore();
+}
 
 const keys = new Map([
   ["w", "up"],
@@ -244,6 +345,28 @@ function connect(url) {
 }
 
 function handleServerMessage(message) {
+  if (message.type === "pong") {
+    const t = Number(message.t);
+    if (Number.isFinite(t)) {
+      state.debugRttMs = performance.now() - t;
+    }
+    if (typeof message.tick === "number") {
+      state.debugServerTick = message.tick;
+    }
+    if (typeof message.tickRate === "number") {
+      state.debugTickRate = message.tickRate;
+    }
+    if (typeof message.snapshotRate === "number") {
+      state.debugSnapshotRate = message.snapshotRate;
+    }
+    if (message.simHz == null || !Number.isFinite(message.simHz)) {
+      state.debugServerSimHz = null;
+    } else {
+      state.debugServerSimHz = message.simHz;
+    }
+    return;
+  }
+
   if (message.type === "auth") {
     loginButton.disabled = false;
     createAccountButton.disabled = false;
@@ -268,6 +391,12 @@ function handleServerMessage(message) {
   if (message.type === "welcome") {
     state.selfId = message.selfId;
     state.joined = true;
+    if (typeof message.tickRate === "number") {
+      state.debugTickRate = message.tickRate;
+    }
+    if (typeof message.snapshotRate === "number") {
+      state.debugSnapshotRate = message.snapshotRate;
+    }
     bootPanel.classList.add("hidden");
     accountForm.classList.add("hidden");
     form.classList.add("hidden");
@@ -315,6 +444,9 @@ function handleServerMessage(message) {
   }
 
   if (message.type === "snapshot") {
+    if (typeof message.tick === "number") {
+      state.debugServerTick = message.tick;
+    }
     state.population = message.population;
     applySnapshot(message.players);
     applyNpcSnapshot(message.npcs || []);
@@ -907,6 +1039,16 @@ function wireUi() {
     send({ type: "modTeleport", x: worldX, y: worldY });
   });
 
+  debugToggleButton?.addEventListener("click", () => {
+    state.debugHud = !state.debugHud;
+    localStorage.setItem(DEBUG_HUD_STORAGE_KEY, state.debugHud ? "1" : "0");
+    syncDebugToggleButton();
+    if (!state.debugHud) {
+      state.debugRttMs = null;
+    }
+  });
+  syncDebugToggleButton();
+
   wireMobileControls();
 }
 
@@ -1105,6 +1247,9 @@ function resetToConnection(message) {
   loginButton.disabled = false;
   createAccountButton.disabled = false;
   chatMessages.replaceChildren();
+  state.debugRttMs = null;
+  state.debugServerSimHz = null;
+  state.debugServerTick = null;
 }
 
 function clearWorldState() {
@@ -1257,6 +1402,7 @@ function openMenu() {
   menuServerUrlInput.focus();
   menuServerUrlInput.select();
   clearMovementInput();
+  syncDebugToggleButton();
 }
 
 function closeMenu() {
@@ -1281,6 +1427,10 @@ function changeServer(url) {
 function frame(now) {
   const dt = Math.min(0.05, (now - state.lastFrame) / 1000);
   state.lastFrame = now;
+  if (state.debugHud) {
+    updateClientFps(now);
+    maybeSendDebugPing(now);
+  }
   updateSmoothPlayers(dt);
   updateCamera(dt);
   draw();
@@ -1559,6 +1709,7 @@ function draw() {
 
   if (!state.joined) {
     drawTitleWorld();
+    drawDebugHud();
     return;
   }
 
@@ -1579,6 +1730,7 @@ function draw() {
 
   ctx.restore();
   populationEl.textContent = `${state.population} online`;
+  drawDebugHud();
 }
 
 function drawTitleWorld() {

@@ -208,6 +208,11 @@ let nextItemId = 1;
 let nextGroundItemId = 1;
 let tick = 0;
 
+/** Rolling wall-clock intervals between simulate() runs (for debug pong). */
+let lastSimulateWallMs = Date.now();
+const simulateWallIntervals = [];
+const SIM_WALL_SAMPLES_MAX = 60;
+
 const accountStore = loadAccountStore();
 seedModAccounts();
 const clients = new Map();
@@ -444,7 +449,28 @@ function syncNextItemIdFromAccounts() {
   nextItemId = Math.max(nextItemId, maxId + 1);
 }
 
+function recordSimulateWallInterval() {
+  const now = Date.now();
+  const delta = now - lastSimulateWallMs;
+  lastSimulateWallMs = now;
+  if (delta > 0 && delta < 500) {
+    simulateWallIntervals.push(delta);
+    while (simulateWallIntervals.length > SIM_WALL_SAMPLES_MAX) {
+      simulateWallIntervals.shift();
+    }
+  }
+}
+
+function getMeasuredSimHz() {
+  if (simulateWallIntervals.length < 5) {
+    return null;
+  }
+  const avgMs = simulateWallIntervals.reduce((a, b) => a + b, 0) / simulateWallIntervals.length;
+  return avgMs > 0 ? 1000 / avgMs : null;
+}
+
 function simulate() {
+  recordSimulateWallInterval();
   tick += 1;
   const dt = 1 / TICK_RATE;
 
@@ -580,6 +606,19 @@ function handleMessage(client, raw) {
     message = JSON.parse(raw);
   } catch {
     send(client, { type: "serverMessage", message: "invalid_json" });
+    return;
+  }
+
+  if (message.type === "ping") {
+    const t = Number(message.t);
+    send(client, {
+      type: "pong",
+      t: Number.isFinite(t) ? t : 0,
+      tick,
+      tickRate: TICK_RATE,
+      snapshotRate: SNAPSHOT_RATE,
+      simHz: getMeasuredSimHz()
+    });
     return;
   }
 
