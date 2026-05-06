@@ -98,6 +98,10 @@
     </aside>
 
     <section id="chat" class="chat hidden" aria-label="Realm chat">
+      <div class="chat-head">
+        <strong>Chat</strong>
+        <button id="chatToggle" class="chat-toggle" type="button" aria-expanded="true">Minimize</button>
+      </div>
       <div id="chatMessages" class="chat-messages"></div>
       <form id="chatForm" class="chat-form">
         <input id="chatInput" maxlength="180" placeholder="Message" autocomplete="off">

@@ -289,12 +289,44 @@ button:focus-visible {
   bottom: 16px;
   width: min(420px, calc(100vw - 32px));
   display: grid;
-  grid-template-rows: minmax(112px, 180px) 42px;
+  grid-template-rows: 28px minmax(112px, 180px) 42px;
   gap: 8px;
   padding: 12px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
   background: rgba(15, 19, 28, 0.72);
+}
+
+.chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chat-toggle {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: var(--control);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.chat-toggle.has-unread {
+  border-color: #ffd166;
+  color: #ffd166;
+}
+
+.chat.minimized {
+  width: min(220px, calc(100vw - 32px));
+  grid-template-rows: 28px;
+}
+
+.chat.minimized .chat-messages,
+.chat.minimized .chat-form {
+  display: none;
 }
 
 .chat-messages {
@@ -417,7 +449,7 @@ button:focus-visible {
     right: 8px;
     bottom: 150px;
     width: auto;
-    grid-template-rows: minmax(64px, 100px) 42px;
+    grid-template-rows: 28px minmax(64px, 100px) 42px;
   }
 
   .progression {

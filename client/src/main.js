@@ -25,6 +25,7 @@ const chat = document.querySelector("#chat");
 const chatMessages = document.querySelector("#chatMessages");
 const chatForm = document.querySelector("#chatForm");
 const chatInput = document.querySelector("#chatInput");
+const chatToggle = document.querySelector("#chatToggle");
 const mobileControls = document.querySelector("#mobileControls");
 
 const TILE_SIZE = 32;
@@ -88,6 +89,7 @@ const state = {
   camera: { x: 0, y: 0 },
   activeServerUrl: "",
   menuOpen: false,
+  chatMinimized: false,
   lastFrame: performance.now()
 };
 
@@ -581,6 +583,10 @@ function wireUi() {
     chatInput.value = "";
   });
 
+  chatToggle.addEventListener("click", () => {
+    setChatMinimized(!state.chatMinimized);
+  });
+
   document.querySelectorAll("input").forEach((input) => {
     input.addEventListener("focus", clearMovementInput);
   });
@@ -778,6 +784,7 @@ function resetToConnection(message) {
   progression.classList.add("hidden");
   chat.classList.add("hidden");
   mobileControls.classList.add("hidden");
+  setChatMinimized(false);
   chatMessages.replaceChildren();
 }
 
@@ -856,6 +863,22 @@ function appendChat(message) {
     chatMessages.firstElementChild.remove();
   }
   chatMessages.scrollTop = chatMessages.scrollHeight;
+
+  if (state.chatMinimized) {
+    chatToggle.classList.add("has-unread");
+    chatToggle.textContent = "Expand *";
+  }
+}
+
+function setChatMinimized(minimized) {
+  state.chatMinimized = minimized;
+  chat.classList.toggle("minimized", minimized);
+  chatToggle.setAttribute("aria-expanded", String(!minimized));
+  chatToggle.classList.remove("has-unread");
+  chatToggle.textContent = minimized ? "Expand" : "Minimize";
+  if (minimized) {
+    clearMovementInput();
+  }
 }
 
 function toggleMenu() {

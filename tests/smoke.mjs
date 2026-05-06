@@ -54,6 +54,7 @@ try {
   assert.match(index, /mobileControls/);
   assert.match(index, /Torso Colour/);
   assert.match(index, /Weapon Colour/);
+  assert.match(index, /chatToggle/);
 
   const messages = await joinViaWebSocket(serverPort);
   assert.equal(messages.some((message) => message.type === "welcome"), true);
