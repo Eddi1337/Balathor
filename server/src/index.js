@@ -608,7 +608,7 @@ function handleMessage(client, raw) {
   }
 
   if (message.type === "attack") {
-    handleAttack(client);
+    handleAttack(client, message);
     return;
   }
 
@@ -788,7 +788,7 @@ function joinWorld(client, message, savedCharacter = null) {
   broadcastSnapshot();
 }
 
-function handleAttack(client) {
+function handleAttack(client, message = {}) {
   if (!client.player) {
     return;
   }
@@ -804,6 +804,15 @@ function handleAttack(client) {
   if (!canAttackAt(client.player.x, client.player.y)) {
     send(client, { type: "serverMessage", message: "combat_protected" });
     return;
+  }
+
+  // If client supplied a facing or target coords, prefer those (validate)
+  if (typeof message.facing === "number" && Number.isFinite(message.facing)) {
+    client.player.facing = normalizeAngle(Number(message.facing));
+  } else if (typeof message.targetX === "number" && typeof message.targetY === "number") {
+    const fx = Number(message.targetX) - client.player.x;
+    const fy = Number(message.targetY) - client.player.y;
+    client.player.facing = Math.atan2(fy, fx);
   }
 
   const target = findAttackTarget(client, loadout);
@@ -822,8 +831,13 @@ function handleAttack(client) {
   };
 
   if (loadout.kind === "projectile") {
-    event.endX = Number((client.player.x + Math.cos(client.player.facing) * loadout.range).toFixed(3));
-    event.endY = Number((client.player.y + Math.sin(client.player.facing) * loadout.range).toFixed(3));
+    if (typeof message.targetX === "number" && typeof message.targetY === "number") {
+      event.endX = Number(Number(message.targetX).toFixed(3));
+      event.endY = Number(Number(message.targetY).toFixed(3));
+    } else {
+      event.endX = Number((client.player.x + Math.cos(client.player.facing) * loadout.range).toFixed(3));
+      event.endY = Number((client.player.y + Math.sin(client.player.facing) * loadout.range).toFixed(3));
+    }
   }
 
   if (target) {

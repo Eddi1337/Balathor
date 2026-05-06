@@ -532,7 +532,8 @@ function updateSmoothPlayers(dt) {
       isMoving = predictLocalPlayer(player, dt) || isMoving;
     }
 
-    const follow = player.id === state.selfId ? 1 - Math.pow(0.00002, dt) : 1 - Math.pow(0.0005, dt);
+    // Make local player interpolation more responsive for snappy controls.
+    const follow = player.id === state.selfId ? 1 - Math.pow(0.0005, dt) : 1 - Math.pow(0.0005, dt);
     player.renderX += (player.targetX - player.renderX) * follow;
     player.renderY += (player.targetY - player.renderY) * follow;
     player.renderMoving = isMoving || Math.hypot(player.targetX - player.renderX, player.targetY - player.renderY) > 0.01;
@@ -791,7 +792,32 @@ function wireUi() {
     if (tryPickupClickedGroundItem(event)) {
       return;
     }
-    sendAttack();
+    // compute world coordinates and send with attack direction
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const cx = (event.clientX - rect.left) * scaleX;
+    const cy = (event.clientY - rect.top) * scaleY;
+    const halfW = canvas.width / 2;
+    const halfH = canvas.height / 2;
+    const worldX = (cx - halfW) / (TILE_SIZE * state.zoom) + state.camera.x / TILE_SIZE;
+    const worldY = (cy - halfH) / (TILE_SIZE * state.zoom) + state.camera.y / TILE_SIZE;
+    state.lastPointerWorldX = worldX;
+    state.lastPointerWorldY = worldY;
+    sendAttack(worldX, worldY);
+  });
+
+  // track latest pointer world position for keyboard/mobile attacks
+  canvas.addEventListener("pointermove", (event) => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const cx = (event.clientX - rect.left) * scaleX;
+    const cy = (event.clientY - rect.top) * scaleY;
+    const halfW = canvas.width / 2;
+    const halfH = canvas.height / 2;
+    state.lastPointerWorldX = (cx - halfW) / (TILE_SIZE * state.zoom) + state.camera.x / TILE_SIZE;
+    state.lastPointerWorldY = (cy - halfH) / (TILE_SIZE * state.zoom) + state.camera.y / TILE_SIZE;
   });
 
   window.addEventListener("keydown", (event) => {
@@ -809,7 +835,8 @@ function wireUi() {
 
     if ((event.code === "Space" || event.key.toLowerCase() === "f") && state.joined && !isTextEntryTarget(event.target)) {
       event.preventDefault();
-      sendAttack();
+    // include last known pointer world coordinates if we have them
+    sendAttack(state.lastPointerWorldX, state.lastPointerWorldY);
       return;
     }
 
@@ -1081,7 +1108,26 @@ function clearWorldState() {
 }
 
 function sendAttack() {
-  send({ type: "attack" });
+  // Allow optional target world coords (x,y) and compute facing client-side.
+  const args = Array.from(arguments);
+  let payload = { type: "attack" };
+  if (args.length >= 2 && Number.isFinite(args[0]) && Number.isFinite(args[1])) {
+    const tx = Number(args[0]);
+    const ty = Number(args[1]);
+    payload.targetX = tx;
+    payload.targetY = ty;
+    payload.facing = Number(Math.atan2(ty - (state.players.get(state.selfId)?.y || 0), tx - (state.players.get(state.selfId)?.x || 0)).toFixed(6));
+    // Also set local facing for immediate feedback
+    const self = state.players.get(state.selfId);
+    if (self) self.facing = payload.facing;
+  } else {
+    // no coords: fire in current facing
+    const self = state.players.get(state.selfId);
+    if (self && Number.isFinite(self.facing)) {
+      payload.facing = Number(self.facing.toFixed(6));
+    }
+  }
+  send(payload);
 }
 
 function indexChunkPortals(chunk) {
