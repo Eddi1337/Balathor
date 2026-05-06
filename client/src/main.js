@@ -1673,15 +1673,8 @@ function drawBuildingSprite(building, sx, sy) {
   const w = building.w * TILE_SIZE;
   const h = building.h * TILE_SIZE;
   const variant = getBuildingVariant(building);
-
-  drawCastShadow(sx + 12, sy + h - 18, w - 4, 20, 0.32);
-
-  if (!kenneyRpgBase.complete || kenneyRpgBase.naturalWidth === 0) {
-    drawBuildingFallback(sx, sy, w, h, variant);
-    return;
-  }
-
-  drawKenneyHouse(building, sx, sy, w, h, variant);
+  drawCastShadow(sx + 10, sy + h - 14, w - 6, 18, 0.28);
+  drawHouse(building, sx, sy, w, h, variant);
 }
 
 function getBuildingVariant(building) {
@@ -1694,167 +1687,190 @@ function getBuildingVariant(building) {
   return "timber";
 }
 
-function drawKenneyHouse(building, sx, sy, w, h, variant) {
-  const wide = building.w >= 11;
-  const cols = wide ? 5 : 4;
-  const tile = 64;
-  const houseW = cols * tile;
-  const houseX = Math.round(sx + (w - houseW) / 2);
-  const bodyRows = wide ? 3 : 2;
-  const bodyY = Math.round(sy + h - bodyRows * tile - 12);
-  const roofY = bodyY - (wide ? 100 : 80);
-  const useStone = variant === "stone" || variant === "ember";
-  const doorIndex = useStone ? 214 : 189;
-  const wallIndex = useStone ? 60 : 83;
-  const wallDetailIndex = useStone ? 80 : 84;
-  const windowIndex = useStone ? 191 : 185;
-  const capTile = useStone ? 80 : 86;
+const BUILDING_PALETTES = {
+  timber: { roofBase: "#9c4c1a", roofDark: "#6a2e0e", roofMid: "#b86030", roofLight: "#d4884a", roofRidge: "#3c1808", eave: "#3c1808", wall: "#7a4a22", wallLight: "#a06838", wallDark: "#4a2c10", wallLine: "#3a1e0a", win: "#b8deff", door: "#2c1408", doorFrame: "#c07830", ground: "#5a7a44" },
+  stone:  { roofBase: "#5a6060", roofDark: "#323838", roofMid: "#6e7e7e", roofLight: "#98aaaa", roofRidge: "#1a2020", eave: "#242c2c", wall: "#7a8484", wallLight: "#a8b8b8", wallDark: "#4a5454", wallLine: "#3a4444", win: "#c8e8ff", door: "#1c2424", doorFrame: "#98a8a8", ground: "#6e7a52" },
+  wood:   { roofBase: "#5c3818", roofDark: "#341e0c", roofMid: "#7a5028", roofLight: "#9a7040", roofRidge: "#200e04", eave: "#200e04", wall: "#4a2e14", wallLight: "#6a4828", wallDark: "#2c1a08", wallLine: "#1e0e04", win: "#b8e8b8", door: "#180c04", doorFrame: "#9a6828", ground: "#3a5a2a" },
+  desert: { roofBase: "#c07830", roofDark: "#8a4c18", roofMid: "#d89848", roofLight: "#f0c070", roofRidge: "#5a2c0c", eave: "#5a2c0c", wall: "#c8a060", wallLight: "#e4c890", wallDark: "#8a6a30", wallLine: "#6a4820", win: "#fff0c0", door: "#5c3010", doorFrame: "#e0a040", ground: "#b88840" },
+  ember:  { roofBase: "#2c1c10", roofDark: "#140c08", roofMid: "#482818", roofLight: "#7a3c1c", roofRidge: "#080404", eave: "#0c0604", wall: "#281410", wallLight: "#483028", wallDark: "#140a08", wallLine: "#0c0604", win: "#ff8820", door: "#0c0404", doorFrame: "#8c3410", ground: "#2c2014" },
+};
+
+function drawHouse(building, sx, sy, w, h, variant) {
+  const p = BUILDING_PALETTES[variant] || BUILDING_PALETTES.timber;
+  const wallH = Math.max(38, Math.min(56, Math.round(h * 0.26)));
+  const roofH = h - wallH;
+  const wallY = sy + roofH;
+  const inset = 4;
+  const rw = w - inset * 2;
 
   ctx.save();
-  ctx.shadowColor = "rgba(0, 0, 0, 0.24)";
-  ctx.shadowBlur = 6;
-  ctx.shadowOffsetX = 5;
-  ctx.shadowOffsetY = 8;
+  ctx.shadowColor = "rgba(0,0,0,0.32)";
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetX = 4;
+  ctx.shadowOffsetY = 6;
 
-  for (let row = 0; row < bodyRows; row += 1) {
-    for (let col = 0; col < cols; col += 1) {
-      drawKenneyTile((row + col) % 2 === 0 ? wallIndex : wallDetailIndex, houseX + col * tile, bodyY + row * tile, tile, tile);
+  // --- ROOF ---
+  ctx.fillStyle = p.roofBase;
+  ctx.fillRect(sx + inset, sy + 2, rw, roofH - 2);
+
+  ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+
+  // Shingles: horizontal bands
+  const shingleH = 5;
+  for (let ly = 6; ly < roofH - 2; ly += shingleH + 2) {
+    ctx.fillStyle = ly % (shingleH * 3) < shingleH ? p.roofMid : p.roofBase;
+    ctx.fillRect(sx + inset, sy + 2 + ly, rw, shingleH);
+    ctx.fillStyle = p.roofDark;
+    ctx.fillRect(sx + inset, sy + 2 + ly + shingleH, rw, 2);
+  }
+
+  // Ridge line (runs left–right at roof center)
+  const ridgeY = sy + 2 + Math.round(roofH * 0.28);
+  ctx.fillStyle = p.roofRidge;
+  ctx.fillRect(sx + inset, ridgeY, rw, 4);
+  ctx.fillStyle = p.roofLight;
+  ctx.fillRect(sx + inset, ridgeY + 1, rw, 2);
+
+  // Top highlight
+  ctx.fillStyle = p.roofLight;
+  ctx.fillRect(sx + inset + 4, sy + 3, Math.round(rw * 0.55), 3);
+
+  // Eave (dark overhang strip at wall join)
+  ctx.fillStyle = p.eave;
+  ctx.fillRect(sx + inset - 2, wallY - 6, rw + 4, 8);
+  ctx.fillStyle = blend(p.eave, "#000000", 0.5);
+  ctx.fillRect(sx + inset - 2, wallY + 2, rw + 4, 3);
+
+  // Chimney (on roof, slightly right of center)
+  const chimneyX = sx + Math.round(w * 0.65);
+  const chimneyBotY = ridgeY + 2;
+  ctx.fillStyle = blend(p.wall, "#000000", 0.35);
+  ctx.fillRect(chimneyX - 5, sy + 3, 11, 4);
+  ctx.fillStyle = p.wall;
+  ctx.fillRect(chimneyX - 4, sy + 4, 9, chimneyBotY - sy - 4);
+  ctx.fillStyle = p.wallLight;
+  ctx.fillRect(chimneyX - 4, sy + 5, 3, 3);
+  if (variant !== "ember") {
+    ctx.fillStyle = "rgba(200,200,200,0.3)";
+    ctx.beginPath();
+    ctx.ellipse(chimneyX, sy + 1, 3, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // --- FRONT WALL ---
+  ctx.fillStyle = p.wall;
+  ctx.fillRect(sx + inset - 2, wallY, rw + 4, wallH);
+
+  // Wall texture: vertical boards (timber/wood) or horizontal blocks (stone)
+  if (variant === "stone") {
+    ctx.fillStyle = p.wallDark;
+    for (let ly = 0; ly < wallH; ly += 9) {
+      const offset = Math.floor(ly / 9) % 2 === 0 ? 0 : 14;
+      for (let lx = -14 + offset; lx < rw + 4; lx += 28) {
+        ctx.fillRect(sx + inset - 2 + lx, wallY + ly, 27, 8);
+      }
+    }
+    ctx.fillStyle = p.wallLine;
+    for (let ly = 0; ly < wallH; ly += 9) {
+      ctx.fillRect(sx + inset - 2, wallY + ly, rw + 4, 1);
+    }
+  } else {
+    ctx.fillStyle = p.wallLine;
+    for (let lx = 8; lx < rw + 4; lx += 8) {
+      ctx.fillRect(sx + inset - 2 + lx, wallY, 1, wallH);
     }
   }
 
-  for (let col = 0; col < cols; col += 1) {
-    drawKenneyTile(capTile, houseX + col * tile, bodyY - 18, tile, tile);
-  }
+  // Wall top highlight
+  ctx.fillStyle = p.wallLight;
+  ctx.fillRect(sx + inset - 2, wallY, rw + 4, 3);
 
-  const roofStyle = (variant === "stone" || variant === "ember") ? "stone" : "timber";
-  drawKenneyRoof(houseX, roofY, cols, roofStyle);
+  // Wall side shadow
+  ctx.fillStyle = "rgba(0,0,0,0.22)";
+  ctx.fillRect(sx + inset - 2, wallY, 4, wallH);
+  ctx.fillRect(sx + inset - 2 + rw, wallY, 4, wallH);
 
-  const doorX = houseX + Math.floor(cols / 2) * tile;
-  drawKenneyTile(doorIndex, doorX, bodyY + (bodyRows - 1) * tile, tile, tile);
-
-  if (cols > 3) {
-    drawKenneyTile(windowIndex, houseX + tile, bodyY + tile * 0.35, tile, tile);
-    drawKenneyTile(windowIndex, houseX + (cols - 2) * tile, bodyY + tile * 0.35, tile, tile);
+  // --- WINDOWS ---
+  const numWin = building.w >= 10 ? 2 : 1;
+  const winW = 12; const winH = Math.max(10, wallH - 14);
+  const winY = wallY + 6;
+  if (numWin === 2) {
+    drawHouseWindow(sx + Math.round(w * 0.18), winY, winW, winH, p);
+    drawHouseWindow(sx + Math.round(w * 0.70), winY, winW, winH, p);
   } else {
-    drawKenneyTile(windowIndex, houseX + tile, bodyY + tile * 0.35, tile, tile);
+    drawHouseWindow(sx + Math.round(w * 0.30), winY, winW, winH, p);
   }
+
+  // --- DOOR ---
+  const doorW = Math.max(14, Math.round(w * 0.14));
+  const doorH = wallH - 4;
+  const doorX = sx + Math.round(w / 2) - Math.round(doorW / 2);
+  const doorY = wallY + wallH - doorH;
+  ctx.fillStyle = p.doorFrame;
+  ctx.fillRect(doorX - 2, doorY - 2, doorW + 4, doorH + 2);
+  ctx.fillStyle = p.door;
+  ctx.fillRect(doorX, doorY, doorW, doorH);
+  // Door panels
+  ctx.fillStyle = blend(p.door, "#ffffff", 0.15);
+  ctx.fillRect(doorX + 2, doorY + 3, Math.round(doorW / 2) - 3, Math.round(doorH / 2) - 4);
+  ctx.fillRect(doorX + 2, doorY + Math.round(doorH / 2), Math.round(doorW / 2) - 3, Math.round(doorH / 2) - 4);
+  // Door handle
+  ctx.fillStyle = "#e8c040";
+  ctx.fillRect(doorX + doorW - 5, doorY + Math.round(doorH / 2) - 1, 4, 4);
 
   ctx.restore();
 
-  drawBuildingChimney(houseX + Math.round(cols * tile * 0.62), roofY + 4, variant);
-  drawBuildingFrontDetail(houseX, houseX + houseW, bodyY + bodyRows * tile, variant);
+  // Front garden strip
+  drawBuildingFrontDetail(sx + inset - 2, sx + inset - 2 + rw + 4, sy + h, variant, p);
 }
 
-function drawBuildingChimney(x, roofTopY, variant) {
-  const brick = variant === "stone" ? "#8a9296" :
-                variant === "ember" ? "#2a2020" :
-                variant === "desert" ? "#c09050" :
-                variant === "wood" ? "#6a3820" : "#7a3a28";
-  const top = variant === "ember" ? "#1a1212" : blend(brick, "#000000", 0.2);
-
-  ctx.fillStyle = top;
-  ctx.fillRect(x - 5, roofTopY - 14, 12, 4);
-  ctx.fillStyle = brick;
-  ctx.fillRect(x - 4, roofTopY - 10, 10, 16);
-  ctx.fillStyle = blend(brick, "#ffffff", 0.18);
-  ctx.fillRect(x - 4, roofTopY - 9, 3, 3);
-  ctx.fillRect(x - 4, roofTopY - 4, 3, 3);
-
-  if (variant !== "ember") {
-    ctx.fillStyle = "rgba(220, 220, 220, 0.35)";
-    ctx.beginPath();
-    ctx.ellipse(x + 1, roofTopY - 15, 4, 6, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
+function drawHouseWindow(x, y, w, h, p) {
+  ctx.fillStyle = p.wallDark;
+  ctx.fillRect(x - 1, y - 1, w + 2, h + 2);
+  ctx.fillStyle = p.win;
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.fillRect(x + 1, y + 1, Math.round(w / 2) - 1, Math.round(h / 2) - 1);
+  ctx.fillStyle = p.wallDark;
+  ctx.fillRect(x + Math.round(w / 2), y, 1, h);
+  ctx.fillRect(x, y + Math.round(h / 2), w, 1);
 }
 
-function drawBuildingFrontDetail(leftX, rightX, groundY, variant) {
-  const midX = (leftX + rightX) / 2;
-  const detailW = rightX - leftX - 12;
+function drawBuildingFrontDetail(leftX, rightX, groundY, variant, p) {
+  const detailW = rightX - leftX;
+  const ground = p ? p.ground : "#5a7a44";
+
+  ctx.fillStyle = ground;
+  ctx.fillRect(leftX, groundY, detailW, 5);
 
   if (variant === "desert") {
-    ctx.fillStyle = "#d4a855";
-    ctx.fillRect(leftX + 6, groundY, detailW, 5);
     ctx.fillStyle = "#c8e06a";
     for (let i = 0; i < 3; i += 1) {
-      const bx = leftX + 14 + i * (detailW / 3) | 0;
-      ctx.fillRect(bx, groundY - 8, 3, 10);
-      ctx.fillRect(bx - 3, groundY - 4, 9, 3);
+      const bx = leftX + 10 + Math.round(i * detailW / 3);
+      ctx.fillRect(bx, groundY - 7, 3, 9);
+      ctx.fillRect(bx - 3, groundY - 3, 9, 3);
     }
     return;
   }
 
   if (variant === "ember") {
-    ctx.fillStyle = "#333028";
-    ctx.fillRect(leftX + 6, groundY, detailW, 5);
     for (let i = 0; i < 4; i += 1) {
       ctx.fillStyle = i % 2 === 0 ? "#8b3010" : "#6a2808";
-      ctx.fillRect(leftX + 10 + i * (detailW / 4) | 0, groundY - 3, 6, 4);
+      ctx.fillRect(leftX + 8 + Math.round(i * detailW / 4), groundY - 3, 6, 4);
     }
     return;
   }
 
-  ctx.fillStyle = variant === "stone" ? "#6e7a52" :
-                  variant === "wood" ? "#4a6a3a" : "#5a7a44";
-  ctx.fillRect(leftX + 6, groundY, detailW, 5);
-
-  const flowerColors = variant === "stone" ? ["#d0e8a0", "#b8d480"] :
-                        variant === "wood" ? ["#e8b840", "#c87830", "#90b820"] :
-                        ["#e86870", "#f8c840", "#78c8f0"];
-
+  const flowerColors = variant === "stone" ? ["#d0e8a0", "#b8d480", "#8ec860"] :
+                       variant === "wood" ? ["#e8b840", "#c87830", "#90b820"] :
+                       ["#e86870", "#f8c840", "#78c8f0"];
   for (let i = 0; i < 5; i += 1) {
-    const fx = leftX + 10 + i * (detailW / 5) | 0;
+    const fx = leftX + 8 + Math.round(i * detailW / 5);
     ctx.fillStyle = "#3a6030";
     ctx.fillRect(fx, groundY - 5, 2, 6);
     ctx.fillStyle = flowerColors[i % flowerColors.length];
     ctx.fillRect(fx - 1, groundY - 8, 4, 4);
   }
-}
-
-function drawKenneyRoof(x, y, cols, variant) {
-  const tan = variant !== "stone";
-  const roofLeft = tan ? 101 : 110;
-  const roofRight = tan ? 102 : 111;
-  const gableLeft = tan ? 103 : 112;
-  const gableRight = tan ? 104 : 113;
-  const gableCenter = tan ? 105 : 114;
-  const roofMid = tan ? 106 : 115;
-  const tile = 64;
-
-  drawKenneyTile(roofLeft, x, y + tile, tile, tile);
-  drawKenneyTile(roofRight, x + (cols - 1) * tile, y + tile, tile, tile);
-
-  for (let col = 1; col < cols - 1; col += 1) {
-    drawKenneyTile(roofMid, x + col * tile, y + tile, tile, tile);
-  }
-
-  const center = Math.floor(cols / 2);
-  drawKenneyTile(gableLeft, x + (center - 1) * tile, y + tile * 0.2, tile, tile);
-  drawKenneyTile(gableRight, x + center * tile, y + tile * 0.2, tile, tile);
-  drawKenneyTile(gableCenter, x + center * tile - tile / 2, y + tile * 0.9, tile, tile);
-}
-
-function drawKenneyTile(index, dx, dy, dw = KENNEY_TILE_SIZE, dh = KENNEY_TILE_SIZE) {
-  const sx = (index % KENNEY_SHEET_COLUMNS) * KENNEY_TILE_SIZE;
-  const sy = Math.floor(index / KENNEY_SHEET_COLUMNS) * KENNEY_TILE_SIZE;
-  ctx.drawImage(kenneyRpgBase, sx, sy, KENNEY_TILE_SIZE, KENNEY_TILE_SIZE, Math.round(dx), Math.round(dy), Math.round(dw), Math.round(dh));
-}
-
-function drawBuildingFallback(sx, sy, w, h, variant) {
-  const roofColor = variant === "stone" ? "#5f6c72" : "#b97438";
-  const wallColor = variant === "stone" ? "#9eb0b2" : "#e1d1a1";
-  const roofH = Math.max(42, Math.min(72, h * 0.35));
-  const bodyY = sy + roofH * 0.72;
-
-  ctx.fillStyle = wallColor;
-  ctx.fillRect(sx + 16, bodyY, w - 32, h - roofH);
-  ctx.fillStyle = roofColor;
-  ctx.beginPath();
-  ctx.moveTo(sx + 4, bodyY + 6);
-  ctx.lineTo(sx + w / 2, sy + 4);
-  ctx.lineTo(sx + w - 4, bodyY + 6);
-  ctx.closePath();
-  ctx.fill();
 }
 
 function drawLighting() {
