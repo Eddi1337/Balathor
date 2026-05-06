@@ -19,10 +19,12 @@ const createAccountButton = document.querySelector("#createAccountButton");
 const form = document.querySelector("#characterForm");
 const playButton = document.querySelector("#playButton");
 const nameInput = document.querySelector("#nameInput");
-const hud = document.querySelector("#hud");
-const populationEl = document.querySelector("#population");
-const positionEl = document.querySelector("#position");
+const menuServerLabel = document.querySelector("#menuServerLabel");
+const menuPopulation = document.querySelector("#menuPopulation");
+const menuPosition = document.querySelector("#menuPosition");
 const progression = document.querySelector("#progression");
+const hpFill = document.querySelector("#hpFill");
+const hpText = document.querySelector("#hpText");
 const levelText = document.querySelector("#levelText");
 const statPointsEl = document.querySelector("#statPoints");
 const xpFill = document.querySelector("#xpFill");
@@ -404,7 +406,6 @@ function handleServerMessage(message) {
     bootPanel.classList.add("hidden");
     accountForm.classList.add("hidden");
     form.classList.add("hidden");
-    hud.classList.remove("hidden");
     progression.classList.remove("hidden");
     chat.classList.remove("hidden");
     mobileControls.classList.remove("hidden");
@@ -1224,6 +1225,31 @@ function normalizeServerUrl(value) {
   return url.toString();
 }
 
+function formatServerDisplay(url) {
+  if (!url) {
+    return "—";
+  }
+  try {
+    const withProto = /^wss?:/i.test(url) ? url : `ws://${url}`;
+    const httpish = withProto.replace(/^ws/i, "http");
+    const u = new URL(httpish);
+    const host = u.hostname + (u.port ? `:${u.port}` : "");
+    return host || url;
+  } catch {
+    return url;
+  }
+}
+
+function syncMenuSessionInfo() {
+  if (!state.joined) {
+    return;
+  }
+  menuServerLabel.textContent = formatServerDisplay(state.activeServerUrl);
+  menuPopulation.textContent = `${state.population} online`;
+  const self = state.players.get(state.selfId);
+  menuPosition.textContent = self ? `${Math.round(self.renderX)}, ${Math.round(self.renderY)}` : "—";
+}
+
 function resetToConnection(message) {
   state.connected = false;
   state.joined = false;
@@ -1240,7 +1266,6 @@ function resetToConnection(message) {
   bootPanel.classList.remove("hidden");
   accountForm.classList.add("hidden");
   form.classList.add("hidden");
-  hud.classList.add("hidden");
   progression.classList.add("hidden");
   equipmentPanel.classList.add("hidden");
   bagsPanel.classList.add("hidden");
@@ -1407,6 +1432,7 @@ function openMenu() {
   menuServerUrlInput.select();
   clearMovementInput();
   syncDebugToggleButton();
+  syncMenuSessionInfo();
 }
 
 function closeMenu() {
@@ -1452,8 +1478,6 @@ function updateCamera(dt) {
   const follow = 1 - Math.pow(0.001, dt);
   state.camera.x += (targetX - state.camera.x) * follow;
   state.camera.y += (targetY - state.camera.y) * follow;
-  const hpText = Number.isFinite(self.hp) ? ` HP ${self.hp}/${self.maxHp}` : "";
-  positionEl.textContent = `${Math.round(self.renderX)}, ${Math.round(self.renderY)}${hpText}`;
   renderProgression(self);
   sendViewUpdate();
   requestVisibleChunks();
@@ -1483,6 +1507,13 @@ function renderProgression(self) {
   const statPoints = Number.isFinite(self.statPoints) ? self.statPoints : 0;
   const stats = self.stats || {};
   const xpPct = Math.max(0, Math.min(100, (xp / Math.max(1, xpToNext)) * 100));
+
+  const hpVal = Number.isFinite(self.hp) ? self.hp : 0;
+  const maxHpVal = Number.isFinite(self.maxHp) ? self.maxHp : 1;
+  const hpPct = Math.max(0, Math.min(100, (hpVal / Math.max(1, maxHpVal)) * 100));
+  hpFill.style.width = `${hpPct}%`;
+  hpFill.style.backgroundColor = hpPct < 26 ? "#e74c3c" : hpPct < 52 ? "#f1c40f" : "#2ecc71";
+  hpText.textContent = `${hpVal} / ${maxHpVal} HP`;
 
   levelText.textContent = `Level ${level}`;
   statPointsEl.textContent = `${statPoints} point${statPoints === 1 ? "" : "s"}`;
@@ -1733,7 +1764,9 @@ function draw() {
   drawLighting();
 
   ctx.restore();
-  populationEl.textContent = `${state.population} online`;
+  if (state.menuOpen) {
+    syncMenuSessionInfo();
+  }
   drawDebugHud();
 }
 

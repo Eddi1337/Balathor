@@ -206,25 +206,6 @@ button:focus-visible {
   cursor: progress;
 }
 
-.hud {
-  position: fixed;
-  left: 16px;
-  top: 16px;
-  display: grid;
-  gap: 4px;
-  min-width: 146px;
-  padding: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 8px;
-  background: rgba(15, 19, 28, 0.72);
-  color: var(--text);
-  font-size: 13px;
-}
-
-.hud span {
-  color: var(--muted);
-}
-
 .progression {
   position: fixed;
   right: 16px;
@@ -238,6 +219,33 @@ button:focus-visible {
   background: rgba(15, 19, 28, 0.72);
   color: var(--text);
   font-size: 13px;
+}
+
+.hp-stack {
+  display: grid;
+  gap: 4px;
+}
+
+.hp-track {
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.hp-track span {
+  display: block;
+  width: 0%;
+  height: 100%;
+  border-radius: 4px;
+  background: #2ecc71;
+  transition: width 120ms linear, background-color 180ms ease;
+}
+
+.hp-text {
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .progress-head {
@@ -319,7 +327,7 @@ button:focus-visible {
 .game-window {
   position: fixed;
   right: 16px;
-  top: 206px;
+  top: 246px;
   width: min(360px, calc(100vw - 32px));
   display: grid;
   gap: 10px;
@@ -563,6 +571,34 @@ button:focus-visible {
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42);
 }
 
+.menu-session {
+  text-align: center;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.menu-session-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.menu-session-meta {
+  margin-top: 6px;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.menu-session-sep {
+  opacity: 0.5;
+}
+
 .menu-head {
   display: flex;
   align-items: center;
@@ -643,7 +679,7 @@ button:focus-visible {
   .game-window {
     left: 8px;
     right: auto;
-    top: 270px;
+    top: 310px;
     width: min(300px, calc(100vw - 16px));
   }
 

@@ -91,13 +91,11 @@
       </form>
     </section>
 
-    <aside id="hud" class="hud hidden">
-      <strong>Balathor</strong>
-      <span id="population">0 online</span>
-      <span id="position">0, 0</span>
-    </aside>
-
     <aside id="progression" class="progression hidden" aria-label="Progression">
+      <div class="hp-stack" aria-label="Hit points">
+        <div class="hp-track"><span id="hpFill"></span></div>
+        <span id="hpText" class="hp-text">— / — HP</span>
+      </div>
       <div class="progress-head">
         <strong id="levelText">Level 1</strong>
         <span id="statPoints">0 points</span>
@@ -163,6 +161,14 @@
 
     <aside id="menu" class="menu hidden" aria-hidden="true">
       <div class="menu-panel">
+        <header class="menu-session" aria-label="Session">
+          <div class="menu-session-title" id="menuServerLabel">—</div>
+          <div class="menu-session-meta">
+            <span id="menuPopulation">0 online</span>
+            <span class="menu-session-sep" aria-hidden="true">·</span>
+            <span id="menuPosition">0, 0</span>
+          </div>
+        </header>
         <div class="menu-head">
           <strong>Menu</strong>
           <button id="resumeButton" class="menu-close" type="button">Resume</button>
