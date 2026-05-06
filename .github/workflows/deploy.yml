@@ -7,7 +7,7 @@ on:
       - master
 
 env:
-  REGISTRY: 192.168.10.155
+    REGISTRY: harbor.edmundmurphy.com
   SERVER_IMAGE_REPOSITORY: balathor/server
   CLIENT_IMAGE_REPOSITORY: balathor/client
   DEPLOY_HOST: 192.168.10.112
