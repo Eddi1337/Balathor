@@ -28,17 +28,18 @@ const INTERIOR_BASE_Y = 10000;
 const INTERIOR_SPACING = 40;
 const INTERIOR_WIDTH = 12;
 const INTERIOR_HEIGHT = 10;
-const STARTING_AREA = { x: 0, y: 4, radius: 34 };
+const STARTING_AREA = { x: 0, y: 4, radius: 46 };
+const START_SPAWN = { x: 0, y: -8 };
 
 // Hand-crafted buildings: starting town + portal destinations only.
 const BUILDINGS = [
   // Central village
-  { x:  -5, y: -12, w: 10, h: 8, name: "Home" },
-  { x: -21, y: -14, w: 10, h: 8, name: "Blue Roof House" },
-  { x:  12, y: -14, w: 10, h: 8, name: "Red Roof House" },
-  { x: -28, y:   5, w: 12, h: 8, name: "Market House" },
-  { x:  16, y:   5, w: 12, h: 8, name: "Garden House" },
-  { x:  -6, y:  15, w: 12, h: 9, name: "Town Hall" },
+  { x:  -5, y: -17, w: 10, h: 8, name: "Home" },
+  { x: -38, y: -28, w: 10, h: 8, name: "Blue Roof House" },
+  { x:  28, y: -27, w: 10, h: 8, name: "Red Roof House" },
+  { x: -50, y:  10, w: 12, h: 8, name: "Market House" },
+  { x:  39, y:  15, w: 12, h: 8, name: "Garden House" },
+  { x:  -7, y:  35, w: 14, h: 9, name: "Town Hall" },
   // Desert Oasis (portal destination)
   { x: 142, y: 109, w: 12, h: 8, name: "Oasis House" },
   { x: 159, y: 110, w: 10, h: 7, name: "Sun House" },
@@ -55,7 +56,7 @@ const BUILDINGS = [
 
 // Fixed village clearing zones — only starting town + portal destinations.
 const VILLAGES = [
-  { cx:   0, cy:   4, r: 38 }, // Central Village (slightly expanded)
+  { cx:   0, cy:   4, r: 64 }, // Central Village
   { cx: 150, cy: 118, r: 24 }, // Desert Oasis
   { cx: -150, cy: -120, r: 24 }, // Frost Village
   { cx: 145, cy: -130, r: 24 }, // Ember Camp
@@ -63,9 +64,16 @@ const VILLAGES = [
 
 // Road segments for fixed villages only.
 const STREET_SEGMENTS = [
-  { x1: -26, y1:   0, x2: 26,  y2:   0 }, // Central east-west lane
-  { x1:   0, y1: -14, x2:  0,  y2:  26 }, // Central north-south lane
-  { x1: -30, y1:  13, x2: 30,  y2:  13 }, // Southern lane past Town Hall
+  { x1: -58, y1:   0, x2: 58,  y2:   0, w: 1 }, // Central east-west lane
+  { x1:   0, y1:  -9, x2:  0,  y2:  44, w: 1 }, // Central south lane to Town Hall
+  { x1: -33, y1:  -8, x2: -11, y2:  -8, w: 0 }, // Blue Roof House branch
+  { x1: -33, y1: -20, x2: -33, y2:  -8, w: 0 }, // Blue Roof House walk
+  { x1:  11, y1:  -8, x2:  33, y2:  -8, w: 0 }, // Red Roof House branch
+  { x1:  33, y1: -19, x2:  33, y2:  -8, w: 0 }, // Red Roof House walk
+  { x1: -44, y1:   8, x2: -11, y2:   8, w: 0 }, // Market House branch
+  { x1: -44, y1:   8, x2: -44, y2:  18, w: 0 }, // Market House walk
+  { x1:  11, y1:   8, x2:  45, y2:   8, w: 0 }, // Garden House branch
+  { x1:  45, y1:   8, x2:  45, y2:  23, w: 0 }, // Garden House walk
   { x1: 135, y1: 118, x2: 169, y2: 118 }, // Oasis lane
   { x1: 150, y1: 103, x2: 150, y2: 132 }, // Oasis lane
   { x1: -166, y1: -120, x2: -132, y2: -120 }, // Frost lane
@@ -75,9 +83,9 @@ const STREET_SEGMENTS = [
 ];
 
 const PORTALS = [
-  { id: "portal_oasis", name: "Oasis Gate", x: 10, y: 0, targetX: 150, targetY: 118, color: "#f2c45f" },
-  { id: "portal_frost", name: "Frost Gate", x: -10, y: 0, targetX: -150, targetY: -120, color: "#9ee7ff" },
-  { id: "portal_ember", name: "Ember Gate", x: 0, y: -10, targetX: 145, targetY: -130, color: "#ff7a45" },
+  { id: "portal_oasis", name: "Oasis Gate", x: 8, y: 4, targetX: 150, targetY: 118, color: "#f2c45f" },
+  { id: "portal_frost", name: "Frost Gate", x: -8, y: 4, targetX: -150, targetY: -120, color: "#9ee7ff" },
+  { id: "portal_ember", name: "Ember Gate", x: 0, y: 7, targetX: 145, targetY: -130, color: "#ff7a45" },
   { id: "portal_hub_oasis", name: "Hub Gate", x: 150, y: 118, targetX: 0, targetY: 0, color: "#8fe388" },
   { id: "portal_hub_frost", name: "Hub Gate", x: -150, y: -120, targetX: 0, targetY: 0, color: "#8fe388" },
   { id: "portal_hub_ember", name: "Hub Gate", x: 145, y: -130, targetX: 0, targetY: 0, color: "#8fe388" },
@@ -90,8 +98,6 @@ const BUILDING_INTERIORS = BUILDINGS.map((building, index) => ({
   w: INTERIOR_WIDTH,
   h: INTERIOR_HEIGHT
 }));
-
-const START_INTERIOR = BUILDING_INTERIORS[0];
 
 // ---------------------------------------------------------------------------
 // Procedural settlement system
@@ -352,12 +358,13 @@ function isInVillage(x, y) {
 
 function isStreet(x, y) {
   for (const s of STREET_SEGMENTS) {
+    const width = s.w ?? 1;
     if (s.y1 === s.y2) {
-      if (Math.abs(y - s.y1) <= 1 && x >= Math.min(s.x1, s.x2) && x <= Math.max(s.x1, s.x2)) {
+      if (Math.abs(y - s.y1) <= width && x >= Math.min(s.x1, s.x2) && x <= Math.max(s.x1, s.x2)) {
         return true;
       }
     } else {
-      if (Math.abs(x - s.x1) <= 1 && y >= Math.min(s.y1, s.y2) && y <= Math.max(s.y1, s.y2)) {
+      if (Math.abs(x - s.x1) <= width && y >= Math.min(s.y1, s.y2) && y <= Math.max(s.y1, s.y2)) {
         return true;
       }
     }
@@ -453,13 +460,13 @@ function generateTile(x, y) {
   const ay = Math.abs(y);
   const dist = Math.hypot(x, y);
 
-  // Central stone plaza.
-  if (ax <= 8 && ay <= 6) {
+  // Central stone plaza outside Home.
+  if (ax <= 11 && ay <= 9) {
     return TILE.STONE;
   }
 
   // Main cross-paths, extended to reach the portal villages.
-  if ((ax <= 2 && ay <= 90) || (ay <= 2 && ax <= 90)) {
+  if ((ax <= 1 && ay <= 90) || (ay <= 1 && ax <= 90)) {
     return TILE.PATH;
   }
 
@@ -607,10 +614,10 @@ function isBlockedCircle(x, y, radius = 0.28) {
 
 function spawnPoint(index = 0) {
   const angle = index * 2.399963229728653;
-  const radius = (index % 4) * 0.2;
+  const radius = (index % 8) * 0.08;
   return {
-    x: START_INTERIOR.x + Math.floor(START_INTERIOR.w / 2) + Math.cos(angle) * radius,
-    y: START_INTERIOR.y + 5 + Math.sin(angle) * radius
+    x: START_SPAWN.x + Math.cos(angle) * radius,
+    y: START_SPAWN.y + Math.sin(angle) * radius
   };
 }
 
