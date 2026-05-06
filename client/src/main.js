@@ -1798,8 +1798,12 @@ function tryOpenTraderAtClick(worldX, worldY) {
   if (!self) return false;
   for (const npc of state.npcs.values()) {
     if (!npc.isTrader) continue;
-    if (Math.hypot(npc.x - worldX, npc.y - worldY) > 1.5) continue;
-    if (Math.hypot(npc.x - self.x, npc.y - self.y) > 3.5) continue;
+    const nx = Number.isFinite(npc.renderX) ? npc.renderX : npc.x;
+    const ny = Number.isFinite(npc.renderY) ? npc.renderY : npc.y;
+    if (Math.hypot(nx - worldX, ny - worldY) > 2.0) continue;
+    const sx = Number.isFinite(self.renderX) ? self.renderX : self.x;
+    const sy = Number.isFinite(self.renderY) ? self.renderY : self.y;
+    if (Math.hypot(nx - sx, ny - sy) > 4.0) continue;
     send({ type: "traderOpen", npcId: npc.id });
     return true;
   }
