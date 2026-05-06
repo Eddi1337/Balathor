@@ -694,6 +694,15 @@ function handleUnequipItem(client, message) {
     return;
   }
 
+  if (message.drop) {
+    client.player.equipment[equipmentSlot] = null;
+    addGroundItem(item, client.player.x, client.player.y);
+    applyDerivedPlayerStats(client.player);
+    send(client, { type: "serverMessage", message: "item_dropped", itemName: item.name });
+    broadcastSnapshot();
+    return;
+  }
+
   if (!addItemToInventory(client.player, item)) {
     send(client, { type: "serverMessage", message: "inventory_full" });
     return;

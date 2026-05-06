@@ -624,22 +624,28 @@ function wireUi() {
     sendInteract();
   });
 
-  equipmentSlots.addEventListener("click", (event) => {
+  equipmentSlots.addEventListener("pointerdown", (event) => {
     const button = event.target.closest("[data-equipment-action]");
     if (!button) {
       return;
     }
+    event.preventDefault();
+    event.stopPropagation();
     const equipmentSlot = button.dataset.equipmentSlot;
     if (button.dataset.equipmentAction === "unequip") {
-      send({ type: "unequipItem", equipmentSlot });
+      send({ type: "unequipItem", equipmentSlot, drop: false });
+    } else if (button.dataset.equipmentAction === "drop") {
+      send({ type: "unequipItem", equipmentSlot, drop: true });
     }
   });
 
-  inventorySlots.addEventListener("click", (event) => {
+  inventorySlots.addEventListener("pointerdown", (event) => {
     const button = event.target.closest("[data-inventory-action]");
     if (!button) {
       return;
     }
+    event.preventDefault();
+    event.stopPropagation();
     const slot = Number(button.dataset.slot);
     const action = button.dataset.inventoryAction;
     if (action === "equip") {
@@ -1111,7 +1117,12 @@ function renderEquipment() {
     unequip.dataset.equipmentAction = "unequip";
     unequip.dataset.equipmentSlot = slot;
     unequip.textContent = "Unequip";
-    actions.append(unequip);
+    const drop = document.createElement("button");
+    drop.type = "button";
+    drop.dataset.equipmentAction = "drop";
+    drop.dataset.equipmentSlot = slot;
+    drop.textContent = "Drop";
+    actions.append(unequip, drop);
 
     cell.append(labelEl, icon, name, stats, actions);
     equipmentSlots.append(cell);

@@ -124,11 +124,14 @@ async function joinViaWebSocket(port) {
     let upgraded = false;
     let sentChat = false;
     let sentHome = false;
+    let sentUnequip = false;
+    let sentEquip = false;
+    let sentDropEquipment = false;
     const messages = [];
     const timeout = setTimeout(() => {
       socket.destroy();
       reject(new Error("WebSocket smoke test timed out"));
-    }, 2000);
+    }, 3000);
 
     socket.on("connect", () => {
       socket.write([
@@ -189,6 +192,38 @@ async function joinViaWebSocket(port) {
         })));
       }
 
+      const self = latestSelfSnapshot(messages);
+      if (!sentUnequip && self?.equipment?.weapon) {
+        sentUnequip = true;
+        socket.write(maskedFrame(JSON.stringify({
+          type: "unequipItem",
+          equipmentSlot: "weapon"
+        })));
+      }
+
+      const unequippedSelf = latestSelfSnapshot(messages, (player) => (
+        player.equipment?.weapon === null &&
+        player.inventory?.some((item) => item?.type === "weapon")
+      ));
+      if (sentUnequip && !sentEquip && unequippedSelf) {
+        const slot = unequippedSelf.inventory.findIndex((item) => item?.type === "weapon");
+        sentEquip = true;
+        socket.write(maskedFrame(JSON.stringify({
+          type: "equipItem",
+          slot
+        })));
+      }
+
+      const equippedSelf = latestSelfSnapshot(messages, (player) => player.equipment?.weapon?.type === "weapon");
+      if (sentEquip && !sentDropEquipment && equippedSelf?.equipment?.body) {
+        sentDropEquipment = true;
+        socket.write(maskedFrame(JSON.stringify({
+          type: "unequipItem",
+          equipmentSlot: "body",
+          drop: true
+        })));
+      }
+
       if (
         messages.some((message) => message.type === "welcome") &&
         messages.some((message) => message.type === "teleport" && message.portalId === "home") &&
@@ -206,6 +241,10 @@ async function joinViaWebSocket(port) {
           player.weaponStyle === "ornate" &&
           player.weaponKind === "staff"
         ))) &&
+        messages.some((message) => message.type === "serverMessage" && message.message === "item_unequipped") &&
+        messages.some((message) => message.type === "serverMessage" && message.message === "item_equipped") &&
+        messages.some((message) => message.type === "serverMessage" && message.message === "item_dropped") &&
+        messages.some((message) => message.type === "snapshot" && message.groundItems?.some((ground) => ground.item?.type === "armor")) &&
         messages.some((message) => message.type === "chat" && message.text === "hello realm")
       ) {
         clearTimeout(timeout);
@@ -219,6 +258,20 @@ async function joinViaWebSocket(port) {
       reject(error);
     });
   });
+}
+
+function latestSelfSnapshot(messages, predicate = () => true) {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message.type !== "snapshot") {
+      continue;
+    }
+    const player = message.players?.find((item) => item.name === "Smoke");
+    if (player && predicate(player)) {
+      return player;
+    }
+  }
+  return null;
 }
 
 function maskedFrame(text) {
