@@ -1,5 +1,7 @@
 const crypto = require("node:crypto");
+const fs = require("node:fs");
 const http = require("node:http");
+const path = require("node:path");
 const {
   CHUNK_SIZE,
   ENEMY_CAMPS,
@@ -16,11 +18,14 @@ const { updateNpcs, getNpcSnapshot } = require("./npcs");
 
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 8080);
+const ACCOUNT_STORE_PATH = process.env.ACCOUNT_STORE_PATH || path.join(__dirname, "..", "data", "accounts.json");
 const TICK_RATE = 30;
 const SNAPSHOT_RATE = 20;
 const PLAYER_SPEED = 5.2;
 const MAX_CHUNKS_PER_REQUEST = 64;
 const MAX_NAME_LENGTH = 18;
+const MAX_USERNAME_LENGTH = 18;
+const PASSWORD_MIN_LENGTH = 6;
 const MAX_CHAT_LENGTH = 180;
 const CHAT_HISTORY_LIMIT = 60;
 const CHAT_COOLDOWN_MS = 800;
@@ -165,6 +170,7 @@ let nextItemId = 1;
 let nextGroundItemId = 1;
 let tick = 0;
 
+const accountStore = loadAccountStore();
 const clients = new Map();
 const chunkCache = new Map();
 const chatHistory = [];
@@ -172,6 +178,8 @@ const itemDatabase = createItemDatabase();
 const chests = createChests();
 const groundItems = [];
 const mobs = createMobs();
+
+syncNextItemIdFromAccounts();
 
 const server = http.createServer((req, res) => {
   if (req.url === "/health") {
@@ -228,6 +236,7 @@ server.on("upgrade", (req, socket) => {
     lastHomeAt: 0,
     input: { up: false, down: false, left: false, right: false },
     view: null,
+    account: null,
     player: null
   };
 
@@ -247,6 +256,121 @@ server.listen(PORT, HOST, () => {
 });
 
 setInterval(simulate, 1000 / TICK_RATE).unref();
+
+process.on("SIGTERM", () => {
+  saveAllActiveCharacters();
+  process.exit(0);
+});
+
+process.on("SIGINT", () => {
+  saveAllActiveCharacters();
+  process.exit(0);
+});
+
+function loadAccountStore() {
+  try {
+    const raw = fs.readFileSync(ACCOUNT_STORE_PATH, "utf8");
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && parsed.accounts && typeof parsed.accounts === "object") {
+      return parsed;
+    }
+  } catch {
+    // A missing or unreadable account file starts with an empty local store.
+  }
+  return { version: 1, accounts: {} };
+}
+
+function saveAccountStore() {
+  fs.mkdirSync(path.dirname(ACCOUNT_STORE_PATH), { recursive: true });
+  const tmpPath = `${ACCOUNT_STORE_PATH}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(accountStore, null, 2));
+  fs.renameSync(tmpPath, ACCOUNT_STORE_PATH);
+}
+
+function createAccount(username, password) {
+  const salt = crypto.randomBytes(16).toString("hex");
+  return {
+    username,
+    salt,
+    passwordHash: hashPassword(password, salt),
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    character: null
+  };
+}
+
+function hashPassword(password, salt) {
+  return crypto.pbkdf2Sync(password, salt, 120000, 32, "sha256").toString("hex");
+}
+
+function verifyPassword(password, account) {
+  const expected = Buffer.from(account.passwordHash || "", "hex");
+  const actual = Buffer.from(hashPassword(password, account.salt || ""), "hex");
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+}
+
+function saveClientCharacter(client) {
+  if (!client.account || !client.player) {
+    return;
+  }
+
+  const account = accountStore.accounts[client.account.key];
+  if (!account) {
+    return;
+  }
+
+  account.character = serializePlayer(client.player);
+  account.updatedAt = Date.now();
+  saveAccountStore();
+}
+
+function saveAllActiveCharacters() {
+  for (const client of clients.values()) {
+    saveClientCharacter(client);
+  }
+}
+
+function serializePlayer(player) {
+  return {
+    name: player.name,
+    classId: player.classId,
+    baseTorsoStyle: player.baseTorsoStyle,
+    baseWeaponStyle: player.baseWeaponStyle,
+    torsoStyle: player.baseTorsoStyle || player.torsoStyle,
+    weaponStyle: player.baseWeaponStyle || player.weaponStyle,
+    torsoColor: player.torsoColor,
+    weaponColor: player.weaponColor,
+    hp: player.hp,
+    maxHp: player.maxHp,
+    xp: player.xp,
+    level: player.level,
+    statPoints: player.statPoints,
+    stats: player.stats,
+    inventory: player.inventory,
+    equipment: player.equipment,
+    x: Number(player.x.toFixed(3)),
+    y: Number(player.y.toFixed(3)),
+    facing: Number(player.facing.toFixed(3))
+  };
+}
+
+function syncNextItemIdFromAccounts() {
+  let maxId = 0;
+  for (const account of Object.values(accountStore.accounts)) {
+    const character = account.character;
+    if (!character) continue;
+    for (const item of [
+      ...(Array.isArray(character.inventory) ? character.inventory : []),
+      ...Object.values(character.equipment || {})
+    ]) {
+      const match = /^item_(\d+)$/.exec(item?.id || "");
+      if (match) {
+        maxId = Math.max(maxId, Number(match[1]));
+      }
+    }
+  }
+  nextItemId = Math.max(nextItemId, maxId + 1);
+}
 
 function simulate() {
   tick += 1;
@@ -387,6 +511,11 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "auth") {
+    handleAuth(client, message);
+    return;
+  }
+
   if (message.type === "hello") {
     joinWorld(client, message);
     return;
@@ -457,12 +586,59 @@ function handleMessage(client, raw) {
   }
 }
 
-function joinWorld(client, message) {
+function handleAuth(client, message) {
   if (client.player) {
     return;
   }
 
-  const spawn = spawnPoint(nextSpawnIndex++);
+  const username = sanitizeUsername(message.username);
+  const password = sanitizePassword(message.password);
+  const action = message.action === "create" ? "create" : "login";
+  if (!username || !password) {
+    send(client, { type: "auth", ok: false, message: "auth_invalid" });
+    return;
+  }
+
+  const key = username.toLowerCase();
+  let account = accountStore.accounts[key];
+  if (action === "create") {
+    if (account) {
+      send(client, { type: "auth", ok: false, message: "auth_exists" });
+      return;
+    }
+    account = createAccount(username, password);
+    accountStore.accounts[key] = account;
+    saveAccountStore();
+  } else if (!account || !verifyPassword(password, account)) {
+    send(client, { type: "auth", ok: false, message: "auth_failed" });
+    return;
+  }
+
+  client.account = { key, username: account.username };
+  send(client, {
+    type: "auth",
+    ok: true,
+    username: account.username,
+    hasCharacter: Boolean(account.character)
+  });
+
+  if (account.character) {
+    joinWorld(client, account.character, account.character);
+  }
+}
+
+function joinWorld(client, message, savedCharacter = null) {
+  if (client.player) {
+    return;
+  }
+
+  const fallbackSpawn = spawnPoint(nextSpawnIndex++);
+  const spawn = savedCharacter
+    ? {
+        x: clampNumber(savedCharacter.x, -10000, 10000, fallbackSpawn.x),
+        y: clampNumber(savedCharacter.y, -10000, 10000, fallbackSpawn.y)
+      }
+    : fallbackSpawn;
   const torsoColor = sanitizeColor(message.torsoColor || message.primary, "#5cc8ff");
   const weaponColor = sanitizeColor(message.weaponColor || message.accent, "#ffd166");
   const baseTorsoStyle = sanitizeChoice(message.torsoStyle, TORSO_STYLE_IDS, "tunic");
@@ -482,13 +658,13 @@ function joinWorld(client, message) {
     accent: weaponColor,
     hp: PLAYER_MAX_HP,
     maxHp: PLAYER_MAX_HP,
-    xp: 0,
-    level: 1,
-    xpToNext: xpForNextLevel(1),
-    statPoints: 0,
-    stats: createBaseStats(),
-    inventory: Array(INVENTORY_SIZE).fill(null),
-    equipment: createStarterEquipment(classId, {
+    xp: clampInteger(savedCharacter?.xp ?? 0, 0, 100000000),
+    level: clampInteger(savedCharacter?.level ?? 1, 1, 1000),
+    xpToNext: xpForNextLevel(clampInteger(savedCharacter?.level ?? 1, 1, 1000)),
+    statPoints: clampInteger(savedCharacter?.statPoints ?? 0, 0, 1000),
+    stats: sanitizeStats(savedCharacter?.stats),
+    inventory: sanitizeInventory(savedCharacter?.inventory),
+    equipment: sanitizeEquipment(savedCharacter?.equipment) || createStarterEquipment(classId, {
       torsoStyle: baseTorsoStyle,
       weaponStyle: baseWeaponStyle,
       torsoColor,
@@ -501,7 +677,13 @@ function joinWorld(client, message) {
   };
 
   applyDerivedPlayerStats(client.player);
-  client.player.hp = client.player.maxHp;
+  client.player.hp = savedCharacter
+    ? Math.min(client.player.maxHp, clampInteger(savedCharacter.hp ?? client.player.maxHp, 0, client.player.maxHp))
+    : client.player.maxHp;
+
+  if (client.account && !savedCharacter) {
+    saveClientCharacter(client);
+  }
 
   send(client, {
     type: "welcome",
@@ -1706,6 +1888,7 @@ function disconnect(client) {
   }
 
   const playerName = client.player?.name;
+  saveClientCharacter(client);
   client.alive = false;
   clients.delete(client.id);
 
@@ -1828,6 +2011,19 @@ function normalizeView(view = {}, player = null) {
   };
 }
 
+function sanitizeUsername(value) {
+  const normalized = String(value || "")
+    .replace(/[^\w-]/g, "")
+    .trim()
+    .slice(0, MAX_USERNAME_LENGTH);
+  return normalized.length >= 3 ? normalized : "";
+}
+
+function sanitizePassword(value) {
+  const password = String(value || "");
+  return password.length >= PASSWORD_MIN_LENGTH && password.length <= 128 ? password : "";
+}
+
 function sanitizeName(value) {
   const normalized = String(value || "Wanderer")
     .replace(/[^\w -]/g, "")
@@ -1858,6 +2054,63 @@ function clampInteger(value, min, max) {
     return 0;
   }
   return Math.max(min, Math.min(max, parsed));
+}
+
+function clampNumber(value, min, max, fallback) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, parsed));
+}
+
+function sanitizeStats(stats = {}) {
+  const result = createBaseStats();
+  for (const stat of STAT_IDS) {
+    result[stat] = clampInteger(stats[stat] || 0, 0, 1000);
+  }
+  return result;
+}
+
+function sanitizeInventory(inventory) {
+  const result = Array(INVENTORY_SIZE).fill(null);
+  if (!Array.isArray(inventory)) {
+    return result;
+  }
+  inventory.slice(0, INVENTORY_SIZE).forEach((item, index) => {
+    result[index] = sanitizeItem(item);
+  });
+  return result;
+}
+
+function sanitizeEquipment(equipment) {
+  if (!equipment || typeof equipment !== "object") {
+    return null;
+  }
+  return {
+    weapon: sanitizeItem(equipment.weapon),
+    body: sanitizeItem(equipment.body),
+    ring1: sanitizeItem(equipment.ring1),
+    ring2: sanitizeItem(equipment.ring2)
+  };
+}
+
+function sanitizeItem(item) {
+  if (!item || typeof item !== "object") {
+    return null;
+  }
+  const type = sanitizeChoice(item.type, ["weapon", "armor", "ring", "potion"], null);
+  if (!type) {
+    return null;
+  }
+  return {
+    ...item,
+    type,
+    name: String(item.name || "Item").slice(0, 48),
+    id: String(item.id || `item_${nextItemId++}`).slice(0, 48),
+    stats: typeof item.stats === "object" && item.stats ? { ...item.stats } : {},
+    visual: typeof item.visual === "object" && item.visual ? { ...item.visual } : {}
+  };
 }
 
 function sendJson(res, status, payload) {

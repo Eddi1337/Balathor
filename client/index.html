@@ -17,6 +17,23 @@
 
       <div id="status" class="status">Loading realm config</div>
 
+      <form id="accountForm" class="character hidden">
+        <label>
+          <span>Username</span>
+          <input id="usernameInput" maxlength="18" autocomplete="username">
+        </label>
+
+        <label>
+          <span>Password</span>
+          <input id="passwordInput" type="password" maxlength="128" autocomplete="current-password">
+        </label>
+
+        <div class="account-actions">
+          <button id="loginButton" class="connect" type="submit" value="login">Log In</button>
+          <button id="createAccountButton" class="segment" type="submit" value="create">Create</button>
+        </div>
+      </form>
+
       <form id="characterForm" class="character hidden">
         <label>
           <span>Name</span>

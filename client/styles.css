@@ -164,6 +164,13 @@ button:focus-visible {
   gap: 10px;
 }
 
+.account-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  margin-top: auto;
+}
+
 .swatch {
   width: 42px;
   height: 42px;
@@ -181,11 +188,14 @@ button:focus-visible {
 .connect,
 .play {
   width: 100%;
-  margin-top: auto;
   border-color: #ffd166;
   background: #ffd166;
   color: #1d2430;
   font-weight: 800;
+}
+
+.play {
+  margin-top: auto;
 }
 
 .connect:disabled,

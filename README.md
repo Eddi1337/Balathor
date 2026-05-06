@@ -5,7 +5,7 @@ Balathor is starting as a small MMO prototype in the style of a sprite-based fan
 - `server`: an authoritative Node.js simulation server with a custom WebSocket transport and Dockerfile.
 - `client`: a Windows-friendly HTML5 canvas client that can be run in a browser now and packaged with the Electron scaffold in `client/desktop`.
 
-The current gameplay loop is intentionally narrow: the client opens on a server connection screen, connects, shows character customization, then joins a social hub in a large fantasy world. Players move with WASD, movement is simulated by the server, and chat is delivered locally to players who can see the speaker.
+The current gameplay loop is intentionally narrow: the client opens on an account login screen, connects, shows character customization for new accounts, then joins a social hub in a large fantasy world. Players move with WASD, movement is simulated by the server, characters are saved to their account, and chat is delivered locally to players who can see the speaker.
 
 ## Run Locally
 
@@ -111,6 +111,7 @@ GAME_SERVER_URL=ws://localhost:8080/ws npm run client
 
 The server owns:
 
+- account login and saved character state
 - player positions and movement validation
 - social hub spawning
 - generated world chunks
@@ -166,6 +167,7 @@ npm run client:desktop:build:win
 
 Client to server:
 
+- `auth`: creates an account or logs into an existing account.
 - `hello`: sends player name, class, torso style/colour, and weapon style/colour.
 - `input`: sends current movement key state.
 - `view`: sends the current camera viewport used for local chat visibility.
@@ -180,6 +182,7 @@ Client to server:
 
 Server to client:
 
+- `auth`: confirms account login/create status.
 - `welcome`: confirms the player's id and world settings.
 - `chatHistory`: sends recent server-side chat history visible to this player.
 - `chat`: sends a server-accepted local chat line to nearby visible clients.
@@ -188,9 +191,12 @@ Server to client:
 - `combat`: broadcasts sword swings, arrows, fireballs, hits, damage, and shield blocks.
 - `serverMessage`: sends connection or validation messages.
 
+## Account Persistence
+
+The server stores local account data in `server/data/accounts.json` by default. Passwords are salted and hashed with PBKDF2. Set `ACCOUNT_STORE_PATH=/path/to/accounts.json` to place the account file somewhere persistent for a deployment.
+
 ## Next Milestones
 
-- account/session identity
 - combat and enemy simulation
 - item drops and inventory
 - persistent shard state

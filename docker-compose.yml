@@ -8,14 +8,16 @@ services:
     environment:
       HOST: 0.0.0.0
       PORT: 8080
+      ACCOUNT_STORE_PATH: /data/accounts.json
     ports:
       - "8080:8080"
+    volumes:
+      - balathor-data:/data
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 15s
       timeout: 3s
       retries: 5
-
   balathor-client:
     build:
       context: ./client
@@ -33,3 +35,6 @@ services:
       interval: 15s
       timeout: 3s
       retries: 5
+
+volumes:
+  balathor-data:

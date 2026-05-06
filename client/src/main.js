@@ -6,6 +6,11 @@ const menu = document.querySelector("#menu");
 const menuServerUrlInput = document.querySelector("#menuServerUrlInput");
 const resumeButton = document.querySelector("#resumeButton");
 const serverForm = document.querySelector("#serverForm");
+const accountForm = document.querySelector("#accountForm");
+const usernameInput = document.querySelector("#usernameInput");
+const passwordInput = document.querySelector("#passwordInput");
+const loginButton = document.querySelector("#loginButton");
+const createAccountButton = document.querySelector("#createAccountButton");
 const form = document.querySelector("#characterForm");
 const playButton = document.querySelector("#playButton");
 const nameInput = document.querySelector("#nameInput");
@@ -94,6 +99,7 @@ const state = {
   equipment: { weapon: null, body: null, ring1: null, ring2: null },
   speechBubbles: new Map(),
   combatFx: [],
+  levelUpFx: [],
   chunks: new Map(),
   portals: new Map(),
   buildings: new Map(),
@@ -103,6 +109,7 @@ const state = {
   inputSeq: 0,
   camera: { x: 0, y: 0 },
   activeServerUrl: "",
+  authenticated: false,
   menuOpen: false,
   chatMinimized: false,
   activeWindow: null,
@@ -210,8 +217,9 @@ function connect(url) {
     localStorage.setItem(SERVER_URL_STORAGE_KEY, normalizedUrl);
     setStatus("Connected");
     bootPanel.classList.remove("hidden");
-    form.classList.remove("hidden");
-    nameInput.focus();
+    accountForm.classList.remove("hidden");
+    form.classList.add("hidden");
+    usernameInput.focus();
   });
 
   socket.addEventListener("message", (event) => {
@@ -234,10 +242,33 @@ function connect(url) {
 }
 
 function handleServerMessage(message) {
+  if (message.type === "auth") {
+    loginButton.disabled = false;
+    createAccountButton.disabled = false;
+    if (!message.ok) {
+      state.authenticated = false;
+      setStatus(authErrorText(message.message));
+      return;
+    }
+    state.authenticated = true;
+    accountForm.classList.add("hidden");
+    if (!message.hasCharacter) {
+      setStatus("Create your character");
+      form.classList.remove("hidden");
+      nameInput.value = message.username || usernameInput.value || "Wanderer";
+      nameInput.focus();
+    } else {
+      setStatus("Entering realm");
+    }
+    return;
+  }
+
   if (message.type === "welcome") {
     state.selfId = message.selfId;
     state.joined = true;
     bootPanel.classList.add("hidden");
+    accountForm.classList.add("hidden");
+    form.classList.add("hidden");
     hud.classList.remove("hidden");
     progression.classList.remove("hidden");
     chat.classList.remove("hidden");
@@ -297,6 +328,9 @@ function handleServerMessage(message) {
   if (message.type === "combat") {
     applyCombatEvent(message);
     if (message.attackerId === state.selfId && message.xpGained) {
+      if (message.levelsGained > 0) {
+        createLevelUpFireworks();
+      }
       appendChat({
         kind: "system",
         name: "Realm",
@@ -346,6 +380,16 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: `${message.itemName}` });
     }
   }
+}
+
+function authErrorText(message) {
+  if (message === "auth_exists") {
+    return "That username is already taken";
+  }
+  if (message === "auth_failed") {
+    return "Username or password is wrong";
+  }
+  return "Use a username and a password with at least 6 characters";
 }
 
 function applySnapshot(players) {
@@ -514,6 +558,36 @@ function updateSmoothPlayers(dt) {
 
   const now = performance.now();
   state.combatFx = state.combatFx.filter((fx) => now - fx.createdAt < fx.ttl);
+  state.levelUpFx = state.levelUpFx.filter((fx) => now - fx.createdAt < fx.ttl);
+}
+
+function createLevelUpFireworks() {
+  const self = state.players.get(state.selfId);
+  if (!self) {
+    return;
+  }
+
+  const colors = ["#ffd166", "#5cc8ff", "#f26d6d", "#c79cff", "#8fe388"];
+  for (let burst = 0; burst < 4; burst += 1) {
+    const particles = [];
+    const count = 18;
+    for (let i = 0; i < count; i += 1) {
+      const angle = (Math.PI * 2 * i) / count + burst * 0.18;
+      const speed = 34 + (i % 5) * 9;
+      particles.push({
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        color: colors[(i + burst) % colors.length]
+      });
+    }
+    state.levelUpFx.push({
+      x: self.renderX,
+      y: self.renderY - 0.9 - burst * 0.18,
+      particles,
+      createdAt: performance.now() + burst * 120,
+      ttl: 1250
+    });
+  }
 }
 
 function predictLocalPlayer(player, dt) {
@@ -583,6 +657,10 @@ function wireUi() {
     if (!state.connected || state.joined) {
       return;
     }
+    if (!state.authenticated) {
+      setStatus("Log in before creating a character");
+      return;
+    }
 
     playButton.disabled = true;
     send({
@@ -595,6 +673,24 @@ function wireUi() {
       weaponColor: state.weaponColor,
       primary: state.torsoColor,
       accent: state.weaponColor
+    });
+  });
+
+  accountForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!state.connected || state.joined) {
+      return;
+    }
+    const submitter = event.submitter;
+    const action = submitter?.value === "create" ? "create" : "login";
+    loginButton.disabled = true;
+    createAccountButton.disabled = true;
+    setStatus(action === "create" ? "Creating account" : "Logging in");
+    send({
+      type: "auth",
+      action,
+      username: usernameInput.value,
+      password: passwordInput.value
     });
   });
 
@@ -913,6 +1009,7 @@ function resetToConnection(message) {
   state.connected = false;
   state.joined = false;
   state.selfId = null;
+  state.authenticated = false;
   state.socket = null;
   clearWorldState();
   state.menuOpen = false;
@@ -922,6 +1019,7 @@ function resetToConnection(message) {
   playButton.disabled = false;
   setStatus(message);
   bootPanel.classList.remove("hidden");
+  accountForm.classList.add("hidden");
   form.classList.add("hidden");
   hud.classList.add("hidden");
   progression.classList.add("hidden");
@@ -931,6 +1029,8 @@ function resetToConnection(message) {
   mobileControls.classList.add("hidden");
   setChatMinimized(false);
   setActiveGameWindow(null);
+  loginButton.disabled = false;
+  createAccountButton.disabled = false;
   chatMessages.replaceChildren();
 }
 
@@ -944,6 +1044,7 @@ function clearWorldState() {
   state.equipment = { weapon: null, body: null, ring1: null, ring2: null };
   state.speechBubbles.clear();
   state.combatFx = [];
+  state.levelUpFx = [];
   state.chunks.clear();
   state.portals.clear();
   state.buildings.clear();
@@ -1076,10 +1177,12 @@ function changeServer(url) {
   const normalizedUrl = normalizeServerUrl(url);
   closeMenu();
   clearWorldState();
+  accountForm.classList.add("hidden");
   form.classList.add("hidden");
   playButton.disabled = false;
   state.joined = false;
   state.selfId = null;
+  state.authenticated = false;
   connect(normalizedUrl);
 }
 
@@ -1370,6 +1473,7 @@ function draw() {
   drawPlayers();
   drawTreeCanopies();
   drawCombatFx();
+  drawLevelUpFx();
   drawLighting();
   populationEl.textContent = `${state.population} online`;
 }
@@ -2016,6 +2120,36 @@ function drawDamageFx(fx, pct, halfW, halfH) {
   ctx.textAlign = "center";
   ctx.fillText(fx.blocked ? `blocked -${fx.damage}` : `-${fx.damage}`, tx, ty - 22 - pct * 18);
   ctx.globalAlpha = 1;
+}
+
+function drawLevelUpFx() {
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const now = performance.now();
+
+  for (const fx of state.levelUpFx) {
+    const age = now - fx.createdAt;
+    if (age < 0) {
+      continue;
+    }
+    const pct = Math.min(1, age / fx.ttl);
+    const originX = fx.x * TILE_SIZE - state.camera.x + halfW;
+    const originY = fx.y * TILE_SIZE - state.camera.y + halfH;
+    ctx.save();
+    ctx.globalAlpha = 1 - pct;
+    for (const particle of fx.particles) {
+      const px = originX + particle.vx * pct;
+      const py = originY + particle.vy * pct + pct * pct * 34;
+      ctx.fillStyle = particle.color;
+      ctx.fillRect(px - 2, py - 2, 4, 4);
+    }
+    ctx.strokeStyle = "#ffd166";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(originX, originY, 14 + pct * 36, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
 }
 
 function drawHealthBar(x, y, w, h, hp, maxHp) {

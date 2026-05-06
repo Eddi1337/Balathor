@@ -21,12 +21,16 @@ assert.equal(world.isBlocked(0, 0), false);
 const basePort = 18000 + (process.pid % 1000);
 const serverPort = basePort;
 const clientPort = basePort + 1000;
+const accountPath = `/tmp/balathor-smoke-accounts-${process.pid}.json`;
+const smokeAccount = `Smoke${process.pid}`;
+const smokePassword = "smoke-password";
 
 const server = spawn(process.execPath, ["server/src/index.js"], {
   env: {
     ...process.env,
     HOST: "127.0.0.1",
-    PORT: String(serverPort)
+    PORT: String(serverPort),
+    ACCOUNT_STORE_PATH: accountPath
   },
   stdio: "ignore"
 });
@@ -55,11 +59,25 @@ try {
   assert.match(index, /Torso Colour/);
   assert.match(index, /Weapon Colour/);
   assert.match(index, /chatToggle/);
+  assert.match(index, /accountForm/);
   assert.match(index, /equipmentButton/);
   assert.match(index, /bagsButton/);
 
-  const messages = await joinViaWebSocket(serverPort);
+  const messages = await joinViaWebSocket(serverPort, {
+    action: "create",
+    username: smokeAccount,
+    password: smokePassword
+  });
+  await delay(120);
+  const resumedMessages = await loginSavedCharacter(serverPort, smokeAccount, smokePassword);
   assert.equal(messages.some((message) => message.type === "welcome"), true);
+  assert.equal(messages.some((message) => message.type === "auth" && message.ok && message.hasCharacter === false), true);
+  assert.equal(resumedMessages.some((message) => message.type === "auth" && message.ok && message.hasCharacter === true), true);
+  assert.equal(resumedMessages.some((message) => message.type === "snapshot" && message.players?.some((player) => (
+    player.name === smokeAccount &&
+    player.equipment?.body === null &&
+    player.inventory?.some((item) => item?.type === "armor")
+  ))), true);
   assert.equal(messages.some((message) => message.type === "teleport" && message.portalId === "home"), true);
   assert.equal(messages.some((message) => message.type === "chunk"), true);
   assert.equal(messages.some((message) => message.type === "snapshot" && message.mobs?.some((mob) => mob.isBoss)), true);
@@ -122,12 +140,13 @@ async function retry(fn, attempts, waitMs) {
   throw lastError;
 }
 
-async function joinViaWebSocket(port) {
+async function joinViaWebSocket(port, account) {
   return new Promise((resolve, reject) => {
     const socket = net.createConnection({ host: "127.0.0.1", port });
     const key = crypto.randomBytes(16).toString("base64");
     let buffer = Buffer.alloc(0);
     let upgraded = false;
+    let sentHello = false;
     let sentChat = false;
     let sentHome = false;
     let sentView = false;
@@ -167,8 +186,24 @@ async function joinViaWebSocket(port) {
         buffer = buffer.subarray(marker + 4);
         upgraded = true;
         socket.write(maskedFrame(JSON.stringify({
+          type: "auth",
+          action: account.action,
+          username: account.username,
+          password: account.password
+        })));
+      }
+
+      const decoded = decodeServerFrames(buffer);
+      buffer = decoded.remaining;
+      for (const payload of decoded.payloads) {
+        messages.push(JSON.parse(payload.toString("utf8")));
+      }
+
+      if (!sentHello && messages.some((message) => message.type === "auth" && message.ok && message.hasCharacter === false)) {
+        sentHello = true;
+        socket.write(maskedFrame(JSON.stringify({
           type: "hello",
-          name: "Smoke",
+          name: account.username,
           classId: "mage",
           torsoStyle: "robe",
           weaponStyle: "ornate",
@@ -177,12 +212,6 @@ async function joinViaWebSocket(port) {
           primary: "#5cc8ff",
           accent: "#ffd166"
         })));
-      }
-
-      const decoded = decodeServerFrames(buffer);
-      buffer = decoded.remaining;
-      for (const payload of decoded.payloads) {
-        messages.push(JSON.parse(payload.toString("utf8")));
       }
 
       if (!sentChat && messages.some((message) => message.type === "welcome")) {
@@ -272,7 +301,7 @@ async function joinViaWebSocket(port) {
         messages.some((message) => message.type === "serverMessage" && message.message === "item_picked_up") &&
         messages.some((message) => message.type === "snapshot" && message.groundItems?.some((ground) => ground.item?.type === "armor")) &&
         messages.some((message) => message.type === "snapshot" && message.players?.some((player) => (
-          player.name === "Smoke" &&
+          player.name === smokeAccount &&
           player.equipment?.body === null &&
           player.inventory?.some((item) => item?.type === "armor")
         ))) &&
@@ -311,12 +340,85 @@ function latestSelfSnapshot(messages, predicate = () => true) {
     if (message.type !== "snapshot") {
       continue;
     }
-    const player = message.players?.find((item) => item.name === "Smoke");
+    const player = message.players?.find((item) => item.name === smokeAccount);
     if (player && predicate(player)) {
       return player;
     }
   }
   return null;
+}
+
+async function loginSavedCharacter(port, username, password) {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection({ host: "127.0.0.1", port });
+    const key = crypto.randomBytes(16).toString("base64");
+    let buffer = Buffer.alloc(0);
+    let upgraded = false;
+    const messages = [];
+    const timeout = setTimeout(() => {
+      socket.destroy();
+      reject(new Error("Saved character login timed out"));
+    }, 3000);
+
+    socket.on("connect", () => {
+      socket.write([
+        "GET /ws HTTP/1.1",
+        "Host: 127.0.0.1",
+        "Upgrade: websocket",
+        "Connection: Upgrade",
+        `Sec-WebSocket-Key: ${key}`,
+        "Sec-WebSocket-Version: 13",
+        "",
+        ""
+      ].join("\r\n"));
+    });
+
+    socket.on("data", (data) => {
+      buffer = Buffer.concat([buffer, data]);
+
+      if (!upgraded) {
+        const marker = buffer.indexOf("\r\n\r\n");
+        if (marker === -1) {
+          return;
+        }
+        const headers = buffer.subarray(0, marker).toString("utf8");
+        assert.match(headers, /101 Switching Protocols/);
+        buffer = buffer.subarray(marker + 4);
+        upgraded = true;
+        socket.write(maskedFrame(JSON.stringify({
+          type: "auth",
+          action: "login",
+          username,
+          password
+        })));
+      }
+
+      const decoded = decodeServerFrames(buffer);
+      buffer = decoded.remaining;
+      for (const payload of decoded.payloads) {
+        messages.push(JSON.parse(payload.toString("utf8")));
+      }
+
+      if (
+        messages.some((message) => message.type === "auth" && message.ok && message.hasCharacter === true) &&
+        messages.some((message) => message.type === "welcome") &&
+        messages.some((message) => message.type === "snapshot" && message.players?.some((player) => (
+          player.name === username &&
+          player.equipment?.body === null &&
+          player.inventory?.some((item) => item?.type === "armor")
+        )))
+      ) {
+        clearTimeout(timeout);
+        socket.end();
+        resolve(messages);
+      }
+    });
+
+    socket.on("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+  });
 }
 
 function maskedFrame(text) {
