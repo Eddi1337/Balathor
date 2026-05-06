@@ -28,6 +28,14 @@ const PORTAL_COOLDOWN_MS = 1400;
 const DOOR_COOLDOWN_MS = 600;
 const PLAYER_MAX_HP = 100;
 const MOB_RESPAWN_MS = 7000;
+const XP_BASE_TO_LEVEL = 100;
+const XP_LEVEL_STEP = 55;
+const STAT_IDS = ["speed", "strength", "armour", "health"];
+const STAT_POINT_HP = 20;
+const STAT_POINT_SPEED = 0.32;
+const STAT_POINT_STRENGTH_DAMAGE = 4;
+const STAT_POINT_ARMOUR_REDUCTION = 0.04;
+const STAT_POINT_ARMOUR_CAP = 0.55;
 const CLASS_IDS = ["ranger", "mage", "knight"];
 const CLASS_LOADOUTS = Object.freeze({
   ranger: {
@@ -209,8 +217,9 @@ function simulate() {
       dx /= length;
       dy /= length;
 
-      const nextX = client.player.x + dx * PLAYER_SPEED * dt;
-      const nextY = client.player.y + dy * PLAYER_SPEED * dt;
+      const speed = getPlayerSpeed(client.player);
+      const nextX = client.player.x + dx * speed * dt;
+      const nextY = client.player.y + dy * speed * dt;
 
       if (!isBlockedCircle(nextX, client.player.y)) {
         client.player.x = nextX;
@@ -349,6 +358,11 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "spendStat") {
+    handleSpendStat(client, message);
+    return;
+  }
+
   if (message.type === "requestChunks") {
     streamChunks(client, message.chunks);
   }
@@ -368,6 +382,11 @@ function joinWorld(client, message) {
     accent: sanitizeColor(message.accent, "#ffd166"),
     hp: PLAYER_MAX_HP,
     maxHp: PLAYER_MAX_HP,
+    xp: 0,
+    level: 1,
+    xpToNext: xpForNextLevel(1),
+    statPoints: 0,
+    stats: createBaseStats(),
     x: spawn.x,
     y: spawn.y,
     facing: 0,
@@ -441,7 +460,13 @@ function handleAttack(client) {
     const hitX = hit.x;
     const hitY = hit.y;
     const blocked = hitKind === "player" && isShieldBlocking(hit, client.player);
-    const damage = blocked ? Math.max(1, Math.round(loadout.damage * KNIGHT_SHIELD_DAMAGE_MULTIPLIER)) : loadout.damage;
+    let damage = getAttackDamage(client.player, loadout);
+    if (blocked) {
+      damage = Math.max(1, Math.round(damage * KNIGHT_SHIELD_DAMAGE_MULTIPLIER));
+    }
+    if (hitKind === "player") {
+      damage = applyArmourReduction(hit, damage);
+    }
 
     hit.hp = Math.max(0, hit.hp - damage);
     event.hit = true;
@@ -456,6 +481,10 @@ function handleAttack(client) {
     if (hitKind === "mob" && hit.hp <= 0) {
       hit.dead = true;
       hit.respawnAt = now + MOB_RESPAWN_MS;
+      event.defeated = true;
+      const progress = awardXp(client.player, xpForMob(hit));
+      event.xpGained = progress.xpGained;
+      event.levelsGained = progress.levelsGained;
     }
 
     if (hitKind === "player" && hit.hp <= 0) {
@@ -470,6 +499,92 @@ function handleAttack(client) {
 
   broadcastCombat(event);
   broadcastSnapshot();
+}
+
+function handleSpendStat(client, message) {
+  if (!client.player) {
+    return;
+  }
+
+  const stat = sanitizeChoice(message.stat, STAT_IDS, null);
+  if (!stat || client.player.statPoints <= 0) {
+    return;
+  }
+
+  client.player.stats[stat] += 1;
+  client.player.statPoints -= 1;
+
+  if (stat === "health") {
+    const oldMax = client.player.maxHp;
+    applyDerivedPlayerStats(client.player);
+    client.player.hp = Math.min(client.player.maxHp, client.player.hp + (client.player.maxHp - oldMax));
+  } else {
+    applyDerivedPlayerStats(client.player);
+  }
+
+  send(client, {
+    type: "serverMessage",
+    message: "stat_spent",
+    stat
+  });
+  broadcastSnapshot();
+}
+
+function createBaseStats() {
+  return {
+    speed: 0,
+    strength: 0,
+    armour: 0,
+    health: 0
+  };
+}
+
+function xpForNextLevel(level) {
+  return XP_BASE_TO_LEVEL + (level - 1) * XP_LEVEL_STEP;
+}
+
+function xpForMob(mob) {
+  if (mob.isBoss) {
+    return 150 + Math.max(0, mob.maxHp - 100);
+  }
+  return 25 + Math.floor(mob.maxHp / 6);
+}
+
+function awardXp(player, amount) {
+  player.xp += amount;
+  let levelsGained = 0;
+
+  while (player.xp >= player.xpToNext) {
+    player.xp -= player.xpToNext;
+    player.level += 1;
+    player.statPoints += 1;
+    levelsGained += 1;
+    player.xpToNext = xpForNextLevel(player.level);
+  }
+
+  if (levelsGained > 0) {
+    player.hp = player.maxHp;
+  }
+
+  return { xpGained: amount, levelsGained };
+}
+
+function applyDerivedPlayerStats(player) {
+  player.maxHp = PLAYER_MAX_HP + player.stats.health * STAT_POINT_HP;
+  player.hp = Math.min(player.hp, player.maxHp);
+}
+
+function getPlayerSpeed(player) {
+  return PLAYER_SPEED + player.stats.speed * STAT_POINT_SPEED;
+}
+
+function getAttackDamage(player, loadout) {
+  return loadout.damage + player.stats.strength * STAT_POINT_STRENGTH_DAMAGE;
+}
+
+function applyArmourReduction(player, damage) {
+  const reduction = Math.min(STAT_POINT_ARMOUR_CAP, player.stats.armour * STAT_POINT_ARMOUR_REDUCTION);
+  return Math.max(1, Math.round(damage * (1 - reduction)));
 }
 
 function findAttackTarget(client, loadout) {
@@ -606,6 +721,12 @@ function broadcastSnapshot() {
       accent: client.player.accent,
       hp: client.player.hp,
       maxHp: client.player.maxHp,
+      xp: client.player.xp,
+      level: client.player.level,
+      xpToNext: client.player.xpToNext,
+      statPoints: client.player.statPoints,
+      stats: client.player.stats,
+      moveSpeed: Number(getPlayerSpeed(client.player).toFixed(2)),
       x: Number(client.player.x.toFixed(3)),
       y: Number(client.player.y.toFixed(3)),
       facing: Number(client.player.facing.toFixed(3)),

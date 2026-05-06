@@ -12,6 +12,15 @@ const nameInput = document.querySelector("#nameInput");
 const hud = document.querySelector("#hud");
 const populationEl = document.querySelector("#population");
 const positionEl = document.querySelector("#position");
+const progression = document.querySelector("#progression");
+const levelText = document.querySelector("#levelText");
+const statPointsEl = document.querySelector("#statPoints");
+const xpFill = document.querySelector("#xpFill");
+const xpText = document.querySelector("#xpText");
+const statSpeed = document.querySelector("#statSpeed");
+const statStrength = document.querySelector("#statStrength");
+const statArmour = document.querySelector("#statArmour");
+const statHealth = document.querySelector("#statHealth");
 const chat = document.querySelector("#chat");
 const chatMessages = document.querySelector("#chatMessages");
 const chatForm = document.querySelector("#chatForm");
@@ -205,6 +214,7 @@ function handleServerMessage(message) {
     state.joined = true;
     bootPanel.classList.add("hidden");
     hud.classList.remove("hidden");
+    progression.classList.remove("hidden");
     chat.classList.remove("hidden");
     state.camera.x = message.spawn.x * TILE_SIZE;
     state.camera.y = message.spawn.y * TILE_SIZE;
@@ -255,6 +265,15 @@ function handleServerMessage(message) {
 
   if (message.type === "combat") {
     applyCombatEvent(message);
+    if (message.attackerId === state.selfId && message.xpGained) {
+      appendChat({
+        kind: "system",
+        name: "Realm",
+        text: message.levelsGained > 0
+          ? `Gained ${message.xpGained} XP and reached a new level`
+          : `Gained ${message.xpGained} XP`
+      });
+    }
     return;
   }
 
@@ -283,6 +302,12 @@ function handleServerMessage(message) {
         kind: "system",
         name: "Realm",
         text: "Combat is disabled inside houses and the starting area"
+      });
+    } else if (message.message === "stat_spent") {
+      appendChat({
+        kind: "system",
+        name: "Realm",
+        text: `Added a point to ${message.stat}`
       });
     }
   }
@@ -457,8 +482,9 @@ function predictLocalPlayer(player, dt) {
 
   dx /= length;
   dy /= length;
-  player.renderX += dx * CLIENT_PLAYER_SPEED * dt;
-  player.renderY += dy * CLIENT_PLAYER_SPEED * dt;
+  const speed = Number.isFinite(player.moveSpeed) ? player.moveSpeed : CLIENT_PLAYER_SPEED;
+  player.renderX += dx * speed * dt;
+  player.renderY += dy * speed * dt;
   player.facing = Math.atan2(dy, dx);
   player.renderMoving = true;
   return true;
@@ -507,6 +533,12 @@ function wireUi() {
   serverForm.addEventListener("submit", (event) => {
     event.preventDefault();
     changeServer(menuServerUrlInput.value);
+  });
+
+  document.querySelectorAll("[data-stat]").forEach((button) => {
+    button.addEventListener("click", () => {
+      send({ type: "spendStat", stat: button.dataset.stat });
+    });
   });
 
   resumeButton.addEventListener("click", () => {
@@ -651,6 +683,7 @@ function resetToConnection(message) {
   bootPanel.classList.remove("hidden");
   form.classList.add("hidden");
   hud.classList.add("hidden");
+  progression.classList.add("hidden");
   chat.classList.add("hidden");
   chatMessages.replaceChildren();
 }
@@ -793,7 +826,30 @@ function updateCamera(dt) {
   state.camera.y += (targetY - state.camera.y) * follow;
   const hpText = Number.isFinite(self.hp) ? ` HP ${self.hp}/${self.maxHp}` : "";
   positionEl.textContent = `${Math.round(self.renderX)}, ${Math.round(self.renderY)}${hpText}`;
+  renderProgression(self);
   requestVisibleChunks();
+}
+
+function renderProgression(self) {
+  const level = Number.isFinite(self.level) ? self.level : 1;
+  const xp = Number.isFinite(self.xp) ? self.xp : 0;
+  const xpToNext = Number.isFinite(self.xpToNext) ? self.xpToNext : 100;
+  const statPoints = Number.isFinite(self.statPoints) ? self.statPoints : 0;
+  const stats = self.stats || {};
+  const xpPct = Math.max(0, Math.min(100, (xp / Math.max(1, xpToNext)) * 100));
+
+  levelText.textContent = `Level ${level}`;
+  statPointsEl.textContent = `${statPoints} point${statPoints === 1 ? "" : "s"}`;
+  xpFill.style.width = `${xpPct}%`;
+  xpText.textContent = `${xp} / ${xpToNext} XP`;
+  statSpeed.textContent = stats.speed || 0;
+  statStrength.textContent = stats.strength || 0;
+  statArmour.textContent = stats.armour || 0;
+  statHealth.textContent = stats.health || 0;
+
+  document.querySelectorAll("[data-stat]").forEach((button) => {
+    button.disabled = statPoints <= 0;
+  });
 }
 
 function requestVisibleChunks() {

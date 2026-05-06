@@ -56,6 +56,16 @@ try {
   assert.equal(messages.some((message) => message.type === "welcome"), true);
   assert.equal(messages.some((message) => message.type === "chunk"), true);
   assert.equal(messages.some((message) => message.type === "snapshot" && message.mobs?.some((mob) => mob.isBoss)), true);
+  assert.equal(messages.some((message) => message.type === "snapshot" && message.players?.some((player) => (
+    player.level === 1 &&
+    player.xp === 0 &&
+    player.xpToNext > 0 &&
+    player.statPoints === 0 &&
+    player.stats?.speed === 0 &&
+    player.stats?.strength === 0 &&
+    player.stats?.armour === 0 &&
+    player.stats?.health === 0
+  ))), true);
   assert.equal(messages.some((message) => message.type === "chat" && message.text === "hello realm"), true);
 } finally {
   server.kill("SIGTERM");
@@ -152,6 +162,7 @@ async function joinViaWebSocket(port) {
         messages.some((message) => message.type === "welcome") &&
         messages.some((message) => message.type === "chunk") &&
         messages.some((message) => message.type === "snapshot" && message.mobs?.some((mob) => mob.isBoss)) &&
+        messages.some((message) => message.type === "snapshot" && message.players?.some((player) => player.level === 1 && player.stats?.speed === 0)) &&
         messages.some((message) => message.type === "chat" && message.text === "hello realm")
       ) {
         clearTimeout(timeout);

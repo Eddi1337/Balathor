@@ -62,6 +62,23 @@
       <span id="position">0, 0</span>
     </aside>
 
+    <aside id="progression" class="progression hidden" aria-label="Progression">
+      <div class="progress-head">
+        <strong id="levelText">Level 1</strong>
+        <span id="statPoints">0 points</span>
+      </div>
+      <div class="xp-track" aria-hidden="true">
+        <span id="xpFill"></span>
+      </div>
+      <span id="xpText" class="xp-text">0 / 100 XP</span>
+      <div class="stat-grid">
+        <button type="button" data-stat="speed">Speed <span id="statSpeed">0</span></button>
+        <button type="button" data-stat="strength">Strength <span id="statStrength">0</span></button>
+        <button type="button" data-stat="armour">Armour <span id="statArmour">0</span></button>
+        <button type="button" data-stat="health">Health <span id="statHealth">0</span></button>
+      </div>
+    </aside>
+
     <section id="chat" class="chat hidden" aria-label="Realm chat">
       <div id="chatMessages" class="chat-messages"></div>
       <form id="chatForm" class="chat-form">
