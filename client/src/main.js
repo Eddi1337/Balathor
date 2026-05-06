@@ -45,7 +45,8 @@ const mobileControls = document.querySelector("#mobileControls");
 
 const TILE_SIZE = 32;
 const CHUNK_SIZE = 16;
-const CLIENT_PLAYER_SPEED = 5.2;
+// Client-side predicted base player speed (tiles per second). Match server base.
+const CLIENT_PLAYER_SPEED = 10.4;
 const PRODUCTION_SERVER_URL = "wss://balathor.edmundmurphy.com/ws";
 const SERVER_URL_STORAGE_KEY = "balathor.serverUrl";
 const TILE = {
