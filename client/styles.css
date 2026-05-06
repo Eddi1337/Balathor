@@ -515,6 +515,15 @@ button:focus-visible {
   font-weight: 800;
 }
 
+.chat-line.mod .chat-name {
+  color: #c79cff;
+  font-weight: 800;
+}
+
+.chat-line.mod {
+  color: #e8d8ff;
+}
+
 .chat-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 76px;

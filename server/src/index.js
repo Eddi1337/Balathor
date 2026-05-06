@@ -171,6 +171,7 @@ let nextGroundItemId = 1;
 let tick = 0;
 
 const accountStore = loadAccountStore();
+seedModAccounts();
 const clients = new Map();
 const chunkCache = new Map();
 const chatHistory = [];
@@ -266,6 +267,39 @@ process.on("SIGINT", () => {
   saveAllActiveCharacters();
   process.exit(0);
 });
+
+function seedModAccounts() {
+  const MOD_ACCOUNTS = [
+    { username: "mod_ed", password: "QAZ123wsx!", isMod: true, modCharacterName: "ed" }
+  ];
+  let dirty = false;
+  for (const def of MOD_ACCOUNTS) {
+    const key = def.username.toLowerCase();
+    const existing = accountStore.accounts[key];
+    if (!existing) {
+      const salt = crypto.randomBytes(16).toString("hex");
+      accountStore.accounts[key] = {
+        username: def.username,
+        salt,
+        passwordHash: hashPassword(def.password, salt),
+        isMod: def.isMod,
+        modCharacterName: def.modCharacterName || null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        character: null
+      };
+      dirty = true;
+    } else if (!existing.isMod) {
+      existing.isMod = def.isMod;
+      existing.modCharacterName = def.modCharacterName || null;
+      existing.updatedAt = Date.now();
+      dirty = true;
+    }
+  }
+  if (dirty) {
+    saveAccountStore();
+  }
+}
 
 function loadAccountStore() {
   try {
@@ -583,6 +617,11 @@ function handleMessage(client, raw) {
 
   if (message.type === "requestChunks") {
     streamChunks(client, message.chunks);
+    return;
+  }
+
+  if (message.type === "modTeleport") {
+    handleModTeleport(client, message);
   }
 }
 
@@ -614,7 +653,7 @@ function handleAuth(client, message) {
     return;
   }
 
-  client.account = { key, username: account.username };
+  client.account = { key, username: account.username, isMod: Boolean(account.isMod), modCharacterName: account.modCharacterName || null };
   send(client, {
     type: "auth",
     ok: true,
@@ -644,9 +683,11 @@ function joinWorld(client, message, savedCharacter = null) {
   const baseTorsoStyle = sanitizeChoice(message.torsoStyle, TORSO_STYLE_IDS, "tunic");
   const baseWeaponStyle = sanitizeChoice(message.weaponStyle, WEAPON_STYLE_IDS, "classic");
   const classId = sanitizeChoice(message.classId, CLASS_IDS, "ranger");
+  const isMod = Boolean(client.account?.isMod);
+  const forcedName = isMod && client.account?.modCharacterName ? client.account.modCharacterName : null;
   client.player = {
     id: client.id,
-    name: sanitizeName(message.name),
+    name: forcedName || sanitizeName(message.name),
     classId,
     baseTorsoStyle,
     baseWeaponStyle,
@@ -661,7 +702,7 @@ function joinWorld(client, message, savedCharacter = null) {
     xp: clampInteger(savedCharacter?.xp ?? 0, 0, 100000000),
     level: clampInteger(savedCharacter?.level ?? 1, 1, 1000),
     xpToNext: xpForNextLevel(clampInteger(savedCharacter?.level ?? 1, 1, 1000)),
-    statPoints: clampInteger(savedCharacter?.statPoints ?? 0, 0, 1000),
+    statPoints: isMod ? 9999 : clampInteger(savedCharacter?.statPoints ?? 0, 0, 1000),
     stats: sanitizeStats(savedCharacter?.stats),
     inventory: sanitizeInventory(savedCharacter?.inventory),
     equipment: sanitizeEquipment(savedCharacter?.equipment) || createStarterEquipment(classId, {
@@ -673,7 +714,8 @@ function joinWorld(client, message, savedCharacter = null) {
     x: spawn.x,
     y: spawn.y,
     facing: 0,
-    moving: false
+    moving: false,
+    isMod
   };
 
   applyDerivedPlayerStats(client.player);
@@ -829,7 +871,9 @@ function handleSpendStat(client, message) {
   }
 
   client.player.stats[stat] += 1;
-  client.player.statPoints -= 1;
+  if (!client.player.isMod) {
+    client.player.statPoints -= 1;
+  }
 
   if (stat === "health") {
     const oldMax = client.player.maxHp;
@@ -844,6 +888,24 @@ function handleSpendStat(client, message) {
     message: "stat_spent",
     stat
   });
+  broadcastSnapshot();
+}
+
+function handleModTeleport(client, message) {
+  if (!client.player || !client.player.isMod) {
+    return;
+  }
+
+  const x = clampNumber(message.x, -10000, 10000, null);
+  const y = clampNumber(message.y, -10000, 10000, null);
+  if (x === null || y === null) {
+    return;
+  }
+
+  client.player.x = x;
+  client.player.y = y;
+  send(client, { type: "teleport", x, y, name: "Teleport" });
+  streamChunks(client, nearbyChunks(x, y, 3));
   broadcastSnapshot();
 }
 
@@ -1163,7 +1225,7 @@ function handleChat(client, message) {
 
   client.lastChatAt = now;
   pushChat({
-    kind: "player",
+    kind: client.player.isMod ? "mod" : "player",
     fromId: client.player.id,
     name: client.player.name,
     text,
@@ -1292,7 +1354,8 @@ function broadcastSnapshot() {
         x: Number(client.player.x.toFixed(3)),
         y: Number(client.player.y.toFixed(3)),
         facing: Number(client.player.facing.toFixed(3)),
-        moving: client.player.moving
+        moving: client.player.moving,
+        isMod: client.player.isMod || false
       };
     });
 

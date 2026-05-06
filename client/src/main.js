@@ -108,6 +108,7 @@ const state = {
   input: { up: false, down: false, left: false, right: false },
   inputSeq: 0,
   camera: { x: 0, y: 0 },
+  zoom: 1,
   activeServerUrl: "",
   authenticated: false,
   menuOpen: false,
@@ -834,6 +835,33 @@ function wireUi() {
     updateInput(event, true);
   });
   window.addEventListener("keyup", (event) => updateInput(event, false));
+
+  canvas.addEventListener("wheel", (event) => {
+    const self = state.players.get(state.selfId);
+    if (!self?.isMod) return;
+    event.preventDefault();
+    const delta = event.deltaY > 0 ? -0.1 : 0.1;
+    state.zoom = Math.max(0.25, Math.min(1.0, state.zoom + delta));
+    state.requestedChunks.clear();
+    requestVisibleChunks();
+  }, { passive: false });
+
+  canvas.addEventListener("contextmenu", (event) => {
+    const self = state.players.get(state.selfId);
+    if (!self?.isMod || !state.joined) return;
+    event.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const cx = (event.clientX - rect.left) * scaleX;
+    const cy = (event.clientY - rect.top) * scaleY;
+    const halfW = canvas.width / 2;
+    const halfH = canvas.height / 2;
+    const worldX = (cx - halfW) / (TILE_SIZE * state.zoom) + state.camera.x / TILE_SIZE;
+    const worldY = (cy - halfH) / (TILE_SIZE * state.zoom) + state.camera.y / TILE_SIZE;
+    send({ type: "modTeleport", x: worldX, y: worldY });
+  });
+
   wireMobileControls();
 }
 
@@ -1099,7 +1127,7 @@ function indexChunkBuildings(chunk) {
 function appendChat(message) {
   rememberSpeechBubble(message);
   const line = document.createElement("div");
-  const kindClass = message.kind === "system" ? "system" : message.kind === "npc" ? "npc" : "player";
+  const kindClass = message.kind === "system" ? "system" : message.kind === "npc" ? "npc" : message.kind === "mod" ? "mod" : "player";
   line.className = `chat-line ${kindClass}`;
 
   if (message.kind === "system") {
@@ -1124,7 +1152,7 @@ function appendChat(message) {
 }
 
 function rememberSpeechBubble(message) {
-  if ((message.kind !== "player" && message.kind !== "npc") || !message.fromId || !message.text) {
+  if ((message.kind !== "player" && message.kind !== "npc" && message.kind !== "mod") || !message.fromId || !message.text) {
     return;
   }
 
@@ -1224,8 +1252,8 @@ function sendViewUpdate() {
     view: {
       x: state.camera.x / TILE_SIZE,
       y: state.camera.y / TILE_SIZE,
-      halfW: canvas.width / TILE_SIZE / 2,
-      halfH: canvas.height / TILE_SIZE / 2
+      halfW: canvas.width / TILE_SIZE / 2 / (state.zoom || 1),
+      halfH: canvas.height / TILE_SIZE / 2 / (state.zoom || 1)
     }
   });
 }
@@ -1435,8 +1463,9 @@ function requestVisibleChunks() {
     return;
   }
 
-  const widthTiles = Math.ceil(canvas.width / TILE_SIZE);
-  const heightTiles = Math.ceil(canvas.height / TILE_SIZE);
+  const zoom = state.zoom || 1;
+  const widthTiles = Math.ceil(canvas.width / (TILE_SIZE * zoom));
+  const heightTiles = Math.ceil(canvas.height / (TILE_SIZE * zoom));
   const centerTileX = Math.floor(state.camera.x / TILE_SIZE);
   const centerTileY = Math.floor(state.camera.y / TILE_SIZE);
   const minCx = Math.floor((centerTileX - widthTiles / 2) / CHUNK_SIZE) - 1;
@@ -1469,12 +1498,22 @@ function draw() {
     return;
   }
 
+  const zoom = state.zoom || 1;
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  ctx.save();
+  ctx.translate(halfW, halfH);
+  ctx.scale(zoom, zoom);
+  ctx.translate(-halfW, -halfH);
+
   drawWorld();
   drawPlayers();
   drawTreeCanopies();
   drawCombatFx();
   drawLevelUpFx();
   drawLighting();
+
+  ctx.restore();
   populationEl.textContent = `${state.population} online`;
 }
 
@@ -1492,18 +1531,21 @@ function drawTitleWorld() {
 }
 
 function drawWorld() {
-  const halfW = canvas.width / 2;
-  const halfH = canvas.height / 2;
-  const minTileX = Math.floor((state.camera.x - halfW) / TILE_SIZE) - 1;
-  const maxTileX = Math.ceil((state.camera.x + halfW) / TILE_SIZE) + 1;
-  const minTileY = Math.floor((state.camera.y - halfH) / TILE_SIZE) - 1;
-  const maxTileY = Math.ceil((state.camera.y + halfH) / TILE_SIZE) + 1;
+  const zoom = state.zoom || 1;
+  const screenHalfW = canvas.width / 2;
+  const screenHalfH = canvas.height / 2;
+  const visHalfW = screenHalfW / zoom;
+  const visHalfH = screenHalfH / zoom;
+  const minTileX = Math.floor((state.camera.x - visHalfW) / TILE_SIZE) - 1;
+  const maxTileX = Math.ceil((state.camera.x + visHalfW) / TILE_SIZE) + 1;
+  const minTileY = Math.floor((state.camera.y - visHalfH) / TILE_SIZE) - 1;
+  const maxTileY = Math.ceil((state.camera.y + visHalfH) / TILE_SIZE) + 1;
 
   for (let ty = minTileY; ty <= maxTileY; ty += 1) {
     for (let tx = minTileX; tx <= maxTileX; tx += 1) {
       const tile = getTile(tx, ty);
-      const sx = Math.floor(tx * TILE_SIZE - state.camera.x + halfW);
-      const sy = Math.floor(ty * TILE_SIZE - state.camera.y + halfH);
+      const sx = Math.floor(tx * TILE_SIZE - state.camera.x + screenHalfW);
+      const sy = Math.floor(ty * TILE_SIZE - state.camera.y + screenHalfH);
       drawTile(tile, sx, sy, tx, ty);
     }
   }
@@ -1700,6 +1742,19 @@ function drawItemIcon(item, x, y) {
   ctx.stroke();
 }
 
+function drawModCape(px, py, scale, bob, dirX, dirY) {
+  // Cape drapes behind the character: two overlapping rectangles that sway with movement
+  const capeX = px + 4 * scale;
+  const capeY = py + 2 * scale + bob;
+  const sway = Math.round(dirX * 2);
+  ctx.fillStyle = "#7a30c8";
+  ctx.fillRect(capeX, capeY, 8 * scale, 6 * scale);
+  ctx.fillStyle = "#5a1ea8";
+  ctx.fillRect(capeX + sway, capeY + 4 * scale, 8 * scale, 5 * scale);
+  ctx.fillStyle = "#c79cff";
+  ctx.fillRect(capeX + 1, capeY, 2, 3 * scale);
+}
+
 function drawCharacter(entity, x, y, isNpc = false) {
   const scale = 2;
   const phase = entity.walkPhase || 0;
@@ -1721,6 +1776,10 @@ function drawCharacter(entity, x, y, isNpc = false) {
   const torsoStyle = entity.torsoStyle || "tunic";
 
   drawEllipseShadow(x - 11, y + 7, 22, 5, 0.28);
+
+  if (entity.isMod) {
+    drawModCape(px, py, scale, bob, dirX, dirY);
+  }
 
   pixel(px, py, 5, 1, 6, 2, weaponColor, scale);
   drawTorso(px, py, torsoStyle, torsoColor, weaponColor, scale);
@@ -1766,7 +1825,7 @@ function drawCharacter(entity, x, y, isNpc = false) {
   ctx.textAlign = "center";
   ctx.lineWidth = 3;
   ctx.strokeStyle = "rgba(8, 12, 18, 0.82)";
-  ctx.fillStyle = isNpc ? "#ffd27a" : "#f7f3df";
+  ctx.fillStyle = isNpc ? "#ffd27a" : entity.isMod ? "#c79cff" : "#f7f3df";
   ctx.strokeText(entity.name, x, y - 28);
   ctx.fillText(entity.name, x, y - 28);
 
@@ -1795,10 +1854,11 @@ function drawSpeechBubble(entity, x, y) {
   const left = Math.round(x - width / 2);
   const top = Math.round(y - height);
 
+  const isMod = entity.isMod;
   ctx.save();
   ctx.globalAlpha = Math.min(1, (bubble.expiresAt - now) / 500);
-  ctx.fillStyle = "rgba(247, 243, 223, 0.94)";
-  ctx.strokeStyle = "rgba(28, 34, 46, 0.88)";
+  ctx.fillStyle = isMod ? "rgba(220, 200, 255, 0.96)" : "rgba(247, 243, 223, 0.94)";
+  ctx.strokeStyle = isMod ? "rgba(90, 30, 168, 0.9)" : "rgba(28, 34, 46, 0.88)";
   ctx.lineWidth = 2;
   roundedRect(left, top, width, height, 6);
   ctx.fill();
@@ -1812,7 +1872,7 @@ function drawSpeechBubble(entity, x, y) {
   ctx.fill();
   ctx.stroke();
 
-  ctx.fillStyle = "#1d2430";
+  ctx.fillStyle = isMod ? "#3a1060" : "#1d2430";
   ctx.font = "12px ui-sans-serif, system-ui";
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
@@ -2443,18 +2503,21 @@ function drawTownPlanter(sx, sy, tx, ty) {
 }
 
 function drawTreeCanopies() {
-  const halfW = canvas.width / 2;
-  const halfH = canvas.height / 2;
-  const minTileX = Math.floor((state.camera.x - halfW) / TILE_SIZE) - 2;
-  const maxTileX = Math.ceil((state.camera.x + halfW) / TILE_SIZE) + 2;
-  const minTileY = Math.floor((state.camera.y - halfH) / TILE_SIZE) - 2;
-  const maxTileY = Math.ceil((state.camera.y + halfH) / TILE_SIZE) + 2;
+  const zoom = state.zoom || 1;
+  const screenHalfW = canvas.width / 2;
+  const screenHalfH = canvas.height / 2;
+  const visHalfW = screenHalfW / zoom;
+  const visHalfH = screenHalfH / zoom;
+  const minTileX = Math.floor((state.camera.x - visHalfW) / TILE_SIZE) - 2;
+  const maxTileX = Math.ceil((state.camera.x + visHalfW) / TILE_SIZE) + 2;
+  const minTileY = Math.floor((state.camera.y - visHalfH) / TILE_SIZE) - 2;
+  const maxTileY = Math.ceil((state.camera.y + visHalfH) / TILE_SIZE) + 2;
 
   for (let ty = minTileY; ty <= maxTileY; ty += 1) {
     for (let tx = minTileX; tx <= maxTileX; tx += 1) {
       if (getTile(tx, ty) === TILE.TREE) {
-        const sx = Math.floor(tx * TILE_SIZE - state.camera.x + halfW);
-        const sy = Math.floor(ty * TILE_SIZE - state.camera.y + halfH);
+        const sx = Math.floor(tx * TILE_SIZE - state.camera.x + screenHalfW);
+        const sy = Math.floor(ty * TILE_SIZE - state.camera.y + screenHalfH);
         drawTreeCanopy(sx, sy, tx, ty);
       }
     }
