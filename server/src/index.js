@@ -2,10 +2,13 @@ const crypto = require("node:crypto");
 const http = require("node:http");
 const {
   CHUNK_SIZE,
+  ENEMY_CAMPS,
   canAttackAt,
   generateChunk,
+  getBiome,
   getDoorTransitionAt,
   getPortalAt,
+  hash2,
   isBlockedCircle,
   spawnPoint
 } = require("./world");
@@ -57,6 +60,54 @@ const CLASS_LOADOUTS = Object.freeze({
 });
 const KNIGHT_SHIELD_ARC = Math.PI * 0.72;
 const KNIGHT_SHIELD_DAMAGE_MULTIPLIER = 0.45;
+const MOB_TYPES = Object.freeze({
+  forest: {
+    names: ["Forest Goblin", "Bramble Imp", "Moss Gnawer"],
+    primary: "#4f9f5f",
+    accent: "#d8f0a0",
+    bossName: "Bramble Chief",
+    bossPrimary: "#3f7f44",
+    bossAccent: "#ffd166"
+  },
+  meadow: {
+    names: ["Meadow Pest", "Field Imp", "Thistle Sprite"],
+    primary: "#79b85a",
+    accent: "#fff0a8",
+    bossName: "Thistle Matron",
+    bossPrimary: "#6d9540",
+    bossAccent: "#f7c95f"
+  },
+  desert: {
+    names: ["Sand Slime", "Dust Imp", "Clay Crawler"],
+    primary: "#c7904f",
+    accent: "#ffe0a0",
+    bossName: "Dune Brute",
+    bossPrimary: "#9f6935",
+    bossAccent: "#ffd06a"
+  },
+  frost: {
+    names: ["Frost Wisp", "Snow Gnawer", "Ice Sprite"],
+    primary: "#88d8ff",
+    accent: "#f0fbff",
+    bossName: "Rime Lord",
+    bossPrimary: "#5da8d8",
+    bossAccent: "#ffffff"
+  },
+  ember: {
+    names: ["Ember Imp", "Ash Crawler", "Cinderling"],
+    primary: "#d85b35",
+    accent: "#ffd06a",
+    bossName: "Cinder Brute",
+    bossPrimary: "#a43b2b",
+    bossAccent: "#ffdf7a"
+  }
+});
+const WILDERNESS_BOSSES = Object.freeze([
+  { id: "lone_stag", x: -212, y: 18, biome: "forest", name: "Old Rootback" },
+  { id: "glass_dune", x: 210, y: 158, biome: "desert", name: "Glasshide" },
+  { id: "white_pine", x: -214, y: -184, biome: "frost", name: "Whitepine Warden" },
+  { id: "red_crag", x: 218, y: -210, biome: "ember", name: "Red Crag" },
+]);
 
 let nextClientId = 1;
 let nextSpawnIndex = 0;
@@ -621,26 +672,120 @@ function normalizeAngle(value) {
 }
 
 function createMobs() {
-  return [
+  const fixedMobs = [
     { id: "mob_slime_oasis_1", name: "Oasis Slime", homeX: 137, homeY: 113, primary: "#56b88f", accent: "#c7f5b0" },
     { id: "mob_slime_oasis_2", name: "Oasis Slime", homeX: 163, homeY: 126, primary: "#56b88f", accent: "#c7f5b0" },
     { id: "mob_wisp_frost_1", name: "Frost Wisp", homeX: -139, homeY: -113, primary: "#88d8ff", accent: "#f0fbff" },
     { id: "mob_wisp_frost_2", name: "Frost Wisp", homeX: -162, homeY: -132, primary: "#88d8ff", accent: "#f0fbff" },
     { id: "mob_imp_ember_1", name: "Ember Imp", homeX: 134, homeY: -121, primary: "#d85b35", accent: "#ffd06a" },
     { id: "mob_imp_ember_2", name: "Ember Imp", homeX: 158, homeY: -142, primary: "#d85b35", accent: "#ffd06a" },
-  ].map((mob) => ({
+  ];
+  return [...fixedMobs, ...createWildernessMobs()].map((mob) => ({
     ...mob,
     x: mob.homeX,
     y: mob.homeY,
-    hp: 60,
-    maxHp: 60,
+    hp: mob.maxHp || 60,
+    maxHp: mob.maxHp || 60,
     dead: false,
     respawnAt: 0,
     facing: Math.random() * Math.PI * 2,
     _targetX: mob.homeX,
     _targetY: mob.homeY,
-    _nextMoveAt: Date.now() + Math.random() * 3000
+    _nextMoveAt: Date.now() + Math.random() * 3000,
+    roamRadius: mob.roamRadius || 5,
+    speed: mob.speed || 1.7
   }));
+}
+
+function createWildernessMobs() {
+  const mobs = [];
+
+  for (const camp of ENEMY_CAMPS) {
+    const biome = camp.biome || getBiome(camp.x, camp.y);
+    const type = MOB_TYPES[biome] || MOB_TYPES.forest;
+    const count = camp.size;
+
+    for (let i = 0; i < count; i += 1) {
+      const angle = hash2(camp.x, camp.y, 300 + i) * Math.PI * 2;
+      const radius = 2 + hash2(camp.x, camp.y, 400 + i) * 5;
+      const home = findOpenMobHome(
+        camp.x + Math.cos(angle) * radius,
+        camp.y + Math.sin(angle) * radius,
+        camp.x,
+        camp.y
+      );
+      mobs.push({
+        id: `mob_camp_${camp.id}_${i + 1}`,
+        name: type.names[i % type.names.length],
+        homeX: home.x,
+        homeY: home.y,
+        primary: type.primary,
+        accent: type.accent,
+        campId: camp.id,
+        maxHp: 58 + Math.floor(hash2(camp.x, camp.y, 500 + i) * 18),
+        roamRadius: camp.size >= 6 ? 6 : 4.5,
+        speed: 1.55 + hash2(camp.x, camp.y, 600 + i) * 0.35
+      });
+    }
+
+    if (camp.boss) {
+      const bossHome = findOpenMobHome(camp.x, camp.y, camp.x, camp.y);
+      mobs.push({
+        id: `mob_boss_${camp.id}`,
+        name: type.bossName,
+        homeX: bossHome.x,
+        homeY: bossHome.y,
+        primary: type.bossPrimary,
+        accent: type.bossAccent,
+        campId: camp.id,
+        isBoss: true,
+        maxHp: 190,
+        roamRadius: 7,
+        speed: 1.25
+      });
+    }
+  }
+
+  for (const boss of WILDERNESS_BOSSES) {
+    const type = MOB_TYPES[boss.biome] || MOB_TYPES.forest;
+    const home = findOpenMobHome(boss.x, boss.y, boss.x, boss.y);
+    mobs.push({
+      id: `mob_boss_${boss.id}`,
+      name: boss.name,
+      homeX: home.x,
+      homeY: home.y,
+      primary: type.bossPrimary,
+      accent: type.bossAccent,
+      isBoss: true,
+      maxHp: 220,
+      roamRadius: 8,
+      speed: 1.18
+    });
+  }
+
+  return mobs;
+}
+
+function findOpenMobHome(x, y, fallbackX, fallbackY) {
+  const candidates = [
+    [x, y],
+    [x + 1.5, y],
+    [x - 1.5, y],
+    [x, y + 1.5],
+    [x, y - 1.5],
+    [fallbackX + 2, fallbackY + 2],
+    [fallbackX - 2, fallbackY + 2],
+    [fallbackX + 2, fallbackY - 2],
+    [fallbackX - 2, fallbackY - 2],
+  ];
+
+  for (const [cx, cy] of candidates) {
+    if (!isBlockedCircle(cx, cy, 0.35) && canAttackAt(cx, cy)) {
+      return { x: Number(cx.toFixed(3)), y: Number(cy.toFixed(3)) };
+    }
+  }
+
+  return { x: fallbackX, y: fallbackY };
 }
 
 function updateMobs(dt) {
@@ -664,7 +809,7 @@ function updateMobs(dt) {
     if (dist < 0.08) {
       if (now >= mob._nextMoveAt) {
         const angle = Math.random() * Math.PI * 2;
-        const radius = Math.random() * 5;
+        const radius = Math.random() * mob.roamRadius;
         mob._targetX = mob.homeX + Math.cos(angle) * radius;
         mob._targetY = mob.homeY + Math.sin(angle) * radius;
         mob._nextMoveAt = now + 1500 + Math.random() * 3500;
@@ -674,7 +819,7 @@ function updateMobs(dt) {
 
     const nx = dx / dist;
     const ny = dy / dist;
-    const step = 1.7 * dt;
+    const step = mob.speed * dt;
     const nextX = mob.x + nx * step;
     const nextY = mob.y + ny * step;
 
@@ -698,6 +843,7 @@ function getMobSnapshot() {
       accent: mob.accent,
       hp: mob.hp,
       maxHp: mob.maxHp,
+      isBoss: Boolean(mob.isBoss),
       x: Number(mob.x.toFixed(3)),
       y: Number(mob.y.toFixed(3)),
       facing: Number(mob.facing.toFixed(3)),

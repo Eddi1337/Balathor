@@ -1143,26 +1143,38 @@ function drawMob(entity, x, y) {
   const bounce = Math.round(Math.sin(phase * 3) * 2);
   const primary = entity.primary || "#56b88f";
   const accent = entity.accent || "#c7f5b0";
+  const isBoss = Boolean(entity.isBoss);
+  const bodyW = isBoss ? 30 : 24;
+  const bodyH = isBoss ? 14 : 10;
+  const headW = isBoss ? 26 : 20;
+  const headH = isBoss ? 18 : 14;
+  const nameY = isBoss ? y - 34 : y - 26;
+  const barW = isBoss ? 44 : 32;
 
-  drawEllipseShadow(x - 12, y + 8, 24, 6, 0.28);
+  drawEllipseShadow(x - bodyW / 2, y + 8, bodyW, isBoss ? 8 : 6, 0.28);
   ctx.fillStyle = blend(primary, "#000000", 0.25);
-  ctx.fillRect(x - 12, y - 1 + bounce, 24, 10);
+  ctx.fillRect(x - bodyW / 2, y - 1 + bounce, bodyW, bodyH);
   ctx.fillStyle = primary;
-  ctx.fillRect(x - 10, y - 8 + bounce, 20, 14);
+  ctx.fillRect(x - headW / 2, y - 8 + bounce - (isBoss ? 3 : 0), headW, headH);
   ctx.fillStyle = accent;
-  ctx.fillRect(x - 5, y - 4 + bounce, 3, 3);
-  ctx.fillRect(x + 3, y - 4 + bounce, 3, 3);
+  ctx.fillRect(x - 6, y - 4 + bounce, 3, 3);
+  ctx.fillRect(x + 4, y - 4 + bounce, 3, 3);
+  if (isBoss) {
+    ctx.fillStyle = "#ffd166";
+    ctx.fillRect(x - 11, y - 16 + bounce, 5, 5);
+    ctx.fillRect(x + 6, y - 16 + bounce, 5, 5);
+  }
   ctx.fillStyle = "rgba(255, 255, 255, 0.22)";
-  ctx.fillRect(x - 7, y - 7 + bounce, 6, 2);
+  ctx.fillRect(x - 7, y - 9 + bounce, 6, 2);
 
-  ctx.font = "12px ui-sans-serif, system-ui";
+  ctx.font = `${isBoss ? 13 : 12}px ui-sans-serif, system-ui`;
   ctx.textAlign = "center";
   ctx.lineWidth = 3;
   ctx.strokeStyle = "rgba(8, 12, 18, 0.82)";
-  ctx.fillStyle = "#ffc0a0";
-  ctx.strokeText(entity.name, x, y - 26);
-  ctx.fillText(entity.name, x, y - 26);
-  drawHealthBar(x - 16, y - 20, 32, 4, entity.hp, entity.maxHp);
+  ctx.fillStyle = isBoss ? "#ffd166" : "#ffc0a0";
+  ctx.strokeText(entity.name, x, nameY);
+  ctx.fillText(entity.name, x, nameY);
+  drawHealthBar(x - barW / 2, y - (isBoss ? 27 : 20), barW, 4, entity.hp, entity.maxHp);
 }
 
 function drawCombatFx() {

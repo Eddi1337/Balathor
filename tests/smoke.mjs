@@ -9,6 +9,11 @@ const require = createRequire(import.meta.url);
 const world = require("../server/src/world.js");
 
 assert.equal(world.CHUNK_SIZE, 16);
+assert.ok(world.ENEMY_CAMPS.length >= 10);
+for (const camp of world.ENEMY_CAMPS) {
+  assert.equal(world.generateTile(camp.x, camp.y), world.TILE.STONE);
+  assert.equal(world.canAttackAt(camp.x, camp.y), true);
+}
 const originChunk = world.generateChunk(0, 0);
 assert.equal(originChunk.tiles.length, world.CHUNK_SIZE * world.CHUNK_SIZE);
 assert.equal(world.isBlocked(0, 0), false);
@@ -50,6 +55,7 @@ try {
   const messages = await joinViaWebSocket(serverPort);
   assert.equal(messages.some((message) => message.type === "welcome"), true);
   assert.equal(messages.some((message) => message.type === "chunk"), true);
+  assert.equal(messages.some((message) => message.type === "snapshot" && message.mobs?.some((mob) => mob.isBoss)), true);
   assert.equal(messages.some((message) => message.type === "chat" && message.text === "hello realm"), true);
 } finally {
   server.kill("SIGTERM");
@@ -145,6 +151,7 @@ async function joinViaWebSocket(port) {
       if (
         messages.some((message) => message.type === "welcome") &&
         messages.some((message) => message.type === "chunk") &&
+        messages.some((message) => message.type === "snapshot" && message.mobs?.some((mob) => mob.isBoss)) &&
         messages.some((message) => message.type === "chat" && message.text === "hello realm")
       ) {
         clearTimeout(timeout);

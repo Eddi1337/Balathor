@@ -91,6 +91,23 @@ const PORTALS = [
   { id: "portal_hub_ember", name: "Hub Gate", x: 145, y: -130, targetX: 0, targetY: 0, color: "#8fe388" },
 ];
 
+const ENEMY_CAMPS = [
+  { id: "north_woods", x: -54, y: -86, size: 4 },
+  { id: "east_copse", x: 88, y: -38, size: 5 },
+  { id: "south_ford", x: 62, y: 82, size: 4 },
+  { id: "west_bramble", x: -92, y: 56, size: 5 },
+  { id: "deep_pines", x: -118, y: -42, size: 6, boss: true },
+  { id: "old_road", x: 42, y: -116, size: 6, boss: true },
+  { id: "oasis_raiders", x: 184, y: 94, size: 7, boss: true },
+  { id: "sunken_dunes", x: 116, y: 170, size: 5 },
+  { id: "frost_ridge", x: -184, y: -96, size: 7, boss: true },
+  { id: "snow_hollow", x: -112, y: -174, size: 5 },
+  { id: "ember_watch", x: 194, y: -120, size: 7, boss: true },
+  { id: "ash_fields", x: 104, y: -190, size: 5 },
+  { id: "far_meadow", x: -176, y: 148, size: 6, boss: true },
+  { id: "green_crossing", x: 154, y: 24, size: 4 },
+];
+
 const BUILDING_INTERIORS = BUILDINGS.map((building, index) => ({
   building,
   x: INTERIOR_BASE_X + index * INTERIOR_SPACING,
@@ -203,6 +220,42 @@ function getProceduralSettlementTile(x, y) {
       return r > 0.86 ? TILE.FLOWERS : r > 0.70 ? TILE.DARK_GRASS : TILE.GRASS;
     }
   }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+
+function getEnemyCampTile(x, y) {
+  for (const camp of ENEMY_CAMPS) {
+    const dist = Math.hypot(x - camp.x, y - camp.y);
+    if (dist > camp.size + 2) {
+      continue;
+    }
+
+    if (Math.abs(x - camp.x) <= 1 && Math.abs(y - camp.y) <= 1) {
+      return TILE.STONE;
+    }
+
+    if (dist <= camp.size) {
+      const r = hash2(x, y, 901);
+      if (r > 0.84) {
+        return TILE.STONE;
+      }
+      if (r > 0.28) {
+        return TILE.PATH;
+      }
+      const biome = getBiome(x, y);
+      if (biome === "desert") return TILE.SAND;
+      if (biome === "frost") return TILE.SNOW;
+      if (biome === "ember") return TILE.DARK_GRASS;
+      return TILE.GRASS;
+    }
+
+    if (hash2(x, y, 902) > 0.62) {
+      return TILE.PATH;
+    }
+  }
+
   return null;
 }
 
@@ -507,6 +560,11 @@ function generateTile(x, y) {
     return TILE.GRASS;
   }
 
+  const campTile = getEnemyCampTile(x, y);
+  if (campTile !== null) {
+    return campTile;
+  }
+
   // Procedural settlements scattered across the world.
   const settleTile = getProceduralSettlementTile(x, y);
   if (settleTile !== null) {
@@ -686,6 +744,7 @@ module.exports = {
   CHUNK_SIZE,
   TILE,
   BUILDINGS,
+  ENEMY_CAMPS,
   PORTALS,
   generateChunk,
   generateTile,
