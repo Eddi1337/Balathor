@@ -532,9 +532,26 @@ function updateSmoothPlayers(dt) {
     if (player.id === state.selfId) {
       isMoving = predictLocalPlayer(player, dt) || isMoving;
     }
-
-    // Make local player interpolation more responsive for snappy controls.
-    const follow = player.id === state.selfId ? 1 - Math.pow(0.0005, dt) : 1 - Math.pow(0.0005, dt);
+    // Interpolation strategy:
+    // - When local player is moving (local input), follow server target aggressively for responsiveness.
+    // - When local player stops, ease toward server position slowly to avoid bouncing from network jitter.
+    const fastBase = 0.00002; // aggressive follow
+    const slowBase = 0.01; // gentle correction when stopping
+    let follow;
+    if (player.id === state.selfId) {
+      const localInputActive = Boolean(state.input.up || state.input.down || state.input.left || state.input.right);
+      follow = localInputActive ? 1 - Math.pow(fastBase, dt) : 1 - Math.pow(slowBase, dt);
+      // If server and client disagree massively, snap to avoid long drift
+      const err = Math.hypot(player.targetX - player.renderX, player.targetY - player.renderY);
+      if (!localInputActive && err > 3.0) {
+        player.renderX = player.targetX;
+        player.renderY = player.targetY;
+        player.renderMoving = false;
+        continue;
+      }
+    } else {
+      follow = 1 - Math.pow(0.0005, dt);
+    }
     player.renderX += (player.targetX - player.renderX) * follow;
     player.renderY += (player.targetY - player.renderY) * follow;
     player.renderMoving = isMoving || Math.hypot(player.targetX - player.renderX, player.targetY - player.renderY) > 0.01;
