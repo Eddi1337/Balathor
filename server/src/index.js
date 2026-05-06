@@ -1380,9 +1380,37 @@ function streamChunks(client, chunks) {
   }
 }
 
+function snapshotAddToSpatialBucket(buckets, x, y, item, cellSize) {
+  const cx = Math.floor(Number(x) / cellSize);
+  const cy = Math.floor(Number(y) / cellSize);
+  const key = `${cx},${cy}`;
+  let arr = buckets.get(key);
+  if (!arr) {
+    arr = [];
+    buckets.set(key, arr);
+  }
+  arr.push(item);
+}
+
+/** Visit every spatial cell whose tile region intersects [minX,maxX]×[minY,maxY] world tile coordinates. */
+function snapshotForEachCellInWorldRect(minX, maxX, minY, maxY, cellSize, visitor) {
+  const minCx = Math.floor(minX / cellSize);
+  const maxCx = Math.floor(maxX / cellSize);
+  const minCy = Math.floor(minY / cellSize);
+  const maxCy = Math.floor(maxY / cellSize);
+  for (let cx = minCx; cx <= maxCx; cx += 1) {
+    for (let cy = minCy; cy <= maxCy; cy += 1) {
+      visitor(`${cx},${cy}`);
+    }
+  }
+}
+
 function broadcastSnapshot() {
+  const margin = CHAT_VIEW_MARGIN_TILES;
+  const cellSize = CHUNK_SIZE;
+
   // Helper: is a point inside a client's view (with optional margin)
-  function isInView(view, x, y, margin = 0) {
+  function isInView(view, x, y) {
     return (
       Number.isFinite(x) &&
       Number.isFinite(y) &&
@@ -1425,45 +1453,170 @@ function broadcastSnapshot() {
     };
   }
 
-  // For each connected client, send a tailored snapshot containing only nearby entities
+  const npcsAll = getNpcSnapshot();
+  const mobsAll = getMobSnapshot();
+
+  const mobBuckets = new Map();
+  for (const m of mobsAll) {
+    snapshotAddToSpatialBucket(mobBuckets, m.x, m.y, m, cellSize);
+  }
+
+  const npcBuckets = new Map();
+  for (const n of npcsAll) {
+    snapshotAddToSpatialBucket(npcBuckets, n.x, n.y, n, cellSize);
+  }
+
+  const chestBuckets = new Map();
+  for (const chest of chests) {
+    snapshotAddToSpatialBucket(chestBuckets, chest.x, chest.y, chest, cellSize);
+  }
+
+  const groundBuckets = new Map();
+  for (const g of groundItems) {
+    snapshotAddToSpatialBucket(groundBuckets, g.x, g.y, g, cellSize);
+  }
+
+  const playerBuckets = new Map();
+  let totalOnline = 0;
+  for (const c of clients.values()) {
+    if (c.player) {
+      totalOnline += 1;
+      snapshotAddToSpatialBucket(playerBuckets, c.player.x, c.player.y, c, cellSize);
+    }
+  }
+
   for (const client of clients.values()) {
     const view = client.player ? client.view || defaultViewForPlayer(client.player) : { x: 0, y: 0, halfW: 40, halfH: 25 };
-    const margin = CHAT_VIEW_MARGIN_TILES;
 
-    // Players visible to this client (always include the client themselves)
-    const players = [...clients.values()]
-      .filter((c) => c.player && (c === client || isInView(view, c.player.x, c.player.y, margin)))
-      .map((c) => playerSnapshot(c.player));
+    const minX = view.x - view.halfW - margin;
+    const maxX = view.x + view.halfW + margin;
+    const minY = view.y - view.halfH - margin;
+    const maxY = view.y + view.halfH + margin;
 
-    // NPCs and mobs: get full snapshots then filter by view
-    const npcsAll = getNpcSnapshot();
-    const npcs = npcsAll.filter((n) => isInView(view, n.x, n.y, margin));
+    const playersVisible = [];
+    const seenPid = new Set();
 
-    const mobsAll = getMobSnapshot();
-    const mobs = mobsAll.filter((m) => isInView(view, m.x, m.y, margin));
+    if (client.player) {
+      playersVisible.push(playerSnapshot(client.player));
+      seenPid.add(client.player.id);
+      snapshotForEachCellInWorldRect(minX, maxX, minY, maxY, cellSize, (key) => {
+        const arr = playerBuckets.get(key);
+        if (!arr) {
+          return;
+        }
+        for (const cli of arr) {
+          const p = cli.player;
+          if (!p || seenPid.has(p.id) || cli === client) {
+            continue;
+          }
+          if (isInView(view, p.x, p.y)) {
+            seenPid.add(p.id);
+            playersVisible.push(playerSnapshot(p));
+          }
+        }
+      });
+    } else {
+      snapshotForEachCellInWorldRect(minX, maxX, minY, maxY, cellSize, (key) => {
+        const arr = playerBuckets.get(key);
+        if (!arr) {
+          return;
+        }
+        for (const cli of arr) {
+          const p = cli.player;
+          if (!p || seenPid.has(p.id)) {
+            continue;
+          }
+          if (isInView(view, p.x, p.y)) {
+            seenPid.add(p.id);
+            playersVisible.push(playerSnapshot(p));
+          }
+        }
+      });
+    }
 
-    // Chests and ground items: filter by position
-    const visibleChests = chests
-      .filter((c) => isInView(view, c.x, c.y, margin))
-      .map((c) => ({ id: c.id, x: c.x, y: c.y, opened: c.opened }));
+    const npcs = [];
+    const seenNpc = new Set();
+    snapshotForEachCellInWorldRect(minX, maxX, minY, maxY, cellSize, (key) => {
+      const arr = npcBuckets.get(key);
+      if (!arr) {
+        return;
+      }
+      for (const n of arr) {
+        if (seenNpc.has(n.id)) {
+          continue;
+        }
+        if (isInView(view, n.x, n.y)) {
+          seenNpc.add(n.id);
+          npcs.push(n);
+        }
+      }
+    });
 
-    const visibleGround = groundItems
-      .filter((g) => isInView(view, g.x, g.y, margin))
-      .map((g) => ({ id: g.id, x: g.x, y: g.y, item: g.item }));
+    const mobs = [];
+    const seenMob = new Set();
+    snapshotForEachCellInWorldRect(minX, maxX, minY, maxY, cellSize, (key) => {
+      const arr = mobBuckets.get(key);
+      if (!arr) {
+        return;
+      }
+      for (const m of arr) {
+        if (seenMob.has(m.id)) {
+          continue;
+        }
+        if (isInView(view, m.x, m.y)) {
+          seenMob.add(m.id);
+          mobs.push(m);
+        }
+      }
+    });
 
-    const snapshot = {
+    const visibleChests = [];
+    const seenChest = new Set();
+    snapshotForEachCellInWorldRect(minX, maxX, minY, maxY, cellSize, (key) => {
+      const arr = chestBuckets.get(key);
+      if (!arr) {
+        return;
+      }
+      for (const ch of arr) {
+        if (seenChest.has(ch.id)) {
+          continue;
+        }
+        if (isInView(view, ch.x, ch.y)) {
+          seenChest.add(ch.id);
+          visibleChests.push({ id: ch.id, x: ch.x, y: ch.y, opened: ch.opened });
+        }
+      }
+    });
+
+    const visibleGround = [];
+    const seenGround = new Set();
+    snapshotForEachCellInWorldRect(minX, maxX, minY, maxY, cellSize, (key) => {
+      const arr = groundBuckets.get(key);
+      if (!arr) {
+        return;
+      }
+      for (const g of arr) {
+        if (seenGround.has(g.id)) {
+          continue;
+        }
+        if (isInView(view, g.x, g.y)) {
+          seenGround.add(g.id);
+          visibleGround.push({ id: g.id, x: g.x, y: g.y, item: g.item });
+        }
+      }
+    });
+
+    send(client, {
       type: "snapshot",
       serverTime: Date.now(),
       tick,
-      population: players.length,
-      players,
+      population: totalOnline,
+      players: playersVisible,
       npcs,
       mobs,
       chests: visibleChests,
       groundItems: visibleGround
-    };
-
-    send(client, snapshot);
+    });
   }
 }
 
