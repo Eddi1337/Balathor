@@ -38,6 +38,8 @@ const STAT_POINT_STRENGTH_DAMAGE = 4;
 const STAT_POINT_ARMOUR_REDUCTION = 0.04;
 const STAT_POINT_ARMOUR_CAP = 0.55;
 const CLASS_IDS = ["ranger", "mage", "knight"];
+const TORSO_STYLE_IDS = ["tunic", "armor", "robe"];
+const WEAPON_STYLE_IDS = ["classic", "heavy", "ornate"];
 const CLASS_LOADOUTS = Object.freeze({
   ranger: {
     weapon: "bow",
@@ -381,12 +383,18 @@ function joinWorld(client, message) {
   }
 
   const spawn = spawnPoint(nextSpawnIndex++);
+  const torsoColor = sanitizeColor(message.torsoColor || message.primary, "#5cc8ff");
+  const weaponColor = sanitizeColor(message.weaponColor || message.accent, "#ffd166");
   client.player = {
     id: client.id,
     name: sanitizeName(message.name),
     classId: sanitizeChoice(message.classId, CLASS_IDS, "ranger"),
-    primary: sanitizeColor(message.primary, "#5cc8ff"),
-    accent: sanitizeColor(message.accent, "#ffd166"),
+    torsoStyle: sanitizeChoice(message.torsoStyle, TORSO_STYLE_IDS, "tunic"),
+    weaponStyle: sanitizeChoice(message.weaponStyle, WEAPON_STYLE_IDS, "classic"),
+    torsoColor,
+    weaponColor,
+    primary: torsoColor,
+    accent: weaponColor,
     hp: PLAYER_MAX_HP,
     maxHp: PLAYER_MAX_HP,
     xp: 0,
@@ -752,6 +760,10 @@ function broadcastSnapshot() {
       id: client.player.id,
       name: client.player.name,
       classId: client.player.classId,
+      torsoStyle: client.player.torsoStyle,
+      weaponStyle: client.player.weaponStyle,
+      torsoColor: client.player.torsoColor,
+      weaponColor: client.player.weaponColor,
       primary: client.player.primary,
       accent: client.player.accent,
       hp: client.player.hp,

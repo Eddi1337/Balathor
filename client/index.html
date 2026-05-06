@@ -33,8 +33,17 @@
         </fieldset>
 
         <fieldset>
-          <legend>Primary</legend>
-          <div class="swatches" data-target="primary">
+          <legend>Torso</legend>
+          <div class="segments" role="radiogroup" aria-label="Torso style">
+            <button type="button" class="segment selected" data-torso-style="tunic">Tunic</button>
+            <button type="button" class="segment" data-torso-style="armor">Armour</button>
+            <button type="button" class="segment" data-torso-style="robe">Robe</button>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Torso Colour</legend>
+          <div class="swatches" data-target="torsoColor">
             <button type="button" class="swatch selected" style="--swatch: #5cc8ff" data-color="#5cc8ff" aria-label="sky"></button>
             <button type="button" class="swatch" style="--swatch: #8bd346" data-color="#8bd346" aria-label="leaf"></button>
             <button type="button" class="swatch" style="--swatch: #f26d6d" data-color="#f26d6d" aria-label="ember"></button>
@@ -43,8 +52,17 @@
         </fieldset>
 
         <fieldset>
-          <legend>Accent</legend>
-          <div class="swatches" data-target="accent">
+          <legend>Weapon</legend>
+          <div class="segments" role="radiogroup" aria-label="Weapon style">
+            <button type="button" class="segment selected" data-weapon-style="classic">Classic</button>
+            <button type="button" class="segment" data-weapon-style="heavy">Heavy</button>
+            <button type="button" class="segment" data-weapon-style="ornate">Ornate</button>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Weapon Colour</legend>
+          <div class="swatches" data-target="weaponColor">
             <button type="button" class="swatch selected" style="--swatch: #ffd166" data-color="#ffd166" aria-label="gold"></button>
             <button type="button" class="swatch" style="--swatch: #ffffff" data-color="#ffffff" aria-label="white"></button>
             <button type="button" class="swatch" style="--swatch: #2ef3c5" data-color="#2ef3c5" aria-label="teal"></button>

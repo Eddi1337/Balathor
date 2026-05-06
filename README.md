@@ -166,7 +166,7 @@ npm run client:desktop:build:win
 
 Client to server:
 
-- `hello`: sends player name and customization choices.
+- `hello`: sends player name, class, torso style/colour, and weapon style/colour.
 - `input`: sends current movement key state.
 - `chat`: sends a player chat line to the server.
 - `attack`: uses the player's class weapon.

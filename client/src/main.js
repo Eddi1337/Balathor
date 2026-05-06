@@ -70,8 +70,10 @@ const state = {
   joined: false,
   selfId: null,
   selectedClass: "ranger",
-  primary: "#5cc8ff",
-  accent: "#ffd166",
+  torsoStyle: "tunic",
+  weaponStyle: "classic",
+  torsoColor: "#5cc8ff",
+  weaponColor: "#ffd166",
   players: new Map(),
   npcs: new Map(),
   mobs: new Map(),
@@ -502,6 +504,24 @@ function wireUi() {
     });
   });
 
+  document.querySelectorAll("[data-torso-style]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.torsoStyle = button.dataset.torsoStyle;
+      document.querySelectorAll("[data-torso-style]").forEach((item) => {
+        item.classList.toggle("selected", item === button);
+      });
+    });
+  });
+
+  document.querySelectorAll("[data-weapon-style]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.weaponStyle = button.dataset.weaponStyle;
+      document.querySelectorAll("[data-weapon-style]").forEach((item) => {
+        item.classList.toggle("selected", item === button);
+      });
+    });
+  });
+
   document.querySelectorAll(".swatches").forEach((group) => {
     group.addEventListener("click", (event) => {
       const button = event.target.closest(".swatch");
@@ -527,8 +547,12 @@ function wireUi() {
       type: "hello",
       name: nameInput.value,
       classId: state.selectedClass,
-      primary: state.primary,
-      accent: state.accent
+      torsoStyle: state.torsoStyle,
+      weaponStyle: state.weaponStyle,
+      torsoColor: state.torsoColor,
+      weaponColor: state.weaponColor,
+      primary: state.torsoColor,
+      accent: state.weaponColor
     });
   });
 
@@ -1128,13 +1152,14 @@ function drawCharacter(entity, x, y, isNpc = false) {
   const travelY = Math.round(dirY * 2);
   const px = x - 8 * scale;
   const py = y - 10 * scale + bob;
-  const primary = entity.primary || "#5cc8ff";
-  const accent = entity.accent || "#ffd166";
+  const torsoColor = entity.torsoColor || entity.primary || "#5cc8ff";
+  const weaponColor = entity.weaponColor || entity.accent || "#ffd166";
+  const torsoStyle = entity.torsoStyle || "tunic";
 
   drawEllipseShadow(x - 11, y + 7, 22, 5, 0.28);
 
-  pixel(px, py, 5, 1, 6, 2, accent, scale);
-  pixel(px, py, 4, 3, 8, 7, primary, scale);
+  pixel(px, py, 5, 1, 6, 2, weaponColor, scale);
+  drawTorso(px, py, torsoStyle, torsoColor, weaponColor, scale);
   pixel(px, py, 6, 4, 4, 3, "#f0c9a2", scale);
 
   const leftFootX = 4 + travelX - Math.round(sideX * forward);
@@ -1155,22 +1180,22 @@ function drawCharacter(entity, x, y, isNpc = false) {
   const leftArmY = 6 + Math.round(-sideY * forward) + travelY;
   const rightArmX = 11 + Math.round(sideX * forward) + travelX;
   const rightArmY = 6 + Math.round(sideY * forward) + travelY;
-  pixel(px, py, leftArmX, leftArmY, 3, 4, accent, scale);
-  pixel(px, py, rightArmX, rightArmY, 3, 4, accent, scale);
+  pixel(px, py, leftArmX, leftArmY, 3, 4, weaponColor, scale);
+  pixel(px, py, rightArmX, rightArmY, 3, 4, weaponColor, scale);
 
   if (entity.classId === "mage") {
-    pixel(px, py, 3, 2, 10, 2, accent, scale);
-    pixel(px, py, 7, -1, 3, 4, primary, scale);
+    pixel(px, py, 3, 2, 10, 2, weaponColor, scale);
+    pixel(px, py, 7, -1, 3, 4, torsoColor, scale);
   } else if (entity.classId === "knight") {
     pixel(px, py, 4, 2, 8, 2, "#d4dae2", scale);
     pixel(px, py, 3, 7, 10, 4, "#8a929e", scale);
   } else {
-    pixel(px, py, 2, 5, 3, 5, accent, scale);
-    pixel(px, py, 11, 5, 3, 5, accent, scale);
+    pixel(px, py, 2, 5, 3, 5, weaponColor, scale);
+    pixel(px, py, 11, 5, 3, 5, weaponColor, scale);
   }
 
   if (!isNpc) {
-    drawClassEquipment(entity, x, y + bob, dirX, dirY, sideX, sideY, accent);
+    drawClassEquipment(entity, x, y + bob, dirX, dirY, sideX, sideY, weaponColor);
   }
 
   ctx.font = "12px ui-sans-serif, system-ui";
@@ -1186,7 +1211,30 @@ function drawCharacter(entity, x, y, isNpc = false) {
   }
 }
 
+function drawTorso(px, py, style, torsoColor, trimColor, scale) {
+  if (style === "armor") {
+    pixel(px, py, 4, 3, 8, 7, "#6f7b86", scale);
+    pixel(px, py, 5, 4, 6, 1, "#d4dae2", scale);
+    pixel(px, py, 5, 6, 6, 1, blend(torsoColor, "#ffffff", 0.25), scale);
+    pixel(px, py, 7, 3, 2, 7, trimColor, scale);
+    return;
+  }
+
+  if (style === "robe") {
+    pixel(px, py, 4, 3, 8, 8, torsoColor, scale);
+    pixel(px, py, 3, 7, 10, 4, blend(torsoColor, "#000000", 0.18), scale);
+    pixel(px, py, 4, 3, 1, 8, trimColor, scale);
+    pixel(px, py, 11, 3, 1, 8, trimColor, scale);
+    return;
+  }
+
+  pixel(px, py, 4, 3, 8, 7, torsoColor, scale);
+  pixel(px, py, 4, 7, 8, 2, blend(torsoColor, "#000000", 0.22), scale);
+  pixel(px, py, 6, 3, 4, 1, trimColor, scale);
+}
+
 function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent) {
+  const style = entity.weaponStyle || "classic";
   ctx.save();
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
@@ -1196,15 +1244,15 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent) {
     const baseY = y + 8 - sideY * 12 - dirY * 2;
     const tipX = x - sideX * 15 + dirX * 9;
     const tipY = y - 21 - sideY * 15 + dirY * 9;
-    ctx.strokeStyle = "#6b4428";
-    ctx.lineWidth = 4;
+    ctx.strokeStyle = style === "ornate" ? accent : "#6b4428";
+    ctx.lineWidth = style === "heavy" ? 6 : 4;
     ctx.beginPath();
     ctx.moveTo(baseX, baseY);
     ctx.lineTo(tipX, tipY);
     ctx.stroke();
-    ctx.fillStyle = "#ff7a45";
+    ctx.fillStyle = style === "ornate" ? "#c79cff" : "#ff7a45";
     ctx.beginPath();
-    ctx.arc(tipX, tipY, 5, 0, Math.PI * 2);
+    ctx.arc(tipX, tipY, style === "heavy" ? 6 : 5, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = "#ffd166";
     ctx.fillRect(tipX - 2, tipY - 2, 4, 4);
@@ -1213,8 +1261,8 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent) {
     const swordBaseY = y - 5 + dirY * 8 + sideY * 4;
     const swordTipX = x + dirX * 24 + sideX * 8;
     const swordTipY = y - 12 + dirY * 24 + sideY * 8;
-    ctx.strokeStyle = "#edf3f7";
-    ctx.lineWidth = 4;
+    ctx.strokeStyle = style === "ornate" ? accent : "#edf3f7";
+    ctx.lineWidth = style === "heavy" ? 6 : 4;
     ctx.beginPath();
     ctx.moveTo(swordBaseX, swordBaseY);
     ctx.lineTo(swordTipX, swordTipY);
@@ -1228,7 +1276,7 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent) {
 
     const shieldX = x - sideX * 12 + dirX * 3;
     const shieldY = y - 5 - sideY * 12 + dirY * 3;
-    ctx.fillStyle = "#3f4b5e";
+    ctx.fillStyle = style === "heavy" ? "#2f3744" : "#3f4b5e";
     ctx.beginPath();
     ctx.ellipse(shieldX, shieldY, 8, 11, entity.facing || 0, 0, Math.PI * 2);
     ctx.fill();
@@ -1237,23 +1285,26 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent) {
     ctx.stroke();
     ctx.fillStyle = accent;
     ctx.fillRect(shieldX - 2, shieldY - 7, 4, 14);
+    if (style === "ornate") {
+      ctx.fillRect(shieldX - 6, shieldY - 2, 12, 4);
+    }
   } else {
     const bowX = x - sideX * 13 + dirX * 2;
     const bowY = y - 7 - sideY * 13 + dirY * 2;
-    ctx.strokeStyle = "#8b5a34";
-    ctx.lineWidth = 4;
+    ctx.strokeStyle = style === "ornate" ? accent : "#8b5a34";
+    ctx.lineWidth = style === "heavy" ? 6 : 4;
     ctx.beginPath();
     ctx.moveTo(bowX - dirX * 9 - dirY * 4, bowY - dirY * 9 + dirX * 4);
     ctx.quadraticCurveTo(bowX + sideX * 7, bowY + sideY * 7, bowX + dirX * 9 + dirY * 4, bowY + dirY * 9 - dirX * 4);
     ctx.stroke();
-    ctx.strokeStyle = "#f4ead3";
+    ctx.strokeStyle = style === "heavy" ? "#d7e4ef" : "#f4ead3";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(bowX - dirX * 9 - dirY * 4, bowY - dirY * 9 + dirX * 4);
     ctx.lineTo(bowX + dirX * 9 + dirY * 4, bowY + dirY * 9 - dirX * 4);
     ctx.stroke();
     ctx.strokeStyle = accent;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = style === "heavy" ? 3 : 2;
     ctx.beginPath();
     ctx.moveTo(x + sideX * 8 - dirX * 10, y - 12 + sideY * 8 - dirY * 10);
     ctx.lineTo(x + sideX * 8 + dirX * 8, y - 3 + sideY * 8 + dirY * 8);

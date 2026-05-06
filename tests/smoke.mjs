@@ -52,6 +52,8 @@ try {
   const index = await fetchText(`http://127.0.0.1:${clientPort}/`);
   assert.match(index, /Balathor/);
   assert.match(index, /mobileControls/);
+  assert.match(index, /Torso Colour/);
+  assert.match(index, /Weapon Colour/);
 
   const messages = await joinViaWebSocket(serverPort);
   assert.equal(messages.some((message) => message.type === "welcome"), true);
@@ -63,6 +65,10 @@ try {
     player.xp === 0 &&
     player.xpToNext > 0 &&
     player.statPoints === 0 &&
+    player.torsoStyle === "robe" &&
+    player.weaponStyle === "ornate" &&
+    player.torsoColor === "#c79cff" &&
+    player.weaponColor === "#2ef3c5" &&
     player.stats?.speed === 0 &&
     player.stats?.strength === 0 &&
     player.stats?.armour === 0 &&
@@ -142,6 +148,10 @@ async function joinViaWebSocket(port) {
           type: "hello",
           name: "Smoke",
           classId: "mage",
+          torsoStyle: "robe",
+          weaponStyle: "ornate",
+          torsoColor: "#c79cff",
+          weaponColor: "#2ef3c5",
           primary: "#5cc8ff",
           accent: "#ffd166"
         })));
@@ -173,7 +183,12 @@ async function joinViaWebSocket(port) {
         messages.some((message) => message.type === "teleport" && message.portalId === "home") &&
         messages.some((message) => message.type === "chunk") &&
         messages.some((message) => message.type === "snapshot" && message.mobs?.some((mob) => mob.isBoss)) &&
-        messages.some((message) => message.type === "snapshot" && message.players?.some((player) => player.level === 1 && player.stats?.speed === 0)) &&
+        messages.some((message) => message.type === "snapshot" && message.players?.some((player) => (
+          player.level === 1 &&
+          player.stats?.speed === 0 &&
+          player.torsoStyle === "robe" &&
+          player.weaponStyle === "ornate"
+        ))) &&
         messages.some((message) => message.type === "chat" && message.text === "hello realm")
       ) {
         clearTimeout(timeout);
