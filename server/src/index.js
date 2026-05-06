@@ -158,10 +158,10 @@ const MOB_TYPES = Object.freeze({
   }
 });
 const WILDERNESS_BOSSES = Object.freeze([
-  { id: "lone_stag", x: -212, y: 18, biome: "forest", name: "Old Rootback" },
-  { id: "glass_dune", x: 210, y: 158, biome: "desert", name: "Glasshide" },
-  { id: "white_pine", x: -214, y: -184, biome: "frost", name: "Whitepine Warden" },
-  { id: "red_crag", x: 218, y: -210, biome: "ember", name: "Red Crag" },
+  { id: "lone_stag",   x: -320, y:   35, biome: "forest", name: "Old Rootback" },
+  { id: "glass_dune",  x:  450, y:  385, biome: "desert", name: "Glasshide" },
+  { id: "white_pine",  x: -450, y: -365, biome: "frost",  name: "Whitepine Warden" },
+  { id: "red_crag",    x:  425, y: -390, biome: "ember",  name: "Red Crag" },
 ]);
 
 let nextClientId = 1;
