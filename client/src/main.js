@@ -1747,11 +1747,11 @@ function drawModCape(px, py, scale, bob, dirX, dirY) {
   const capeX = px + 4 * scale;
   const capeY = py + 2 * scale + bob;
   const sway = Math.round(dirX * 2);
-  ctx.fillStyle = "#7a30c8";
+  ctx.fillStyle = "#2d9e3a";
   ctx.fillRect(capeX, capeY, 8 * scale, 6 * scale);
-  ctx.fillStyle = "#5a1ea8";
+  ctx.fillStyle = "#1a6828";
   ctx.fillRect(capeX + sway, capeY + 4 * scale, 8 * scale, 5 * scale);
-  ctx.fillStyle = "#c79cff";
+  ctx.fillStyle = "#6dcc7a";
   ctx.fillRect(capeX + 1, capeY, 2, 3 * scale);
 }
 
