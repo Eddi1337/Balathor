@@ -743,6 +743,11 @@ button:focus-visible {
     user-select: none;
   }
 
+  .mobile-dpad button {
+    font-size: 22px;
+    line-height: 1;
+  }
+
   .mobile-actions button {
     min-width: 76px;
     background: rgba(255, 209, 102, 0.9);
