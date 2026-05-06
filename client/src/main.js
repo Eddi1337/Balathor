@@ -390,7 +390,7 @@ function authErrorText(message) {
   if (message === "auth_failed") {
     return "Username or password is wrong";
   }
-  return "Use a username and a password with at least 6 characters";
+  return "Use a valid username and password (password may be empty; very long values are rejected)";
 }
 
 function applySnapshot(players) {

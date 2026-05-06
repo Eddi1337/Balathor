@@ -24,8 +24,10 @@ const SNAPSHOT_RATE = 20;
 const PLAYER_SPEED = 5.2;
 const MAX_CHUNKS_PER_REQUEST = 64;
 const MAX_NAME_LENGTH = 18;
-const MAX_USERNAME_LENGTH = 18;
-const PASSWORD_MIN_LENGTH = 6;
+const MIN_USERNAME_LENGTH = 1;
+/** Hard cap to keep account storage and hashing bounded; large enough to count as “unlimited” in practice. */
+const MAX_AUTH_USERNAME_LENGTH = 8192;
+const MAX_AUTH_PASSWORD_LENGTH = 8192;
 const MAX_CHAT_LENGTH = 180;
 const CHAT_HISTORY_LIMIT = 60;
 const CHAT_COOLDOWN_MS = 800;
@@ -668,7 +670,7 @@ function handleAuth(client, message) {
   const username = sanitizeUsername(message.username);
   const password = sanitizePassword(message.password);
   const action = message.action === "create" ? "create" : "login";
-  if (!username || !password) {
+  if (!username || password === null) {
     send(client, { type: "auth", ok: false, message: "auth_invalid" });
     return;
   }
@@ -2209,13 +2211,16 @@ function sanitizeUsername(value) {
   const normalized = String(value || "")
     .replace(/[^\w-]/g, "")
     .trim()
-    .slice(0, MAX_USERNAME_LENGTH);
-  return normalized.length >= 3 ? normalized : "";
+    .slice(0, MAX_AUTH_USERNAME_LENGTH);
+  return normalized.length >= MIN_USERNAME_LENGTH ? normalized : "";
 }
 
 function sanitizePassword(value) {
-  const password = String(value || "");
-  return password.length >= PASSWORD_MIN_LENGTH && password.length <= 128 ? password : "";
+  const password = String(value ?? "");
+  if (password.length > MAX_AUTH_PASSWORD_LENGTH) {
+    return null;
+  }
+  return password;
 }
 
 function sanitizeName(value) {

@@ -91,7 +91,7 @@ The server container exposes HTTP health at `/health` and WebSocket gameplay at 
 
 ## Server Deployment
 
-Pushes to `main` or `master` build `./server` and `./client` on the self-hosted Balathor runner, publish the images to Harbor as `192.168.10.155/balathor/server` and `192.168.10.155/balathor/client`, then deploy `docker-compose.prod.yml` to `/root/balathor` on `192.168.10.222`.
+Pushes to `main` or `master` build `./server` and `./client` on the self-hosted Balathor runner, publish the images to Harbor as `192.168.10.155/balathor/server` and `192.168.10.155/balathor/client`, then deploy `docker-compose.prod.yml` to `/root/balathor` on `192.168.10.112`.
 
 The workflow expects the same repository secrets as the other deployed repos:
 
