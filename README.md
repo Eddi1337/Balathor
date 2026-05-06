@@ -30,6 +30,44 @@ npm run server
 npm run client
 ```
 
+## Stress Testing
+
+The stress runner launches lightweight WebSocket clients with random player names. It targets the remote Balathor server by default:
+
+```bash
+npm run stress -- --clients 500 --duration 300 --ramp 25
+```
+
+From a Windows Command Prompt, the shortest command is:
+
+```bat
+stress-remote.cmd 500
+```
+
+From PowerShell, run:
+
+```powershell
+.\stress-remote.cmd 500
+```
+
+That launches 500 clients against:
+
+```text
+wss://balathor.edmundmurphy.com/ws
+```
+
+Add `--attack` when you want combat traffic too:
+
+```bash
+npm run stress -- --clients 500 --duration 300 --ramp 25 --attack
+```
+
+To test a local development server instead, start it first with `npm run server`, then pass the local URL:
+
+```bash
+npm run stress -- --url ws://127.0.0.1:8080/ws --clients 100 --duration 60
+```
+
 ## Docker Server
 
 ```bash

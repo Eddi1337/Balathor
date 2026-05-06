@@ -8,6 +8,8 @@
     "server": "node server/src/index.js",
     "client": "node client/dev-server.js",
     "smoke": "node tests/smoke.mjs",
+    "stress": "node tools/stress.mjs",
+    "stress:remote": "node tools/stress.mjs --url wss://balathor.edmundmurphy.com/ws",
     "server:docker:build": "docker build -t balathor-server ./server",
     "server:docker:run": "docker run --rm --name balathor-server -p 8080:8080 balathor-server",
     "client:docker:build": "docker build -t balathor-client ./client",
