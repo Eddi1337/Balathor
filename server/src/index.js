@@ -14,7 +14,7 @@ const {
   isBlockedCircle,
   spawnPoint
 } = require("./world");
-const { updateNpcs, getNpcSnapshot } = require("./npcs");
+const { updateNpcs, getNpcSnapshot, getNpcById, getTraderDefinitions } = require("./npcs");
 
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 8080);
@@ -43,6 +43,9 @@ const MOB_RESPAWN_MS = 7000;
 const INVENTORY_SIZE = 10;
 const INTERACT_RADIUS = 1.8;
 const MAX_GROUND_ITEMS = 140;
+const TRADER_INTERACT_RADIUS = 3.5;
+const SELL_PRICE_RATIO = 0.5;
+const STARTER_GOLD = 50;
 const MOB_AGGRO_RADIUS = 7.5;
 const MOB_ATTACK_RADIUS = 1.15;
 const MOB_ATTACK_COOLDOWN_MS = 1300;
@@ -224,6 +227,10 @@ const itemDatabase = createItemDatabase();
 const chests = createChests();
 const groundItems = [];
 const mobs = createMobs();
+const traderStocks = new Map();
+for (const def of getTraderDefinitions()) {
+  traderStocks.set(def.id, createTraderStock(def.id, def.homeX * 100 + def.homeY));
+}
 
 syncNextItemIdFromAccounts();
 
@@ -451,6 +458,7 @@ function serializePlayer(player) {
     level: player.level,
     statPoints: player.statPoints,
     stats: player.stats,
+    gold: player.gold,
     inventory: player.inventory,
     equipment: player.equipment,
     x: Number(player.x.toFixed(3)),
@@ -774,6 +782,21 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "traderOpen") {
+    handleTraderOpen(client, message);
+    return;
+  }
+
+  if (message.type === "buyItem") {
+    handleBuyItem(client, message);
+    return;
+  }
+
+  if (message.type === "sellItem") {
+    handleSellItem(client, message);
+    return;
+  }
+
   if (message.type === "modTeleport") {
     handleModTeleport(client, message);
   }
@@ -858,6 +881,7 @@ function joinWorld(client, message, savedCharacter = null) {
     xpToNext: xpForNextLevel(clampInteger(savedCharacter?.level ?? 1, 1, 1000)),
     statPoints: isMod ? 9999 : clampInteger(savedCharacter?.statPoints ?? 0, 0, 1000),
     stats: sanitizeStats(savedCharacter?.stats),
+    gold: clampInteger(savedCharacter?.gold ?? STARTER_GOLD, 0, 100000000),
     inventory: sanitizeInventory(savedCharacter?.inventory),
     equipment: sanitizeEquipment(savedCharacter?.equipment) || createStarterEquipment(classId, {
       torsoStyle: baseTorsoStyle,
@@ -987,6 +1011,9 @@ function handleAttack(client, message = {}) {
       const progress = awardXp(client.player, xpForMob(hit));
       event.xpGained = progress.xpGained;
       event.levelsGained = progress.levelsGained;
+      const goldReward = goldForMob(hit);
+      client.player.gold += goldReward;
+      event.goldGained = goldReward;
       dropLootForMob(hit);
     }
 
@@ -1220,6 +1247,73 @@ function handleDropItem(client, message) {
   broadcastSnapshot();
 }
 
+function handleTraderOpen(client, message) {
+  if (!client.player) return;
+  const npcId = String(message.npcId || "").slice(0, 64);
+  const npc = getNpcById(npcId);
+  if (!npc || !npc.isTrader) return;
+  if (Math.hypot(npc.x - client.player.x, npc.y - client.player.y) > TRADER_INTERACT_RADIUS) return;
+  const stock = traderStocks.get(npcId);
+  if (!stock) return;
+  send(client, {
+    type: "traderInventory",
+    npcId,
+    npcName: npc.name,
+    items: stock.map((entry, index) => ({
+      index,
+      item: entry.item,
+      price: entry.price,
+      sold: entry.sold || false
+    }))
+  });
+}
+
+function handleBuyItem(client, message) {
+  if (!client.player) return;
+  const npcId = String(message.npcId || "").slice(0, 64);
+  const npc = getNpcById(npcId);
+  if (!npc || !npc.isTrader) return;
+  if (Math.hypot(npc.x - client.player.x, npc.y - client.player.y) > TRADER_INTERACT_RADIUS) return;
+  const stock = traderStocks.get(npcId);
+  if (!stock) return;
+  const idx = clampInteger(message.index, 0, stock.length - 1);
+  const entry = stock[idx];
+  if (!entry || entry.sold) {
+    send(client, { type: "serverMessage", message: "item_sold_out" });
+    return;
+  }
+  if (client.player.gold < entry.price) {
+    send(client, { type: "serverMessage", message: "not_enough_gold" });
+    return;
+  }
+  if (!addItemToInventory(client.player, cloneItem(entry.item))) {
+    send(client, { type: "serverMessage", message: "inventory_full" });
+    return;
+  }
+  client.player.gold -= entry.price;
+  entry.sold = true;
+  send(client, { type: "serverMessage", message: "item_bought", itemName: entry.item.name });
+  handleTraderOpen(client, { npcId });
+  broadcastSnapshot();
+}
+
+function handleSellItem(client, message) {
+  if (!client.player) return;
+  const npcId = String(message.npcId || "").slice(0, 64);
+  const npc = getNpcById(npcId);
+  if (!npc || !npc.isTrader) return;
+  if (Math.hypot(npc.x - client.player.x, npc.y - client.player.y) > TRADER_INTERACT_RADIUS) return;
+  const slot = clampInteger(message.slot, 0, INVENTORY_SIZE - 1);
+  const item = client.player.inventory[slot];
+  if (!item) return;
+  const price = itemSellPrice(item);
+  client.player.inventory[slot] = null;
+  client.player.gold += price;
+  send(client, { type: "serverMessage", message: "item_sold", itemName: item.name, goldGained: price });
+  handleTraderOpen(client, { npcId });
+  broadcastSnapshot();
+}
+
 function createBaseStats() {
   return {
     speed: 0,
@@ -1241,6 +1335,12 @@ function xpForMob(mob) {
     return 120 + mob.level * 24 + Math.max(0, mob.maxHp - 120);
   }
   return 18 + mob.level * 8 + Math.floor(mob.maxHp / 8);
+}
+
+function goldForMob(mob) {
+  if (mob.isCritter) return 1;
+  if (mob.isBoss) return 25 + mob.level * 5;
+  return 3 + mob.level * 2;
 }
 
 function awardXp(player, amount) {
@@ -1564,6 +1664,7 @@ function broadcastSnapshot() {
       xpToNext: p.xpToNext,
       statPoints: p.statPoints,
       stats: p.stats,
+      gold: p.gold,
       inventory: p.inventory,
       equipment: p.equipment,
       moveSpeed: Number(getPlayerSpeed(p).toFixed(2)),
@@ -1949,6 +2050,31 @@ function cloneItem(template) {
     stats: { ...(template.stats || {}) },
     visual: { ...(template.visual || {}) }
   };
+}
+
+const RARITY_VALUE = { common: 1, uncommon: 2.5, rare: 6, epic: 15 };
+
+function itemValue(item) {
+  if (!item) return 0;
+  const base = item.type === "potion" ? 8 : item.type === "ring" ? 20 : item.type === "armor" ? 15 : 12;
+  const mult = RARITY_VALUE[item.rarity] || 1;
+  return Math.round(base * mult);
+}
+
+function itemSellPrice(item) {
+  return Math.max(1, Math.round(itemValue(item) * SELL_PRICE_RATIO));
+}
+
+function createTraderStock(traderId, seed) {
+  const stock = [];
+  const count = 8;
+  for (let i = 0; i < count; i += 1) {
+    const roll = hash2(seed + i, traderId.length + i, 900);
+    const qualityBias = roll > 0.85 ? 0.8 : roll > 0.55 ? 0.5 : roll > 0.3 ? 0.25 : 0;
+    const item = createLootItem(seed + i * 7, traderId.length * 13 + i, qualityBias);
+    stock.push({ item, price: itemValue(item) });
+  }
+  return stock;
 }
 
 function addItemToInventory(player, item) {

@@ -94,6 +94,7 @@
     <aside id="progression" class="progression hidden" aria-label="Progression">
       <div class="progression-head">
         <strong id="levelText">Level 1</strong>
+        <span id="goldText" class="gold-text">0g</span>
         <button id="progressionToggle" class="progression-toggle" type="button" aria-expanded="true" aria-label="Minimize stats">&#8722;</button>
       </div>
       <div class="progression-body">
@@ -137,6 +138,16 @@
       <div id="nearbyLoot" class="nearby-loot"></div>
       <div id="inventorySlots" class="inventory-slots"></div>
       <button id="interactButton" class="interact-button" type="button">Open / Pick Up</button>
+    </aside>
+
+    <aside id="traderPanel" class="game-window trader-window hidden" aria-label="Trader">
+      <div class="window-head">
+        <strong id="traderTitle">Trader</strong>
+        <button id="traderClose" class="window-close" type="button" aria-label="Close trader">Close</button>
+      </div>
+      <div id="traderStock" class="trader-stock"></div>
+      <div class="trader-sell-head"><strong>Sell from inventory</strong></div>
+      <div id="traderSellSlots" class="inventory-slots"></div>
     </aside>
 
     <section id="chat" class="chat hidden" aria-label="Realm chat">

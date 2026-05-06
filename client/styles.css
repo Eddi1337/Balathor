@@ -253,6 +253,12 @@ button:focus-visible {
   display: none;
 }
 
+.gold-text {
+  color: #ffd166;
+  font-weight: 700;
+  font-size: 12px;
+}
+
 .hp-stack {
   display: grid;
   gap: 4px;
@@ -373,6 +379,56 @@ button:focus-visible {
 
 .bags-window {
   width: min(380px, calc(100vw - 32px));
+}
+
+.trader-window {
+  width: min(380px, calc(100vw - 32px));
+  max-height: calc(100vh - 260px);
+  overflow-y: auto;
+}
+
+.trader-stock {
+  display: grid;
+  gap: 6px;
+}
+
+.trader-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.trader-item.sold {
+  opacity: 0.4;
+}
+
+.trader-item-info {
+  display: grid;
+  gap: 2px;
+}
+
+.trader-item-price {
+  color: #ffd166;
+  font-weight: 700;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.trader-sell-head {
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sell-price {
+  color: #ffd166;
+  font-size: 11px;
 }
 
 .window-head {

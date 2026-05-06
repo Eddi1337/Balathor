@@ -50,6 +50,12 @@ const chatForm = document.querySelector("#chatForm");
 const chatInput = document.querySelector("#chatInput");
 const chatToggle = document.querySelector("#chatToggle");
 const mobileControls = document.querySelector("#mobileControls");
+const traderPanel = document.querySelector("#traderPanel");
+const traderTitle = document.querySelector("#traderTitle");
+const traderStock = document.querySelector("#traderStock");
+const traderSellSlots = document.querySelector("#traderSellSlots");
+const traderClose = document.querySelector("#traderClose");
+const goldText = document.querySelector("#goldText");
 
 const TILE_SIZE = 32;
 const CHUNK_SIZE = 16;
@@ -125,6 +131,8 @@ const state = {
   chatMinimized: false,
   progressionMinimized: false,
   activeWindow: null,
+  traderNpcId: null,
+  traderItems: [],
   lastViewSentAt: 0,
   lastFrame: performance.now(),
   debugHud: localStorage.getItem(DEBUG_HUD_STORAGE_KEY) === "1",
@@ -463,6 +471,10 @@ function handleServerMessage(message) {
     updateSelfInventory();
     renderEquipment();
     renderBags();
+    if (state.activeWindow === "trader") {
+      renderTraderStock();
+      renderTraderSellSlots();
+    }
     return;
   }
 
@@ -472,12 +484,13 @@ function handleServerMessage(message) {
       if (message.levelsGained > 0) {
         createLevelUpFireworks();
       }
+      const goldPart = message.goldGained ? ` +${message.goldGained}g` : "";
       appendChat({
         kind: "system",
         name: "Realm",
         text: message.levelsGained > 0
-          ? `Gained ${message.xpGained} XP and reached a new level`
-          : `Gained ${message.xpGained} XP`
+          ? `Gained ${message.xpGained} XP${goldPart} and reached a new level`
+          : `Gained ${message.xpGained} XP${goldPart}`
       });
     }
     return;
@@ -493,6 +506,16 @@ function handleServerMessage(message) {
 
   if (message.type === "chat") {
     appendChat(message);
+    return;
+  }
+
+  if (message.type === "traderInventory") {
+    state.traderNpcId = message.npcId;
+    state.traderItems = message.items || [];
+    traderTitle.textContent = message.npcName || "Trader";
+    renderTraderStock();
+    renderTraderSellSlots();
+    setActiveGameWindow("trader");
     return;
   }
 
@@ -517,6 +540,14 @@ function handleServerMessage(message) {
       });
     } else if (message.message === "inventory_full") {
       appendChat({ kind: "system", name: "Realm", text: "Inventory is full" });
+    } else if (message.message === "not_enough_gold") {
+      appendChat({ kind: "system", name: "Realm", text: "Not enough gold" });
+    } else if (message.message === "item_sold_out") {
+      appendChat({ kind: "system", name: "Realm", text: "Item is sold out" });
+    } else if (message.message === "item_bought") {
+      appendChat({ kind: "system", name: "Realm", text: `Bought ${message.itemName}` });
+    } else if (message.message === "item_sold") {
+      appendChat({ kind: "system", name: "Realm", text: `Sold ${message.itemName} for ${message.goldGained}g` });
     } else if (message.itemName) {
       appendChat({ kind: "system", name: "Realm", text: `${message.itemName}` });
     }
@@ -893,6 +924,24 @@ function wireUi() {
     setActiveGameWindow(null);
   });
 
+  traderClose.addEventListener("click", () => {
+    setActiveGameWindow(null);
+  });
+
+  traderStock.addEventListener("pointerdown", (event) => {
+    const button = event.target.closest("[data-trader-buy]");
+    if (!button || !state.traderNpcId) return;
+    event.preventDefault();
+    send({ type: "buyItem", npcId: state.traderNpcId, index: Number(button.dataset.traderBuy) });
+  });
+
+  traderSellSlots.addEventListener("pointerdown", (event) => {
+    const button = event.target.closest("[data-trader-sell]");
+    if (!button || !state.traderNpcId) return;
+    event.preventDefault();
+    send({ type: "sellItem", npcId: state.traderNpcId, slot: Number(button.dataset.traderSell) });
+  });
+
   interactButton.addEventListener("click", () => {
     sendInteract();
   });
@@ -966,7 +1015,6 @@ function wireUi() {
     if (tryPickupClickedGroundItem(event)) {
       return;
     }
-    // compute world coordinates and send with attack direction
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
@@ -978,6 +1026,9 @@ function wireUi() {
     const worldY = (cy - halfH) / (TILE_SIZE * state.zoom) + state.camera.y / TILE_SIZE;
     state.lastPointerWorldX = worldX;
     state.lastPointerWorldY = worldY;
+    if (tryOpenTraderAtClick(worldX, worldY)) {
+      return;
+    }
     sendAttack(worldX, worldY);
   });
 
@@ -1288,6 +1339,7 @@ function resetToConnection(message) {
   progression.classList.add("hidden");
   equipmentPanel.classList.add("hidden");
   bagsPanel.classList.add("hidden");
+  traderPanel.classList.add("hidden");
   chat.classList.add("hidden");
   mobileControls.classList.add("hidden");
   setChatMinimized(false);
@@ -1543,6 +1595,8 @@ function renderProgression(self) {
   hpText.textContent = `${hpVal} / ${maxHpVal} HP`;
 
   levelText.textContent = `Level ${level}`;
+  const gold = Number.isFinite(self.gold) ? self.gold : 0;
+  goldText.textContent = `${gold}g`;
   statPointsEl.textContent = `${statPoints} point${statPoints === 1 ? "" : "s"}`;
   xpFill.style.width = `${xpPct}%`;
   xpText.textContent = `${xp} / ${xpToNext} XP`;
@@ -1727,11 +1781,115 @@ function setActiveGameWindow(windowName) {
   state.activeWindow = windowName;
   equipmentPanel.classList.toggle("hidden", windowName !== "equipment");
   bagsPanel.classList.toggle("hidden", windowName !== "bags");
+  traderPanel.classList.toggle("hidden", windowName !== "trader");
   equipmentButton.classList.toggle("selected", windowName === "equipment");
   bagsButton.classList.toggle("selected", windowName === "bags");
+  if (windowName !== "trader") {
+    state.traderNpcId = null;
+    state.traderItems = [];
+  }
   if (!windowName) {
     clearMovementInput();
   }
+}
+
+function tryOpenTraderAtClick(worldX, worldY) {
+  const self = state.players.get(state.selfId);
+  if (!self) return false;
+  for (const npc of state.npcs.values()) {
+    if (!npc.isTrader) continue;
+    if (Math.hypot(npc.x - worldX, npc.y - worldY) > 1.5) continue;
+    if (Math.hypot(npc.x - self.x, npc.y - self.y) > 3.5) continue;
+    send({ type: "traderOpen", npcId: npc.id });
+    return true;
+  }
+  return false;
+}
+
+function renderTraderStock() {
+  traderStock.replaceChildren();
+  const self = state.players.get(state.selfId);
+  const playerGold = self?.gold ?? 0;
+  for (const entry of state.traderItems) {
+    const row = document.createElement("div");
+    row.className = `trader-item ${entry.item.rarity || "common"}${entry.sold ? " sold" : ""}`;
+
+    const icon = createItemIcon(entry.item);
+    const info = document.createElement("div");
+    info.className = "trader-item-info";
+    const name = document.createElement("strong");
+    name.textContent = entry.item.name;
+    const stats = document.createElement("span");
+    stats.className = "item-stats";
+    stats.textContent = formatItemStats(entry.item);
+    info.append(name, stats);
+
+    const right = document.createElement("div");
+    right.style.display = "flex";
+    right.style.alignItems = "center";
+    right.style.gap = "8px";
+    const price = document.createElement("span");
+    price.className = "trader-item-price";
+    price.textContent = `${entry.price}g`;
+    right.append(price);
+
+    if (!entry.sold) {
+      const buyBtn = document.createElement("button");
+      buyBtn.type = "button";
+      buyBtn.dataset.traderBuy = String(entry.index);
+      buyBtn.textContent = "Buy";
+      buyBtn.disabled = playerGold < entry.price;
+      buyBtn.className = "window-close";
+      right.append(buyBtn);
+    } else {
+      const soldLabel = document.createElement("span");
+      soldLabel.textContent = "Sold";
+      soldLabel.style.color = "var(--muted)";
+      right.append(soldLabel);
+    }
+
+    row.append(icon, info, right);
+    traderStock.append(row);
+  }
+}
+
+function renderTraderSellSlots() {
+  traderSellSlots.replaceChildren();
+  state.inventory.forEach((item, slot) => {
+    const cell = document.createElement("div");
+    cell.className = `inventory-slot ${item ? item.rarity || "common" : "empty"}`;
+    if (!item) {
+      cell.textContent = slot + 1;
+      traderSellSlots.append(cell);
+      return;
+    }
+    const icon = createItemIcon(item);
+    const name = document.createElement("strong");
+    name.textContent = item.name;
+    const stats = document.createElement("span");
+    stats.className = "item-stats";
+    stats.textContent = formatItemStats(item);
+    const sellPrice = document.createElement("span");
+    sellPrice.className = "sell-price";
+    sellPrice.textContent = `Sell: ${itemSellPrice(item)}g`;
+    const actions = document.createElement("div");
+    actions.className = "item-actions";
+    const sellBtn = document.createElement("button");
+    sellBtn.type = "button";
+    sellBtn.dataset.traderSell = String(slot);
+    sellBtn.textContent = "Sell";
+    actions.append(sellBtn);
+    cell.append(icon, name, stats, sellPrice, actions);
+    traderSellSlots.append(cell);
+  });
+}
+
+function itemSellPrice(item) {
+  if (!item) return 0;
+  const RARITY_VALUE = { common: 1, uncommon: 2.5, rare: 6, epic: 15 };
+  const base = item.type === "potion" ? 8 : item.type === "ring" ? 20 : item.type === "armor" ? 15 : 12;
+  const mult = RARITY_VALUE[item.rarity] || 1;
+  return Math.max(1, Math.round(Math.round(base * mult) * 0.5));
 }
 
 function requestVisibleChunks() {

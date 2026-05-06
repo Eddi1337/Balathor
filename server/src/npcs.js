@@ -36,6 +36,7 @@ const DEFINITIONS = [
     id: "npc_dale", name: "Merchant Dale",
     classId: "ranger", primary: "#5a4a35", accent: "#c8a86b",
     homeX: 0, homeY: -62, patrolRadius: 8,
+    isTrader: true,
     dialogue: [
       "Finest wares from across the realm, step right up!",
       "Business has been booming since the new road opened.",
@@ -74,6 +75,7 @@ const DEFINITIONS = [
     id: "npc_lyssa", name: "Trader Lyssa",
     classId: "ranger", primary: "#7b5ea7", accent: "#ffd700",
     homeX: 60, homeY: -11, patrolRadius: 8,
+    isTrader: true,
     dialogue: [
       "The market has everything the heart desires!",
       "My spices come from lands you could not imagine.",
@@ -319,7 +321,16 @@ function getNpcSnapshot() {
     y: Number(npc.y.toFixed(3)),
     facing: Number(npc.facing.toFixed(3)),
     moving: npc.moving,
+    isTrader: npc.isTrader || false,
   }));
 }
 
-module.exports = { updateNpcs, getNpcSnapshot };
+function getNpcById(id) {
+  return npcs.find((npc) => npc.id === id) || null;
+}
+
+function getTraderDefinitions() {
+  return DEFINITIONS.filter((d) => d.isTrader);
+}
+
+module.exports = { updateNpcs, getNpcSnapshot, getNpcById, getTraderDefinitions };
