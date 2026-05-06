@@ -211,6 +211,18 @@ const DEFINITIONS = [
   },
 ];
 
+function npcPatrolIntersectsBounds(npc, bounds) {
+  if (!bounds) {
+    return false;
+  }
+  const pad = 1.5;
+  const nx0 = npc.homeX - npc.patrolRadius - pad;
+  const nx1 = npc.homeX + npc.patrolRadius + pad;
+  const ny0 = npc.homeY - npc.patrolRadius - pad;
+  const ny1 = npc.homeY + npc.patrolRadius + pad;
+  return !(nx1 < bounds.minX || nx0 > bounds.maxX || ny1 < bounds.minY || ny0 > bounds.maxY);
+}
+
 // Runtime NPC state — positions are mutated by AI each tick.
 const npcs = DEFINITIONS.map((def) => ({
   ...def,
@@ -227,10 +239,18 @@ const npcs = DEFINITIONS.map((def) => ({
     Math.random() * (CHAT_INTERVAL_MAX - CHAT_INTERVAL_MIN),
 }));
 
-function updateNpcs(dt, onChat) {
+function updateNpcs(dt, onChat, activationBounds) {
+  if (!activationBounds) {
+    return;
+  }
+
   const now = Date.now();
 
   for (const npc of npcs) {
+    if (!npcPatrolIntersectsBounds(npc, activationBounds)) {
+      continue;
+    }
+
     const dx = npc._targetX - npc.x;
     const dy = npc._targetY - npc.y;
     const dist = Math.hypot(dx, dy);

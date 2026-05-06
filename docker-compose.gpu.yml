@@ -1,0 +1,9 @@
+# Optional overlay: `docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d`
+# Exposes the host iGPU/DRI to services (requires /dev/dri on the host, e.g. after LXC bind-mount).
+services:
+  balathor-server:
+    devices:
+      - /dev/dri:/dev/dri
+  balathor-client:
+    devices:
+      - /dev/dri:/dev/dri

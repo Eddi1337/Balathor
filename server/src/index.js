@@ -469,6 +469,31 @@ function getMeasuredSimHz() {
   return avgMs > 0 ? 1000 / avgMs : null;
 }
 
+/** Union of all logged-in players' snapshot view rectangles — used to tick NPC AI only near anyone who could see them. */
+function computeNpcActivationBounds() {
+  const margin = CHAT_VIEW_MARGIN_TILES;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let any = false;
+  for (const client of clients.values()) {
+    if (!client.player) {
+      continue;
+    }
+    any = true;
+    const view = client.view || defaultViewForPlayer(client.player);
+    minX = Math.min(minX, view.x - view.halfW - margin);
+    maxX = Math.max(maxX, view.x + view.halfW + margin);
+    minY = Math.min(minY, view.y - view.halfH - margin);
+    maxY = Math.max(maxY, view.y + view.halfH + margin);
+  }
+  if (!any) {
+    return null;
+  }
+  return { minX, maxX, minY, maxY };
+}
+
 function simulate() {
   recordSimulateWallInterval();
   tick += 1;
@@ -509,7 +534,7 @@ function simulate() {
     handlePortalTravel(client);
   }
 
-  updateNpcs(dt, pushChat);
+  updateNpcs(dt, pushChat, computeNpcActivationBounds());
   updateMobs(dt);
 
   if (tick % Math.round(TICK_RATE / SNAPSHOT_RATE) === 0) {

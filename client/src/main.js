@@ -1,5 +1,9 @@
 const canvas = document.querySelector("#game");
-const ctx = canvas.getContext("2d", { alpha: false });
+const ctx = canvas.getContext("2d", {
+  alpha: false,
+  desynchronized: true,
+  willReadFrequently: false
+});
 const bootPanel = document.querySelector("#boot");
 const statusEl = document.querySelector("#status");
 const menu = document.querySelector("#menu");
