@@ -92,27 +92,32 @@
     </section>
 
     <aside id="progression" class="progression hidden" aria-label="Progression">
-      <div class="hp-stack" aria-label="Hit points">
-        <div class="hp-track"><span id="hpFill"></span></div>
-        <span id="hpText" class="hp-text">— / — HP</span>
-      </div>
-      <div class="progress-head">
+      <div class="progression-head">
         <strong id="levelText">Level 1</strong>
-        <span id="statPoints">0 points</span>
+        <button id="progressionToggle" class="progression-toggle" type="button" aria-expanded="true" aria-label="Minimize stats">&#8722;</button>
       </div>
-      <div class="xp-track" aria-hidden="true">
-        <span id="xpFill"></span>
-      </div>
-      <span id="xpText" class="xp-text">0 / 100 XP</span>
-      <div class="stat-grid">
-        <button type="button" data-stat="speed">Speed <span id="statSpeed">0</span></button>
-        <button type="button" data-stat="strength">Strength <span id="statStrength">0</span></button>
-        <button type="button" data-stat="armour">Armour <span id="statArmour">0</span></button>
-        <button type="button" data-stat="health">Health <span id="statHealth">0</span></button>
-      </div>
-      <div class="window-actions">
-        <button id="equipmentButton" type="button">Equipment</button>
-        <button id="bagsButton" type="button">Bags</button>
+      <div class="progression-body">
+        <div class="hp-stack" aria-label="Hit points">
+          <div class="hp-track"><span id="hpFill"></span></div>
+          <span id="hpText" class="hp-text">— / — HP</span>
+        </div>
+        <div class="progress-head">
+          <span id="statPoints">0 points</span>
+        </div>
+        <div class="xp-track" aria-hidden="true">
+          <span id="xpFill"></span>
+        </div>
+        <span id="xpText" class="xp-text">0 / 100 XP</span>
+        <div class="stat-grid">
+          <button type="button" data-stat="speed">Speed <span id="statSpeed">0</span></button>
+          <button type="button" data-stat="strength">Strength <span id="statStrength">0</span></button>
+          <button type="button" data-stat="armour">Armour <span id="statArmour">0</span></button>
+          <button type="button" data-stat="health">Health <span id="statHealth">0</span></button>
+        </div>
+        <div class="window-actions">
+          <button id="equipmentButton" type="button">Equipment</button>
+          <button id="bagsButton" type="button">Bags</button>
+        </div>
       </div>
     </aside>
 
@@ -148,10 +153,10 @@
 
     <section id="mobileControls" class="mobile-controls hidden" aria-label="Mobile controls">
       <div class="mobile-dpad">
-        <button type="button" data-mobile-move="up" class="mobile-up" aria-label="Move up">Up</button>
-        <button type="button" data-mobile-move="left" class="mobile-left" aria-label="Move left">Left</button>
-        <button type="button" data-mobile-move="down" class="mobile-down" aria-label="Move down">Down</button>
-        <button type="button" data-mobile-move="right" class="mobile-right" aria-label="Move right">Right</button>
+        <button type="button" data-mobile-move="up" class="mobile-up" aria-label="Move up">&#9650;</button>
+        <button type="button" data-mobile-move="left" class="mobile-left" aria-label="Move left">&#9664;</button>
+        <button type="button" data-mobile-move="down" class="mobile-down" aria-label="Move down">&#9660;</button>
+        <button type="button" data-mobile-move="right" class="mobile-right" aria-label="Move right">&#9654;</button>
       </div>
       <div class="mobile-actions">
         <button type="button" data-mobile-action="home">Home</button>
