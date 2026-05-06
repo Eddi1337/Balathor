@@ -21,11 +21,15 @@ const statSpeed = document.querySelector("#statSpeed");
 const statStrength = document.querySelector("#statStrength");
 const statArmour = document.querySelector("#statArmour");
 const statHealth = document.querySelector("#statHealth");
-const inventoryPanel = document.querySelector("#inventoryPanel");
-const inventoryToggle = document.querySelector("#inventoryToggle");
+const equipmentButton = document.querySelector("#equipmentButton");
+const bagsButton = document.querySelector("#bagsButton");
+const equipmentPanel = document.querySelector("#equipmentPanel");
+const bagsPanel = document.querySelector("#bagsPanel");
+const equipmentClose = document.querySelector("#equipmentClose");
+const bagsClose = document.querySelector("#bagsClose");
+const equipmentSlots = document.querySelector("#equipmentSlots");
 const inventorySlots = document.querySelector("#inventorySlots");
-const equippedWeapon = document.querySelector("#equippedWeapon");
-const equippedArmor = document.querySelector("#equippedArmor");
+const nearbyLoot = document.querySelector("#nearbyLoot");
 const interactButton = document.querySelector("#interactButton");
 const chat = document.querySelector("#chat");
 const chatMessages = document.querySelector("#chatMessages");
@@ -87,7 +91,7 @@ const state = {
   chests: [],
   groundItems: [],
   inventory: Array(10).fill(null),
-  equipment: { weapon: null, armor: null },
+  equipment: { weapon: null, body: null, ring1: null, ring2: null },
   combatFx: [],
   chunks: new Map(),
   portals: new Map(),
@@ -100,7 +104,7 @@ const state = {
   activeServerUrl: "",
   menuOpen: false,
   chatMinimized: false,
-  inventoryMinimized: false,
+  activeWindow: null,
   lastFrame: performance.now()
 };
 
@@ -231,7 +235,6 @@ function handleServerMessage(message) {
     bootPanel.classList.add("hidden");
     hud.classList.remove("hidden");
     progression.classList.remove("hidden");
-    inventoryPanel.classList.remove("hidden");
     chat.classList.remove("hidden");
     mobileControls.classList.remove("hidden");
     state.camera.x = message.spawn.x * TILE_SIZE;
@@ -281,7 +284,8 @@ function handleServerMessage(message) {
     state.chests = message.chests || [];
     state.groundItems = message.groundItems || [];
     updateSelfInventory();
-    renderInventory();
+    renderEquipment();
+    renderBags();
     return;
   }
 
@@ -381,11 +385,11 @@ function updateSelfInventory() {
   const self = state.players.get(state.selfId);
   if (!self) {
     state.inventory = Array(10).fill(null);
-    state.equipment = { weapon: null, armor: null };
+    state.equipment = { weapon: null, body: null, ring1: null, ring2: null };
     return;
   }
   state.inventory = Array.isArray(self.inventory) ? self.inventory : Array(10).fill(null);
-  state.equipment = self.equipment || { weapon: null, armor: null };
+  state.equipment = self.equipment || { weapon: null, body: null, ring1: null, ring2: null };
 }
 
 function applyNpcSnapshot(snapshotNpcs) {
@@ -600,12 +604,35 @@ function wireUi() {
     });
   });
 
-  inventoryToggle.addEventListener("click", () => {
-    setInventoryMinimized(!state.inventoryMinimized);
+  equipmentButton.addEventListener("click", () => {
+    toggleGameWindow("equipment");
+  });
+
+  bagsButton.addEventListener("click", () => {
+    toggleGameWindow("bags");
+  });
+
+  equipmentClose.addEventListener("click", () => {
+    setActiveGameWindow(null);
+  });
+
+  bagsClose.addEventListener("click", () => {
+    setActiveGameWindow(null);
   });
 
   interactButton.addEventListener("click", () => {
     sendInteract();
+  });
+
+  equipmentSlots.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-equipment-action]");
+    if (!button) {
+      return;
+    }
+    const equipmentSlot = button.dataset.equipmentSlot;
+    if (button.dataset.equipmentAction === "unequip") {
+      send({ type: "unequipItem", equipmentSlot });
+    }
   });
 
   inventorySlots.addEventListener("click", (event) => {
@@ -616,7 +643,7 @@ function wireUi() {
     const slot = Number(button.dataset.slot);
     const action = button.dataset.inventoryAction;
     if (action === "equip") {
-      send({ type: "equipItem", slot });
+      send({ type: "equipItem", slot, equipmentSlot: button.dataset.equipmentSlot || null });
     } else if (action === "use") {
       send({ type: "useItem", slot });
     } else if (action === "drop") {
@@ -850,11 +877,12 @@ function resetToConnection(message) {
   form.classList.add("hidden");
   hud.classList.add("hidden");
   progression.classList.add("hidden");
-  inventoryPanel.classList.add("hidden");
+  equipmentPanel.classList.add("hidden");
+  bagsPanel.classList.add("hidden");
   chat.classList.add("hidden");
   mobileControls.classList.add("hidden");
   setChatMinimized(false);
-  setInventoryMinimized(false);
+  setActiveGameWindow(null);
   chatMessages.replaceChildren();
 }
 
@@ -865,7 +893,7 @@ function clearWorldState() {
   state.chests = [];
   state.groundItems = [];
   state.inventory = Array(10).fill(null);
-  state.equipment = { weapon: null, armor: null };
+  state.equipment = { weapon: null, body: null, ring1: null, ring2: null };
   state.combatFx = [];
   state.chunks.clear();
   state.portals.clear();
@@ -1042,9 +1070,56 @@ function renderProgression(self) {
   });
 }
 
-function renderInventory() {
-  equippedWeapon.textContent = state.equipment.weapon?.name || "None";
-  equippedArmor.textContent = state.equipment.armor?.name || "None";
+function renderEquipment() {
+  const slots = [
+    ["weapon", "Weapon"],
+    ["body", "Body"],
+    ["ring1", "Ring"],
+    ["ring2", "Ring"]
+  ];
+  equipmentSlots.replaceChildren();
+
+  for (const [slot, label] of slots) {
+    const item = state.equipment?.[slot] || null;
+    const cell = document.createElement("div");
+    cell.className = `equipment-slot ${item ? item.rarity || "common" : "empty"}`;
+
+    const labelEl = document.createElement("span");
+    labelEl.className = "slot-label";
+    labelEl.textContent = label;
+
+    if (!item) {
+      const empty = document.createElement("strong");
+      empty.textContent = "Empty";
+      cell.append(labelEl, empty);
+      equipmentSlots.append(cell);
+      continue;
+    }
+
+    const icon = createItemIcon(item);
+    const name = document.createElement("strong");
+    name.textContent = item.name;
+
+    const stats = document.createElement("span");
+    stats.className = "item-stats";
+    stats.textContent = formatItemStats(item);
+
+    const actions = document.createElement("div");
+    actions.className = "item-actions";
+    const unequip = document.createElement("button");
+    unequip.type = "button";
+    unequip.dataset.equipmentAction = "unequip";
+    unequip.dataset.equipmentSlot = slot;
+    unequip.textContent = "Unequip";
+    actions.append(unequip);
+
+    cell.append(labelEl, icon, name, stats, actions);
+    equipmentSlots.append(cell);
+  }
+}
+
+function renderBags() {
+  renderNearbyLoot();
   inventorySlots.replaceChildren();
 
   state.inventory.forEach((item, slot) => {
@@ -1057,10 +1132,6 @@ function renderInventory() {
       return;
     }
 
-    const icon = document.createElement("span");
-    icon.className = `item-icon ${item.icon || item.type}`;
-    icon.style.setProperty("--item-color", item.color || "#d7e4ef");
-
     const name = document.createElement("strong");
     name.textContent = item.name;
 
@@ -1072,21 +1143,72 @@ function renderInventory() {
     actions.className = "item-actions";
     if (item.type === "weapon" || item.type === "armor") {
       actions.append(itemActionButton("equip", slot, "Equip"));
+    } else if (item.type === "ring") {
+      actions.append(itemActionButton("equip", slot, "Ring 1", "ring1"));
+      actions.append(itemActionButton("equip", slot, "Ring 2", "ring2"));
     }
     if (item.type === "potion") {
       actions.append(itemActionButton("use", slot, "Use"));
     }
     actions.append(itemActionButton("drop", slot, "Drop"));
-    cell.append(icon, name, stats, actions);
+    cell.append(createItemIcon(item), name, stats, actions);
     inventorySlots.append(cell);
   });
 }
 
-function itemActionButton(action, slot, label) {
+function renderNearbyLoot() {
+  const self = state.players.get(state.selfId);
+  if (!self) {
+    nearbyLoot.textContent = "Nothing nearby";
+    return;
+  }
+
+  const nearbyItems = state.groundItems
+    .filter((ground) => Math.hypot(ground.x - self.x, ground.y - self.y) <= 2.2)
+    .slice(0, 3);
+  const nearbyChests = state.chests
+    .filter((chest) => !chest.opened && Math.hypot(chest.x - self.x, chest.y - self.y) <= 2.2)
+    .slice(0, 2);
+
+  nearbyLoot.replaceChildren();
+  const label = document.createElement("span");
+  label.textContent = "Nearby";
+  nearbyLoot.append(label);
+
+  if (nearbyChests.length === 0 && nearbyItems.length === 0) {
+    const empty = document.createElement("strong");
+    empty.textContent = "Nothing to pick up";
+    nearbyLoot.append(empty);
+    return;
+  }
+
+  for (const chest of nearbyChests) {
+    const row = document.createElement("strong");
+    row.textContent = `Chest ${Math.round(chest.x)}, ${Math.round(chest.y)}`;
+    nearbyLoot.append(row);
+  }
+  for (const ground of nearbyItems) {
+    const row = document.createElement("strong");
+    row.textContent = ground.item?.name || "Loot";
+    nearbyLoot.append(row);
+  }
+}
+
+function createItemIcon(item) {
+  const icon = document.createElement("span");
+  icon.className = `item-icon ${item.icon || item.type}`;
+  icon.style.setProperty("--item-color", item.color || "#d7e4ef");
+  return icon;
+}
+
+function itemActionButton(action, slot, label, equipmentSlot = null) {
   const button = document.createElement("button");
   button.type = "button";
   button.dataset.inventoryAction = action;
   button.dataset.slot = String(slot);
+  if (equipmentSlot) {
+    button.dataset.equipmentSlot = equipmentSlot;
+  }
   button.textContent = label;
   return button;
 }
@@ -1106,11 +1228,19 @@ function formatItemStats(item) {
     .join(" ");
 }
 
-function setInventoryMinimized(minimized) {
-  state.inventoryMinimized = minimized;
-  inventoryPanel.classList.toggle("minimized", minimized);
-  inventoryToggle.setAttribute("aria-expanded", String(!minimized));
-  inventoryToggle.textContent = minimized ? "Expand" : "Minimize";
+function toggleGameWindow(windowName) {
+  setActiveGameWindow(state.activeWindow === windowName ? null : windowName);
+}
+
+function setActiveGameWindow(windowName) {
+  state.activeWindow = windowName;
+  equipmentPanel.classList.toggle("hidden", windowName !== "equipment");
+  bagsPanel.classList.toggle("hidden", windowName !== "bags");
+  equipmentButton.classList.toggle("selected", windowName === "equipment");
+  bagsButton.classList.toggle("selected", windowName === "bags");
+  if (!windowName) {
+    clearMovementInput();
+  }
 }
 
 function requestVisibleChunks() {
@@ -1363,6 +1493,17 @@ function drawItemIcon(item, x, y) {
     return;
   }
 
+  if (item?.type === "ring") {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(x, y - 2, 7, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "#ffd166";
+    ctx.fillRect(x - 2, y - 12, 4, 4);
+    return;
+  }
+
   ctx.strokeStyle = color;
   ctx.lineWidth = 4;
   ctx.beginPath();
@@ -1470,11 +1611,15 @@ function drawTorso(px, py, style, torsoColor, trimColor, scale) {
 
 function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent) {
   const style = entity.weaponStyle || "classic";
+  const weaponKind = entity.weaponKind || (entity.classId === "mage" ? "staff" : entity.classId === "knight" ? "sword" : "bow");
+  if (!entity.weaponKind) {
+    return;
+  }
   ctx.save();
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
-  if (entity.classId === "mage") {
+  if (weaponKind === "staff") {
     const baseX = x - sideX * 12 - dirX * 2;
     const baseY = y + 8 - sideY * 12 - dirY * 2;
     const tipX = x - sideX * 15 + dirX * 9;
@@ -1491,7 +1636,7 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent) {
     ctx.fill();
     ctx.fillStyle = "#ffd166";
     ctx.fillRect(tipX - 2, tipY - 2, 4, 4);
-  } else if (entity.classId === "knight") {
+  } else if (weaponKind === "sword") {
     const swordBaseX = x + dirX * 8 + sideX * 4;
     const swordBaseY = y - 5 + dirY * 8 + sideY * 4;
     const swordTipX = x + dirX * 24 + sideX * 8;

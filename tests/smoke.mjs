@@ -55,6 +55,8 @@ try {
   assert.match(index, /Torso Colour/);
   assert.match(index, /Weapon Colour/);
   assert.match(index, /chatToggle/);
+  assert.match(index, /equipmentButton/);
+  assert.match(index, /bagsButton/);
 
   const messages = await joinViaWebSocket(serverPort);
   assert.equal(messages.some((message) => message.type === "welcome"), true);
@@ -69,10 +71,13 @@ try {
     player.statPoints === 0 &&
     Array.isArray(player.inventory) &&
     player.inventory.length === 10 &&
-    player.equipment?.weapon === null &&
-    player.equipment?.armor === null &&
+    player.equipment?.weapon?.type === "weapon" &&
+    player.equipment?.body?.type === "armor" &&
+    player.equipment?.ring1 === null &&
+    player.equipment?.ring2 === null &&
     player.torsoStyle === "robe" &&
     player.weaponStyle === "ornate" &&
+    player.weaponKind === "staff" &&
     player.torsoColor === "#c79cff" &&
     player.weaponColor === "#2ef3c5" &&
     player.stats?.speed === 0 &&
@@ -195,8 +200,11 @@ async function joinViaWebSocket(port) {
           player.stats?.speed === 0 &&
           Array.isArray(player.inventory) &&
           player.inventory.length === 10 &&
+          player.equipment?.weapon?.type === "weapon" &&
+          player.equipment?.body?.type === "armor" &&
           player.torsoStyle === "robe" &&
-          player.weaponStyle === "ornate"
+          player.weaponStyle === "ornate" &&
+          player.weaponKind === "staff"
         ))) &&
         messages.some((message) => message.type === "chat" && message.text === "hello realm")
       ) {

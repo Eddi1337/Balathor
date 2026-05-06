@@ -95,23 +95,26 @@
         <button type="button" data-stat="armour">Armour <span id="statArmour">0</span></button>
         <button type="button" data-stat="health">Health <span id="statHealth">0</span></button>
       </div>
+      <div class="window-actions">
+        <button id="equipmentButton" type="button">Equipment</button>
+        <button id="bagsButton" type="button">Bags</button>
+      </div>
     </aside>
 
-    <aside id="inventoryPanel" class="inventory-panel hidden" aria-label="Inventory">
-      <div class="inventory-head">
-        <strong>Character</strong>
-        <button id="inventoryToggle" class="inventory-toggle" type="button" aria-expanded="true">Minimize</button>
+    <aside id="equipmentPanel" class="game-window equipment-window hidden" aria-label="Equipment">
+      <div class="window-head">
+        <strong>Equipment</strong>
+        <button id="equipmentClose" class="window-close" type="button" aria-label="Close equipment">Close</button>
       </div>
-      <div class="equipment-grid">
-        <div>
-          <span>Weapon</span>
-          <strong id="equippedWeapon">None</strong>
-        </div>
-        <div>
-          <span>Armour</span>
-          <strong id="equippedArmor">None</strong>
-        </div>
+      <div id="equipmentSlots" class="equipment-slots"></div>
+    </aside>
+
+    <aside id="bagsPanel" class="game-window bags-window hidden" aria-label="Bags">
+      <div class="window-head">
+        <strong>Bags</strong>
+        <button id="bagsClose" class="window-close" type="button" aria-label="Close bags">Close</button>
       </div>
+      <div id="nearbyLoot" class="nearby-loot"></div>
       <div id="inventorySlots" class="inventory-slots"></div>
       <button id="interactButton" class="interact-button" type="button">Open / Pick Up</button>
     </aside>

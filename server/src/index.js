@@ -32,6 +32,11 @@ const MOB_RESPAWN_MS = 7000;
 const INVENTORY_SIZE = 10;
 const INTERACT_RADIUS = 1.8;
 const MAX_GROUND_ITEMS = 140;
+const MOB_AGGRO_RADIUS = 7.5;
+const MOB_ATTACK_RADIUS = 1.15;
+const MOB_ATTACK_COOLDOWN_MS = 1300;
+const MOB_ATTACK_DAMAGE = 13;
+const BOSS_ATTACK_DAMAGE = 26;
 const XP_BASE_TO_LEVEL = 100;
 const XP_LEVEL_STEP = 55;
 const STAT_IDS = ["speed", "strength", "armour", "health"];
@@ -400,6 +405,11 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "unequipItem") {
+    handleUnequipItem(client, message);
+    return;
+  }
+
   if (message.type === "requestChunks") {
     streamChunks(client, message.chunks);
   }
@@ -415,10 +425,11 @@ function joinWorld(client, message) {
   const weaponColor = sanitizeColor(message.weaponColor || message.accent, "#ffd166");
   const baseTorsoStyle = sanitizeChoice(message.torsoStyle, TORSO_STYLE_IDS, "tunic");
   const baseWeaponStyle = sanitizeChoice(message.weaponStyle, WEAPON_STYLE_IDS, "classic");
+  const classId = sanitizeChoice(message.classId, CLASS_IDS, "ranger");
   client.player = {
     id: client.id,
     name: sanitizeName(message.name),
-    classId: sanitizeChoice(message.classId, CLASS_IDS, "ranger"),
+    classId,
     baseTorsoStyle,
     baseWeaponStyle,
     torsoStyle: baseTorsoStyle,
@@ -435,12 +446,20 @@ function joinWorld(client, message) {
     statPoints: 0,
     stats: createBaseStats(),
     inventory: Array(INVENTORY_SIZE).fill(null),
-    equipment: { weapon: null, armor: null },
+    equipment: createStarterEquipment(classId, {
+      torsoStyle: baseTorsoStyle,
+      weaponStyle: baseWeaponStyle,
+      torsoColor,
+      weaponColor
+    }),
     x: spawn.x,
     y: spawn.y,
     facing: 0,
     moving: false
   };
+
+  applyDerivedPlayerStats(client.player);
+  client.player.hp = client.player.maxHp;
 
   send(client, {
     type: "welcome",
@@ -471,7 +490,7 @@ function handleAttack(client) {
     return;
   }
 
-  const loadout = CLASS_LOADOUTS[client.player.classId] || CLASS_LOADOUTS.ranger;
+  const loadout = getActiveLoadout(client.player);
   const now = Date.now();
   if (now - client.lastAttackAt < loadout.cooldownMs) {
     return;
@@ -538,11 +557,7 @@ function handleAttack(client) {
     }
 
     if (hitKind === "player" && hit.hp <= 0) {
-      const spawn = spawnPoint(nextSpawnIndex++);
-      hit.hp = hit.maxHp;
-      hit.x = spawn.x;
-      hit.y = spawn.y;
-      hit.moving = false;
+      respawnPlayer(hit);
       event.defeated = true;
     }
   }
@@ -651,19 +666,42 @@ function handleEquipItem(client, message) {
 
   const slot = clampInteger(message.slot, 0, INVENTORY_SIZE - 1);
   const item = client.player.inventory[slot];
-  if (!item || (item.type !== "weapon" && item.type !== "armor")) {
+  let equipSlot = getEquipmentSlotForItem(item, message.equipmentSlot);
+  if (item?.type === "ring" && !message.equipmentSlot) {
+    equipSlot = client.player.equipment.ring1 ? "ring2" : "ring1";
+  }
+  if (!item || !equipSlot) {
     return;
   }
 
-  const equipSlot = item.type === "weapon" ? "weapon" : "armor";
   const oldMaxHp = client.player.maxHp;
   client.player.inventory[slot] = client.player.equipment[equipSlot];
   client.player.equipment[equipSlot] = item;
   applyDerivedPlayerStats(client.player);
-  if (equipSlot === "armor") {
-    client.player.hp = Math.min(client.player.maxHp, client.player.hp + Math.max(0, client.player.maxHp - oldMaxHp));
-  }
+  client.player.hp = Math.min(client.player.maxHp, client.player.hp + Math.max(0, client.player.maxHp - oldMaxHp));
   send(client, { type: "serverMessage", message: "item_equipped", itemName: item.name });
+  broadcastSnapshot();
+}
+
+function handleUnequipItem(client, message) {
+  if (!client.player) {
+    return;
+  }
+
+  const equipmentSlot = sanitizeChoice(message.equipmentSlot, ["weapon", "body", "ring1", "ring2"], null);
+  const item = equipmentSlot ? client.player.equipment[equipmentSlot] : null;
+  if (!item) {
+    return;
+  }
+
+  if (!addItemToInventory(client.player, item)) {
+    send(client, { type: "serverMessage", message: "inventory_full" });
+    return;
+  }
+
+  client.player.equipment[equipmentSlot] = null;
+  applyDerivedPlayerStats(client.player);
+  send(client, { type: "serverMessage", message: "item_unequipped", itemName: item.name });
   broadcastSnapshot();
 }
 
@@ -771,6 +809,51 @@ function getEquipmentStats(player) {
     }
   }
   return totals;
+}
+
+function getActiveLoadout(player) {
+  const weapon = player.equipment?.weapon;
+  if (!weapon) {
+    return {
+      weapon: "unarmed",
+      kind: "swing",
+      projectileKind: null,
+      cooldownMs: 620,
+      range: 1.35,
+      arc: Math.PI * 0.58,
+      damage: 5
+    };
+  }
+
+  if (weapon.weaponKind === "staff") {
+    return { ...CLASS_LOADOUTS.mage, damage: 14 };
+  }
+
+  if (weapon.weaponKind === "bow") {
+    return { ...CLASS_LOADOUTS.ranger, damage: 10 };
+  }
+
+  if (weapon.weaponKind === "sword") {
+    return { ...CLASS_LOADOUTS.knight, damage: 13 };
+  }
+
+  return CLASS_LOADOUTS[player.classId] || CLASS_LOADOUTS.ranger;
+}
+
+function getEquipmentSlotForItem(item, preferredSlot = null) {
+  if (!item) {
+    return null;
+  }
+  if (item.type === "weapon") {
+    return "weapon";
+  }
+  if (item.type === "armor") {
+    return "body";
+  }
+  if (item.type === "ring") {
+    return preferredSlot === "ring2" ? "ring2" : "ring1";
+  }
+  return null;
 }
 
 function findAttackTarget(client, loadout) {
@@ -907,6 +990,7 @@ function broadcastSnapshot() {
         classId: client.player.classId,
         torsoStyle: appearance.torsoStyle,
         weaponStyle: appearance.weaponStyle,
+        weaponKind: appearance.weaponKind,
         torsoColor: appearance.torsoColor,
         weaponColor: appearance.weaponColor,
         primary: appearance.torsoColor,
@@ -975,7 +1059,7 @@ function isAttackTarget(attacker, target, loadout) {
 }
 
 function isShieldBlocking(target, attacker) {
-  if (target.classId !== "knight") {
+  if (target.equipment?.weapon?.weaponKind !== "sword") {
     return false;
   }
 
@@ -988,8 +1072,55 @@ function distance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
+function createStarterEquipment(classId, appearance) {
+  const weaponKindByClass = {
+    ranger: "bow",
+    mage: "staff",
+    knight: "sword"
+  };
+  const weaponNameByKind = {
+    bow: "Training Bow",
+    staff: "Apprentice Staff",
+    sword: "Squire Sword and Shield"
+  };
+  const weaponKind = weaponKindByClass[classId] || "bow";
+  return {
+    weapon: {
+      id: `item_${nextItemId++}`,
+      templateId: `starter_weapon_${classId}`,
+      type: "weapon",
+      name: weaponNameByKind[weaponKind],
+      icon: weaponKind,
+      rarity: "common",
+      color: appearance.weaponColor,
+      weaponKind,
+      visual: {
+        weaponStyle: appearance.weaponStyle,
+        weaponColor: appearance.weaponColor
+      },
+      stats: { damage: 0 }
+    },
+    body: {
+      id: `item_${nextItemId++}`,
+      templateId: `starter_body_${classId}`,
+      type: "armor",
+      name: "Wanderer's Tunic",
+      icon: "armor",
+      rarity: "common",
+      color: appearance.torsoColor,
+      visual: {
+        torsoStyle: appearance.torsoStyle,
+        torsoColor: appearance.torsoColor
+      },
+      stats: { health: 8, armour: 1 }
+    },
+    ring1: null,
+    ring2: null
+  };
+}
+
 function createItemDatabase() {
-  const types = ["weapon", "armor", "potion"];
+  const types = ["weapon", "armor", "ring", "potion"];
   const rarities = [
     { id: "common", label: "Common", multiplier: 1, color: "#d7e4ef" },
     { id: "uncommon", label: "Uncommon", multiplier: 1.35, color: "#8fe388" },
@@ -1012,20 +1143,41 @@ function createItemTemplate(type, rarity, index) {
     const weaponKinds = ["Bow", "Staff", "Sword"];
     const visualStyles = ["classic", "heavy", "ornate"];
     const kind = weaponKinds[index % weaponKinds.length];
+    const weaponKind = kind.toLowerCase();
     const damage = Math.round((4 + hash2(index, 2, 711) * 8) * rarity.multiplier);
     const strength = hash2(index, 3, 712) > 0.68 ? Math.ceil(rarity.multiplier) : 0;
     return {
       templateId: `weapon_${index}`,
       type,
       name: `${rarity.label} ${kind}`,
-      icon: kind.toLowerCase(),
+      icon: weaponKind,
       rarity: rarity.id,
       color: rarity.color,
+      weaponKind,
       visual: {
         weaponStyle: visualStyles[index % visualStyles.length],
         weaponColor: rarity.color
       },
       stats: { damage, strength }
+    };
+  }
+
+  if (type === "ring") {
+    const ringKinds = ["Ring of Vigor", "Ring of Iron", "Ring of Haste", "Ring of Force"];
+    const kind = ringKinds[index % ringKinds.length];
+    const statKey = ["health", "armour", "speed", "strength"][index % 4];
+    const base = statKey === "speed" ? 0.18 : statKey === "health" ? 8 : 1;
+    const value = statKey === "speed"
+      ? Number((base * rarity.multiplier).toFixed(2))
+      : Math.max(1, Math.round(base * rarity.multiplier));
+    return {
+      templateId: `ring_${index}`,
+      type,
+      name: `${rarity.label} ${kind}`,
+      icon: "ring",
+      rarity: rarity.id,
+      color: rarity.color,
+      stats: { [statKey]: value }
     };
   }
 
@@ -1137,12 +1289,13 @@ function nearestGroundItem(player) {
 }
 
 function getPlayerAppearance(player) {
-  const armor = player.equipment?.armor;
+  const armor = player.equipment?.body;
   const weapon = player.equipment?.weapon;
   return {
-    torsoStyle: armor?.visual?.torsoStyle || player.baseTorsoStyle || player.torsoStyle,
+    torsoStyle: armor?.visual?.torsoStyle || "tunic",
     weaponStyle: weapon?.visual?.weaponStyle || player.baseWeaponStyle || player.weaponStyle,
-    torsoColor: armor?.visual?.torsoColor || player.torsoColor,
+    weaponKind: weapon?.weaponKind || null,
+    torsoColor: armor?.visual?.torsoColor || "#8a929e",
     weaponColor: weapon?.visual?.weaponColor || player.weaponColor
   };
 }
@@ -1175,6 +1328,7 @@ function createMobs() {
     maxHp: mob.maxHp || 60,
     dead: false,
     respawnAt: 0,
+    lastAttackAt: 0,
     facing: Math.random() * Math.PI * 2,
     _targetX: mob.homeX,
     _targetY: mob.homeY,
@@ -1289,6 +1443,18 @@ function updateMobs(dt) {
       continue;
     }
 
+    const targetPlayer = nearestAttackablePlayer(mob);
+    if (targetPlayer) {
+      mob._targetX = targetPlayer.x;
+      mob._targetY = targetPlayer.y;
+      const angleToPlayer = Math.atan2(targetPlayer.y - mob.y, targetPlayer.x - mob.x);
+      mob.facing = angleToPlayer;
+      if (distance(mob, targetPlayer) <= MOB_ATTACK_RADIUS) {
+        attackPlayerWithMob(mob, targetPlayer, now);
+        continue;
+      }
+    }
+
     const dx = mob._targetX - mob.x;
     const dy = mob._targetY - mob.y;
     const dist = Math.hypot(dx, dy);
@@ -1318,6 +1484,76 @@ function updateMobs(dt) {
     }
     mob.facing = Math.atan2(ny, nx);
   }
+}
+
+function nearestAttackablePlayer(mob) {
+  let nearest = null;
+  let nearestDistance = Infinity;
+
+  for (const client of clients.values()) {
+    const player = client.player;
+    if (!player || player.hp <= 0 || !canAttackAt(player.x, player.y)) {
+      continue;
+    }
+    const dist = distance(mob, player);
+    if (dist <= MOB_AGGRO_RADIUS && dist < nearestDistance) {
+      nearest = player;
+      nearestDistance = dist;
+    }
+  }
+
+  return nearest;
+}
+
+function attackPlayerWithMob(mob, player, now) {
+  if (now - mob.lastAttackAt < MOB_ATTACK_COOLDOWN_MS) {
+    return;
+  }
+
+  mob.lastAttackAt = now;
+  let damage = mob.isBoss ? BOSS_ATTACK_DAMAGE : MOB_ATTACK_DAMAGE;
+  const blocked = isShieldBlocking(player, mob);
+  if (blocked) {
+    damage = Math.max(1, Math.round(damage * KNIGHT_SHIELD_DAMAGE_MULTIPLIER));
+  }
+  damage = applyArmourReduction(player, damage);
+  player.hp = Math.max(0, player.hp - damage);
+
+  const event = {
+    type: "combat",
+    kind: "swing",
+    weapon: mob.isBoss ? "boss_claws" : "claws",
+    projectileKind: null,
+    attackerId: mob.id,
+    x: Number(mob.x.toFixed(3)),
+    y: Number(mob.y.toFixed(3)),
+    facing: Number(mob.facing.toFixed(3)),
+    range: MOB_ATTACK_RADIUS,
+    hit: true,
+    targetId: player.id,
+    targetKind: "player",
+    damage,
+    blocked,
+    targetHp: player.hp,
+    endX: Number(player.x.toFixed(3)),
+    endY: Number(player.y.toFixed(3))
+  };
+
+  if (player.hp <= 0) {
+    respawnPlayer(player);
+    event.defeated = true;
+  }
+
+  broadcastCombat(event);
+  broadcastSnapshot();
+}
+
+function respawnPlayer(player) {
+  const spawn = spawnPoint(nextSpawnIndex++);
+  player.hp = player.maxHp;
+  player.x = spawn.x;
+  player.y = spawn.y;
+  player.moving = false;
 }
 
 function getMobSnapshot() {

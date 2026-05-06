@@ -283,10 +283,33 @@ button:focus-visible {
   opacity: 0.62;
 }
 
-.inventory-panel {
+.window-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.window-actions button,
+.window-close,
+.interact-button,
+.item-actions button {
+  min-height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: var(--control);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.window-actions button.selected {
+  border-color: #ffd166;
+  color: #ffd166;
+}
+
+.game-window {
   position: fixed;
   right: 16px;
-  top: 174px;
+  top: 206px;
   width: min(360px, calc(100vw - 32px));
   display: grid;
   gap: 10px;
@@ -298,47 +321,36 @@ button:focus-visible {
   font-size: 13px;
 }
 
-.inventory-head,
-.equipment-grid {
+.bags-window {
+  width: min(380px, calc(100vw - 32px));
+}
+
+.window-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
 }
 
-.equipment-grid > div {
-  min-width: 0;
-  display: grid;
-  gap: 3px;
-}
-
-.equipment-grid span,
+.slot-label,
+.nearby-loot span,
 .item-stats {
   color: var(--muted);
 }
 
-.inventory-toggle,
-.interact-button,
-.item-actions button {
-  min-height: 30px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 6px;
-  background: var(--control);
-  color: var(--text);
-  cursor: pointer;
-}
-
-.inventory-toggle,
+.window-close,
 .interact-button {
   padding: 0 10px;
 }
 
+.equipment-slots,
 .inventory-slots {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
+.equipment-slot,
 .inventory-slot {
   min-height: 82px;
   display: grid;
@@ -351,8 +363,24 @@ button:focus-visible {
   background: rgba(17, 24, 39, 0.72);
 }
 
+.equipment-slot {
+  grid-template-columns: 28px minmax(0, 1fr);
+}
+
+.equipment-slot .slot-label {
+  grid-column: 1 / -1;
+}
+
+.equipment-slot.empty {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .inventory-slot.empty {
   place-items: center;
+  color: var(--muted);
+}
+
+.equipment-slot.empty {
   color: var(--muted);
 }
 
@@ -370,6 +398,22 @@ button:focus-visible {
   clip-path: none;
 }
 
+.item-icon.ring {
+  border: 4px solid var(--item-color);
+  border-radius: 50%;
+  background: transparent;
+  clip-path: none;
+}
+
+.nearby-loot {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(17, 24, 39, 0.62);
+}
+
 .item-actions {
   display: flex;
   flex-wrap: wrap;
@@ -380,16 +424,6 @@ button:focus-visible {
   min-height: 24px;
   padding: 0 6px;
   font-size: 12px;
-}
-
-.inventory-panel.minimized {
-  width: min(210px, calc(100vw - 32px));
-}
-
-.inventory-panel.minimized .equipment-grid,
-.inventory-panel.minimized .inventory-slots,
-.inventory-panel.minimized .interact-button {
-  display: none;
 }
 
 .chat {
@@ -568,13 +602,14 @@ button:focus-visible {
     width: min(240px, calc(100vw - 16px));
   }
 
-  .inventory-panel {
+  .game-window {
     left: 8px;
     right: auto;
-    top: 214px;
+    top: 270px;
     width: min(300px, calc(100vw - 16px));
   }
 
+  .equipment-slots,
   .inventory-slots {
     grid-template-columns: 1fr;
     max-height: 220px;
