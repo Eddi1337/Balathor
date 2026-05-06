@@ -173,6 +173,7 @@ Client to server:
 - `home`: teleports the player back to the spawn square.
 - `spendStat`: spends a level-up point on speed, strength, armour, or health.
 - `interact`: opens a nearby chest or picks up nearby loot.
+- `pickupGroundItem`: picks up a clicked ground item after the server validates range.
 - `equipItem`, `unequipItem`, `useItem`, `dropItem`: manages equipment and bag items.
 - `requestChunks`: asks the server for world chunks around the camera.
 

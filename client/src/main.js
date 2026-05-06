@@ -686,6 +686,9 @@ function wireUi() {
       return;
     }
     event.preventDefault();
+    if (tryPickupClickedGroundItem(event)) {
+      return;
+    }
     sendAttack();
   });
 
@@ -791,6 +794,40 @@ function sendInteract() {
     return;
   }
   send({ type: "interact" });
+}
+
+function tryPickupClickedGroundItem(event) {
+  const clicked = findClickedGroundItem(event);
+  if (!clicked) {
+    return false;
+  }
+  send({ type: "pickupGroundItem", groundItemId: clicked.id });
+  return true;
+}
+
+function findClickedGroundItem(event) {
+  const rect = canvas.getBoundingClientRect();
+  const screenX = event.clientX - rect.left;
+  const screenY = event.clientY - rect.top;
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const self = state.players.get(state.selfId);
+
+  let closest = null;
+  let closestDistance = Infinity;
+  for (const ground of state.groundItems) {
+    if (self && Math.hypot(ground.x - self.x, ground.y - self.y) > 2.25) {
+      continue;
+    }
+    const sx = ground.x * TILE_SIZE - state.camera.x + halfW;
+    const sy = ground.y * TILE_SIZE - state.camera.y + halfH;
+    const dist = Math.hypot(screenX - sx, screenY - sy);
+    if (dist <= 18 && dist < closestDistance) {
+      closest = ground;
+      closestDistance = dist;
+    }
+  }
+  return closest;
 }
 
 function wireMobileControls() {
@@ -1739,8 +1776,9 @@ function drawMob(entity, x, y) {
   ctx.lineWidth = 3;
   ctx.strokeStyle = "rgba(8, 12, 18, 0.82)";
   ctx.fillStyle = isBoss ? "#ffd166" : "#ffc0a0";
-  ctx.strokeText(entity.name, x, nameY);
-  ctx.fillText(entity.name, x, nameY);
+  const label = Number.isFinite(entity.level) ? `Lv ${entity.level} ${entity.name}` : entity.name;
+  ctx.strokeText(label, x, nameY);
+  ctx.fillText(label, x, nameY);
   drawHealthBar(x - barW / 2, y - (isBoss ? 27 : 20), barW, 4, entity.hp, entity.maxHp);
 }
 

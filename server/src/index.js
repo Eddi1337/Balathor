@@ -81,42 +81,72 @@ const KNIGHT_SHIELD_ARC = Math.PI * 0.72;
 const KNIGHT_SHIELD_DAMAGE_MULTIPLIER = 0.45;
 const MOB_TYPES = Object.freeze({
   forest: {
-    names: ["Forest Goblin", "Bramble Imp", "Moss Gnawer"],
+    enemies: [
+      { name: "Forest Goblin", level: 1, hp: 48, damage: 8, speed: 1.7 },
+      { name: "Bramble Imp", level: 2, hp: 54, damage: 9, speed: 1.8 },
+      { name: "Moss Gnawer", level: 3, hp: 62, damage: 10, speed: 1.6 },
+      { name: "Thorn Stalker", level: 4, hp: 70, damage: 12, speed: 1.9 },
+    ],
     primary: "#4f9f5f",
     accent: "#d8f0a0",
     bossName: "Bramble Chief",
+    bossLevel: 8,
     bossPrimary: "#3f7f44",
     bossAccent: "#ffd166"
   },
   meadow: {
-    names: ["Meadow Pest", "Field Imp", "Thistle Sprite"],
+    enemies: [
+      { name: "Meadow Pest", level: 1, hp: 42, damage: 7, speed: 2.0 },
+      { name: "Field Imp", level: 2, hp: 50, damage: 9, speed: 1.85 },
+      { name: "Thistle Sprite", level: 3, hp: 46, damage: 11, speed: 2.15 },
+      { name: "Clover Raider", level: 4, hp: 68, damage: 12, speed: 1.7 },
+    ],
     primary: "#79b85a",
     accent: "#fff0a8",
     bossName: "Thistle Matron",
+    bossLevel: 8,
     bossPrimary: "#6d9540",
     bossAccent: "#f7c95f"
   },
   desert: {
-    names: ["Sand Slime", "Dust Imp", "Clay Crawler"],
+    enemies: [
+      { name: "Sand Slime", level: 5, hp: 76, damage: 13, speed: 1.45 },
+      { name: "Dust Imp", level: 6, hp: 68, damage: 15, speed: 1.9 },
+      { name: "Clay Crawler", level: 7, hp: 92, damage: 16, speed: 1.35 },
+      { name: "Dune Raider", level: 8, hp: 86, damage: 18, speed: 1.8 },
+    ],
     primary: "#c7904f",
     accent: "#ffe0a0",
     bossName: "Dune Brute",
+    bossLevel: 13,
     bossPrimary: "#9f6935",
     bossAccent: "#ffd06a"
   },
   frost: {
-    names: ["Frost Wisp", "Snow Gnawer", "Ice Sprite"],
+    enemies: [
+      { name: "Frost Wisp", level: 7, hp: 72, damage: 16, speed: 2.05 },
+      { name: "Snow Gnawer", level: 8, hp: 94, damage: 17, speed: 1.45 },
+      { name: "Ice Sprite", level: 9, hp: 78, damage: 19, speed: 2.1 },
+      { name: "Rime Guard", level: 10, hp: 110, damage: 20, speed: 1.55 },
+    ],
     primary: "#88d8ff",
     accent: "#f0fbff",
     bossName: "Rime Lord",
+    bossLevel: 15,
     bossPrimary: "#5da8d8",
     bossAccent: "#ffffff"
   },
   ember: {
-    names: ["Ember Imp", "Ash Crawler", "Cinderling"],
+    enemies: [
+      { name: "Ember Imp", level: 9, hp: 84, damage: 19, speed: 1.95 },
+      { name: "Ash Crawler", level: 10, hp: 116, damage: 20, speed: 1.4 },
+      { name: "Cinderling", level: 11, hp: 92, damage: 22, speed: 2.0 },
+      { name: "Charred Knight", level: 12, hp: 132, damage: 24, speed: 1.55 },
+    ],
     primary: "#d85b35",
     accent: "#ffd06a",
     bossName: "Cinder Brute",
+    bossLevel: 17,
     bossPrimary: "#a43b2b",
     bossAccent: "#ffdf7a"
   }
@@ -390,6 +420,11 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "pickupGroundItem") {
+    handlePickupGroundItem(client, message);
+    return;
+  }
+
   if (message.type === "equipItem") {
     handleEquipItem(client, message);
     return;
@@ -646,6 +681,24 @@ function handleInteract(client) {
     return;
   }
 
+  pickupGroundItem(client, ground);
+}
+
+function handlePickupGroundItem(client, message) {
+  if (!client.player) {
+    return;
+  }
+
+  const ground = groundItems.find((item) => item.id === message.groundItemId);
+  if (!ground || Math.hypot(ground.x - client.player.x, ground.y - client.player.y) > INTERACT_RADIUS + 0.35) {
+    send(client, { type: "serverMessage", message: "nothing_nearby" });
+    return;
+  }
+
+  pickupGroundItem(client, ground);
+}
+
+function pickupGroundItem(client, ground) {
   if (!addItemToInventory(client.player, ground.item)) {
     send(client, { type: "serverMessage", message: "inventory_full" });
     return;
@@ -764,9 +817,9 @@ function xpForNextLevel(level) {
 
 function xpForMob(mob) {
   if (mob.isBoss) {
-    return 150 + Math.max(0, mob.maxHp - 100);
+    return 120 + mob.level * 24 + Math.max(0, mob.maxHp - 120);
   }
-  return 25 + Math.floor(mob.maxHp / 6);
+  return 18 + mob.level * 8 + Math.floor(mob.maxHp / 8);
 }
 
 function awardXp(player, amount) {
@@ -1322,12 +1375,12 @@ function normalizeAngle(value) {
 
 function createMobs() {
   const fixedMobs = [
-    { id: "mob_slime_oasis_1", name: "Oasis Slime", homeX: 137, homeY: 113, primary: "#56b88f", accent: "#c7f5b0" },
-    { id: "mob_slime_oasis_2", name: "Oasis Slime", homeX: 163, homeY: 126, primary: "#56b88f", accent: "#c7f5b0" },
-    { id: "mob_wisp_frost_1", name: "Frost Wisp", homeX: -139, homeY: -113, primary: "#88d8ff", accent: "#f0fbff" },
-    { id: "mob_wisp_frost_2", name: "Frost Wisp", homeX: -162, homeY: -132, primary: "#88d8ff", accent: "#f0fbff" },
-    { id: "mob_imp_ember_1", name: "Ember Imp", homeX: 134, homeY: -121, primary: "#d85b35", accent: "#ffd06a" },
-    { id: "mob_imp_ember_2", name: "Ember Imp", homeX: 158, homeY: -142, primary: "#d85b35", accent: "#ffd06a" },
+    { id: "mob_slime_oasis_1", name: "Oasis Slime", level: 5, homeX: 137, homeY: 113, primary: "#56b88f", accent: "#c7f5b0", maxHp: 74, attackDamage: 13 },
+    { id: "mob_slime_oasis_2", name: "Oasis Slime", level: 5, homeX: 163, homeY: 126, primary: "#56b88f", accent: "#c7f5b0", maxHp: 74, attackDamage: 13 },
+    { id: "mob_wisp_frost_1", name: "Frost Wisp", level: 7, homeX: -139, homeY: -113, primary: "#88d8ff", accent: "#f0fbff", maxHp: 78, attackDamage: 16 },
+    { id: "mob_wisp_frost_2", name: "Frost Wisp", level: 7, homeX: -162, homeY: -132, primary: "#88d8ff", accent: "#f0fbff", maxHp: 78, attackDamage: 16 },
+    { id: "mob_imp_ember_1", name: "Ember Imp", level: 9, homeX: 134, homeY: -121, primary: "#d85b35", accent: "#ffd06a", maxHp: 86, attackDamage: 19 },
+    { id: "mob_imp_ember_2", name: "Ember Imp", level: 9, homeX: 158, homeY: -142, primary: "#d85b35", accent: "#ffd06a", maxHp: 86, attackDamage: 19 },
   ];
   return [...fixedMobs, ...createWildernessMobs()].map((mob) => ({
     ...mob,
@@ -1335,6 +1388,8 @@ function createMobs() {
     y: mob.homeY,
     hp: mob.maxHp || 60,
     maxHp: mob.maxHp || 60,
+    level: mob.level || 1,
+    attackDamage: mob.attackDamage || MOB_ATTACK_DAMAGE,
     dead: false,
     respawnAt: 0,
     lastAttackAt: 0,
@@ -1354,8 +1409,11 @@ function createWildernessMobs() {
     const biome = camp.biome || getBiome(camp.x, camp.y);
     const type = MOB_TYPES[biome] || MOB_TYPES.forest;
     const count = camp.size;
+    const tier = camp.tier || Math.max(1, Math.floor(Math.hypot(camp.x, camp.y) / 90));
 
     for (let i = 0; i < count; i += 1) {
+      const enemy = type.enemies[i % type.enemies.length];
+      const level = enemy.level + Math.max(0, tier - 1);
       const angle = hash2(camp.x, camp.y, 300 + i) * Math.PI * 2;
       const radius = 2 + hash2(camp.x, camp.y, 400 + i) * 5;
       const home = findOpenMobHome(
@@ -1366,30 +1424,37 @@ function createWildernessMobs() {
       );
       mobs.push({
         id: `mob_camp_${camp.id}_${i + 1}`,
-        name: type.names[i % type.names.length],
+        name: enemy.name,
+        level,
         homeX: home.x,
         homeY: home.y,
         primary: type.primary,
         accent: type.accent,
         campId: camp.id,
-        maxHp: 58 + Math.floor(hash2(camp.x, camp.y, 500 + i) * 18),
-        roamRadius: camp.size >= 6 ? 6 : 4.5,
-        speed: 1.55 + hash2(camp.x, camp.y, 600 + i) * 0.35
+        biome,
+        maxHp: enemy.hp + level * 7 + Math.floor(hash2(camp.x, camp.y, 500 + i) * 14),
+        attackDamage: enemy.damage + Math.floor(level * 1.15),
+        roamRadius: camp.size >= 6 ? 6.5 : 4.8,
+        speed: enemy.speed + hash2(camp.x, camp.y, 600 + i) * 0.18
       });
     }
 
     if (camp.boss) {
       const bossHome = findOpenMobHome(camp.x, camp.y, camp.x, camp.y);
+      const level = type.bossLevel + tier;
       mobs.push({
         id: `mob_boss_${camp.id}`,
         name: type.bossName,
+        level,
         homeX: bossHome.x,
         homeY: bossHome.y,
         primary: type.bossPrimary,
         accent: type.bossAccent,
         campId: camp.id,
+        biome,
         isBoss: true,
-        maxHp: 190,
+        maxHp: 150 + level * 18,
+        attackDamage: 16 + level * 2,
         roamRadius: 7,
         speed: 1.25
       });
@@ -1402,12 +1467,15 @@ function createWildernessMobs() {
     mobs.push({
       id: `mob_boss_${boss.id}`,
       name: boss.name,
+      level: (type.bossLevel || 8) + 3,
       homeX: home.x,
       homeY: home.y,
       primary: type.bossPrimary,
       accent: type.bossAccent,
+      biome: boss.biome,
       isBoss: true,
-      maxHp: 220,
+      maxHp: 260,
+      attackDamage: 34,
       roamRadius: 8,
       speed: 1.18
     });
@@ -1520,7 +1588,7 @@ function attackPlayerWithMob(mob, player, now) {
   }
 
   mob.lastAttackAt = now;
-  let damage = mob.isBoss ? BOSS_ATTACK_DAMAGE : MOB_ATTACK_DAMAGE;
+  let damage = mob.attackDamage || (mob.isBoss ? BOSS_ATTACK_DAMAGE : MOB_ATTACK_DAMAGE);
   const blocked = isShieldBlocking(player, mob);
   if (blocked) {
     damage = Math.max(1, Math.round(damage * KNIGHT_SHIELD_DAMAGE_MULTIPLIER));
@@ -1575,6 +1643,8 @@ function getMobSnapshot() {
       accent: mob.accent,
       hp: mob.hp,
       maxHp: mob.maxHp,
+      level: mob.level,
+      biome: mob.biome || getBiome(mob.homeX, mob.homeY),
       isBoss: Boolean(mob.isBoss),
       x: Number(mob.x.toFixed(3)),
       y: Number(mob.y.toFixed(3)),

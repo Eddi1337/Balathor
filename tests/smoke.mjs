@@ -9,7 +9,7 @@ const require = createRequire(import.meta.url);
 const world = require("../server/src/world.js");
 
 assert.equal(world.CHUNK_SIZE, 16);
-assert.ok(world.ENEMY_CAMPS.length >= 10);
+assert.ok(world.ENEMY_CAMPS.length >= 30);
 for (const camp of world.ENEMY_CAMPS) {
   assert.equal(world.generateTile(camp.x, camp.y), world.TILE.STONE);
   assert.equal(world.canAttackAt(camp.x, camp.y), true);
@@ -63,6 +63,11 @@ try {
   assert.equal(messages.some((message) => message.type === "teleport" && message.portalId === "home"), true);
   assert.equal(messages.some((message) => message.type === "chunk"), true);
   assert.equal(messages.some((message) => message.type === "snapshot" && message.mobs?.some((mob) => mob.isBoss)), true);
+  assert.equal(messages.some((message) => message.type === "snapshot" && message.mobs?.some((mob) => (
+    Number.isInteger(mob.level) &&
+    mob.level > 1 &&
+    ["forest", "meadow", "desert", "frost", "ember"].includes(mob.biome)
+  ))), true);
   assert.equal(messages.some((message) => message.type === "snapshot" && message.chests?.length >= 10), true);
   assert.equal(messages.some((message) => message.type === "snapshot" && message.players?.some((player) => (
     player.level === 1 &&
@@ -127,6 +132,7 @@ async function joinViaWebSocket(port) {
     let sentUnequip = false;
     let sentEquip = false;
     let sentDropEquipment = false;
+    let sentPickupGroundItem = false;
     const messages = [];
     const timeout = setTimeout(() => {
       socket.destroy();
@@ -224,11 +230,21 @@ async function joinViaWebSocket(port) {
         })));
       }
 
+      const droppedArmor = latestGroundItem(messages, (ground) => ground.item?.type === "armor");
+      if (sentDropEquipment && !sentPickupGroundItem && droppedArmor) {
+        sentPickupGroundItem = true;
+        socket.write(maskedFrame(JSON.stringify({
+          type: "pickupGroundItem",
+          groundItemId: droppedArmor.id
+        })));
+      }
+
       if (
         messages.some((message) => message.type === "welcome") &&
         messages.some((message) => message.type === "teleport" && message.portalId === "home") &&
         messages.some((message) => message.type === "chunk") &&
         messages.some((message) => message.type === "snapshot" && message.mobs?.some((mob) => mob.isBoss)) &&
+        messages.some((message) => message.type === "snapshot" && message.mobs?.some((mob) => Number.isInteger(mob.level) && mob.biome)) &&
         messages.some((message) => message.type === "snapshot" && message.chests?.length >= 10) &&
         messages.some((message) => message.type === "snapshot" && message.players?.some((player) => (
           player.level === 1 &&
@@ -244,7 +260,13 @@ async function joinViaWebSocket(port) {
         messages.some((message) => message.type === "serverMessage" && message.message === "item_unequipped") &&
         messages.some((message) => message.type === "serverMessage" && message.message === "item_equipped") &&
         messages.some((message) => message.type === "serverMessage" && message.message === "item_dropped") &&
+        messages.some((message) => message.type === "serverMessage" && message.message === "item_picked_up") &&
         messages.some((message) => message.type === "snapshot" && message.groundItems?.some((ground) => ground.item?.type === "armor")) &&
+        messages.some((message) => message.type === "snapshot" && message.players?.some((player) => (
+          player.name === "Smoke" &&
+          player.equipment?.body === null &&
+          player.inventory?.some((item) => item?.type === "armor")
+        ))) &&
         messages.some((message) => message.type === "chat" && message.text === "hello realm")
       ) {
         clearTimeout(timeout);
@@ -258,6 +280,20 @@ async function joinViaWebSocket(port) {
       reject(error);
     });
   });
+}
+
+function latestGroundItem(messages, predicate = () => true) {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (message.type !== "snapshot") {
+      continue;
+    }
+    const ground = message.groundItems?.find(predicate);
+    if (ground) {
+      return ground;
+    }
+  }
+  return null;
 }
 
 function latestSelfSnapshot(messages, predicate = () => true) {
