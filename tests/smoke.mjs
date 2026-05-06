@@ -91,6 +91,7 @@ try {
     player.stats?.health === 0
   ))), true);
   assert.equal(messages.some((message) => message.type === "chat" && message.text === "hello realm"), true);
+  assert.equal(messages.some((message) => message.type === "chat" && message.text === "hello realm" && Number.isFinite(message.x) && Number.isFinite(message.y)), true);
 } finally {
   server.kill("SIGTERM");
   client.kill("SIGTERM");
@@ -129,6 +130,7 @@ async function joinViaWebSocket(port) {
     let upgraded = false;
     let sentChat = false;
     let sentHome = false;
+    let sentView = false;
     let sentUnequip = false;
     let sentEquip = false;
     let sentDropEquipment = false;
@@ -185,6 +187,13 @@ async function joinViaWebSocket(port) {
 
       if (!sentChat && messages.some((message) => message.type === "welcome")) {
         sentChat = true;
+        if (!sentView) {
+          sentView = true;
+          socket.write(maskedFrame(JSON.stringify({
+            type: "view",
+            view: { x: 0, y: -8, halfW: 22, halfH: 14 }
+          })));
+        }
         socket.write(maskedFrame(JSON.stringify({
           type: "chat",
           text: "hello realm"
@@ -267,7 +276,7 @@ async function joinViaWebSocket(port) {
           player.equipment?.body === null &&
           player.inventory?.some((item) => item?.type === "armor")
         ))) &&
-        messages.some((message) => message.type === "chat" && message.text === "hello realm")
+        messages.some((message) => message.type === "chat" && message.text === "hello realm" && Number.isFinite(message.x) && Number.isFinite(message.y))
       ) {
         clearTimeout(timeout);
         socket.end();

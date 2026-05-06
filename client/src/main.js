@@ -92,6 +92,7 @@ const state = {
   groundItems: [],
   inventory: Array(10).fill(null),
   equipment: { weapon: null, body: null, ring1: null, ring2: null },
+  speechBubbles: new Map(),
   combatFx: [],
   chunks: new Map(),
   portals: new Map(),
@@ -105,8 +106,12 @@ const state = {
   menuOpen: false,
   chatMinimized: false,
   activeWindow: null,
+  lastViewSentAt: 0,
   lastFrame: performance.now()
 };
+
+const SPEECH_BUBBLE_MS = 5200;
+const VIEW_SEND_INTERVAL_MS = 350;
 
 const keys = new Map([
   ["w", "up"],
@@ -937,6 +942,7 @@ function clearWorldState() {
   state.groundItems = [];
   state.inventory = Array(10).fill(null);
   state.equipment = { weapon: null, body: null, ring1: null, ring2: null };
+  state.speechBubbles.clear();
   state.combatFx = [];
   state.chunks.clear();
   state.portals.clear();
@@ -990,6 +996,7 @@ function indexChunkBuildings(chunk) {
 }
 
 function appendChat(message) {
+  rememberSpeechBubble(message);
   const line = document.createElement("div");
   const kindClass = message.kind === "system" ? "system" : message.kind === "npc" ? "npc" : "player";
   line.className = `chat-line ${kindClass}`;
@@ -1013,6 +1020,17 @@ function appendChat(message) {
     chatToggle.classList.add("has-unread");
     chatToggle.textContent = "Expand *";
   }
+}
+
+function rememberSpeechBubble(message) {
+  if ((message.kind !== "player" && message.kind !== "npc") || !message.fromId || !message.text) {
+    return;
+  }
+
+  state.speechBubbles.set(message.fromId, {
+    text: message.text,
+    expiresAt: performance.now() + SPEECH_BUBBLE_MS
+  });
 }
 
 function setChatMinimized(minimized) {
@@ -1088,7 +1106,25 @@ function updateCamera(dt) {
   const hpText = Number.isFinite(self.hp) ? ` HP ${self.hp}/${self.maxHp}` : "";
   positionEl.textContent = `${Math.round(self.renderX)}, ${Math.round(self.renderY)}${hpText}`;
   renderProgression(self);
+  sendViewUpdate();
   requestVisibleChunks();
+}
+
+function sendViewUpdate() {
+  const now = performance.now();
+  if (!state.joined || now - state.lastViewSentAt < VIEW_SEND_INTERVAL_MS) {
+    return;
+  }
+  state.lastViewSentAt = now;
+  send({
+    type: "view",
+    view: {
+      x: state.camera.x / TILE_SIZE,
+      y: state.camera.y / TILE_SIZE,
+      halfW: canvas.width / TILE_SIZE / 2,
+      halfH: canvas.height / TILE_SIZE / 2
+    }
+  });
 }
 
 function renderProgression(self) {
@@ -1633,6 +1669,86 @@ function drawCharacter(entity, x, y, isNpc = false) {
   if (!isNpc && Number.isFinite(entity.hp) && Number.isFinite(entity.maxHp)) {
     drawHealthBar(x - 14, y - 22, 28, 4, entity.hp, entity.maxHp);
   }
+
+  drawSpeechBubble(entity, x, y - 44);
+}
+
+function drawSpeechBubble(entity, x, y) {
+  const bubble = state.speechBubbles.get(entity.id);
+  const now = performance.now();
+  if (!bubble) {
+    return;
+  }
+  if (bubble.expiresAt <= now) {
+    state.speechBubbles.delete(entity.id);
+    return;
+  }
+
+  ctx.font = "12px ui-sans-serif, system-ui";
+  const lines = wrapBubbleText(bubble.text, 24).slice(0, 3);
+  const width = Math.min(190, Math.max(58, ...lines.map((line) => ctx.measureText(line).width + 18)));
+  const height = 16 + lines.length * 14;
+  const left = Math.round(x - width / 2);
+  const top = Math.round(y - height);
+
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, (bubble.expiresAt - now) / 500);
+  ctx.fillStyle = "rgba(247, 243, 223, 0.94)";
+  ctx.strokeStyle = "rgba(28, 34, 46, 0.88)";
+  ctx.lineWidth = 2;
+  roundedRect(left, top, width, height, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(x - 5, top + height - 1);
+  ctx.lineTo(x, top + height + 7);
+  ctx.lineTo(x + 5, top + height - 1);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "#1d2430";
+  ctx.font = "12px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  lines.forEach((line, index) => {
+    ctx.fillText(line, x, top + 8 + index * 14);
+  });
+  ctx.restore();
+}
+
+function wrapBubbleText(text, maxChars) {
+  const words = String(text).split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (next.length > maxChars && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = next;
+    }
+  }
+  if (line) {
+    lines.push(line);
+  }
+  return lines.length > 0 ? lines : [String(text).slice(0, maxChars)];
+}
+
+function roundedRect(x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
 }
 
 function drawTorso(px, py, style, torsoColor, trimColor, scale) {

@@ -5,7 +5,7 @@ Balathor is starting as a small MMO prototype in the style of a sprite-based fan
 - `server`: an authoritative Node.js simulation server with a custom WebSocket transport and Dockerfile.
 - `client`: a Windows-friendly HTML5 canvas client that can be run in a browser now and packaged with the Electron scaffold in `client/desktop`.
 
-The current gameplay loop is intentionally narrow: the client opens on a server connection screen, connects, shows character customization, then joins a social hub in a large forest world. Players move with WASD, movement is simulated by the server, and chat is broadcast server-side to all connected clients.
+The current gameplay loop is intentionally narrow: the client opens on a server connection screen, connects, shows character customization, then joins a social hub in a large fantasy world. Players move with WASD, movement is simulated by the server, and chat is delivered locally to players who can see the speaker.
 
 ## Run Locally
 
@@ -168,6 +168,7 @@ Client to server:
 
 - `hello`: sends player name, class, torso style/colour, and weapon style/colour.
 - `input`: sends current movement key state.
+- `view`: sends the current camera viewport used for local chat visibility.
 - `chat`: sends a player chat line to the server.
 - `attack`: uses the player's class weapon.
 - `home`: teleports the player back to the spawn square.
@@ -180,8 +181,8 @@ Client to server:
 Server to client:
 
 - `welcome`: confirms the player's id and world settings.
-- `chatHistory`: sends recent server-side chat history.
-- `chat`: broadcasts a server-accepted chat line to all clients.
+- `chatHistory`: sends recent server-side chat history visible to this player.
+- `chat`: sends a server-accepted local chat line to nearby visible clients.
 - `chunk`: streams generated tile data for one chunk.
 - `snapshot`: sends authoritative player positions.
 - `combat`: broadcasts sword swings, arrows, fireballs, hits, damage, and shield blocks.

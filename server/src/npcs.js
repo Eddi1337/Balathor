@@ -279,7 +279,7 @@ function updateNpcs(dt, onChat) {
 
     if (now >= npc._nextChatAt) {
       const line = npc.dialogue[Math.floor(Math.random() * npc.dialogue.length)];
-      onChat({ kind: "npc", fromId: npc.id, name: npc.name, text: line });
+      onChat({ kind: "npc", fromId: npc.id, name: npc.name, text: line, x: npc.x, y: npc.y });
       npc._nextChatAt =
         now +
         CHAT_INTERVAL_MIN +

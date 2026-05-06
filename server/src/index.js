@@ -24,6 +24,7 @@ const MAX_NAME_LENGTH = 18;
 const MAX_CHAT_LENGTH = 180;
 const CHAT_HISTORY_LIMIT = 60;
 const CHAT_COOLDOWN_MS = 800;
+const CHAT_VIEW_MARGIN_TILES = 4;
 const PORTAL_COOLDOWN_MS = 1400;
 const DOOR_COOLDOWN_MS = 600;
 const HOME_COOLDOWN_MS = 2000;
@@ -226,6 +227,7 @@ server.on("upgrade", (req, socket) => {
     lastPortalAt: 0,
     lastHomeAt: 0,
     input: { up: false, down: false, left: false, right: false },
+    view: null,
     player: null
   };
 
@@ -395,6 +397,11 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "view") {
+    client.view = normalizeView(message.view, client.player);
+    return;
+  }
+
   if (message.type === "chat") {
     handleChat(client, message);
     return;
@@ -508,7 +515,7 @@ function joinWorld(client, message) {
 
   send(client, {
     type: "chatHistory",
-    messages: chatHistory
+    messages: chatHistory.filter((message) => isMessageVisibleToClient(message, client))
   });
 
   streamChunks(client, nearbyChunks(spawn.x, spawn.y, 3));
@@ -977,11 +984,13 @@ function handleChat(client, message) {
     kind: "player",
     fromId: client.player.id,
     name: client.player.name,
-    text
+    text,
+    x: client.player.x,
+    y: client.player.y
   });
 }
 
-function pushChat({ kind, fromId = null, name, text }) {
+function pushChat({ kind, fromId = null, name, text, x = null, y = null }) {
   const message = {
     type: "chat",
     id: crypto.randomUUID(),
@@ -989,6 +998,8 @@ function pushChat({ kind, fromId = null, name, text }) {
     fromId,
     name,
     text,
+    x: Number.isFinite(x) ? Number(x.toFixed(3)) : null,
+    y: Number.isFinite(y) ? Number(y.toFixed(3)) : null,
     serverTime: Date.now()
   };
 
@@ -998,8 +1009,37 @@ function pushChat({ kind, fromId = null, name, text }) {
   }
 
   for (const client of clients.values()) {
-    send(client, message);
+    if (isMessageVisibleToClient(message, client)) {
+      send(client, message);
+    }
   }
+}
+
+function isMessageVisibleToClient(message, client) {
+  if (message.kind === "system" || message.fromId === client.player?.id) {
+    return true;
+  }
+
+  if (!client.player || !Number.isFinite(message.x) || !Number.isFinite(message.y)) {
+    return false;
+  }
+
+  const view = client.view || defaultViewForPlayer(client.player);
+  return (
+    message.x >= view.x - view.halfW - CHAT_VIEW_MARGIN_TILES &&
+    message.x <= view.x + view.halfW + CHAT_VIEW_MARGIN_TILES &&
+    message.y >= view.y - view.halfH - CHAT_VIEW_MARGIN_TILES &&
+    message.y <= view.y + view.halfH + CHAT_VIEW_MARGIN_TILES
+  );
+}
+
+function defaultViewForPlayer(player) {
+  return {
+    x: player.x,
+    y: player.y,
+    halfW: 22,
+    halfH: 14
+  };
 }
 
 function nearbyChunks(x, y, radius) {
@@ -1771,6 +1811,20 @@ function normalizeInput(keys = {}) {
     down: Boolean(keys.down),
     left: Boolean(keys.left),
     right: Boolean(keys.right)
+  };
+}
+
+function normalizeView(view = {}, player = null) {
+  const fallback = player ? defaultViewForPlayer(player) : { x: 0, y: 0, halfW: 22, halfH: 14 };
+  const x = Number(view.x);
+  const y = Number(view.y);
+  const halfW = Number(view.halfW);
+  const halfH = Number(view.halfH);
+  return {
+    x: Number.isFinite(x) ? x : fallback.x,
+    y: Number.isFinite(y) ? y : fallback.y,
+    halfW: Number.isFinite(halfW) ? Math.max(6, Math.min(80, halfW)) : fallback.halfW,
+    halfH: Number.isFinite(halfH) ? Math.max(4, Math.min(45, halfH)) : fallback.halfH
   };
 }
 
