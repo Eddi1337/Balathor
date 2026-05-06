@@ -743,18 +743,14 @@ button:focus-visible {
     touch-action: none;
   }
 
-  .mobile-dpad {
+  .mobile-joystick {
     position: absolute;
     left: 12px;
     bottom: 0;
-    display: grid;
-    grid-template-columns: repeat(3, 52px);
-    grid-template-rows: repeat(3, 52px);
-    gap: 6px;
-    grid-template-areas:
-      ". up ."
-      "left down right"
-      ". . .";
+    width: 140px;
+    height: 140px;
+    pointer-events: auto;
+    touch-action: none;
   }
 
   .mobile-actions {
@@ -779,30 +775,10 @@ button:focus-visible {
     user-select: none;
   }
 
-  .mobile-dpad button {
-    font-size: 22px;
-    line-height: 1;
-  }
-
   .mobile-actions button {
     min-width: 76px;
     background: rgba(255, 209, 102, 0.9);
     color: #1d2430;
   }
 
-  .mobile-up {
-    grid-area: up;
-  }
-
-  .mobile-left {
-    grid-area: left;
-  }
-
-  .mobile-down {
-    grid-area: down;
-  }
-
-  .mobile-right {
-    grid-area: right;
-  }
 }

@@ -50,6 +50,7 @@ const chatForm = document.querySelector("#chatForm");
 const chatInput = document.querySelector("#chatInput");
 const chatToggle = document.querySelector("#chatToggle");
 const mobileControls = document.querySelector("#mobileControls");
+const joystickCanvas = document.querySelector("#joystick");
 
 const TILE_SIZE = 32;
 const CHUNK_SIZE = 16;
@@ -1171,30 +1172,98 @@ function findClickedGroundItem(event) {
 }
 
 function wireMobileControls() {
-  document.querySelectorAll("[data-mobile-move]").forEach((button) => {
-    const direction = button.dataset.mobileMove;
+  const jctx = joystickCanvas?.getContext("2d");
+  const JOYSTICK_RADIUS = 56;
+  const KNOB_RADIUS = 22;
+  const DEAD_ZONE = 0.15;
+  const cx = 70;
+  const cy = 70;
+  let knobX = 0;
+  let knobY = 0;
+  let activePointerId = null;
 
-    button.addEventListener("pointerdown", (event) => {
-      if (!state.joined || state.menuOpen) {
-        return;
-      }
+  function drawJoystick() {
+    if (!jctx) return;
+    jctx.clearRect(0, 0, 140, 140);
+    jctx.beginPath();
+    jctx.arc(cx, cy, JOYSTICK_RADIUS, 0, Math.PI * 2);
+    jctx.fillStyle = "rgba(24, 30, 43, 0.55)";
+    jctx.fill();
+    jctx.strokeStyle = "rgba(255, 255, 255, 0.18)";
+    jctx.lineWidth = 2;
+    jctx.stroke();
+    jctx.beginPath();
+    jctx.arc(cx + knobX, cy + knobY, KNOB_RADIUS, 0, Math.PI * 2);
+    jctx.fillStyle = "rgba(255, 255, 255, 0.35)";
+    jctx.fill();
+    jctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+    jctx.lineWidth = 2;
+    jctx.stroke();
+  }
+
+  function updateFromPointer(event) {
+    const rect = joystickCanvas.getBoundingClientRect();
+    const px = event.clientX - rect.left - cx;
+    const py = event.clientY - rect.top - cy;
+    const dist = Math.hypot(px, py);
+    const maxDist = JOYSTICK_RADIUS - KNOB_RADIUS;
+    if (dist > maxDist) {
+      knobX = (px / dist) * maxDist;
+      knobY = (py / dist) * maxDist;
+    } else {
+      knobX = px;
+      knobY = py;
+    }
+    const normX = knobX / maxDist;
+    const normY = knobY / maxDist;
+    state.input.left = normX < -DEAD_ZONE;
+    state.input.right = normX > DEAD_ZONE;
+    state.input.up = normY < -DEAD_ZONE;
+    state.input.down = normY > DEAD_ZONE;
+    sendInput();
+    drawJoystick();
+  }
+
+  function resetJoystick() {
+    knobX = 0;
+    knobY = 0;
+    activePointerId = null;
+    clearMovementInput();
+    drawJoystick();
+  }
+
+  if (joystickCanvas) {
+    joystickCanvas.addEventListener("pointerdown", (event) => {
+      if (!state.joined || state.menuOpen) return;
       event.preventDefault();
-      button.setPointerCapture?.(event.pointerId);
-      setMovementInput(direction, true);
+      activePointerId = event.pointerId;
+      joystickCanvas.setPointerCapture(event.pointerId);
+      updateFromPointer(event);
     });
 
-    const release = (event) => {
-      if (!state.joined) {
-        return;
-      }
+    joystickCanvas.addEventListener("pointermove", (event) => {
+      if (activePointerId !== event.pointerId) return;
       event.preventDefault();
-      setMovementInput(direction, false);
-    };
+      updateFromPointer(event);
+    });
 
-    button.addEventListener("pointerup", release);
-    button.addEventListener("pointercancel", release);
-    button.addEventListener("lostpointercapture", () => setMovementInput(direction, false));
-  });
+    joystickCanvas.addEventListener("pointerup", (event) => {
+      if (activePointerId !== event.pointerId) return;
+      event.preventDefault();
+      resetJoystick();
+    });
+
+    joystickCanvas.addEventListener("pointercancel", (event) => {
+      if (activePointerId !== event.pointerId) return;
+      resetJoystick();
+    });
+
+    joystickCanvas.addEventListener("lostpointercapture", () => {
+      resetJoystick();
+    });
+
+    drawJoystick();
+  }
 
   document.querySelector("[data-mobile-action='attack']")?.addEventListener("pointerdown", (event) => {
     if (!state.joined || state.menuOpen) {
