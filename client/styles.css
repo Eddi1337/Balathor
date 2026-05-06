@@ -339,6 +339,10 @@ button:focus-visible {
   padding: 0 10px;
 }
 
+.mobile-controls {
+  display: none;
+}
+
 .menu {
   position: fixed;
   inset: 0;
@@ -405,9 +409,9 @@ button:focus-visible {
   .chat {
     left: 8px;
     right: 8px;
-    bottom: 8px;
+    bottom: 150px;
     width: auto;
-    grid-template-rows: minmax(84px, 132px) 42px;
+    grid-template-rows: minmax(64px, 100px) 42px;
   }
 
   .progression {
@@ -420,5 +424,75 @@ button:focus-visible {
   .menu-panel {
     width: calc(100vw - 20px);
     padding: 16px;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .mobile-controls:not(.hidden) {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 10px;
+    display: block;
+    pointer-events: none;
+    touch-action: none;
+  }
+
+  .mobile-dpad {
+    position: absolute;
+    left: 12px;
+    bottom: 0;
+    display: grid;
+    grid-template-columns: repeat(3, 52px);
+    grid-template-rows: repeat(3, 52px);
+    gap: 6px;
+    grid-template-areas:
+      ". up ."
+      "left down right"
+      ". . .";
+  }
+
+  .mobile-actions {
+    position: absolute;
+    right: 12px;
+    bottom: 0;
+    display: grid;
+    grid-template-columns: repeat(2, 76px);
+    gap: 8px;
+  }
+
+  .mobile-controls button {
+    min-width: 52px;
+    min-height: 52px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 8px;
+    background: rgba(24, 30, 43, 0.86);
+    color: var(--text);
+    font-weight: 800;
+    pointer-events: auto;
+    touch-action: none;
+    user-select: none;
+  }
+
+  .mobile-actions button {
+    min-width: 76px;
+    background: rgba(255, 209, 102, 0.9);
+    color: #1d2430;
+  }
+
+  .mobile-up {
+    grid-area: up;
+  }
+
+  .mobile-left {
+    grid-area: left;
+  }
+
+  .mobile-down {
+    grid-area: down;
+  }
+
+  .mobile-right {
+    grid-area: right;
   }
 }

@@ -26,6 +26,7 @@ const CHAT_HISTORY_LIMIT = 60;
 const CHAT_COOLDOWN_MS = 800;
 const PORTAL_COOLDOWN_MS = 1400;
 const DOOR_COOLDOWN_MS = 600;
+const HOME_COOLDOWN_MS = 2000;
 const PLAYER_MAX_HP = 100;
 const MOB_RESPAWN_MS = 7000;
 const XP_BASE_TO_LEVEL = 100;
@@ -178,6 +179,7 @@ server.on("upgrade", (req, socket) => {
     lastAttackAt: 0,
     lastDoorAt: 0,
     lastPortalAt: 0,
+    lastHomeAt: 0,
     input: { up: false, down: false, left: false, right: false },
     player: null
   };
@@ -358,6 +360,11 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "home") {
+    handleHomeTeleport(client);
+    return;
+  }
+
   if (message.type === "spendStat") {
     handleSpendStat(client, message);
     return;
@@ -498,6 +505,34 @@ function handleAttack(client) {
   }
 
   broadcastCombat(event);
+  broadcastSnapshot();
+}
+
+function handleHomeTeleport(client) {
+  if (!client.player) {
+    return;
+  }
+
+  const now = Date.now();
+  if (now - client.lastHomeAt < HOME_COOLDOWN_MS) {
+    return;
+  }
+
+  const spawn = spawnPoint(nextSpawnIndex++);
+  client.lastHomeAt = now;
+  client.player.x = spawn.x;
+  client.player.y = spawn.y;
+  client.player.moving = false;
+  client.input = normalizeInput();
+
+  send(client, {
+    type: "teleport",
+    portalId: "home",
+    name: "Spawn",
+    x: client.player.x,
+    y: client.player.y
+  });
+  streamChunks(client, nearbyChunks(client.player.x, client.player.y, 3));
   broadcastSnapshot();
 }
 

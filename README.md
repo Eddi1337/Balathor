@@ -170,6 +170,8 @@ Client to server:
 - `input`: sends current movement key state.
 - `chat`: sends a player chat line to the server.
 - `attack`: uses the player's class weapon.
+- `home`: teleports the player back to the spawn square.
+- `spendStat`: spends a level-up point on speed, strength, armour, or health.
 - `requestChunks`: asks the server for world chunks around the camera.
 
 Server to client:

@@ -25,6 +25,7 @@ const chat = document.querySelector("#chat");
 const chatMessages = document.querySelector("#chatMessages");
 const chatForm = document.querySelector("#chatForm");
 const chatInput = document.querySelector("#chatInput");
+const mobileControls = document.querySelector("#mobileControls");
 
 const TILE_SIZE = 32;
 const CHUNK_SIZE = 16;
@@ -216,6 +217,7 @@ function handleServerMessage(message) {
     hud.classList.remove("hidden");
     progression.classList.remove("hidden");
     chat.classList.remove("hidden");
+    mobileControls.classList.remove("hidden");
     state.camera.x = message.spawn.x * TILE_SIZE;
     state.camera.y = message.spawn.y * TILE_SIZE;
     requestVisibleChunks();
@@ -588,6 +590,12 @@ function wireUi() {
       return;
     }
 
+    if (event.key.toLowerCase() === "h" && state.joined && !isTextEntryTarget(event.target)) {
+      event.preventDefault();
+      sendHome();
+      return;
+    }
+
     if (event.key === "Enter" && state.joined && !isTextEntryTarget(event.target)) {
       event.preventDefault();
       clearMovementInput();
@@ -598,6 +606,7 @@ function wireUi() {
     updateInput(event, true);
   });
   window.addEventListener("keyup", (event) => updateInput(event, false));
+  wireMobileControls();
 }
 
 function updateInput(event, pressed) {
@@ -621,6 +630,14 @@ function clearMovementInput() {
   sendInput();
 }
 
+function setMovementInput(direction, pressed) {
+  if (!Object.prototype.hasOwnProperty.call(state.input, direction)) {
+    return;
+  }
+  state.input[direction] = pressed;
+  sendInput();
+}
+
 function isTextEntryTarget(target) {
   return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
 }
@@ -634,6 +651,57 @@ function sendInput() {
     type: "input",
     seq: state.inputSeq++,
     keys: state.input
+  });
+}
+
+function sendHome() {
+  if (!state.joined) {
+    return;
+  }
+  clearMovementInput();
+  send({ type: "home" });
+}
+
+function wireMobileControls() {
+  document.querySelectorAll("[data-mobile-move]").forEach((button) => {
+    const direction = button.dataset.mobileMove;
+
+    button.addEventListener("pointerdown", (event) => {
+      if (!state.joined || state.menuOpen) {
+        return;
+      }
+      event.preventDefault();
+      button.setPointerCapture?.(event.pointerId);
+      setMovementInput(direction, true);
+    });
+
+    const release = (event) => {
+      if (!state.joined) {
+        return;
+      }
+      event.preventDefault();
+      setMovementInput(direction, false);
+    };
+
+    button.addEventListener("pointerup", release);
+    button.addEventListener("pointercancel", release);
+    button.addEventListener("lostpointercapture", () => setMovementInput(direction, false));
+  });
+
+  document.querySelector("[data-mobile-action='attack']")?.addEventListener("pointerdown", (event) => {
+    if (!state.joined || state.menuOpen) {
+      return;
+    }
+    event.preventDefault();
+    sendAttack();
+  });
+
+  document.querySelector("[data-mobile-action='home']")?.addEventListener("pointerdown", (event) => {
+    if (!state.joined || state.menuOpen) {
+      return;
+    }
+    event.preventDefault();
+    sendHome();
   });
 }
 
@@ -685,6 +753,7 @@ function resetToConnection(message) {
   hud.classList.add("hidden");
   progression.classList.add("hidden");
   chat.classList.add("hidden");
+  mobileControls.classList.add("hidden");
   chatMessages.replaceChildren();
 }
 

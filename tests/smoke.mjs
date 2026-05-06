@@ -51,9 +51,11 @@ try {
 
   const index = await fetchText(`http://127.0.0.1:${clientPort}/`);
   assert.match(index, /Balathor/);
+  assert.match(index, /mobileControls/);
 
   const messages = await joinViaWebSocket(serverPort);
   assert.equal(messages.some((message) => message.type === "welcome"), true);
+  assert.equal(messages.some((message) => message.type === "teleport" && message.portalId === "home"), true);
   assert.equal(messages.some((message) => message.type === "chunk"), true);
   assert.equal(messages.some((message) => message.type === "snapshot" && message.mobs?.some((mob) => mob.isBoss)), true);
   assert.equal(messages.some((message) => message.type === "snapshot" && message.players?.some((player) => (
@@ -104,6 +106,7 @@ async function joinViaWebSocket(port) {
     let buffer = Buffer.alloc(0);
     let upgraded = false;
     let sentChat = false;
+    let sentHome = false;
     const messages = [];
     const timeout = setTimeout(() => {
       socket.destroy();
@@ -158,8 +161,16 @@ async function joinViaWebSocket(port) {
         })));
       }
 
+      if (!sentHome && messages.some((message) => message.type === "welcome")) {
+        sentHome = true;
+        socket.write(maskedFrame(JSON.stringify({
+          type: "home"
+        })));
+      }
+
       if (
         messages.some((message) => message.type === "welcome") &&
+        messages.some((message) => message.type === "teleport" && message.portalId === "home") &&
         messages.some((message) => message.type === "chunk") &&
         messages.some((message) => message.type === "snapshot" && message.mobs?.some((mob) => mob.isBoss)) &&
         messages.some((message) => message.type === "snapshot" && message.players?.some((player) => player.level === 1 && player.stats?.speed === 0)) &&
