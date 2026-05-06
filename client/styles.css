@@ -210,15 +210,47 @@ button:focus-visible {
   position: fixed;
   right: 16px;
   top: 16px;
-  width: min(280px, calc(100vw - 32px));
+  width: min(220px, calc(100vw - 32px));
   display: grid;
-  gap: 8px;
-  padding: 12px;
+  gap: 6px;
+  padding: 8px 10px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 8px;
   background: rgba(15, 19, 28, 0.72);
   color: var(--text);
-  font-size: 13px;
+  font-size: 12px;
+}
+
+.progression-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.progression-toggle {
+  min-width: 24px;
+  min-height: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: var(--control);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.progression-body {
+  display: grid;
+  gap: 6px;
+}
+
+.progression.minimized {
+  width: min(140px, calc(100vw - 32px));
+}
+
+.progression.minimized .progression-body {
+  display: none;
 }
 
 .hp-stack {
@@ -282,11 +314,11 @@ button:focus-visible {
 }
 
 .stat-grid button {
-  min-height: 36px;
+  min-height: 30px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   padding: 0 10px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 6px;
@@ -673,7 +705,11 @@ button:focus-visible {
     left: 8px;
     right: auto;
     top: 96px;
-    width: min(240px, calc(100vw - 16px));
+    width: min(200px, calc(100vw - 16px));
+  }
+
+  .progression.minimized {
+    width: min(120px, calc(100vw - 16px));
   }
 
   .game-window {

@@ -23,6 +23,7 @@ const menuServerLabel = document.querySelector("#menuServerLabel");
 const menuPopulation = document.querySelector("#menuPopulation");
 const menuPosition = document.querySelector("#menuPosition");
 const progression = document.querySelector("#progression");
+const progressionToggle = document.querySelector("#progressionToggle");
 const hpFill = document.querySelector("#hpFill");
 const hpText = document.querySelector("#hpText");
 const levelText = document.querySelector("#levelText");
@@ -122,6 +123,7 @@ const state = {
   authenticated: false,
   menuOpen: false,
   chatMinimized: false,
+  progressionMinimized: false,
   activeWindow: null,
   lastViewSentAt: 0,
   lastFrame: performance.now(),
@@ -946,6 +948,10 @@ function wireUi() {
     setChatMinimized(!state.chatMinimized);
   });
 
+  progressionToggle.addEventListener("click", () => {
+    setProgressionMinimized(!state.progressionMinimized);
+  });
+
   document.querySelectorAll("input").forEach((input) => {
     input.addEventListener("focus", clearMovementInput);
   });
@@ -1285,6 +1291,7 @@ function resetToConnection(message) {
   chat.classList.add("hidden");
   mobileControls.classList.add("hidden");
   setChatMinimized(false);
+  setProgressionMinimized(false);
   setActiveGameWindow(null);
   loginButton.disabled = false;
   createAccountButton.disabled = false;
@@ -1422,6 +1429,13 @@ function setChatMinimized(minimized) {
   if (minimized) {
     clearMovementInput();
   }
+}
+
+function setProgressionMinimized(minimized) {
+  state.progressionMinimized = minimized;
+  progression.classList.toggle("minimized", minimized);
+  progressionToggle.setAttribute("aria-expanded", String(!minimized));
+  progressionToggle.innerHTML = minimized ? "&#43;" : "&#8722;";
 }
 
 function toggleMenu() {
