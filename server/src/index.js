@@ -1366,62 +1366,88 @@ function streamChunks(client, chunks) {
 }
 
 function broadcastSnapshot() {
-  const players = [...clients.values()]
-    .filter((client) => client.player)
-    .map((client) => {
-      const appearance = getPlayerAppearance(client.player);
-      return {
-        id: client.player.id,
-        name: client.player.name,
-        classId: client.player.classId,
-        torsoStyle: appearance.torsoStyle,
-        weaponStyle: appearance.weaponStyle,
-        weaponKind: appearance.weaponKind,
-        torsoColor: appearance.torsoColor,
-        weaponColor: appearance.weaponColor,
-        primary: appearance.torsoColor,
-        accent: appearance.weaponColor,
-        hp: client.player.hp,
-        maxHp: client.player.maxHp,
-        xp: client.player.xp,
-        level: client.player.level,
-        xpToNext: client.player.xpToNext,
-        statPoints: client.player.statPoints,
-        stats: client.player.stats,
-        inventory: client.player.inventory,
-        equipment: client.player.equipment,
-        moveSpeed: Number(getPlayerSpeed(client.player).toFixed(2)),
-        x: Number(client.player.x.toFixed(3)),
-        y: Number(client.player.y.toFixed(3)),
-        facing: Number(client.player.facing.toFixed(3)),
-        moving: client.player.moving,
-        isMod: client.player.isMod || false
-      };
-    });
+  // Helper: is a point inside a client's view (with optional margin)
+  function isInView(view, x, y, margin = 0) {
+    return (
+      Number.isFinite(x) &&
+      Number.isFinite(y) &&
+      x >= view.x - view.halfW - margin &&
+      x <= view.x + view.halfW + margin &&
+      y >= view.y - view.halfH - margin &&
+      y <= view.y + view.halfH + margin
+    );
+  }
 
-  const snapshot = {
-    type: "snapshot",
-    serverTime: Date.now(),
-    tick,
-    population: players.length,
-    players,
-    npcs: getNpcSnapshot(),
-    mobs: getMobSnapshot(),
-    chests: chests.map((chest) => ({
-      id: chest.id,
-      x: chest.x,
-      y: chest.y,
-      opened: chest.opened
-    })),
-    groundItems: groundItems.map((ground) => ({
-      id: ground.id,
-      x: ground.x,
-      y: ground.y,
-      item: ground.item
-    }))
-  };
+  // Build a compact representation for a player entity
+  function playerSnapshot(p) {
+    const appearance = getPlayerAppearance(p);
+    return {
+      id: p.id,
+      name: p.name,
+      classId: p.classId,
+      torsoStyle: appearance.torsoStyle,
+      weaponStyle: appearance.weaponStyle,
+      weaponKind: appearance.weaponKind,
+      torsoColor: appearance.torsoColor,
+      weaponColor: appearance.weaponColor,
+      primary: appearance.torsoColor,
+      accent: appearance.weaponColor,
+      hp: p.hp,
+      maxHp: p.maxHp,
+      xp: p.xp,
+      level: p.level,
+      xpToNext: p.xpToNext,
+      statPoints: p.statPoints,
+      stats: p.stats,
+      inventory: p.inventory,
+      equipment: p.equipment,
+      moveSpeed: Number(getPlayerSpeed(p).toFixed(2)),
+      x: Number(p.x.toFixed(3)),
+      y: Number(p.y.toFixed(3)),
+      facing: Number(p.facing.toFixed(3)),
+      moving: p.moving,
+      isMod: p.isMod || false
+    };
+  }
 
+  // For each connected client, send a tailored snapshot containing only nearby entities
   for (const client of clients.values()) {
+    const view = client.player ? client.view || defaultViewForPlayer(client.player) : { x: 0, y: 0, halfW: 40, halfH: 25 };
+    const margin = CHAT_VIEW_MARGIN_TILES;
+
+    // Players visible to this client (always include the client themselves)
+    const players = [...clients.values()]
+      .filter((c) => c.player && (c === client || isInView(view, c.player.x, c.player.y, margin)))
+      .map((c) => playerSnapshot(c.player));
+
+    // NPCs and mobs: get full snapshots then filter by view
+    const npcsAll = getNpcSnapshot();
+    const npcs = npcsAll.filter((n) => isInView(view, n.x, n.y, margin));
+
+    const mobsAll = getMobSnapshot();
+    const mobs = mobsAll.filter((m) => isInView(view, m.x, m.y, margin));
+
+    // Chests and ground items: filter by position
+    const visibleChests = chests
+      .filter((c) => isInView(view, c.x, c.y, margin))
+      .map((c) => ({ id: c.id, x: c.x, y: c.y, opened: c.opened }));
+
+    const visibleGround = groundItems
+      .filter((g) => isInView(view, g.x, g.y, margin))
+      .map((g) => ({ id: g.id, x: g.x, y: g.y, item: g.item }));
+
+    const snapshot = {
+      type: "snapshot",
+      serverTime: Date.now(),
+      tick,
+      population: players.length,
+      players,
+      npcs,
+      mobs,
+      chests: visibleChests,
+      groundItems: visibleGround
+    };
+
     send(client, snapshot);
   }
 }
