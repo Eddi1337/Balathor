@@ -164,6 +164,41 @@ const WILDERNESS_BOSSES = Object.freeze([
   { id: "red_crag",    x:  425, y: -390, biome: "ember",  name: "Red Crag" },
 ]);
 
+const CRITTER_CELL = 26;
+
+const CRITTERS_BY_BIOME = Object.freeze({
+  forest: [
+    { name: "Brown Rabbit", maxHp: 14, primary: "#9c7355", accent: "#efe6dc", speed: 2.65 },
+    { name: "Brush Squirrel", maxHp: 12, primary: "#786047", accent: "#d8c8a8", speed: 2.85 },
+    { name: "Field Mouse", maxHp: 10, primary: "#8a867c", accent: "#ddd4c4", speed: 2.45 },
+    { name: "Moss Finch", maxHp: 8, primary: "#6b9080", accent: "#eaf2e6", speed: 2.25 }
+  ],
+  meadow: [
+    { name: "Clover Rabbit", maxHp: 13, primary: "#a67f5c", accent: "#f8f4e9", speed: 2.7 },
+    { name: "Prairie Vole", maxHp: 9, primary: "#9a9578", accent: "#ebe4ce", speed: 2.35 },
+    { name: "Honey Bee Swarm", maxHp: 7, primary: "#c9a227", accent: "#fff8dc", speed: 2.1 },
+    { name: "Skipper Hare", maxHp: 15, primary: "#8d6f52", accent: "#fff0dd", speed: 2.9 }
+  ],
+  desert: [
+    { name: "Sand Jerboa", maxHp: 11, primary: "#c4a574", accent: "#f7edd6", speed: 2.75 },
+    { name: "Dust Cicada", maxHp: 6, primary: "#b89f6a", accent: "#eae2c9", speed: 1.9 },
+    { name: "Sun Lizard", maxHp: 12, primary: "#a8734a", accent: "#ffd7a8", speed: 2.2 },
+    { name: "Cactus Beetle", maxHp: 10, primary: "#907050", accent: "#e8dec8", speed: 1.75 }
+  ],
+  frost: [
+    { name: "Snow Hare", maxHp: 14, primary: "#b8c4d6", accent: "#fafcff", speed: 2.55 },
+    { name: "Frost Lemming", maxHp: 9, primary: "#9aaab8", accent: "#eaf0f8", speed: 2.3 },
+    { name: "Ice Vole", maxHp: 10, primary: "#8fa0b5", accent: "#dfe8f4", speed: 2.15 },
+    { name: "Shiver Pipit", maxHp: 7, primary: "#7d8ea3", accent: "#eef4ff", speed: 2.4 }
+  ],
+  ember: [
+    { name: "Ash Mouse", maxHp: 9, primary: "#7a7068", accent: "#dce0e3", speed: 2.5 },
+    { name: "Cinder Beetle", maxHp: 11, primary: "#6b5448", accent: "#ffb38a", speed: 1.85 },
+    { name: "Ember Salamander", maxHp: 13, primary: "#8b4a38", accent: "#ffd4a8", speed: 2.0 },
+    { name: "Soot Pip", maxHp: 8, primary: "#5c524c", accent: "#cfd2d8", speed: 2.35 }
+  ]
+});
+
 let nextClientId = 1;
 let nextSpawnIndex = 0;
 let nextItemId = 1;
@@ -814,7 +849,7 @@ function handleAttack(client) {
 
     if (hitKind === "mob" && hit.hp <= 0) {
       hit.dead = true;
-      hit.respawnAt = now + MOB_RESPAWN_MS;
+      hit.respawnAt = now + (hit.isCritter ? 4200 : MOB_RESPAWN_MS);
       event.defeated = true;
       const progress = awardXp(client.player, xpForMob(hit));
       event.xpGained = progress.xpGained;
@@ -1067,6 +1102,9 @@ function xpForNextLevel(level) {
 }
 
 function xpForMob(mob) {
+  if (mob.isCritter) {
+    return typeof mob.critterXp === "number" ? mob.critterXp : 3;
+  }
   if (mob.isBoss) {
     return 120 + mob.level * 24 + Math.max(0, mob.maxHp - 120);
   }
@@ -1603,6 +1641,9 @@ function addItemToInventory(player, item) {
 }
 
 function dropLootForMob(mob) {
+  if (mob.isCritter) {
+    return;
+  }
   const chance = mob.isBoss ? 1 : 0.62;
   if (Math.random() > chance) {
     return;
@@ -1667,14 +1708,14 @@ function createMobs() {
     { id: "mob_imp_ember_1", name: "Ember Imp", level: 9, homeX: 134, homeY: -121, primary: "#d85b35", accent: "#ffd06a", maxHp: 86, attackDamage: 19 },
     { id: "mob_imp_ember_2", name: "Ember Imp", level: 9, homeX: 158, homeY: -142, primary: "#d85b35", accent: "#ffd06a", maxHp: 86, attackDamage: 19 },
   ];
-  return [...fixedMobs, ...createWildernessMobs()].map((mob) => ({
+  return [...fixedMobs, ...createWildernessMobs(), ...createCritterMobs()].map((mob) => ({
     ...mob,
     x: mob.homeX,
     y: mob.homeY,
     hp: mob.maxHp || 60,
     maxHp: mob.maxHp || 60,
     level: mob.level || 1,
-    attackDamage: mob.attackDamage || MOB_ATTACK_DAMAGE,
+    attackDamage: "attackDamage" in mob ? mob.attackDamage : MOB_ATTACK_DAMAGE,
     dead: false,
     respawnAt: 0,
     lastAttackAt: 0,
@@ -1769,6 +1810,89 @@ function createWildernessMobs() {
   return mobs;
 }
 
+function createCritterMobs() {
+  const list = [];
+
+  let critterSeq = 0;
+  const gxMin = Math.floor(-720 / CRITTER_CELL);
+  const gxMax = Math.ceil(720 / CRITTER_CELL);
+  const gyMin = gxMin;
+  const gyMax = gxMax;
+
+  for (let gx = gxMin; gx <= gxMax; gx += 1) {
+    for (let gy = gyMin; gy <= gyMax; gy += 1) {
+      const cellPick = hash2(gx, gy, 7711);
+      if (cellPick > 0.28) continue;
+
+      const n = cellPick > 0.12 ? 2 : 1;
+      const baseX = gx * CRITTER_CELL + CRITTER_CELL * 0.5;
+      const baseY = gy * CRITTER_CELL + CRITTER_CELL * 0.5;
+
+      if (Math.hypot(baseX - 0, baseY - 4) < 78) continue;
+      if (Math.hypot(baseX - 600, baseY - 490) < 52) continue;
+      if (Math.hypot(baseX + 600, baseY + 490) < 52) continue;
+      if (Math.hypot(baseX - 580, baseY + 530) < 52) continue;
+
+      for (let i = 0; i < n; i += 1) {
+        const ox = (hash2(gx, gy, 8801 + i) - 0.5) * (CRITTER_CELL - 7);
+        const oy = (hash2(gx, gy, 8901 + i) - 0.5) * (CRITTER_CELL - 7);
+        const bx = Math.round(baseX + ox);
+        const by = Math.round(baseY + oy);
+        const biome = getBiome(bx, by);
+        const pool = CRITTERS_BY_BIOME[biome] || CRITTERS_BY_BIOME.forest;
+        const tmpl = pool[Math.floor(hash2(gx, gy + i * 97, 9001) * pool.length) % pool.length];
+        const home = findOpenMobHomeFromCandidates(bx, by);
+
+        critterSeq += 1;
+        const critterXp = 2 + Math.floor(hash2(gx, gy + i * 13, 9017) * 3);
+
+        list.push({
+          id: `mob_critter_${critterSeq}`,
+          name: tmpl.name,
+          level: 1,
+          biome,
+          isCritter: true,
+          critterXp,
+          attackDamage: 0,
+          homeX: home.x,
+          homeY: home.y,
+          primary: tmpl.primary,
+          accent: tmpl.accent,
+          maxHp: tmpl.maxHp,
+          roamRadius: 5.2 + hash2(gx, gy, 9031 + i) * 2,
+          speed: tmpl.speed
+        });
+      }
+    }
+  }
+
+  return list;
+}
+
+// Lighter footprint than findOpenMobHome — used when spawning many passive critters per cell.
+function findOpenMobHomeFromCandidates(px, py) {
+  const base = [[px, py], [px + 1.2, py], [px - 1.2, py], [px, py + 1.2], [px, py - 1.2]];
+  const extra = [];
+  for (let s = 1; s <= 4; s += 1) {
+    extra.push(
+      [px + s * 0.95, py],
+      [px - s * 0.95, py],
+      [px, py + s * 0.95],
+      [px, py - s * 0.95]
+    );
+  }
+
+  const candidates = [...base, ...extra];
+
+  for (const [cx, cy] of candidates) {
+    if (!isBlockedCircle(cx, cy, 0.32) && canAttackAt(cx, cy)) {
+      return { x: Number(cx.toFixed(3)), y: Number(cy.toFixed(3)) };
+    }
+  }
+
+  return { x: px, y: py };
+}
+
 function findOpenMobHome(x, y, fallbackX, fallbackY) {
   const candidates = [
     [x, y],
@@ -1849,6 +1973,9 @@ function updateMobs(dt) {
 }
 
 function nearestAttackablePlayer(mob) {
+  if (mob.isCritter) {
+    return null;
+  }
   let nearest = null;
   let nearestDistance = Infinity;
 
@@ -1868,6 +1995,9 @@ function nearestAttackablePlayer(mob) {
 }
 
 function attackPlayerWithMob(mob, player, now) {
+  if ((mob.attackDamage || 0) <= 0 || mob.isCritter) {
+    return;
+  }
   if (now - mob.lastAttackAt < MOB_ATTACK_COOLDOWN_MS) {
     return;
   }
@@ -1931,6 +2061,7 @@ function getMobSnapshot() {
       level: mob.level,
       biome: mob.biome || getBiome(mob.homeX, mob.homeY),
       isBoss: Boolean(mob.isBoss),
+      isCritter: Boolean(mob.isCritter),
       x: Number(mob.x.toFixed(3)),
       y: Number(mob.y.toFixed(3)),
       facing: Number(mob.facing.toFixed(3)),

@@ -2028,38 +2028,46 @@ function drawMob(entity, x, y) {
   const primary = entity.primary || "#56b88f";
   const accent = entity.accent || "#c7f5b0";
   const isBoss = Boolean(entity.isBoss);
-  const bodyW = isBoss ? 30 : 24;
-  const bodyH = isBoss ? 14 : 10;
-  const headW = isBoss ? 26 : 20;
-  const headH = isBoss ? 18 : 14;
-  const nameY = isBoss ? y - 34 : y - 26;
-  const barW = isBoss ? 44 : 32;
+  const isCritter = Boolean(entity.isCritter);
+  const bodyW = isBoss ? 30 : isCritter ? 15 : 24;
+  const bodyH = isBoss ? 14 : isCritter ? 7 : 10;
+  const headW = isBoss ? 26 : isCritter ? 12 : 20;
+  const headH = isBoss ? 18 : isCritter ? 8 : 14;
+  const nameY = isBoss ? y - 34 : isCritter ? y - 20 : y - 26;
+  const barW = isBoss ? 44 : isCritter ? 22 : 32;
 
-  drawEllipseShadow(x - bodyW / 2, y + 8, bodyW, isBoss ? 8 : 6, 0.28);
+  drawEllipseShadow(x - bodyW / 2, y + 8, bodyW, isBoss ? 8 : isCritter ? 4 : 6, isCritter ? 0.2 : 0.28);
   ctx.fillStyle = blend(primary, "#000000", 0.25);
   ctx.fillRect(x - bodyW / 2, y - 1 + bounce, bodyW, bodyH);
   ctx.fillStyle = primary;
-  ctx.fillRect(x - headW / 2, y - 8 + bounce - (isBoss ? 3 : 0), headW, headH);
+  ctx.fillRect(x - headW / 2, y - 8 + bounce - (isBoss ? 3 : isCritter ? 1 : 0), headW, headH);
   ctx.fillStyle = accent;
-  ctx.fillRect(x - 6, y - 4 + bounce, 3, 3);
-  ctx.fillRect(x + 4, y - 4 + bounce, 3, 3);
+  if (isCritter) {
+    const earX = bounce % 3;
+    ctx.fillRect(x - 6 + earX, y - 12 + bounce, 4, 5);
+    ctx.fillRect(x + 2 - earX, y - 12 + bounce, 4, 5);
+  } else {
+    ctx.fillRect(x - 6, y - 4 + bounce, 3, 3);
+    ctx.fillRect(x + 4, y - 4 + bounce, 3, 3);
+  }
   if (isBoss) {
     ctx.fillStyle = "#ffd166";
     ctx.fillRect(x - 11, y - 16 + bounce, 5, 5);
     ctx.fillRect(x + 6, y - 16 + bounce, 5, 5);
   }
   ctx.fillStyle = "rgba(255, 255, 255, 0.22)";
-  ctx.fillRect(x - 7, y - 9 + bounce, 6, 2);
+  ctx.fillRect(x - Math.min(headW / 3, 7), y - 9 + bounce, 6, 2);
 
-  ctx.font = `${isBoss ? 13 : 12}px ui-sans-serif, system-ui`;
+  ctx.font = `${isBoss ? 13 : isCritter ? 10 : 12}px ui-sans-serif, system-ui`;
   ctx.textAlign = "center";
-  ctx.lineWidth = 3;
+  ctx.lineWidth = isCritter ? 2 : 3;
   ctx.strokeStyle = "rgba(8, 12, 18, 0.82)";
-  ctx.fillStyle = isBoss ? "#ffd166" : "#ffc0a0";
-  const label = Number.isFinite(entity.level) ? `Lv ${entity.level} ${entity.name}` : entity.name;
+  ctx.fillStyle = isBoss ? "#ffd166" : isCritter ? "#d8eec8" : "#ffc0a0";
+  const label =
+    Number.isFinite(entity.level) && !isCritter ? `Lv ${entity.level} ${entity.name}` : entity.name;
   ctx.strokeText(label, x, nameY);
   ctx.fillText(label, x, nameY);
-  drawHealthBar(x - barW / 2, y - (isBoss ? 27 : 20), barW, 4, entity.hp, entity.maxHp);
+  drawHealthBar(x - barW / 2, y - (isBoss ? 27 : isCritter ? 16 : 20), barW, isCritter ? 3 : 4, entity.hp, entity.maxHp);
 }
 
 function drawCombatFx() {

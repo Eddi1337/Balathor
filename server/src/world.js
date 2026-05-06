@@ -31,6 +31,13 @@ const INTERIOR_HEIGHT = 10;
 const STARTING_AREA = { x: 0, y: 4, radius: 46 };
 const START_SPAWN = { x: 0, y: -8 };
 
+function hash2(x, y, seed = 1337) {
+  let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ seed;
+  h = (h ^ (h >>> 13)) >>> 0;
+  h = Math.imul(h, 1274126177) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+}
+
 // Hand-crafted buildings: starting town + portal destinations only.
 const BUILDINGS = [
   // Central village
@@ -91,7 +98,59 @@ const PORTALS = [
   { id: "portal_hub_ember", name: "Hub Gate", x: 580, y: -530, targetX: 0, targetY: 0, color: "#8fe388" },
 ];
 
-const ENEMY_CAMPS = [
+function nearFixedBuilding(tx, ty, pad = 9) {
+  for (const b of BUILDINGS) {
+    if (tx >= b.x - pad && tx < b.x + b.w + pad && ty >= b.y - pad && ty < b.y + b.h + pad) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function buildScatterEnemyCamps() {
+  const out = [];
+  let scatterId = 0;
+
+  for (let ring = 88; ring < 735; ring += 30) {
+    const sectors = Math.max(12, Math.min(34, Math.floor(ring / 24)));
+    for (let i = 0; i < sectors; i += 1) {
+      const pick = hash2(ring, i, 6100);
+      if (pick > 0.48) continue;
+
+      const angle = (i / sectors + pick * 0.14) * Math.PI * 2;
+      let tx = Math.round(Math.cos(angle) * ring + (hash2(i, ring, 6101) - 0.5) * 24);
+      let ty = Math.round(Math.sin(angle) * ring + (hash2(ring, i, 6102) - 0.5) * 24);
+
+      if (Math.hypot(tx, ty) < 88) continue;
+      if (Math.hypot(tx - 600, ty - 490) < 54) continue;
+      if (Math.hypot(tx + 600, ty + 490) < 54) continue;
+      if (Math.hypot(tx - 580, ty + 530) < 54) continue;
+      if (nearFixedBuilding(tx, ty)) continue;
+
+      const tierGuess = Math.min(6, Math.max(1, Math.floor(ring / 96)));
+      const cappedTier = Math.min(6, tierGuess + (hash2(tx, ty, 6103) > 0.82 ? 1 : 0));
+      let size = 5 + Math.floor(hash2(tx, ty, 6104) * 4) + (cappedTier >= 4 ? 1 : 0);
+      size = Math.min(Math.max(size, 4), 9);
+
+      scatterId += 1;
+      const bossRoll = hash2(tx, ty, 6105);
+      const boss = cappedTier >= 3 && bossRoll > 0.87;
+
+      out.push({
+        id: `scatter_wild_${scatterId}`,
+        x: tx,
+        y: ty,
+        size,
+        tier: cappedTier,
+        ...(boss ? { boss: true } : {})
+      });
+    }
+  }
+
+  return out;
+}
+
+const BASE_ENEMY_CAMPS = [
   // Tier 1 — near hub (50–160 tiles)
   { id: "north_woods",    x:  -80, y: -130, size: 4, tier: 1 },
   { id: "east_copse",     x:  130, y:  -60, size: 5, tier: 1 },
@@ -158,6 +217,8 @@ const ENEMY_CAMPS = [
   { id: "null_pinnacle",  x: -545, y: -455, size: 8, tier: 6, boss: true },
   { id: "ash_crown",      x:  540, y: -500, size: 8, tier: 6, boss: true },
 ];
+
+const ENEMY_CAMPS = [...BASE_ENEMY_CAMPS, ...buildScatterEnemyCamps()];
 
 const BUILDING_INTERIORS = BUILDINGS.map((building, index) => ({
   building,
@@ -489,13 +550,6 @@ function getPortalAt(x, y) {
   }
 
   return null;
-}
-
-function hash2(x, y, seed = 1337) {
-  let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ seed;
-  h = (h ^ (h >>> 13)) >>> 0;
-  h = Math.imul(h, 1274126177) >>> 0;
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
 }
 
 function smoothNoise(x, y, scale, seed) {
