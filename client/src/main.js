@@ -2108,17 +2108,22 @@ function drawCharacter(entity, x, y, isNpc = false) {
   const scale = 3;
   const phase = entity.walkPhase || 0;
   const moving = Boolean(entity.renderMoving);
-  const bob = moving ? Math.round(Math.sin(phase * 1.6) * 2) : 0;
-  const stride = moving ? Math.sin(phase * 1.6) : 0;
   const facing = Number.isFinite(entity.facing) ? entity.facing : Math.PI / 2;
   const dirX = Math.cos(facing);
   const dirY = Math.sin(facing);
   const sideX = -dirY;
   const sideY = dirX;
-  const forward = moving ? Math.round(stride * 3) : 0;
-  const travelX = Math.round(dirX * 3);
-  const travelY = Math.round(dirY * 3);
-  const px = x - 8 * scale;
+
+  const walkFreq = 2.2;
+  const sinPhase = moving ? Math.sin(phase * walkFreq) : 0;
+  const cosPhase = moving ? Math.cos(phase * walkFreq) : 0;
+  const bob = moving ? Math.round(Math.abs(cosPhase) * 1.5 - 0.5) : 0;
+  const sway = moving ? Math.round(sinPhase * 0.8) : 0;
+
+  const faceOffX = Math.round(dirX * 2);
+  const faceOffY = Math.round(dirY * 1.2);
+
+  const px = x - 8 * scale + sway;
   const py = y - 10 * scale + bob;
   const torsoColor = entity.torsoColor || entity.primary || "#5cc8ff";
   const weaponColor = entity.weaponColor || entity.accent || "#ffd166";
@@ -2130,34 +2135,41 @@ function drawCharacter(entity, x, y, isNpc = false) {
     drawModCape(px, py, scale, bob, dirX, dirY);
   }
 
-  pixel(px, py, 5, 1, 6, 2, weaponColor, scale);
+  pixel(px, py, 5 + faceOffX, 1 + faceOffY, 6, 2, weaponColor, scale);
   drawTorso(px, py, torsoStyle, torsoColor, weaponColor, scale);
-  pixel(px, py, 6, 4, 4, 3, "#f0c9a2", scale);
+  pixel(px, py, 6 + faceOffX, 4 + faceOffY, 4, 3, "#f0c9a2", scale);
 
-  const leftFootX = 4 + travelX - Math.round(sideX * forward);
-  const leftFootY = 10 + travelY - Math.round(sideY * forward);
-  const rightFootX = 10 + travelX + Math.round(sideX * forward);
-  const rightFootY = 10 + travelY + Math.round(sideY * forward);
-  const leftKneeX = 5 + Math.round(sideX * forward);
-  const leftKneeY = 7 + Math.round(sideY * forward);
-  const rightKneeX = 9 - Math.round(sideX * forward);
-  const rightKneeY = 7 - Math.round(sideY * forward);
+  const legSwing = moving ? sinPhase * 3 : 0;
+  const leftLegFwd = Math.round(dirX * legSwing);
+  const leftLegFwdY = Math.round(dirY * legSwing);
+  const rightLegFwd = -leftLegFwd;
+  const rightLegFwdY = -leftLegFwdY;
+
+  const leftKneeX = 5 + Math.round(leftLegFwd * 0.5);
+  const leftKneeY = 7 + Math.round(leftLegFwdY * 0.5);
+  const rightKneeX = 9 + Math.round(rightLegFwd * 0.5);
+  const rightKneeY = 7 + Math.round(rightLegFwdY * 0.5);
+  const leftFootX = 4 + leftLegFwd;
+  const leftFootY = 10 + leftLegFwdY;
+  const rightFootX = 10 + rightLegFwd;
+  const rightFootY = 10 + rightLegFwdY;
 
   pixel(px, py, leftKneeX, leftKneeY, 3, 4, "#202437", scale);
   pixel(px, py, rightKneeX, rightKneeY, 3, 4, "#202437", scale);
   pixel(px, py, leftFootX, leftFootY, 3, 2, "#111722", scale);
   pixel(px, py, rightFootX, rightFootY, 3, 2, "#111722", scale);
 
-  const leftArmX = 3 + Math.round(-sideX * forward) + travelX;
-  const leftArmY = 6 + Math.round(-sideY * forward) + travelY;
-  const rightArmX = 11 + Math.round(sideX * forward) + travelX;
-  const rightArmY = 6 + Math.round(sideY * forward) + travelY;
+  const armSwing = moving ? sinPhase * 2 : 0;
+  const leftArmX = 3 + Math.round(-dirX * armSwing);
+  const leftArmY = 6 + Math.round(-dirY * armSwing);
+  const rightArmX = 11 + Math.round(dirX * armSwing);
+  const rightArmY = 6 + Math.round(dirY * armSwing);
   pixel(px, py, leftArmX, leftArmY, 3, 4, weaponColor, scale);
   pixel(px, py, rightArmX, rightArmY, 3, 4, weaponColor, scale);
 
   if (entity.classId === "mage") {
     pixel(px, py, 3, 2, 10, 2, weaponColor, scale);
-    pixel(px, py, 7, -1, 3, 4, torsoColor, scale);
+    pixel(px, py, 7 + faceOffX, -1 + faceOffY, 3, 4, torsoColor, scale);
   } else if (entity.classId === "knight") {
     pixel(px, py, 4, 2, 8, 2, "#d4dae2", scale);
     pixel(px, py, 3, 7, 10, 4, "#8a929e", scale);
@@ -2167,7 +2179,7 @@ function drawCharacter(entity, x, y, isNpc = false) {
   }
 
   if (!isNpc) {
-    drawClassEquipment(entity, x, y + bob, dirX, dirY, sideX, sideY, weaponColor);
+    drawClassEquipment(entity, x + sway, y + bob, dirX, dirY, sideX, sideY, weaponColor);
   }
 
   ctx.font = "12px ui-sans-serif, system-ui";
@@ -2315,9 +2327,9 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent) {
     ctx.fillRect(tipX - 3, tipY - 3, 6, 6);
   } else if (weaponKind === "sword") {
     const swordBaseX = x + dirX * 11 + sideX * 6;
-    const swordBaseY = y - 7 + dirY * 11 + sideY * 6;
+    const swordBaseY = y + 2 + dirY * 11 + sideY * 6;
     const swordTipX = x + dirX * 34 + sideX * 11;
-    const swordTipY = y - 17 + dirY * 34 + sideY * 11;
+    const swordTipY = y - 8 + dirY * 34 + sideY * 11;
     ctx.strokeStyle = style === "ornate" ? accent : "#edf3f7";
     ctx.lineWidth = style === "heavy" ? 8 : 5;
     ctx.beginPath();
@@ -2332,7 +2344,7 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent) {
     ctx.stroke();
 
     const shieldX = x - sideX * 17 + dirX * 4;
-    const shieldY = y - 7 - sideY * 17 + dirY * 4;
+    const shieldY = y + 2 - sideY * 17 + dirY * 4;
     ctx.fillStyle = style === "heavy" ? "#2f3744" : "#3f4b5e";
     ctx.beginPath();
     ctx.ellipse(shieldX, shieldY, 11, 15, entity.facing || 0, 0, Math.PI * 2);
