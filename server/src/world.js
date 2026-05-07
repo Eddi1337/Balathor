@@ -156,30 +156,45 @@ function buildScatterEnemyCamps() {
   const out = [];
   let scatterId = 0;
 
-  for (let ring = 88; ring < 735; ring += 30) {
-    const sectors = Math.max(12, Math.min(34, Math.floor(ring / 24)));
+  for (let ring = 88; ring < 735; ring += 24) {
+    const sectors = Math.max(14, Math.min(40, Math.floor(ring / 20)));
     for (let i = 0; i < sectors; i += 1) {
       const pick = hash2(ring, i, 6100);
-      if (pick > 0.48) continue;
+      if (pick > 0.62) continue; // ~62 % of slots get a camp — dense world
 
       const angle = (i / sectors + pick * 0.14) * Math.PI * 2;
-      let tx = Math.round(Math.cos(angle) * ring + (hash2(i, ring, 6101) - 0.5) * 24);
-      let ty = Math.round(Math.sin(angle) * ring + (hash2(ring, i, 6102) - 0.5) * 24);
+      let tx = Math.round(Math.cos(angle) * ring + (hash2(i, ring, 6101) - 0.5) * 22);
+      let ty = Math.round(Math.sin(angle) * ring + (hash2(ring, i, 6102) - 0.5) * 22);
 
       if (Math.hypot(tx, ty) < 88) continue;
-      if (Math.hypot(tx - 600, ty - 490) < 54) continue;
-      if (Math.hypot(tx + 600, ty + 490) < 54) continue;
-      if (Math.hypot(tx - 580, ty + 530) < 54) continue;
+      if (Math.hypot(tx - 600, ty - 490) < 56) continue;
+      if (Math.hypot(tx + 600, ty + 490) < 56) continue;
+      if (Math.hypot(tx - 580, ty + 530) < 56) continue;
       if (nearFixedBuilding(tx, ty)) continue;
 
       const tierGuess = Math.min(6, Math.max(1, Math.floor(ring / 96)));
       const cappedTier = Math.min(6, tierGuess + (hash2(tx, ty, 6103) > 0.82 ? 1 : 0));
-      let size = 5 + Math.floor(hash2(tx, ty, 6104) * 4) + (cappedTier >= 4 ? 1 : 0);
-      size = Math.min(Math.max(size, 4), 9);
+      const typeRoll   = hash2(tx, ty, 6106);
+
+      // Assign camp type
+      let campType;
+      let size;
+      if (cappedTier >= 3 && typeRoll < 0.16) {
+        campType = "fort";
+        size = Math.min(Math.max(6 + Math.floor(hash2(tx, ty, 6107) * 4), 6), 10);
+      } else if (typeRoll < 0.38) {
+        campType = "watch";
+        size = Math.min(3 + Math.floor(hash2(tx, ty, 6104) * 2), 4);
+      } else {
+        size = 4 + Math.floor(hash2(tx, ty, 6104) * 4) + (cappedTier >= 4 ? 1 : 0);
+        size = Math.min(Math.max(size, 4), 9);
+      }
 
       scatterId += 1;
       const bossRoll = hash2(tx, ty, 6105);
-      const boss = cappedTier >= 3 && bossRoll > 0.87;
+      const boss = campType === "fort"
+        ? (cappedTier >= 2 && bossRoll > 0.55)
+        : (cappedTier >= 3 && bossRoll > 0.87);
 
       out.push({
         id: `scatter_wild_${scatterId}`,
@@ -187,6 +202,7 @@ function buildScatterEnemyCamps() {
         y: ty,
         size,
         tier: cappedTier,
+        ...(campType ? { type: campType } : {}),
         ...(boss ? { boss: true } : {})
       });
     }
@@ -196,43 +212,67 @@ function buildScatterEnemyCamps() {
 }
 
 const BASE_ENEMY_CAMPS = [
-  // Tier 1 — near hub (50–160 tiles)
+  // ── First encounters — just outside safe zone (90–130 tiles) ──────────────
+  { id: "bracken_post",  x:    0, y:  -96, size: 3, tier: 1 },
+  { id: "muddy_bank",    x:   96, y:    0, size: 3, tier: 1 },
+  { id: "stone_stump",   x:    0, y:   96, size: 3, tier: 1 },
+  { id: "briars_edge",   x:  -96, y:    0, size: 3, tier: 1 },
+  { id: "crooked_pine",  x:   68, y:  -68, size: 3, tier: 1 },
+  { id: "dark_burrow",   x:  -68, y:  -68, size: 3, tier: 1 },
+  { id: "wolf_den",      x:   68, y:   68, size: 3, tier: 1 },
+  { id: "thorny_glade",  x:  -68, y:   68, size: 3, tier: 1 },
+  { id: "north_post",    x:   12, y: -115, size: 3, tier: 1, type: "watch" },
+  { id: "east_post",     x:  115, y:   12, size: 3, tier: 1, type: "watch" },
+  { id: "south_post",    x:  -12, y:  115, size: 3, tier: 1, type: "watch" },
+  { id: "west_post",     x: -115, y:  -12, size: 3, tier: 1, type: "watch" },
+  // ── Tier 1 — near hub (90–160 tiles) ─────────────────────────────────────
   { id: "north_woods",    x:  -80, y: -130, size: 4, tier: 1 },
   { id: "east_copse",     x:  130, y:  -60, size: 5, tier: 1 },
   { id: "south_ford",     x:   90, y:  130, size: 4, tier: 1 },
   { id: "west_bramble",   x: -140, y:   80, size: 5, tier: 1 },
-  { id: "creek_watch",    x:  160, y:   40, size: 4, tier: 1 },
+  { id: "creek_watch",    x:  160, y:   40, size: 3, tier: 1, type: "watch" },
   { id: "trail_post",     x:  -60, y:  170, size: 4, tier: 1 },
   { id: "ridge_camp",     x:  -30, y: -160, size: 4, tier: 1 },
   { id: "hollow_band",    x:  150, y: -110, size: 4, tier: 1 },
-  // Tier 2 — mid range (160–320 tiles)
+  { id: "river_watch",    x:  -45, y:  145, size: 3, tier: 1, type: "watch" },
+  { id: "grove_patrol",   x:  110, y:   95, size: 3, tier: 1 },
+  { id: "pine_scout",     x: -125, y:  -80, size: 3, tier: 1 },
+  { id: "east_thicket",   x:  155, y:  -80, size: 3, tier: 1 },
+  // ── Tier 2 — mid range (160–320 tiles) ───────────────────────────────────
   { id: "briar_gate",     x:   50, y: -240, size: 5, tier: 2 },
   { id: "moss_ring",      x: -220, y:   10, size: 5, tier: 2 },
-  { id: "deep_pines",     x: -185, y:  -65, size: 6, tier: 2, boss: true },
-  { id: "old_road",       x:   65, y: -185, size: 6, tier: 2, boss: true },
+  { id: "deep_pines",     x: -185, y:  -65, size: 8, tier: 2, boss: true, type: "fort" },
+  { id: "old_road",       x:   65, y: -185, size: 7, tier: 2, boss: true, type: "fort" },
   { id: "far_meadow",     x: -270, y:  225, size: 6, tier: 2, boss: true },
   { id: "flower_den",     x:  175, y:  230, size: 5, tier: 2 },
   { id: "thistle_bend",   x: -315, y:  135, size: 5, tier: 2 },
-  { id: "canyon_watch",   x:  270, y:  -95, size: 5, tier: 2 },
+  { id: "canyon_watch",   x:  270, y:  -95, size: 3, tier: 2, type: "watch" },
   { id: "glade_post",     x: -245, y: -195, size: 5, tier: 2 },
   { id: "iron_fork",      x:  210, y:  170, size: 5, tier: 2 },
   { id: "dark_crossing",  x: -180, y:  260, size: 5, tier: 2 },
   { id: "salt_run",       x:  300, y:  130, size: 5, tier: 2 },
-  // Tier 3 — outer ring (320–470 tiles)
-  { id: "clover_ruins",   x:   25, y:  310, size: 6, tier: 3, boss: true },
+  { id: "hill_watch",     x: -190, y:  110, size: 3, tier: 2, type: "watch" },
+  { id: "pine_watch",     x:  130, y: -165, size: 3, tier: 2, type: "watch" },
+  { id: "amber_bastion",  x:  245, y:   65, size: 8, tier: 2, boss: true, type: "fort" },
+  { id: "iron_fort",      x:  -50, y: -240, size: 8, tier: 2, boss: true, type: "fort" },
+  // ── Tier 3 — outer ring (320–470 tiles) ──────────────────────────────────
+  { id: "clover_ruins",   x:   25, y:  310, size: 8, tier: 3, boss: true, type: "fort" },
   { id: "oasis_raiders",  x:  295, y:  155, size: 7, tier: 3, boss: true },
   { id: "sunken_dunes",   x:  190, y:  275, size: 5, tier: 3 },
-  { id: "frost_ridge",    x: -295, y: -155, size: 7, tier: 3, boss: true },
+  { id: "frost_ridge",    x: -295, y: -155, size: 9, tier: 3, boss: true, type: "fort" },
   { id: "snow_hollow",    x: -180, y: -275, size: 5, tier: 3 },
-  { id: "ember_watch",    x:  310, y: -195, size: 7, tier: 3, boss: true },
+  { id: "ember_watch",    x:  310, y: -195, size: 3, tier: 3, boss: false, type: "watch" },
   { id: "ash_fields",     x:  165, y: -300, size: 5, tier: 3 },
-  { id: "stone_circle",   x: -205, y:  325, size: 6, tier: 3, boss: true },
+  { id: "stone_circle",   x: -205, y:  325, size: 8, tier: 3, boss: true, type: "fort" },
   { id: "pine_barricade", x: -155, y: -400, size: 5, tier: 3 },
   { id: "bone_crossing",  x:  350, y:  -40, size: 6, tier: 3 },
   { id: "mud_spire",      x: -370, y:   55, size: 5, tier: 3 },
   { id: "crag_den",       x:  -95, y:  390, size: 6, tier: 3, boss: true },
-  { id: "dusk_hollow",    x:  375, y:  -185, size: 5, tier: 3 },
-  // Tier 4 — deep wilderness (470–600 tiles)
+  { id: "dusk_hollow",    x:  375, y: -185, size: 5, tier: 3 },
+  { id: "ridge_watch",    x: -320, y:  -80, size: 3, tier: 3, type: "watch" },
+  { id: "summit_post",    x:  285, y: -280, size: 3, tier: 3, type: "watch" },
+  { id: "oasis_fort",     x:  340, y:  275, size: 9, tier: 3, boss: true, type: "fort" },
+  // ── Tier 4 — deep wilderness (470–600 tiles) ──────────────────────────────
   { id: "glass_wash",     x:  380, y:  195, size: 6, tier: 4 },
   { id: "scorpion_run",   x:  290, y:  345, size: 5, tier: 4 },
   { id: "icefall_post",   x: -385, y: -215, size: 5, tier: 4 },
@@ -247,9 +287,16 @@ const BASE_ENEMY_CAMPS = [
   { id: "frost_tooth",    x: -340, y: -430, size: 5, tier: 4 },
   { id: "ember_flats",    x:  455, y: -430, size: 6, tier: 4 },
   { id: "ruin_arch",      x: -480, y:  310, size: 5, tier: 4 },
-  // Tier 5 — endgame approaches (600–720 tiles)
-  { id: "saffron_outpost", x:  450, y:  295, size: 7, tier: 5, boss: true },
-  { id: "rime_circle",     x: -450, y: -325, size: 7, tier: 5, boss: true },
+  { id: "deep_bastion",   x: -390, y: -310, size: 9, tier: 4, boss: true, type: "fort" },
+  { id: "ember_citadel",  x:  430, y: -360, size: 9, tier: 4, boss: true, type: "fort" },
+  { id: "oasis_keep",     x:  415, y:  240, size: 9, tier: 4, boss: true, type: "fort" },
+  { id: "far_tower_n",    x: -400, y: -150, size: 3, tier: 4, type: "watch" },
+  { id: "far_tower_e",    x:  380, y:  -80, size: 3, tier: 4, type: "watch" },
+  { id: "far_tower_s",    x:  100, y:  460, size: 3, tier: 4, type: "watch" },
+  { id: "far_tower_w",    x: -460, y:  145, size: 3, tier: 4, type: "watch" },
+  // ── Tier 5 — endgame approaches (600–720 tiles) ───────────────────────────
+  { id: "saffron_outpost", x:  450, y:  295, size: 9, tier: 5, boss: true, type: "fort" },
+  { id: "rime_circle",     x: -450, y: -325, size: 9, tier: 5, boss: true, type: "fort" },
   { id: "red_glass_camp",  x:  475, y: -375, size: 7, tier: 5, boss: true },
   { id: "deep_thorn",      x: -490, y:  320, size: 6, tier: 5, boss: true },
   { id: "dusk_spire",      x:  465, y:  465, size: 7, tier: 5, boss: true },
@@ -257,10 +304,12 @@ const BASE_ENEMY_CAMPS = [
   { id: "lava_crown",      x:  510, y: -490, size: 6, tier: 5 },
   { id: "sand_throne",     x:  535, y:  400, size: 6, tier: 5 },
   { id: "black_fen",       x: -550, y:  250, size: 5, tier: 5 },
-  // Tier 6 — portal gates (720+ tiles, near destinations)
-  { id: "void_crossing",  x:  545, y:  440, size: 8, tier: 6, boss: true },
-  { id: "null_pinnacle",  x: -545, y: -455, size: 8, tier: 6, boss: true },
-  { id: "ash_crown",      x:  540, y: -500, size: 8, tier: 6, boss: true },
+  { id: "frost_bastion",   x: -500, y: -470, size:10, tier: 5, boss: true, type: "fort" },
+  { id: "ember_keep",      x:  520, y: -450, size:10, tier: 5, boss: true, type: "fort" },
+  // ── Tier 6 — portal gates (720+ tiles, near destinations) ─────────────────
+  { id: "void_crossing",   x:  545, y:  440, size:10, tier: 6, boss: true, type: "fort" },
+  { id: "null_pinnacle",   x: -545, y: -455, size:10, tier: 6, boss: true, type: "fort" },
+  { id: "ash_crown",       x:  540, y: -500, size:10, tier: 6, boss: true, type: "fort" },
 ];
 
 const ENEMY_CAMPS = [...BASE_ENEMY_CAMPS, ...buildScatterEnemyCamps()];
@@ -385,33 +434,76 @@ function getProceduralSettlementTile(x, y) {
 
 function getEnemyCampTile(x, y) {
   for (const camp of ENEMY_CAMPS) {
-    const dist = Math.hypot(x - camp.x, y - camp.y);
-    if (dist > camp.size + 2) {
+    const dx  = x - camp.x;
+    const dy  = y - camp.y;
+    const adx = Math.abs(dx);
+    const ady = Math.abs(dy);
+    const dist = Math.hypot(dx, dy);
+
+    // ── Fort: rectangular stone perimeter + corner towers ──────────────────
+    if (camp.type === "fort") {
+      const half = camp.size;
+      if (adx > half + 2 || ady > half + 2) continue;
+
+      // Corner towers (always solid stone)
+      if (adx >= half && ady >= half) return TILE.STONE;
+
+      // Perimeter walls
+      const onNorthWall = ady === half && dy < 0;
+      const onSideWall  = adx === half && ady < half;
+      const onSouthWall = dy === half && adx > 3 && adx <= half; // gate gap of ±3
+      if (onNorthWall || onSideWall || onSouthWall) return TILE.STONE;
+
+      // Interior
+      if (adx < half && ady < half) {
+        if (adx <= 1 && ady <= 1) return TILE.STONE; // central structure
+        const r = hash2(x, y, 910);
+        if (r > 0.82) return TILE.STONE;             // rubble/debris
+        return TILE.PATH;
+      }
+
+      // Exterior apron
+      if (hash2(x, y, 911) > 0.62) return TILE.PATH;
       continue;
     }
 
-    if (Math.abs(x - camp.x) <= 1 && Math.abs(y - camp.y) <= 1) {
-      return TILE.STONE;
+    // ── Watchtower: solid stone tower with trampled ground ──────────────────
+    if (camp.type === "watch") {
+      if (dist > camp.size + 2) continue;
+
+      if (adx <= 1 && ady <= 1) return TILE.STONE;
+      if (adx <= 2 && ady <= 2) return hash2(x, y, 912) > 0.45 ? TILE.STONE : TILE.PATH;
+
+      if (dist <= camp.size) {
+        const r = hash2(x, y, 913);
+        if (r > 0.55) return TILE.PATH;
+        const biome = getBiome(x, y);
+        if (biome === "desert") return TILE.SAND;
+        if (biome === "frost")  return TILE.SNOW;
+        if (biome === "ember")  return TILE.DARK_GRASS;
+        return TILE.GRASS;
+      }
+      if (hash2(x, y, 914) > 0.72) return TILE.PATH;
+      continue;
     }
+
+    // ── Default camp: scattered stone/path clearing ─────────────────────────
+    if (dist > camp.size + 2) continue;
+
+    if (adx <= 1 && ady <= 1) return TILE.STONE;
 
     if (dist <= camp.size) {
       const r = hash2(x, y, 901);
-      if (r > 0.84) {
-        return TILE.STONE;
-      }
-      if (r > 0.28) {
-        return TILE.PATH;
-      }
+      if (r > 0.84) return TILE.STONE;
+      if (r > 0.28) return TILE.PATH;
       const biome = getBiome(x, y);
       if (biome === "desert") return TILE.SAND;
-      if (biome === "frost") return TILE.SNOW;
-      if (biome === "ember") return TILE.DARK_GRASS;
+      if (biome === "frost")  return TILE.SNOW;
+      if (biome === "ember")  return TILE.DARK_GRASS;
       return TILE.GRASS;
     }
 
-    if (hash2(x, y, 902) > 0.62) {
-      return TILE.PATH;
-    }
+    if (hash2(x, y, 902) > 0.62) return TILE.PATH;
   }
 
   return null;

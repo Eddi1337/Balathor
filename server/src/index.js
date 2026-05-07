@@ -41,7 +41,7 @@ const PORTAL_COOLDOWN_MS = 1400;
 const DOOR_COOLDOWN_MS = 600;
 const HOME_COOLDOWN_MS = 2000;
 const PLAYER_MAX_HP = 100;
-const MOB_RESPAWN_MS = 7000;
+const MOB_RESPAWN_MS = 300000; // 5 minutes
 const INVENTORY_SIZE = 10;
 const INTERACT_RADIUS = 1.8;
 const SHOP_INTERACT_RADIUS = 1.75;
@@ -2384,7 +2384,7 @@ function createMobs() {
     { id: "mob_imp_ember_1", name: "Ember Imp", level: 9, homeX: 134, homeY: -121, primary: "#d85b35", accent: "#ffd06a", maxHp: 86, attackDamage: 19 },
     { id: "mob_imp_ember_2", name: "Ember Imp", level: 9, homeX: 158, homeY: -142, primary: "#d85b35", accent: "#ffd06a", maxHp: 86, attackDamage: 19 },
   ];
-  return [...fixedMobs, ...createWildernessMobs(), ...createCritterMobs()].map((mob) => ({
+  return [...fixedMobs, ...createWildernessMobs(), ...createRoamingMobs(), ...createCritterMobs()].map((mob) => ({
     ...mob,
     x: mob.homeX,
     y: mob.homeY,
@@ -2484,6 +2484,67 @@ function createWildernessMobs() {
   }
 
   return mobs;
+}
+
+function createRoamingMobs() {
+  const ROAM_CELL = 20;
+  const list = [];
+  let seq = 0;
+
+  const gMin = Math.floor(-720 / ROAM_CELL);
+  const gMax = Math.ceil(720 / ROAM_CELL);
+
+  for (let gx = gMin; gx <= gMax; gx++) {
+    for (let gy = gMin; gy <= gMax; gy++) {
+      const roll = hash2(gx, gy, 9400);
+      if (roll > 0.42) continue;
+
+      const cx = gx * ROAM_CELL + ROAM_CELL * 0.5;
+      const cy = gy * ROAM_CELL + ROAM_CELL * 0.5;
+
+      // Exclude safe zones
+      if (Math.hypot(cx, cy)            < 35) continue;  // spawn hub
+      if (Math.hypot(cx - 600, cy - 490) < 68) continue; // oasis town
+      if (Math.hypot(cx + 600, cy + 490) < 68) continue; // frost town
+      if (Math.hypot(cx - 580, cy + 530) < 68) continue; // ember town
+
+      const biome  = getBiome(Math.round(cx), Math.round(cy));
+      const type   = MOB_TYPES[biome] || MOB_TYPES.forest;
+      const dist   = Math.hypot(cx, cy);
+      const tier   = Math.min(6, Math.max(1, Math.floor(dist / 100)));
+      const count  = (tier >= 3 && hash2(gx, gy, 9450) > 0.62) ? 2 : 1;
+
+      for (let i = 0; i < count; i++) {
+        const ox = (hash2(gx, gy, 9500 + i) - 0.5) * (ROAM_CELL - 5);
+        const oy = (hash2(gx, gy, 9600 + i) - 0.5) * (ROAM_CELL - 5);
+        const hx = Math.round(cx + ox);
+        const hy = Math.round(cy + oy);
+
+        const eIdx  = Math.floor(hash2(gx, gy, 9700 + i) * type.enemies.length);
+        const enemy = type.enemies[eIdx];
+        const level = enemy.level + Math.max(0, tier - 1);
+        const home  = findOpenMobHomeFromCandidates(hx, hy);
+
+        seq++;
+        list.push({
+          id: `mob_roam_${seq}`,
+          name: enemy.name,
+          level,
+          homeX: home.x,
+          homeY: home.y,
+          primary: type.primary,
+          accent: type.accent,
+          biome,
+          maxHp: enemy.hp + level * 5 + Math.floor(hash2(gx, gy, 9800 + i) * 10),
+          attackDamage: enemy.damage + Math.floor(level * 0.8),
+          roamRadius: 9,
+          speed: enemy.speed + hash2(gx, gy, 9900 + i) * 0.15
+        });
+      }
+    }
+  }
+
+  return list;
 }
 
 function createCritterMobs() {
