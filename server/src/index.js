@@ -62,6 +62,24 @@ const STAT_POINT_STRENGTH_DAMAGE = 4;
 const STAT_POINT_ARMOUR_REDUCTION = 0.04;
 const STAT_POINT_ARMOUR_CAP = 0.55;
 const CLASS_IDS = ["ranger", "mage", "knight"];
+
+const SERVER_TALENT_TREES = {
+  mage: [
+    ["fireball","fire_nova","inferno"],
+    ["ice_shard","frost_barrier","blizzard"],
+    ["arcane_bolt","mana_shield","time_warp"]
+  ],
+  knight: [
+    ["shield_bash","divine_shield","fortify"],
+    ["holy_strike","consecration","divine_wrath"],
+    ["healing_aura","lay_on_hands","battle_cry"]
+  ],
+  ranger: [
+    ["precise_shot","piercing_arrow","rain_of_arrows"],
+    ["caltrops","evasion","camouflage"],
+    ["multishot","smoke_bomb","volley"]
+  ]
+};
 const TORSO_STYLE_IDS = ["tunic", "armor", "robe"];
 const WEAPON_STYLE_IDS = ["classic", "heavy", "ornate"];
 const CLASS_LOADOUTS = Object.freeze({
@@ -856,6 +874,17 @@ function handleMessage(client, raw) {
     if (!p || (p.talentPoints || 0) < 1) return;
     const talentId = typeof message.talentId === "string" ? message.talentId.slice(0, 32) : null;
     if (!talentId || p.talents[talentId]) return;
+    // Validate tier order: find which tree/tier this talent is in
+    const trees = SERVER_TALENT_TREES[p.classId] || [];
+    let tierValid = false;
+    for (const tree of trees) {
+      const idx = tree.indexOf(talentId);
+      if (idx === -1) continue;
+      // tier 0 always valid, higher tiers require previous tier unlocked
+      tierValid = idx === 0 || Boolean(p.talents[tree[idx - 1]]);
+      break;
+    }
+    if (!tierValid) return; // spell not found or previous tier not unlocked
     p.talentPoints -= 1;
     p.talents[talentId] = true;
     saveClientCharacter(client);
@@ -870,6 +899,19 @@ function handleMessage(client, raw) {
     if (spellId !== null && !p.talents[spellId]) return;
     p.abilityBar = p.abilityBar || [null, null, null, null, null];
     p.abilityBar[slot] = spellId;
+    saveClientCharacter(client);
+  }
+
+  if (message.type === "swapAbilitySlots") {
+    const p = client.player;
+    if (!p) return;
+    const from = Number(message.fromSlot);
+    const to = Number(message.toSlot);
+    if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || from > 4 || to < 0 || to > 4) return;
+    p.abilityBar = p.abilityBar || [null, null, null, null, null];
+    const tmp = p.abilityBar[from];
+    p.abilityBar[from] = p.abilityBar[to];
+    p.abilityBar[to] = tmp;
     saveClientCharacter(client);
   }
 
@@ -969,7 +1011,7 @@ function joinWorld(client, message, savedCharacter = null) {
       torsoColor,
       weaponColor
     }),
-    talentPoints: clampInteger(savedCharacter?.talentPoints ?? 0, 0, 10000),
+    talentPoints: isMod ? 9999 : clampInteger(savedCharacter?.talentPoints ?? 0, 0, 10000),
     talents: savedCharacter?.talents || {},
     abilityBar: Array.isArray(savedCharacter?.abilityBar)
       ? savedCharacter.abilityBar.slice(0, 5).map(v => (typeof v === "string" ? v : null))
@@ -1452,7 +1494,9 @@ function awardXp(player, amount) {
     player.xp -= player.xpToNext;
     player.level += 1;
     player.statPoints += 1;
-    player.talentPoints = (player.talentPoints || 0) + 1;
+    if (player.level % 5 === 0) {
+      player.talentPoints = (player.talentPoints || 0) + 1;
+    }
     levelsGained += 1;
     player.xpToNext = xpForNextLevel(player.level);
   }
@@ -1769,6 +1813,9 @@ function broadcastSnapshot() {
       gold: p.gold,
       inventory: p.inventory,
       equipment: p.equipment,
+      talentPoints: p.talentPoints || 0,
+      talents: p.talents || {},
+      abilityBar: p.abilityBar || [null, null, null, null, null],
       moveSpeed: Number(getPlayerSpeed(p).toFixed(2)),
       x: Number(p.x.toFixed(3)),
       y: Number(p.y.toFixed(3)),

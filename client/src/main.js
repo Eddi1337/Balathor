@@ -1135,6 +1135,43 @@ function wireUi() {
     send({ type: "setAbilitySlot", slot: Number(slot.dataset.slot), spellId: null });
   });
 
+  makeDraggable(equipmentPanel);
+  makeDraggable(bagsPanel);
+  makeDraggable(shopPanel);
+  makeDraggable(traderPanel);
+
+  // Delegated dragstart for ability slots (avoids listener accumulation across renders)
+  abilitySlotsEl.addEventListener("dragstart", (e) => {
+    const slotEl = e.target.closest("[data-slot]");
+    if (!slotEl) return;
+    const spellId = slotEl.dataset.currentSpell;
+    if (!spellId) { e.preventDefault(); return; }
+    e.dataTransfer.setData("text/plain", JSON.stringify({ type: "abilitySlot", fromSlot: Number(slotEl.dataset.slot) }));
+    e.dataTransfer.effectAllowed = "move";
+  });
+
+  function handleAbilityBarDrop(e) {
+    e.preventDefault();
+    const slotEl = e.target.closest("[data-slot]");
+    if (!slotEl) return;
+    const targetSlot = Number(slotEl.dataset.slot);
+    try {
+      const data = JSON.parse(e.dataTransfer.getData("text/plain"));
+      if (data.type === "inventory") {
+        // Can drop any inventory item onto a bar slot (placeholder — real use is spells/potions)
+        send({ type: "setAbilitySlot", slot: targetSlot, spellId: `inv:${data.slot}` });
+      } else if (data.type === "abilitySlot") {
+        const fromSlot = data.fromSlot;
+        if (fromSlot !== targetSlot) {
+          send({ type: "swapAbilitySlots", fromSlot, toSlot: targetSlot });
+        }
+      }
+    } catch {}
+  }
+
+  abilitySlotsEl.addEventListener("dragover", (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; });
+  abilitySlotsEl.addEventListener("drop", handleAbilityBarDrop);
+
   inventorySlots.addEventListener("pointerdown", (event) => {
     const button = event.target.closest("[data-inventory-action]");
     if (!button) {
@@ -1423,32 +1460,32 @@ function renderAbilityBar() {
   const slots = abilitySlotsEl.querySelectorAll(".ability-slot");
   slots.forEach((slot, i) => {
     const spellId = bar[i] || null;
-    slot.classList.toggle("filled", Boolean(spellId));
-    // Remove existing content (keep .ability-key span)
-    const keySpan = slot.querySelector(".ability-key");
-    slot.replaceChildren(keySpan || (() => {
-      const k = document.createElement("span");
-      k.className = "ability-key";
-      k.textContent = String(i + 1);
-      return k;
-    })());
+    const filled = Boolean(spellId);
+    slot.classList.toggle("filled", filled);
+    slot.draggable = filled;
+
+    // Rebuild slot content (slot element is static HTML, listeners persist)
+    const keySpan = document.createElement("span");
+    keySpan.className = "ability-key";
+    keySpan.textContent = String(i + 1);
+
     if (spellId) {
       const ic = document.createElement("canvas");
       ic.width = 32; ic.height = 32;
       ic.style.cssText = "position:absolute;top:4px;left:50%;transform:translateX(-50%);image-rendering:pixelated;";
       drawSpellIcon(ic, spellId, true);
-      slot.prepend(ic);
       const nm = document.createElement("div");
       nm.className = "ability-slot-name";
-      nm.style.cssText = "position:absolute;top:38px;left:0;right:0;";
-      const spellInfo = Object.values(TALENT_TREES).flat()
-        .flatMap(t => t.spells)
-        .find(s => s.id === spellId);
+      nm.style.cssText = "position:absolute;top:38px;left:0;right:0;text-align:center;font-size:9px;color:#e8c86a;";
+      const spellInfo = Object.values(TALENT_TREES).flat().flatMap(t => t.spells).find(s => s.id === spellId);
       nm.textContent = spellInfo?.name || spellId;
-      slot.append(nm);
+      slot.replaceChildren(ic, nm, keySpan);
+    } else {
+      slot.replaceChildren(keySpan);
     }
-    const kSpan = slot.querySelector(".ability-key");
-    if (kSpan) slot.append(kSpan);
+
+    // Store current spell on element so the handler reads fresh data without closure drift
+    slot.dataset.currentSpell = spellId || "";
   });
 }
 
@@ -2168,7 +2205,13 @@ function renderEquipment() {
   }
 
   const tp = self.talentPoints || 0;
-  talentPointsText.textContent = `${tp} talent point${tp === 1 ? "" : "s"}`;
+  const talentProgressFill = document.getElementById("talentProgressFill");
+  if (talentProgressFill) {
+    const pct = ((self.level % 5) / 5) * 100;
+    talentProgressFill.style.width = `${pct}%`;
+  }
+  const nextTalentLevel = self.level + (5 - (self.level % 5 || 5));
+  talentPointsText.textContent = `${tp} talent pt${tp !== 1 ? "s" : ""} · next at lv ${self.level % 5 === 0 ? self.level + 5 : nextTalentLevel}`;
 
   renderTalentTree(self);
 }
@@ -2214,6 +2257,15 @@ function renderBags() {
       inventorySlots.append(cell);
       return;
     }
+
+    cell.draggable = true;
+    cell.dataset.dragType = "inventory";
+    cell.dataset.dragSlot = String(slot);
+    cell.dataset.dragItemType = item.type || "";
+    cell.addEventListener("dragstart", (e) => {
+      e.dataTransfer.setData("text/plain", JSON.stringify({ type: "inventory", slot, itemType: item.type }));
+      e.dataTransfer.effectAllowed = "move";
+    });
 
     const name = document.createElement("strong");
     name.textContent = item.name;
@@ -5293,6 +5345,47 @@ function resize() {
   canvas.width  = window.innerWidth;
   canvas.height = window.innerHeight;
   chunkCanvasCache.clear();
+}
+
+function makeDraggable(panel) {
+  const head = panel.querySelector(".window-head");
+  if (!head) return;
+  let startX, startY, startLeft, startTop;
+
+  head.style.cursor = "grab";
+
+  head.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("button")) return; // don't drag when clicking buttons
+    e.preventDefault();
+    head.setPointerCapture(e.pointerId);
+    head.style.cursor = "grabbing";
+
+    // Get current position — convert from fixed positioning
+    const rect = panel.getBoundingClientRect();
+    startX = e.clientX;
+    startY = e.clientY;
+    startLeft = rect.left;
+    startTop = rect.top;
+
+    // Switch from right/top to left/top positioning
+    panel.style.right = "auto";
+    panel.style.left = startLeft + "px";
+    panel.style.top = startTop + "px";
+  });
+
+  head.addEventListener("pointermove", (e) => {
+    if (e.buttons === 0) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    const newLeft = Math.max(0, Math.min(window.innerWidth - 80, startLeft + dx));
+    const newTop = Math.max(0, Math.min(window.innerHeight - 40, startTop + dy));
+    panel.style.left = newLeft + "px";
+    panel.style.top = newTop + "px";
+  });
+
+  head.addEventListener("pointerup", () => {
+    head.style.cursor = "grab";
+  });
 }
 
 function setStatus(text) {
