@@ -111,6 +111,7 @@ const state = {
   speechBubbles: new Map(),
   combatFx: [],
   levelUpFx: [],
+  portalTransition: null,
   chunks: new Map(),
   portals: new Map(),
   buildings: new Map(),
@@ -419,6 +420,10 @@ function handleServerMessage(message) {
   }
 
   if (message.type === "teleport") {
+    const portalTeleport = typeof message.portalId === "string" && message.portalId.startsWith("portal_");
+    if (portalTeleport) {
+      startPortalTransition(message);
+    }
     const self = state.players.get(state.selfId);
     if (self) {
       self.x = message.x;
@@ -532,6 +537,19 @@ function authErrorText(message) {
     return "Username or password is wrong";
   }
   return "Use a valid username and password (password may be empty; very long values are rejected)";
+}
+
+function startPortalTransition(message) {
+  state.portalTransition = {
+    fromX: state.camera.x / TILE_SIZE,
+    fromY: state.camera.y / TILE_SIZE,
+    toX: message.x,
+    toY: message.y,
+    color: message.color || "#75f0ff",
+    name: message.name || "Portal",
+    startedAt: performance.now(),
+    duration: 920
+  };
 }
 
 function applySnapshot(players) {
@@ -1381,6 +1399,7 @@ function clearWorldState() {
   state.speechBubbles.clear();
   state.combatFx = [];
   state.levelUpFx = [];
+  state.portalTransition = null;
   state.chunks.clear();
   state.portals.clear();
   state.buildings.clear();
@@ -1860,6 +1879,7 @@ function draw() {
   drawLighting();
 
   ctx.restore();
+  drawPortalTransitionOverlay();
   if (state.menuOpen) {
     syncMenuSessionInfo();
   }
@@ -3292,61 +3312,95 @@ function drawPortal(sx, sy, tx, ty) {
   const T = TILE_SIZE;
   const cx = sx + T + T / 2;
   const cy = sy + T + T / 2;
-  const archW = T * 2.4;
-  const archH = T * 3.2;
-  const innerW = archW - 10;
-  const innerH = archH - 10;
+  const orbR = T * 1.18;
+  const orbY = cy - T * 0.45;
+  const pulse = 0.5 + Math.sin(time * 3.1) * 0.5;
 
-  drawEllipseShadow(cx - archW / 2, cy + archH / 2 - 4, archW, 12, 0.45);
+  drawPortalBase(cx, cy + T * 0.78, orbR, color, time);
 
   ctx.save();
   ctx.beginPath();
-  ctx.ellipse(cx, cy - archH * 0.1, innerW / 2, innerH / 2, 0, 0, Math.PI * 2);
+  ctx.arc(cx, orbY, orbR - 7, 0, Math.PI * 2);
   ctx.clip();
-  drawPortalPreview(cx, cy, innerW, innerH, portal, time);
+  drawPortalPreview(cx, orbY, (orbR - 7) * 2, (orbR - 7) * 2, portal, time);
   ctx.restore();
 
-  ctx.save();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 6;
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 14;
-  ctx.beginPath();
-  ctx.ellipse(cx, cy - archH * 0.1, archW / 2, archH / 2, 0, 0, Math.PI * 2);
-  ctx.stroke();
-
-  ctx.lineWidth = 2;
-  ctx.shadowBlur = 0;
-  ctx.strokeStyle = "rgba(255,255,255,0.5)";
-  ctx.beginPath();
-  ctx.ellipse(cx, cy - archH * 0.1, archW / 2 + 4, archH / 2 + 4, 0, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.restore();
-
-  const pulse = 0.5 + Math.sin(time * 3) * 0.5;
-  ctx.save();
-  ctx.globalAlpha = 0.6 + pulse * 0.3;
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc(cx, cy - archH / 2 - 6, 4 + pulse * 2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
+  drawRoundPortalOverlay(cx, orbY, orbR, color, time, pulse);
 
   ctx.font = "11px ui-sans-serif, system-ui";
   ctx.textAlign = "center";
   ctx.lineWidth = 3;
   ctx.strokeStyle = "rgba(8,12,18,0.8)";
   ctx.fillStyle = color;
-  ctx.strokeText(portal.name, cx, cy + archH / 2 + 14);
-  ctx.fillText(portal.name, cx, cy + archH / 2 + 14);
+  ctx.strokeText(portal.name, cx, cy + T * 1.55);
+  ctx.fillText(portal.name, cx, cy + T * 1.55);
+}
+
+function drawPortalBase(cx, cy, radius, color, time) {
+  drawEllipseShadow(cx - radius * 1.08, cy + 6, radius * 2.16, 14, 0.45);
+
+  ctx.save();
+  ctx.fillStyle = "#4f5363";
+  ctx.fillRect(cx - radius * 0.92, cy - 10, radius * 1.84, 14);
+  ctx.fillStyle = "#707889";
+  ctx.fillRect(cx - radius * 0.72, cy - 20, radius * 1.44, 12);
+  ctx.fillStyle = "#303544";
+  ctx.fillRect(cx - radius * 0.58, cy - 27, radius * 1.16, 9);
+  ctx.fillStyle = `rgba(${hexToRgb(color)}, ${0.2 + Math.sin(time * 4) * 0.08})`;
+  ctx.fillRect(cx - radius * 0.46, cy - 28, radius * 0.92, 5);
+  ctx.restore();
+}
+
+function drawRoundPortalOverlay(cx, cy, radius, color, time, pulse) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 7;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 18 + pulse * 8;
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.lineWidth = 2;
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = "rgba(255,255,255,0.58)";
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius + 5 + pulse * 2, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.globalCompositeOperation = "screen";
+  const glow = ctx.createRadialGradient(cx, cy, radius * 0.15, cx, cy, radius * 1.05);
+  glow.addColorStop(0, `rgba(${hexToRgb(color)}, 0.06)`);
+  glow.addColorStop(0.62, `rgba(${hexToRgb(color)}, 0.22)`);
+  glow.addColorStop(1, `rgba(${hexToRgb(color)}, 0.05)`);
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.fill();
+
+  for (let i = 0; i < 3; i += 1) {
+    const spin = time * (0.8 + i * 0.24) + i * 2.1;
+    ctx.strokeStyle = `rgba(255,255,255,${0.18 - i * 0.035})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(
+      cx,
+      cy,
+      radius * (0.56 + i * 0.12),
+      radius * (0.18 + i * 0.05),
+      spin,
+      0,
+      Math.PI * 2
+    );
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function drawPortalPreview(cx, cy, w, h, portal, time) {
-  const oy = cy - h * 0.1;
-
   if (!portal?.preview?.tiles) {
     ctx.fillStyle = "#180e30";
-    ctx.fillRect(cx - w / 2, oy - h / 2, w, h);
+    ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
     return;
   }
 
@@ -3354,23 +3408,30 @@ function drawPortalPreview(cx, cy, w, h, portal, time) {
   const cellW = w / size;
   const cellH = h / size;
   const startX = cx - w / 2;
-  const startY = oy - h / 2;
+  const startY = cy - h / 2;
 
   for (let py = 0; py < size; py += 1) {
     for (let px = 0; px < size; px += 1) {
       const tile = portal.preview.tiles[py * size + px];
-      const colors = tilePalette[tile] || tilePalette[TILE.GRASS];
       const waveOff = Math.sin(time * 2.5 + py * 0.7 + px * 0.3) * 2;
-      ctx.fillStyle = colors[0];
-      ctx.fillRect(startX + px * cellW + waveOff, startY + py * cellH, cellW + 1, cellH + 1);
+      drawPortalPreviewTile(
+        tile,
+        startX + px * cellW + waveOff,
+        startY + py * cellH,
+        cellW + 1,
+        cellH + 1,
+        px,
+        py,
+        time
+      );
     }
   }
 
   ctx.fillStyle = `rgba(${hexToRgb(portal.color || "#75f0ff")}, 0.12)`;
-  ctx.fillRect(cx - w / 2, oy - h / 2, w, h);
+  ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
 
   for (let i = 0; i < 5; i += 1) {
-    const wy = oy - h / 2 + (((time * 30 + i * h / 5) % h));
+    const wy = cy - h / 2 + (((time * 30 + i * h / 5) % h));
     const waveAmp = 3 + Math.sin(time * 1.5 + i) * 2;
     ctx.strokeStyle = `rgba(255,255,255,${0.08 + Math.sin(time + i) * 0.04})`;
     ctx.lineWidth = 2;
@@ -3382,6 +3443,98 @@ function drawPortalPreview(cx, cy, w, h, portal, time) {
     }
     ctx.stroke();
   }
+}
+
+function drawPortalPreviewTile(tile, x, y, w, h, px, py, time) {
+  const colors = tilePalette[tile] || tilePalette[TILE.GRASS];
+  ctx.fillStyle = colors[0];
+  ctx.fillRect(x, y, w, h);
+
+  if (tile === TILE.WATER) {
+    ctx.fillStyle = colors[1];
+    ctx.fillRect(x, y + h * (0.35 + Math.sin(time * 2 + px) * 0.08), w, h * 0.16);
+    return;
+  }
+
+  if (tile === TILE.LAVA) {
+    ctx.fillStyle = colors[1];
+    ctx.fillRect(x + w * 0.18, y + h * 0.35, w * 0.64, h * 0.18);
+    ctx.fillStyle = colors[2];
+    ctx.fillRect(x + w * 0.42, y + h * 0.62, w * 0.36, h * 0.12);
+    return;
+  }
+
+  if (tile === TILE.PATH || tile === TILE.STONE || tile === TILE.FLOOR) {
+    ctx.fillStyle = colors[1] || colors[0];
+    ctx.fillRect(x, y + h * 0.42, w, Math.max(1, h * 0.18));
+    return;
+  }
+
+  if (tile === TILE.TREE) {
+    ctx.fillStyle = colors[1] || colors[0];
+    ctx.beginPath();
+    ctx.arc(x + w * 0.5, y + h * 0.42, Math.max(2, Math.min(w, h) * 0.36), 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+
+  if (tile === TILE.FLOWERS) {
+    ctx.fillStyle = colors[1] || "#ffd166";
+    ctx.fillRect(x + w * 0.22, y + h * 0.24, Math.max(1, w * 0.18), Math.max(1, h * 0.18));
+    ctx.fillStyle = colors[2] || "#f26d6d";
+    ctx.fillRect(x + w * 0.62, y + h * 0.58, Math.max(1, w * 0.18), Math.max(1, h * 0.18));
+  }
+}
+
+function drawPortalTransitionOverlay() {
+  const fx = state.portalTransition;
+  if (!fx) {
+    return;
+  }
+
+  const now = performance.now();
+  const pct = Math.min(1, Math.max(0, (now - fx.startedAt) / fx.duration));
+  if (pct >= 1) {
+    state.portalTransition = null;
+    return;
+  }
+
+  const color = fx.color || "#75f0ff";
+  const rgb = hexToRgb(color);
+  const travel = pct < 0.5 ? pct / 0.5 : (1 - pct) / 0.5;
+  const radius = Math.hypot(canvas.width, canvas.height) * (0.18 + travel * 0.78);
+  const alpha = 0.18 + travel * 0.56;
+
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = `rgba(5, 8, 18, ${0.16 + travel * 0.42})`;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.globalCompositeOperation = "screen";
+
+  const gradient = ctx.createRadialGradient(
+    canvas.width / 2,
+    canvas.height / 2,
+    Math.max(1, radius * 0.08),
+    canvas.width / 2,
+    canvas.height / 2,
+    radius
+  );
+  gradient.addColorStop(0, `rgba(255,255,255,${0.18 + travel * 0.18})`);
+  gradient.addColorStop(0.34, `rgba(${rgb},${alpha})`);
+  gradient.addColorStop(0.72, `rgba(${rgb},${alpha * 0.28})`);
+  gradient.addColorStop(1, `rgba(${rgb},0)`);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.strokeStyle = `rgba(255,255,255,${0.25 + travel * 0.35})`;
+  ctx.lineWidth = 3;
+  for (let i = 0; i < 4; i += 1) {
+    const r = radius * (0.22 + i * 0.18) + Math.sin(now * 0.01 + i) * 18;
+    ctx.beginPath();
+    ctx.arc(canvas.width / 2, canvas.height / 2, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function hexToRgb(hex) {

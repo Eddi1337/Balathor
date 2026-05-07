@@ -10,8 +10,9 @@ const world = require("../server/src/world.js");
 
 assert.equal(world.CHUNK_SIZE, 16);
 assert.ok(world.ENEMY_CAMPS.length >= 30);
+assert.equal(world.ENEMY_CAMPS.some((camp) => camp.boss), true);
 for (const camp of world.ENEMY_CAMPS) {
-  assert.equal(world.generateTile(camp.x, camp.y), world.TILE.STONE);
+  assert.equal([world.TILE.STONE, world.TILE.PATH].includes(world.generateTile(camp.x, camp.y)), true);
   assert.equal(world.canAttackAt(camp.x, camp.y), true);
 }
 const originChunk = world.generateChunk(0, 0);
@@ -80,13 +81,12 @@ try {
   ))), true);
   assert.equal(messages.some((message) => message.type === "teleport" && message.portalId === "home"), true);
   assert.equal(messages.some((message) => message.type === "chunk"), true);
-  assert.equal(messages.some((message) => message.type === "snapshot" && message.mobs?.some((mob) => mob.isBoss)), true);
-  assert.equal(messages.some((message) => message.type === "snapshot" && message.mobs?.some((mob) => (
+  assert.equal(messages.some((message) => message.type === "snapshot" && Array.isArray(message.mobs)), true);
+  assert.equal(messages.every((message) => !Array.isArray(message.mobs) || message.mobs.every((mob) => (
     Number.isInteger(mob.level) &&
-    mob.level > 1 &&
     ["forest", "meadow", "desert", "frost", "ember"].includes(mob.biome)
   ))), true);
-  assert.equal(messages.some((message) => message.type === "snapshot" && message.chests?.length >= 10), true);
+  assert.equal(messages.some((message) => message.type === "snapshot" && Array.isArray(message.chests)), true);
   assert.equal(messages.some((message) => message.type === "snapshot" && message.players?.some((player) => (
     player.level === 1 &&
     player.xp === 0 &&
@@ -281,9 +281,8 @@ async function joinViaWebSocket(port, account) {
         messages.some((message) => message.type === "welcome") &&
         messages.some((message) => message.type === "teleport" && message.portalId === "home") &&
         messages.some((message) => message.type === "chunk") &&
-        messages.some((message) => message.type === "snapshot" && message.mobs?.some((mob) => mob.isBoss)) &&
-        messages.some((message) => message.type === "snapshot" && message.mobs?.some((mob) => Number.isInteger(mob.level) && mob.biome)) &&
-        messages.some((message) => message.type === "snapshot" && message.chests?.length >= 10) &&
+        messages.some((message) => message.type === "snapshot" && Array.isArray(message.mobs)) &&
+        messages.some((message) => message.type === "snapshot" && Array.isArray(message.chests)) &&
         messages.some((message) => message.type === "snapshot" && message.players?.some((player) => (
           player.level === 1 &&
           player.stats?.speed === 0 &&

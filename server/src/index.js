@@ -642,6 +642,7 @@ function handlePortalTravel(client) {
     type: "teleport",
     portalId: portal.id,
     name: portal.name,
+    color: portal.color,
     x: client.player.x,
     y: client.player.y
   });
