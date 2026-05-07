@@ -216,6 +216,13 @@ const CRITTERS_BY_BIOME = Object.freeze({
   ]
 });
 
+const ITEM_COLORS = [
+  "#ff6b6b", "#ff9f43", "#ffd166", "#a8e673", "#26de81",
+  "#45aaf2", "#a55eea", "#fd79a8", "#00cec9", "#6c5ce7",
+  "#e17055", "#74b9ff", "#55efc4", "#fdcb6e", "#c8a0ff",
+  "#ff7675", "#00b894", "#e84393", "#0984e3", "#f39c12"
+];
+
 let nextClientId = 1;
 let nextSpawnIndex = 0;
 let nextItemId = 1;
@@ -2001,13 +2008,6 @@ function createTraderStock(traderId, seed) {
   }
   return stock;
 }
-
-const ITEM_COLORS = [
-  "#ff6b6b", "#ff9f43", "#ffd166", "#a8e673", "#26de81",
-  "#45aaf2", "#a55eea", "#fd79a8", "#00cec9", "#6c5ce7",
-  "#e17055", "#74b9ff", "#55efc4", "#fdcb6e", "#c8a0ff",
-  "#ff7675", "#00b894", "#e84393", "#0984e3", "#f39c12"
-];
 
 function createItemDatabase() {
   const types = ["weapon", "armor", "ring", "potion"];
