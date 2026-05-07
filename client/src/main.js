@@ -3596,51 +3596,48 @@ function drawHouse(building, sx, sy, w, h, variant, roofless) {
   ctx.shadowOffsetY = 6;
 
   if (!roofless) {
-    // --- ROOF ---
-    ctx.fillStyle = p.roofBase;
-    ctx.fillRect(sx + inset, sy + 2, rw, roofH - 2);
-
+    // --- ROOF (full-width, two-tone pitched) ---
+    const ridgeY = sy + Math.round(roofH * 0.30);
+    // Dark back face (far slope seen from above)
+    ctx.fillStyle = p.roofDark;
+    ctx.fillRect(sx - 3, sy, w + 6, ridgeY - sy + 1);
     ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
-
-    // Shingles: horizontal bands
+    // Lighter front face (near slope)
+    ctx.fillStyle = p.roofBase;
+    ctx.fillRect(sx - 3, ridgeY, w + 6, wallY - ridgeY);
+    // Shingle bands on front face
     const shingleH = 5;
-    for (let ly = 6; ly < roofH - 2; ly += shingleH + 2) {
-      ctx.fillStyle = ly % (shingleH * 3) < shingleH ? p.roofMid : p.roofBase;
-      ctx.fillRect(sx + inset, sy + 2 + ly, rw, shingleH);
+    for (let ly = 4; ly < wallY - ridgeY - 2; ly += shingleH + 2) {
+      ctx.fillStyle = p.roofMid;
+      ctx.fillRect(sx - 3, ridgeY + ly, w + 6, shingleH);
       ctx.fillStyle = p.roofDark;
-      ctx.fillRect(sx + inset, sy + 2 + ly + shingleH, rw, 2);
+      ctx.fillRect(sx - 3, ridgeY + ly + shingleH, w + 6, 1);
     }
-
-    // Ridge line (runs left–right at roof center)
-    const ridgeY = sy + 2 + Math.round(roofH * 0.28);
+    // Ridge band
     ctx.fillStyle = p.roofRidge;
-    ctx.fillRect(sx + inset, ridgeY, rw, 4);
+    ctx.fillRect(sx - 3, ridgeY - 2, w + 6, 5);
     ctx.fillStyle = p.roofLight;
-    ctx.fillRect(sx + inset, ridgeY + 1, rw, 2);
-
-    // Top highlight
+    ctx.fillRect(sx - 3, ridgeY - 1, w + 6, 2);
+    // Top-edge highlight on back face
     ctx.fillStyle = p.roofLight;
-    ctx.fillRect(sx + inset + 4, sy + 3, Math.round(rw * 0.55), 3);
-
-    // Eave (dark overhang strip at wall join)
+    ctx.fillRect(sx, sy + 2, Math.round(w * 0.6), 3);
+    // Eave overhang at wall join
     ctx.fillStyle = p.eave;
-    ctx.fillRect(sx + inset - 2, wallY - 6, rw + 4, 8);
+    ctx.fillRect(sx - 5, wallY - 5, w + 10, 8);
     ctx.fillStyle = blend(p.eave, "#000000", 0.5);
-    ctx.fillRect(sx + inset - 2, wallY + 2, rw + 4, 3);
-
-    // Chimney (on roof, slightly right of center)
+    ctx.fillRect(sx - 5, wallY + 3, w + 10, 3);
+    // Chimney
     const chimneyX = sx + Math.round(w * 0.65);
-    const chimneyBotY = ridgeY + 2;
     ctx.fillStyle = blend(p.wall, "#000000", 0.35);
-    ctx.fillRect(chimneyX - 5, sy + 3, 11, 4);
+    ctx.fillRect(chimneyX - 5, sy, 11, 5);
     ctx.fillStyle = p.wall;
-    ctx.fillRect(chimneyX - 4, sy + 4, 9, chimneyBotY - sy - 4);
+    ctx.fillRect(chimneyX - 4, sy + 2, 9, ridgeY - sy);
     ctx.fillStyle = p.wallLight;
-    ctx.fillRect(chimneyX - 4, sy + 5, 3, 3);
+    ctx.fillRect(chimneyX - 4, sy + 3, 3, 3);
     if (variant !== "ember") {
       ctx.fillStyle = "rgba(200,200,200,0.3)";
       ctx.beginPath();
-      ctx.ellipse(chimneyX, sy + 1, 3, 5, 0, 0, Math.PI * 2);
+      ctx.ellipse(chimneyX, sy, 3, 5, 0, 0, Math.PI * 2);
       ctx.fill();
     }
   } else {
@@ -3649,36 +3646,36 @@ function drawHouse(building, sx, sy, w, h, variant, roofless) {
 
   // --- FRONT WALL ---
   ctx.fillStyle = p.wall;
-  ctx.fillRect(sx + inset - 2, wallY, rw + 4, wallH);
+  ctx.fillRect(sx - 3, wallY, w + 6, wallH);
 
   // Wall texture: vertical boards (timber/wood) or horizontal blocks (stone)
   if (variant === "stone") {
     ctx.fillStyle = p.wallDark;
     for (let ly = 0; ly < wallH; ly += 9) {
       const offset = Math.floor(ly / 9) % 2 === 0 ? 0 : 14;
-      for (let lx = -14 + offset; lx < rw + 4; lx += 28) {
-        ctx.fillRect(sx + inset - 2 + lx, wallY + ly, 27, 8);
+      for (let lx = -14 + offset; lx < w + 6; lx += 28) {
+        ctx.fillRect(sx - 3 + lx, wallY + ly, 27, 8);
       }
     }
     ctx.fillStyle = p.wallLine;
     for (let ly = 0; ly < wallH; ly += 9) {
-      ctx.fillRect(sx + inset - 2, wallY + ly, rw + 4, 1);
+      ctx.fillRect(sx - 3, wallY + ly, w + 6, 1);
     }
   } else {
     ctx.fillStyle = p.wallLine;
-    for (let lx = 8; lx < rw + 4; lx += 8) {
-      ctx.fillRect(sx + inset - 2 + lx, wallY, 1, wallH);
+    for (let lx = 8; lx < w + 6; lx += 8) {
+      ctx.fillRect(sx - 3 + lx, wallY, 1, wallH);
     }
   }
 
   // Wall top highlight
   ctx.fillStyle = p.wallLight;
-  ctx.fillRect(sx + inset - 2, wallY, rw + 4, 3);
+  ctx.fillRect(sx - 3, wallY, w + 6, 3);
 
   // Wall side shadow
   ctx.fillStyle = "rgba(0,0,0,0.22)";
-  ctx.fillRect(sx + inset - 2, wallY, 4, wallH);
-  ctx.fillRect(sx + inset - 2 + rw, wallY, 4, wallH);
+  ctx.fillRect(sx - 3, wallY, 4, wallH);
+  ctx.fillRect(sx + w - 1, wallY, 4, wallH);
 
   // --- WINDOWS ---
   const numWin = building.w >= 10 ? 2 : 1;
@@ -3711,7 +3708,7 @@ function drawHouse(building, sx, sy, w, h, variant, roofless) {
   ctx.restore();
 
   // Front garden strip
-  drawBuildingFrontDetail(sx + inset - 2, sx + inset - 2 + rw + 4, sy + h, variant, p);
+  drawBuildingFrontDetail(sx - 3, sx - 3 + w + 6, sy + h, variant, p);
 }
 
 function drawHut(building, sx, sy, w, h, variant, roofless) {
@@ -3727,32 +3724,39 @@ function drawHut(building, sx, sy, w, h, variant, roofless) {
   ctx.shadowOffsetY = 5;
 
   if (!roofless) {
-    // Thatched roof: wider and steeper than normal house
+    // Thatched roof: full-width triangle from sy (no top gap)
     ctx.fillStyle = variant === "desert" ? "#b89040" : variant === "ember" ? "#3a2010" : "#8a7230";
     ctx.beginPath();
-    ctx.moveTo(sx - 4, wallY);
-    ctx.lineTo(sx + w / 2, sy + 2);
-    ctx.lineTo(sx + w + 4, wallY);
+    ctx.moveTo(sx - 5, wallY);
+    ctx.lineTo(sx + w / 2, sy);
+    ctx.lineTo(sx + w + 5, wallY);
     ctx.closePath();
     ctx.fill();
 
     ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
 
-    // Thatch texture: staggered horizontal stripes
+    // Thatch texture: staggered horizontal stripes clipped to triangle
     const thatchLight = variant === "desert" ? "#d4b860" : variant === "ember" ? "#5a3020" : "#a09050";
     const thatchDark  = variant === "desert" ? "#7a6020" : variant === "ember" ? "#221008" : "#504020";
-    for (let i = 0; i < 6; i += 1) {
-      const ty2 = wallY - 4 - i * (roofH - 8) / 6;
-      const halfSpan = ((ty2 - sy) / (wallY - sy)) * (w / 2 + 4);
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(sx - 5, wallY);
+    ctx.lineTo(sx + w / 2, sy);
+    ctx.lineTo(sx + w + 5, wallY);
+    ctx.closePath();
+    ctx.clip();
+    for (let i = 1; i <= 6; i += 1) {
+      const ty2 = sy + i * roofH / 6;
       ctx.fillStyle = i % 2 === 0 ? thatchLight : thatchDark;
-      ctx.fillRect(sx + w / 2 - halfSpan, ty2 - 3, halfSpan * 2, 5);
+      ctx.fillRect(sx - 5, ty2 - 3, w + 10, 5);
     }
+    ctx.restore();
 
     // Eave overhang
     ctx.fillStyle = p.eave;
-    ctx.fillRect(sx - 4, wallY - 5, w + 8, 7);
+    ctx.fillRect(sx - 5, wallY - 5, w + 10, 8);
     ctx.fillStyle = blend(p.eave, "#000", 0.5);
-    ctx.fillRect(sx - 4, wallY + 2, w + 8, 2);
+    ctx.fillRect(sx - 5, wallY + 3, w + 10, 3);
   } else {
     ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
   }
@@ -3806,84 +3810,83 @@ function drawBigHouse(building, sx, sy, w, h, variant, roofless) {
   ctx.shadowOffsetY = 8;
 
   if (!roofless) {
-    // Roof
-    ctx.fillStyle = p.roofBase;
-    ctx.fillRect(sx + inset, sy + 2, rw, roofH - 2);
+    // --- ROOF (full-width, two-tone pitched) ---
+    const ridgeY = sy + Math.round(roofH * 0.30);
+    ctx.fillStyle = p.roofDark;
+    ctx.fillRect(sx - 4, sy, w + 8, ridgeY - sy + 1);
     ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
-
+    ctx.fillStyle = p.roofBase;
+    ctx.fillRect(sx - 4, ridgeY, w + 8, wallY - ridgeY);
     const shingleH = 5;
-    for (let ly = 6; ly < roofH - 2; ly += shingleH + 2) {
-      ctx.fillStyle = ly % (shingleH * 3) < shingleH ? p.roofMid : p.roofBase;
-      ctx.fillRect(sx + inset, sy + 2 + ly, rw, shingleH);
+    for (let ly = 4; ly < wallY - ridgeY - 2; ly += shingleH + 2) {
+      ctx.fillStyle = p.roofMid;
+      ctx.fillRect(sx - 4, ridgeY + ly, w + 8, shingleH);
       ctx.fillStyle = p.roofDark;
-      ctx.fillRect(sx + inset, sy + 2 + ly + shingleH, rw, 2);
+      ctx.fillRect(sx - 4, ridgeY + ly + shingleH, w + 8, 1);
     }
-
-    // Ridge and dormers (two small dormer windows on roof)
-    const ridgeY = sy + 2 + Math.round(roofH * 0.28);
     ctx.fillStyle = p.roofRidge;
-    ctx.fillRect(sx + inset, ridgeY, rw, 4);
+    ctx.fillRect(sx - 4, ridgeY - 2, w + 8, 5);
     ctx.fillStyle = p.roofLight;
-    ctx.fillRect(sx + inset, ridgeY + 1, rw, 2);
+    ctx.fillRect(sx - 4, ridgeY - 1, w + 8, 2);
     ctx.fillStyle = p.roofLight;
-    ctx.fillRect(sx + inset + 4, sy + 3, Math.round(rw * 0.55), 3);
+    ctx.fillRect(sx, sy + 2, Math.round(w * 0.6), 3);
 
     // Two chimneys
     for (const cFrac of [0.28, 0.72]) {
       const chx = sx + Math.round(w * cFrac);
       ctx.fillStyle = blend(p.wall, "#000", 0.35);
-      ctx.fillRect(chx - 4, sy + 3, 9, 4);
+      ctx.fillRect(chx - 4, sy, 9, 5);
       ctx.fillStyle = p.wall;
-      ctx.fillRect(chx - 3, sy + 4, 7, ridgeY - sy - 4);
+      ctx.fillRect(chx - 3, sy + 2, 7, ridgeY - sy);
       ctx.fillStyle = p.wallLight;
-      ctx.fillRect(chx - 3, sy + 5, 3, 3);
+      ctx.fillRect(chx - 3, sy + 3, 3, 3);
       if (variant !== "ember") {
         ctx.fillStyle = "rgba(200,200,200,0.28)";
         ctx.beginPath();
-        ctx.ellipse(chx, sy + 1, 3, 5, 0, 0, Math.PI * 2);
+        ctx.ellipse(chx, sy, 3, 5, 0, 0, Math.PI * 2);
         ctx.fill();
       }
     }
 
-    // Eave
+    // Eave overhang
     ctx.fillStyle = p.eave;
-    ctx.fillRect(sx + inset - 3, wallY - 6, rw + 6, 8);
+    ctx.fillRect(sx - 6, wallY - 5, w + 12, 8);
     ctx.fillStyle = blend(p.eave, "#000", 0.5);
-    ctx.fillRect(sx + inset - 3, wallY + 2, rw + 6, 3);
+    ctx.fillRect(sx - 6, wallY + 3, w + 12, 3);
   } else {
     ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
   }
 
   // Front wall with two-story band
   ctx.fillStyle = p.wall;
-  ctx.fillRect(sx + inset - 3, wallY, rw + 6, wallH);
+  ctx.fillRect(sx - 4, wallY, w + 8, wallH);
 
   // Second-storey band (horizontal divide)
   const midFloor = Math.round(wallH * 0.45);
   ctx.fillStyle = p.eave;
-  ctx.fillRect(sx + inset - 3, wallY + midFloor - 2, rw + 6, 4);
+  ctx.fillRect(sx - 4, wallY + midFloor - 2, w + 8, 4);
 
   // Wall texture
   if (variant === "stone") {
     ctx.fillStyle = p.wallDark;
     for (let ly = 0; ly < wallH; ly += 9) {
       const offset = Math.floor(ly / 9) % 2 === 0 ? 0 : 14;
-      for (let lx = -14 + offset; lx < rw + 6; lx += 28) {
-        ctx.fillRect(sx + inset - 3 + lx, wallY + ly, 27, 8);
+      for (let lx = -14 + offset; lx < w + 8; lx += 28) {
+        ctx.fillRect(sx - 4 + lx, wallY + ly, 27, 8);
       }
     }
   } else {
     ctx.fillStyle = p.wallLine;
-    for (let lx = 8; lx < rw + 6; lx += 8) {
-      ctx.fillRect(sx + inset - 3 + lx, wallY, 1, wallH);
+    for (let lx = 8; lx < w + 8; lx += 8) {
+      ctx.fillRect(sx - 4 + lx, wallY, 1, wallH);
     }
   }
 
   ctx.fillStyle = p.wallLight;
-  ctx.fillRect(sx + inset - 3, wallY, rw + 6, 3);
+  ctx.fillRect(sx - 4, wallY, w + 8, 3);
   ctx.fillStyle = "rgba(0,0,0,0.22)";
-  ctx.fillRect(sx + inset - 3, wallY, 4, wallH);
-  ctx.fillRect(sx + inset - 3 + rw + 2, wallY, 4, wallH);
+  ctx.fillRect(sx - 4, wallY, 4, wallH);
+  ctx.fillRect(sx + w, wallY, 4, wallH);
 
   // Three windows: two upper, two lower
   const winW = 13; const winH = Math.max(10, midFloor - 14);
@@ -3914,7 +3917,7 @@ function drawBigHouse(building, sx, sy, w, h, variant, roofless) {
   ctx.fillRect(doorX + doorW - 5, doorY + Math.round(doorH / 2) - 1, 4, 4);
 
   ctx.restore();
-  drawBuildingFrontDetail(sx + inset - 3, sx + inset - 3 + rw + 6, sy + h, variant, p);
+  drawBuildingFrontDetail(sx - 4, sx - 4 + w + 8, sy + h, variant, p);
 }
 
 function drawTreehouse(building, sx, sy, w, h, variant, roofless) {
@@ -3975,27 +3978,31 @@ function drawTreehouse(building, sx, sy, w, h, variant, roofless) {
   }
 
   if (!roofless) {
-    // Roof (pointed / organic)
+    // Roof (full-width, two-tone pitched)
+    const ridgeY = houseTopY + Math.round(roofH * 0.30);
+    ctx.fillStyle = "#341e0c";
+    ctx.fillRect(sx - 2, houseTopY, w + 4, ridgeY - houseTopY + 1);
     ctx.fillStyle = "#5c3818";
-    ctx.fillRect(sx + 2, houseTopY + 2, w - 4, roofH - 2);
+    ctx.fillRect(sx - 2, ridgeY, w + 4, wallY - ridgeY);
     const shingleH = 4;
-    for (let ly = 4; ly < roofH - 2; ly += shingleH + 2) {
-      ctx.fillStyle = ly % (shingleH * 3) < shingleH ? "#7a5028" : "#5c3818";
-      ctx.fillRect(sx + 2, houseTopY + 2 + ly, w - 4, shingleH);
+    for (let ly = 4; ly < wallY - ridgeY - 2; ly += shingleH + 2) {
+      ctx.fillStyle = "#7a5028";
+      ctx.fillRect(sx - 2, ridgeY + ly, w + 4, shingleH);
       ctx.fillStyle = "#341e0c";
-      ctx.fillRect(sx + 2, houseTopY + 2 + ly + shingleH, w - 4, 2);
+      ctx.fillRect(sx - 2, ridgeY + ly + shingleH, w + 4, 1);
     }
-    const ridgeY = houseTopY + 2 + Math.round(roofH * 0.3);
     ctx.fillStyle = "#200e04";
-    ctx.fillRect(sx + 2, ridgeY, w - 4, 3);
+    ctx.fillRect(sx - 2, ridgeY - 2, w + 4, 4);
     ctx.fillStyle = "#9a7040";
-    ctx.fillRect(sx + 2, ridgeY + 1, w - 4, 2);
+    ctx.fillRect(sx - 2, ridgeY - 1, w + 4, 2);
+    ctx.fillStyle = "#9a7040";
+    ctx.fillRect(sx, houseTopY + 2, Math.round(w * 0.55), 2);
 
     // Eave
     ctx.fillStyle = "#200e04";
-    ctx.fillRect(sx, wallY - 5, w, 7);
+    ctx.fillRect(sx - 3, wallY - 5, w + 6, 8);
     ctx.fillStyle = "#0e0604";
-    ctx.fillRect(sx, wallY + 2, w, 2);
+    ctx.fillRect(sx - 3, wallY + 3, w + 6, 2);
   }
 
   // Wall (wood planks)
@@ -4056,23 +4063,26 @@ function drawCastle(building, sx, sy, w, h, variant, roofless) {
   ctx.shadowOffsetY = 10;
 
   if (!roofless) {
-    // Roof / upper keep
-    ctx.fillStyle = p.roofBase;
-    ctx.fillRect(sx + towerW, sy + 4, w - towerW * 2, roofH - 4);
+    // Roof / upper keep — full-width two-tone pitched
+    const ridgeY = sy + Math.round(roofH * 0.30);
+    ctx.fillStyle = p.roofDark;
+    ctx.fillRect(sx + towerW, sy, w - towerW * 2, ridgeY - sy + 1);
     ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
-
+    ctx.fillStyle = p.roofBase;
+    ctx.fillRect(sx + towerW, ridgeY, w - towerW * 2, wallY - ridgeY);
     const shingleH = 6;
-    for (let ly = 8; ly < roofH - 4; ly += shingleH + 2) {
-      ctx.fillStyle = ly % (shingleH * 3) < shingleH ? p.roofMid : p.roofBase;
-      ctx.fillRect(sx + towerW, sy + 4 + ly, w - towerW * 2, shingleH);
+    for (let ly = 4; ly < wallY - ridgeY - 2; ly += shingleH + 2) {
+      ctx.fillStyle = p.roofMid;
+      ctx.fillRect(sx + towerW, ridgeY + ly, w - towerW * 2, shingleH);
       ctx.fillStyle = p.roofDark;
-      ctx.fillRect(sx + towerW, sy + 4 + ly + shingleH, w - towerW * 2, 2);
+      ctx.fillRect(sx + towerW, ridgeY + ly + shingleH, w - towerW * 2, 1);
     }
-    const ridgeY = sy + 4 + Math.round(roofH * 0.28);
     ctx.fillStyle = p.roofRidge;
-    ctx.fillRect(sx + towerW, ridgeY, w - towerW * 2, 5);
+    ctx.fillRect(sx + towerW, ridgeY - 2, w - towerW * 2, 5);
     ctx.fillStyle = p.roofLight;
-    ctx.fillRect(sx + towerW, ridgeY + 1, w - towerW * 2, 3);
+    ctx.fillRect(sx + towerW, ridgeY - 1, w - towerW * 2, 3);
+    ctx.fillStyle = p.roofLight;
+    ctx.fillRect(sx + towerW + 4, sy + 2, Math.round((w - towerW * 2) * 0.55), 3);
   } else {
     ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
   }

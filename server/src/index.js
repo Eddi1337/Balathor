@@ -836,8 +836,8 @@ function handleMessage(client, raw) {
     if (Math.hypot(client.player.x - (building.x + building.w/2), client.player.y - (building.y + building.h - 1)) > 4) return;
     client.player.gold -= price;
     ownedBuildings.set(key, { ownerId: client.player.id, ownerName: client.player.name, price });
-    // Broadcast ownership update
-    broadcast({ type: "buildingBought", buildingX: building.x, buildingY: building.y, ownerName: client.player.name });
+    // Broadcast ownership update to all clients
+    for (const c of clients.values()) send(c, { type: "buildingBought", buildingX: building.x, buildingY: building.y, ownerName: client.player.name });
   }
 }
 
