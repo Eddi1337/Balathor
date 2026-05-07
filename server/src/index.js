@@ -21,8 +21,8 @@ const PORT = Number(process.env.PORT || 8080);
 const ACCOUNT_STORE_PATH = process.env.ACCOUNT_STORE_PATH || path.join(__dirname, "..", "data", "accounts.json");
 const TICK_RATE = 30;
 const SNAPSHOT_RATE = 20;
-// Base player movement speed (tiles per second). Increased to be more responsive.
-const PLAYER_SPEED = 10.4;
+// Base player movement speed (tiles per second).
+const PLAYER_SPEED = 5.2;
 const MAX_CHUNKS_PER_REQUEST = 64;
 const MAX_NAME_LENGTH = 18;
 const MIN_USERNAME_LENGTH = 1;

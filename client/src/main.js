@@ -55,7 +55,7 @@ const joystickCanvas = document.querySelector("#joystick");
 const TILE_SIZE = 32;
 const CHUNK_SIZE = 16;
 // Client-side predicted base player speed (tiles per second). Match server base.
-const CLIENT_PLAYER_SPEED = 10.4;
+const CLIENT_PLAYER_SPEED = 5.2;
 const PRODUCTION_SERVER_URL = "wss://balathor.edmundmurphy.com/ws";
 const SERVER_URL_STORAGE_KEY = "balathor.serverUrl";
 const DEBUG_HUD_STORAGE_KEY = "balathor.debugHud";
@@ -2105,26 +2105,26 @@ function drawModCape(px, py, scale, bob, dirX, dirY) {
 }
 
 function drawCharacter(entity, x, y, isNpc = false) {
-  const scale = 2;
+  const scale = 3;
   const phase = entity.walkPhase || 0;
   const moving = Boolean(entity.renderMoving);
-  const bob = moving ? Math.round(Math.sin(phase * 1.6) * 1.5) : 0;
+  const bob = moving ? Math.round(Math.sin(phase * 1.6) * 2) : 0;
   const stride = moving ? Math.sin(phase * 1.6) : 0;
   const facing = Number.isFinite(entity.facing) ? entity.facing : Math.PI / 2;
   const dirX = Math.cos(facing);
   const dirY = Math.sin(facing);
   const sideX = -dirY;
   const sideY = dirX;
-  const forward = moving ? Math.round(stride * 2) : 0;
-  const travelX = Math.round(dirX * 2);
-  const travelY = Math.round(dirY * 2);
+  const forward = moving ? Math.round(stride * 3) : 0;
+  const travelX = Math.round(dirX * 3);
+  const travelY = Math.round(dirY * 3);
   const px = x - 8 * scale;
   const py = y - 10 * scale + bob;
   const torsoColor = entity.torsoColor || entity.primary || "#5cc8ff";
   const weaponColor = entity.weaponColor || entity.accent || "#ffd166";
   const torsoStyle = entity.torsoStyle || "tunic";
 
-  drawEllipseShadow(x - 11, y + 7, 22, 5, 0.28);
+  drawEllipseShadow(x - 16, y + 10, 32, 7, 0.28);
 
   if (entity.isMod) {
     drawModCape(px, py, scale, bob, dirX, dirY);
@@ -2175,14 +2175,14 @@ function drawCharacter(entity, x, y, isNpc = false) {
   ctx.lineWidth = 3;
   ctx.strokeStyle = "rgba(8, 12, 18, 0.82)";
   ctx.fillStyle = isNpc ? "#ffd27a" : entity.isMod ? "#c79cff" : "#f7f3df";
-  ctx.strokeText(entity.name, x, y - 28);
-  ctx.fillText(entity.name, x, y - 28);
+  ctx.strokeText(entity.name, x, y - 38);
+  ctx.fillText(entity.name, x, y - 38);
 
   if (!isNpc && Number.isFinite(entity.hp) && Number.isFinite(entity.maxHp)) {
-    drawHealthBar(x - 14, y - 22, 28, 4, entity.hp, entity.maxHp);
+    drawHealthBar(x - 18, y - 32, 36, 4, entity.hp, entity.maxHp);
   }
 
-  drawSpeechBubble(entity, x, y - 44);
+  drawSpeechBubble(entity, x, y - 54);
 }
 
 function drawSpeechBubble(entity, x, y) {
@@ -2297,74 +2297,74 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent) {
   ctx.lineJoin = "round";
 
   if (weaponKind === "staff") {
-    const baseX = x - sideX * 12 - dirX * 2;
-    const baseY = y + 8 - sideY * 12 - dirY * 2;
-    const tipX = x - sideX * 15 + dirX * 9;
-    const tipY = y - 21 - sideY * 15 + dirY * 9;
+    const baseX = x - sideX * 17 - dirX * 3;
+    const baseY = y + 12 - sideY * 17 - dirY * 3;
+    const tipX = x - sideX * 21 + dirX * 13;
+    const tipY = y - 30 - sideY * 21 + dirY * 13;
     ctx.strokeStyle = style === "ornate" ? accent : "#6b4428";
-    ctx.lineWidth = style === "heavy" ? 6 : 4;
+    ctx.lineWidth = style === "heavy" ? 8 : 5;
     ctx.beginPath();
     ctx.moveTo(baseX, baseY);
     ctx.lineTo(tipX, tipY);
     ctx.stroke();
     ctx.fillStyle = style === "ornate" ? "#c79cff" : "#ff7a45";
     ctx.beginPath();
-    ctx.arc(tipX, tipY, style === "heavy" ? 6 : 5, 0, Math.PI * 2);
+    ctx.arc(tipX, tipY, style === "heavy" ? 8 : 7, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = "#ffd166";
-    ctx.fillRect(tipX - 2, tipY - 2, 4, 4);
+    ctx.fillRect(tipX - 3, tipY - 3, 6, 6);
   } else if (weaponKind === "sword") {
-    const swordBaseX = x + dirX * 8 + sideX * 4;
-    const swordBaseY = y - 5 + dirY * 8 + sideY * 4;
-    const swordTipX = x + dirX * 24 + sideX * 8;
-    const swordTipY = y - 12 + dirY * 24 + sideY * 8;
+    const swordBaseX = x + dirX * 11 + sideX * 6;
+    const swordBaseY = y - 7 + dirY * 11 + sideY * 6;
+    const swordTipX = x + dirX * 34 + sideX * 11;
+    const swordTipY = y - 17 + dirY * 34 + sideY * 11;
     ctx.strokeStyle = style === "ornate" ? accent : "#edf3f7";
-    ctx.lineWidth = style === "heavy" ? 6 : 4;
+    ctx.lineWidth = style === "heavy" ? 8 : 5;
     ctx.beginPath();
     ctx.moveTo(swordBaseX, swordBaseY);
     ctx.lineTo(swordTipX, swordTipY);
     ctx.stroke();
     ctx.strokeStyle = "#7b532f";
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.moveTo(swordBaseX - sideX * 5, swordBaseY - sideY * 5);
-    ctx.lineTo(swordBaseX + sideX * 5, swordBaseY + sideY * 5);
+    ctx.moveTo(swordBaseX - sideX * 7, swordBaseY - sideY * 7);
+    ctx.lineTo(swordBaseX + sideX * 7, swordBaseY + sideY * 7);
     ctx.stroke();
 
-    const shieldX = x - sideX * 12 + dirX * 3;
-    const shieldY = y - 5 - sideY * 12 + dirY * 3;
+    const shieldX = x - sideX * 17 + dirX * 4;
+    const shieldY = y - 7 - sideY * 17 + dirY * 4;
     ctx.fillStyle = style === "heavy" ? "#2f3744" : "#3f4b5e";
     ctx.beginPath();
-    ctx.ellipse(shieldX, shieldY, 8, 11, entity.facing || 0, 0, Math.PI * 2);
+    ctx.ellipse(shieldX, shieldY, 11, 15, entity.facing || 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = "#d4dae2";
     ctx.lineWidth = 2;
     ctx.stroke();
     ctx.fillStyle = accent;
-    ctx.fillRect(shieldX - 2, shieldY - 7, 4, 14);
+    ctx.fillRect(shieldX - 3, shieldY - 10, 6, 20);
     if (style === "ornate") {
-      ctx.fillRect(shieldX - 6, shieldY - 2, 12, 4);
+      ctx.fillRect(shieldX - 8, shieldY - 3, 16, 6);
     }
   } else {
-    const bowX = x - sideX * 13 + dirX * 2;
-    const bowY = y - 7 - sideY * 13 + dirY * 2;
+    const bowX = x - sideX * 18 + dirX * 3;
+    const bowY = y - 10 - sideY * 18 + dirY * 3;
     ctx.strokeStyle = style === "ornate" ? accent : "#8b5a34";
-    ctx.lineWidth = style === "heavy" ? 6 : 4;
+    ctx.lineWidth = style === "heavy" ? 8 : 5;
     ctx.beginPath();
-    ctx.moveTo(bowX - dirX * 9 - dirY * 4, bowY - dirY * 9 + dirX * 4);
-    ctx.quadraticCurveTo(bowX + sideX * 7, bowY + sideY * 7, bowX + dirX * 9 + dirY * 4, bowY + dirY * 9 - dirX * 4);
+    ctx.moveTo(bowX - dirX * 13 - dirY * 6, bowY - dirY * 13 + dirX * 6);
+    ctx.quadraticCurveTo(bowX + sideX * 10, bowY + sideY * 10, bowX + dirX * 13 + dirY * 6, bowY + dirY * 13 - dirX * 6);
     ctx.stroke();
     ctx.strokeStyle = style === "heavy" ? "#d7e4ef" : "#f4ead3";
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(bowX - dirX * 9 - dirY * 4, bowY - dirY * 9 + dirX * 4);
-    ctx.lineTo(bowX + dirX * 9 + dirY * 4, bowY + dirY * 9 - dirX * 4);
+    ctx.moveTo(bowX - dirX * 13 - dirY * 6, bowY - dirY * 13 + dirX * 6);
+    ctx.lineTo(bowX + dirX * 13 + dirY * 6, bowY + dirY * 13 - dirX * 6);
     ctx.stroke();
     ctx.strokeStyle = accent;
-    ctx.lineWidth = style === "heavy" ? 3 : 2;
+    ctx.lineWidth = style === "heavy" ? 4 : 3;
     ctx.beginPath();
-    ctx.moveTo(x + sideX * 8 - dirX * 10, y - 12 + sideY * 8 - dirY * 10);
-    ctx.lineTo(x + sideX * 8 + dirX * 8, y - 3 + sideY * 8 + dirY * 8);
+    ctx.moveTo(x + sideX * 11 - dirX * 14, y - 17 + sideY * 11 - dirY * 14);
+    ctx.lineTo(x + sideX * 11 + dirX * 11, y - 4 + sideY * 11 + dirY * 11);
     ctx.stroke();
   }
 
