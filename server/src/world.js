@@ -31,7 +31,7 @@ const INTERIOR_SPACING = 40;
 const INTERIOR_EXTERIOR_MARGIN = 12;
 const PROCEDURAL_INTERIOR_GRID_SIZE = 1024;
 const PROCEDURAL_INTERIOR_GRID_OFFSET = 512;
-const STARTING_AREA = { x: 0, y: 4, radius: 68 };
+const STARTING_AREA = { x: 0, y: 4, radius: 72 };
 const START_SPAWN = { x: 0, y: -8 };
 
 function hash2(x, y, seed = 1337) {
@@ -43,65 +43,89 @@ function hash2(x, y, seed = 1337) {
 
 // Hand-crafted buildings: starting town + portal destinations only.
 const BUILDINGS = [
-  // Central village
-  { x:  -5, y: -17, w: 10, h:  8, name: "Home",            type: "house" },
-  { x: -40, y: -30, w: 10, h:  8, name: "Blue Roof House",  type: "house" },
-  { x:  26, y: -31, w: 16, h: 12, name: "Red Manor",        type: "big_house" },
-  { x: -52, y:  -6, w:  7, h:  6, name: "Woodcutter Hut",   type: "hut" },
-  { x: -50, y:  10, w: 12, h:  8, name: "Market House",     type: "house" },
-  { x:  39, y:  15, w: 12, h:  8, name: "Garden House",     type: "house" },
-  { x:  50, y:  28, w:  7, h:  6, name: "Herb Hut",         type: "hut" },
-  { x: -22, y: -52, w:  9, h:  8, name: "Ranger's Lodge",   type: "treehouse" },
-  { x: -10, y:  38, w: 20, h: 16, name: "Town Keep",        type: "castle" },
-  // Desert Oasis (portal destination ~600, 490)
-  { x: 585, y: 476, w: 16, h: 12, name: "Oasis Palace",     type: "big_house" },
-  { x: 607, y: 478, w:  7, h:  6, name: "Sun Hut",          type: "hut" },
-  { x: 594, y: 491, w:  9, h:  7, name: "Clay House",       type: "house" },
-  { x: 608, y: 489, w:  7, h:  6, name: "Sand Hut",         type: "hut" },
-  // Frost Village (portal destination ~-600, -490)
-  { x: -612, y: -502, w: 20, h: 16, name: "Frost Keep",     type: "castle" },
-  { x: -591, y: -500, w: 10, h:  8, name: "Snow House",     type: "house" },
-  { x: -605, y: -486, w:  7, h:  6, name: "Pine Hut",       type: "hut" },
-  { x: -591, y: -487, w:  9, h:  8, name: "Ranger Post",    type: "treehouse" },
-  // Ember Camp (portal destination ~580, -530)
-  { x: 568, y: -542, w: 20, h: 16, name: "Ember Citadel",   type: "castle" },
-  { x: 589, y: -540, w: 10, h:  8, name: "Ash House",       type: "house" },
-  { x: 575, y: -526, w:  7, h:  6, name: "Forge Hut",       type: "hut" },
-  { x: 589, y: -527, w:  9, h:  8, name: "Watcher's Perch", type: "treehouse" },
+  // Central village – dense starting zone
+  { x:  -6, y: -19, w: 11, h:  9, name: "Home",             type: "house",     forSale: false },
+  { x: -20, y:  -6, w:  8, h:  7, name: "Weaver's Hut",     type: "hut",       forSale: false },
+  { x:  12, y: -18, w:  8, h:  7, name: "Smith's Hut",       type: "hut",       forSale: false },
+  { x: -44, y: -24, w: 12, h:  9, name: "Blue Tavern",       type: "house",     forSale: false },
+  { x:  30, y: -32, w: 16, h: 12, name: "Red Manor",         type: "big_house", forSale: true  },
+  { x: -56, y:  10, w:  8, h:  7, name: "Miller's Hut",      type: "hut",       forSale: true  },
+  { x: -52, y:  20, w: 12, h:  9, name: "Market Hall",       type: "house",     forSale: false },
+  { x:  42, y:   6, w: 12, h:  9, name: "Garden House",      type: "house",     forSale: true  },
+  { x:  52, y:  22, w:  8, h:  7, name: "Herb Hut",          type: "hut",       forSale: true  },
+  { x: -22, y: -54, w: 10, h:  8, name: "Ranger's Post",     type: "treehouse", forSale: false },
+  { x:  32, y:  -6, w:  8, h:  7, name: "East Hut",          type: "hut",       forSale: true  },
+  { x: -12, y:  28, w: 20, h: 16, name: "Town Keep",         type: "castle",    forSale: false },
+  { x:  20, y:  46, w:  8, h:  7, name: "South Hut",         type: "hut",       forSale: true  },
+  { x: -40, y:  46, w:  8, h:  7, name: "West Hut",          type: "hut",       forSale: true  },
+  { x:  60, y: -22, w: 10, h:  8, name: "Hunter's Lodge",    type: "treehouse", forSale: false },
+  // Desert Oasis
+  { x: 585, y: 475, w: 16, h: 12, name: "Oasis Palace",      type: "big_house", forSale: false },
+  { x: 604, y: 477, w:  8, h:  7, name: "Sun Hut",           type: "hut",       forSale: false },
+  { x: 594, y: 489, w: 10, h:  8, name: "Clay House",        type: "house",     forSale: false },
+  { x: 610, y: 490, w:  8, h:  7, name: "Sand Hut",          type: "hut",       forSale: false },
+  { x: 586, y: 487, w: 20, h: 16, name: "Oasis Keep",        type: "castle",    forSale: false },
+  // Frost Village
+  { x: -614, y: -504, w: 20, h: 16, name: "Frost Keep",      type: "castle",    forSale: false },
+  { x: -593, y: -502, w: 10, h:  8, name: "Snow House",      type: "house",     forSale: false },
+  { x: -607, y: -488, w:  8, h:  7, name: "Pine Hut",        type: "hut",       forSale: false },
+  { x: -593, y: -489, w: 10, h:  8, name: "Ranger Post",     type: "treehouse", forSale: false },
+  // Ember Camp
+  { x: 566, y: -544, w: 20, h: 16, name: "Ember Citadel",    type: "castle",    forSale: false },
+  { x: 589, y: -542, w: 10, h:  8, name: "Ash House",        type: "house",     forSale: false },
+  { x: 573, y: -528, w:  8, h:  7, name: "Forge Hut",        type: "hut",       forSale: false },
+  { x: 589, y: -529, w: 10, h:  8, name: "Watcher's Perch",  type: "treehouse", forSale: false },
 ];
 
 // Fixed village clearing zones — only starting town + portal destinations.
 const VILLAGES = [
-  { cx:   0, cy:   4, r: 72 }, // Central Village
-  { cx:  600, cy:  490, r: 42 }, // Desert Oasis
-  { cx: -600, cy: -490, r: 42 }, // Frost Village
-  { cx:  580, cy: -530, r: 42 }, // Ember Camp
+  { cx:   0, cy:   4, r: 76 }, // Central Village (expanded)
+  { cx: 600, cy: 490, r: 48 },
+  { cx: -600, cy: -490, r: 48 },
+  { cx: 580, cy: -530, r: 48 },
 ];
 
 // Road segments for fixed villages only.
 const STREET_SEGMENTS = [
-  { x1: -58, y1:   0, x2: 58,  y2:   0, w: 1 }, // Central east-west lane
-  { x1:   0, y1:  -9, x2:  0,  y2:  44, w: 1 }, // Central south lane to Town Hall
-  { x1: -33, y1:  -8, x2: -11, y2:  -8, w: 0 }, // Blue Roof House branch
-  { x1: -33, y1: -20, x2: -33, y2:  -8, w: 0 }, // Blue Roof House walk
-  { x1:  11, y1:  -8, x2:  33, y2:  -8, w: 0 }, // Red Roof House branch
-  { x1:  33, y1: -19, x2:  33, y2:  -8, w: 0 }, // Red Roof House walk
-  { x1: -44, y1:   8, x2: -11, y2:   8, w: 0 }, // Market House branch
-  { x1: -44, y1:   8, x2: -44, y2:  18, w: 0 }, // Market House walk
-  { x1:  11, y1:   8, x2:  45, y2:   8, w: 0 }, // Garden House branch
-  { x1:  45, y1:   8, x2:  45, y2:  23, w: 0 }, // Garden House walk
-  { x1: 585, y1: 490, x2: 615, y2: 490 }, // Oasis lane H
-  { x1: 600, y1: 475, x2: 600, y2: 505 }, // Oasis lane V
-  { x1: -615, y1: -490, x2: -585, y2: -490 }, // Frost lane H
-  { x1: -600, y1: -505, x2: -600, y2: -475 }, // Frost lane V
-  { x1: 565, y1: -530, x2: 595, y2: -530 }, // Ember lane H
-  { x1: 580, y1: -545, x2: 580, y2: -515 }, // Ember lane V
+  // Main roads (wide, w=1 = 3 tiles wide)
+  { x1: -62, y1:  0, x2:  62, y2:  0, w: 1 },  // East-west main road
+  { x1:   0, y1: -62, x2:   0, y2: 62, w: 1 },  // North-south main road
+
+  // Building approach paths
+  { x1: -1,  y1: -11, x2:  0, y2: -11 },  // Home spur
+  { x1: -1,  y1: -18, x2: -1, y2: -11 },  // Home north
+  { x1: 16,  y1: -12, x2: 16, y2:  0  },  // Smith's Hut
+  { x1:  0,  y1: -12, x2: 16, y2: -12 },  // Smith's Hut branch
+  { x1: -38, y1: -16, x2: -38, y2:  0  }, // Blue Tavern
+  { x1: -44, y1: -16, x2: -38, y2: -16 },
+  { x1:  38, y1: -21, x2:  38, y2:  0  }, // Red Manor
+  { x1: -52, y1:  16, x2: -52, y2: 20  }, // Miller's Hut approach
+  { x1: -46, y1:  20, x2: -46, y2: 28  }, // Market Hall
+  { x1: -46, y1:   0, x2: -46, y2: 20  }, // Market Hall north
+  { x1:  48, y1:   0, x2:  48, y2: 14  }, // Garden House
+  { x1:  56, y1:  14, x2:  56, y2: 28  }, // Herb Hut
+  { x1:  48, y1:  14, x2:  56, y2: 14  }, // Garden→Herb connector
+  { x1: -17, y1: -47, x2:  0, y2: -47  }, // Ranger's Post approach
+  { x1: -17, y1: -47, x2: -17, y2: -62 },
+  { x1: -2,  y1:  43, x2:   0, y2:  43 }, // Town Keep south door spur
+  { x1:  26, y1:   0, x2:  26, y2:  42 }, // South Hut
+  { x1: -36, y1:   0, x2: -36, y2:  42 }, // West Hut
+  { x1:  62, y1: -15, x2:  62, y2:   0 }, // Hunter's Lodge extension
+  { x1:  62, y1: -15, x2:  65, y2: -15 },
+  { x1:  65, y1: -15, x2:  65, y2: -22 },
+  // Portal destination villages
+  { x1: 585, y1: 490, x2: 615, y2: 490 },
+  { x1: 600, y1: 475, x2: 600, y2: 505 },
+  { x1: -615, y1: -490, x2: -585, y2: -490 },
+  { x1: -600, y1: -505, x2: -600, y2: -475 },
+  { x1: 565, y1: -530, x2: 595, y2: -530 },
+  { x1: 580, y1: -545, x2: 580, y2: -515 },
 ];
 
 const PORTALS = [
-  { id: "portal_oasis", name: "Oasis Gate", x: 8, y: 4, targetX: 600, targetY: 490, color: "#f2c45f" },
-  { id: "portal_frost", name: "Frost Gate", x: -8, y: 4, targetX: -600, targetY: -490, color: "#9ee7ff" },
-  { id: "portal_ember", name: "Ember Gate", x: 0, y: 7, targetX: 580, targetY: -530, color: "#ff7a45" },
+  { id: "portal_oasis", name: "Oasis Gate",  x:  46, y:  0, targetX: 600, targetY: 490, color: "#f2c45f" },
+  { id: "portal_frost", name: "Frost Gate",   x: -46, y:  0, targetX: -600, targetY: -490, color: "#9ee7ff" },
+  { id: "portal_ember", name: "Ember Gate",   x:   0, y: 60, targetX: 580, targetY: -530, color: "#ff7a45" },
   { id: "portal_hub_oasis", name: "Hub Gate", x: 600, y: 490, targetX: 0, targetY: 0, color: "#8fe388" },
   { id: "portal_hub_frost", name: "Hub Gate", x: -600, y: -490, targetX: 0, targetY: 0, color: "#8fe388" },
   { id: "portal_hub_ember", name: "Hub Gate", x: 580, y: -530, targetX: 0, targetY: 0, color: "#8fe388" },
@@ -238,11 +262,11 @@ const SETTLE_GRID = 80;
 
 // Fixed relative building positions within a procedural settlement.
 const SETTLE_SLOTS = [
-  { dx: -19, dy: -13, w: 9, h: 7 },
-  { dx:   7, dy: -13, w: 9, h: 7 },
-  { dx: -20, dy:   5, w: 10, h: 7 },
-  { dx:   7, dy:   5, w: 10, h: 7 },
-  { dx:  -8, dy:  -4, w: 8,  h: 6 },
+  { dx: -19, dy: -13, w: 9, h: 7, type: "hut"   },
+  { dx:   7, dy: -13, w: 9, h: 7, type: "hut"   },
+  { dx: -20, dy:   5, w:10, h: 7, type: "house"  },
+  { dx:   7, dy:   5, w:10, h: 7, type: "house"  },
+  { dx:  -8, dy:  -4, w: 8, h: 6, type: "hut"   },
 ];
 
 const SETTLE_NAMES = {
@@ -284,6 +308,7 @@ function getSettlementBuildingList(s) {
       w: slot.w,
       h: slot.h,
       name: names[i % names.length],
+      type: slot.type || "hut",
       gx: s.gx,
       gy: s.gy,
       slotIndex: i,
@@ -318,7 +343,10 @@ function getProceduralSettlementTile(x, y) {
       const northWall = b.y;
       if (x === doorX && (y === southWall || y === northWall)) return TILE.DOOR;
       if (x === b.x || x === b.x + b.w - 1 || y === northWall || y === southWall) return TILE.WALL;
-      return TILE.FLOOR;
+      const lx = x - b.x;
+      const ly = y - b.y;
+      const seed = hash2(b.x, b.y, 7777);
+      return getBuildingInteriorTile(lx, ly, b.w, b.h, b.type || "hut", seed);
     }
 
     // Cross roads through settlement center.
@@ -379,6 +407,58 @@ function getEnemyCampTile(x, y) {
 
 // ---------------------------------------------------------------------------
 
+function getBuildingInteriorTile(lx, ly, w, h, type, seed) {
+  if (type === "hut") {
+    const fpX = Math.floor((w - 2) / 2) + 1;
+    if (lx === fpX && ly === 1) return TILE.FIREPLACE;
+    if ((lx === 1 || lx === 2) && ly === 1) return TILE.BED;
+    if (lx === w - 2 && ly === 1) return TILE.SHELF;
+    if (ly === h - 2) return TILE.CARPET;
+    return TILE.FLOOR;
+  }
+
+  if (type === "treehouse") {
+    if ((lx === 1 || lx === 2) && ly === 1) return TILE.BED;
+    if (lx === w - 2 && ly === 1) return TILE.SHELF;
+    if (ly === h - 2) return TILE.CARPET;
+    return TILE.FLOOR;
+  }
+
+  if (type === "house") {
+    const fpX = Math.floor(w / 2);
+    if (lx === fpX && ly === 1) return TILE.FIREPLACE;
+    if ((lx === 1 || lx === 2) && ly === 1) return TILE.BED;
+    if ((lx === w - 3 || lx === w - 2) && ly === 2) return TILE.TABLE;
+    if (lx === w - 2 && ly === 3) return TILE.SHELF;
+    if (ly >= h - 3 && lx >= 2 && lx <= w - 3) return TILE.CARPET;
+    return TILE.FLOOR;
+  }
+
+  if (type === "big_house") {
+    const fpX = Math.floor(w / 2);
+    if (lx === fpX && ly === 1) return TILE.FIREPLACE;
+    if ((lx === 1 || lx === 2) && ly === 1) return TILE.BED;
+    if ((lx === 1 || lx === 2) && ly === 3) return TILE.BED;
+    if (lx >= w - 4 && lx <= w - 2 && ly >= 2 && ly <= 4) return TILE.TABLE;
+    if (lx === w - 2 && ly === 5) return TILE.SHELF;
+    if (ly >= h - 4 && lx >= 3 && lx <= w - 3) return TILE.CARPET;
+    return TILE.FLOOR;
+  }
+
+  if (type === "castle") {
+    const midX = Math.floor(w / 2);
+    if (lx === midX && ly === 1) return TILE.FIREPLACE;
+    if (lx >= midX - 1 && lx <= midX + 1 && ly >= 2 && ly <= 3) return TILE.TABLE;
+    if (lx >= 3 && lx <= w - 4 && ly >= 5 && ly <= 6) return TILE.TABLE;
+    if (lx >= 3 && lx <= w - 4 && ly >= 8 && ly <= 9) return TILE.TABLE;
+    if (lx === w - 2 && ly >= 3 && ly <= 5 && (ly - 3) % 2 === 0) return TILE.SHELF;
+    if (lx >= midX - 1 && lx <= midX + 1 && ly >= 2 && ly <= h - 2) return TILE.CARPET;
+    return TILE.FLOOR;
+  }
+
+  return TILE.FLOOR;
+}
+
 function getBuildingTile(x, y) {
   for (const b of BUILDINGS) {
     if (x < b.x || x >= b.x + b.w || y < b.y || y >= b.y + b.h) {
@@ -402,7 +482,10 @@ function getBuildingTile(x, y) {
       return TILE.WALL;
     }
 
-    return TILE.FLOOR;
+    const lx = x - b.x;
+    const ly = y - b.y;
+    const seed = hash2(b.x, b.y, 7777);
+    return getBuildingInteriorTile(lx, ly, b.w, b.h, b.type || "house", seed);
   }
 
   return null;
@@ -601,12 +684,19 @@ function isInteriorCoordinate(x, y) {
   return getInteriorAt(Math.floor(x), Math.floor(y)) !== null;
 }
 
+function isInsideBuilding(x, y) {
+  for (const b of BUILDINGS) {
+    if (x > b.x + 0.5 && x < b.x + b.w - 0.5 && y > b.y + 0.5 && y < b.y + b.h - 0.5) return true;
+  }
+  return false;
+}
+
 function isProtectedStartingArea(x, y) {
   return Math.hypot(x - STARTING_AREA.x, y - STARTING_AREA.y) <= STARTING_AREA.radius;
 }
 
 function canAttackAt(x, y) {
-  return !isInteriorCoordinate(x, y) && !isProtectedStartingArea(x, y);
+  return !isInsideBuilding(x, y) && !isProtectedStartingArea(x, y);
 }
 
 function isInteriorDistrict(x, y) {
@@ -658,58 +748,27 @@ function getBuildingsNearDoor(x, y) {
 }
 
 function getDoorTransitionAt(x, y) {
-  for (const interior of getCandidateInteriorsNear(x)) {
-    for (const door of getInteriorDoors(interior)) {
-      if (Math.hypot(x - door.x, y - door.y) <= DOOR_RADIUS) {
-        return {
-          type: "door",
-          name: interior.building.name,
-          x: interior.building.x + Math.floor(interior.building.w / 2),
-          y: door.outsideY
-        };
-      }
-    }
-  }
-
-  for (const building of getBuildingsNearDoor(x, y)) {
-    const index = Number.isInteger(building.slotIndex) ? getProceduralInteriorIndex(building) : BUILDINGS.indexOf(building);
-    if (index === null || index < 0) {
-      continue;
-    }
-    const interior = createInteriorForBuilding(building, index);
-    for (const entrance of getBuildingDoors(building)) {
-      if (Math.hypot(x - entrance.x, y - entrance.y) <= DOOR_RADIUS) {
-        const door = getInteriorDoors(interior).find((item) => item.side === entrance.side);
-        if (!door) {
-          continue;
-        }
-        return {
-          type: "door",
-          name: building.name,
-          x: door.x,
-          y: door.y + entrance.insideOffsetY
-        };
-      }
-    }
-  }
-
   return null;
 }
 
 function getShopFixtureAt(x, y) {
-  for (const interior of getCandidateInteriorsNear(x)) {
-    const shelf = getInteriorShopShelf(interior);
-    if (Math.hypot(x - (shelf.x + 0.5), y - (shelf.y + 0.5)) <= 1.25) {
-      return {
-        id: shelf.id,
-        name: "Trader Shelf",
-        buildingName: interior.building.name,
-        x: shelf.x + 0.5,
-        y: shelf.y + 0.5
-      };
+  for (const b of BUILDINGS) {
+    if (Math.abs(x - (b.x + b.w/2)) > b.w + 2 || Math.abs(y - (b.y + b.h/2)) > b.h + 2) continue;
+    const seed = hash2(b.x, b.y, 7777);
+    for (let lx = 1; lx <= b.w-2; lx++) {
+      for (let ly = 1; ly <= b.h-2; ly++) {
+        const doorX = b.x + Math.floor(b.w/2);
+        const isDoor = (lx === doorX - b.x) && (ly === 0 || ly === b.h-1);
+        if (isDoor) continue;
+        if (getBuildingInteriorTile(lx, ly, b.w, b.h, b.type || "house", seed) === TILE.SHELF) {
+          const sx = b.x + lx, sy = b.y + ly;
+          if (Math.hypot(x - (sx+0.5), y - (sy+0.5)) <= 1.25) {
+            return { id: `shop_${b.x}_${b.y}`, name: "Trader Shelf", buildingName: b.name, x: sx+0.5, y: sy+0.5 };
+          }
+        }
+      }
     }
   }
-
   return null;
 }
 
@@ -798,20 +857,6 @@ function getBiome(x, y) {
 }
 
 function generateTile(x, y) {
-  const interiorTile = getInteriorTile(x, y);
-  if (interiorTile !== null) {
-    return interiorTile;
-  }
-
-  const interiorExteriorTile = getInteriorExteriorTile(x, y);
-  if (interiorExteriorTile !== null) {
-    return interiorExteriorTile;
-  }
-
-  if (isInteriorDistrict(x, y)) {
-    return TILE.WALL;
-  }
-
   return generateExteriorTile(x, y);
 }
 
@@ -1025,7 +1070,7 @@ function getBuildingsInChunk(cx, cy) {
 
   const result = BUILDINGS
     .filter((b) => b.x < endX && b.x + b.w > startX && b.y < endY && b.y + b.h > startY)
-    .map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h, name: b.name }));
+    .map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h, name: b.name, type: b.type, forSale: !!b.forSale }));
 
   const seen = new Set(result.map((b) => `${b.x},${b.y}`));
   const chunkMidX = startX + CHUNK_SIZE / 2;
@@ -1037,7 +1082,7 @@ function getBuildingsInChunk(cx, cy) {
       const key = `${b.x},${b.y}`;
       if (!seen.has(key)) {
         seen.add(key);
-        result.push(b);
+        result.push({ x: b.x, y: b.y, w: b.w, h: b.h, name: b.name, type: b.type || "hut", forSale: false });
       }
     }
   }
@@ -1072,6 +1117,7 @@ module.exports = {
   getShopFixtureAt,
   getPortalAt,
   hash2,
+  isInsideBuilding,
   isInteriorCoordinate,
   isProtectedStartingArea,
   isBlocked,

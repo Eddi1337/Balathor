@@ -143,6 +143,7 @@ const state = {
   chatMinimized: false,
   progressionMinimized: false,
   activeWindow: null,
+  buildingOwnership: new Map(),
   traderNpcId: null,
   traderItems: [],
   lastViewSentAt: 0,
@@ -596,6 +597,19 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: `${message.itemName}` });
     }
   }
+
+  if (message.type === "buildingOwnership") {
+    state.buildingOwnership.clear();
+    for (const [key, ownerName] of Object.entries(message.data)) {
+      state.buildingOwnership.set(key, ownerName);
+    }
+    return;
+  }
+
+  if (message.type === "buildingBought") {
+    state.buildingOwnership.set(`${message.buildingX},${message.buildingY}`, message.ownerName);
+    return;
+  }
 }
 
 function authErrorText(message) {
@@ -1009,7 +1023,10 @@ function wireUi() {
   });
 
   interactButton.addEventListener("click", () => {
-    sendInteract();
+    const self = state.players.get(state.selfId);
+    if (!self || !tryBuyBuilding(self.renderX, self.renderY)) {
+      sendInteract();
+    }
   });
 
   equipmentSlots.addEventListener("pointerdown", (event) => {
@@ -1109,6 +1126,9 @@ function wireUi() {
     const world = screenEventToWorld(event);
     state.lastPointerWorldX = world.x;
     state.lastPointerWorldY = world.y;
+    if (tryBuyBuilding(world.x, world.y)) {
+      return;
+    }
     if (tryOpenTraderAtClick(world.x, world.y)) {
       return;
     }
@@ -1150,7 +1170,10 @@ function wireUi() {
 
     if (event.key.toLowerCase() === "e" && state.joined && !isTextEntryTarget(event.target)) {
       event.preventDefault();
-      sendInteract();
+      const self = state.players.get(state.selfId);
+      if (!self || !tryBuyBuilding(self.renderX, self.renderY)) {
+        sendInteract();
+      }
       return;
     }
 
@@ -1262,6 +1285,21 @@ function sendInteract(target = null) {
     return;
   }
   send(target ? { type: "interact", ...target } : { type: "interact" });
+}
+
+function tryBuyBuilding(worldX, worldY) {
+  for (const building of state.buildings.values()) {
+    if (!building.forSale) continue;
+    const key = `${building.x},${building.y}`;
+    if (state.buildingOwnership.has(key)) continue;
+    const doorX = building.x + Math.floor(building.w / 2) + 0.5;
+    const doorY = building.y + building.h - 0.5;
+    if (Math.hypot(worldX - doorX, worldY - doorY) <= 2.5) {
+      send({ type: "buyBuilding", buildingX: building.x, buildingY: building.y });
+      return true;
+    }
+  }
+  return false;
 }
 
 function screenEventToWorld(event) {
@@ -2250,6 +2288,18 @@ function drawWorld() {
   drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY);
 }
 
+function getPlayerBuilding() {
+  const self = state.players.get(state.selfId);
+  if (!self) return null;
+  for (const building of state.buildings.values()) {
+    if (self.renderX > building.x + 1 && self.renderX < building.x + building.w - 1 &&
+        self.renderY > building.y + 1 && self.renderY < building.y + building.h - 1) {
+      return building;
+    }
+  }
+  return null;
+}
+
 function drawPortals() {
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
@@ -2261,7 +2311,7 @@ function drawPortals() {
 }
 
 function drawTile(tile, sx, sy, tx, ty) {
-  if (isInteriorTileCoordinate(tx, ty) && isInteriorDrawTile(tile)) {
+  if (isInteriorDrawTile(tile)) {
     drawInteriorTile(tile, sx, sy, tx, ty);
     return;
   }
@@ -3462,6 +3512,7 @@ function isNearTile(tx, ty, tile) {
 function drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY) {
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
+  const playerBuilding = getPlayerBuilding();
   const buildings = [...state.buildings.values()]
     .filter((building) => (
       building.x <= maxTileX &&
@@ -3474,21 +3525,42 @@ function drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY) {
   for (const building of buildings) {
     const sx = Math.floor(building.x * TILE_SIZE - state.camera.x + halfW);
     const sy = Math.floor(building.y * TILE_SIZE - state.camera.y + halfH);
-    drawBuildingSprite(building, sx, sy);
+    const roofless = !!(playerBuilding && playerBuilding.x === building.x && playerBuilding.y === building.y);
+    drawBuildingSprite(building, sx, sy, roofless);
   }
 }
 
-function drawBuildingSprite(building, sx, sy) {
+function drawBuildingSprite(building, sx, sy, roofless) {
   const w = building.w * TILE_SIZE;
   const h = building.h * TILE_SIZE;
   const variant = getBuildingVariant(building);
   const type = building.type || "house";
-  drawCastShadow(sx + 10, sy + h - 14, w - 6, 18, 0.28);
-  if (type === "hut") drawHut(building, sx, sy, w, h, variant);
-  else if (type === "big_house") drawBigHouse(building, sx, sy, w, h, variant);
-  else if (type === "treehouse") drawTreehouse(building, sx, sy, w, h, variant);
-  else if (type === "castle") drawCastle(building, sx, sy, w, h, variant);
-  else drawHouse(building, sx, sy, w, h, variant);
+  if (!roofless) drawCastShadow(sx + 10, sy + h - 14, w - 6, 18, 0.28);
+  if (type === "hut") drawHut(building, sx, sy, w, h, variant, roofless);
+  else if (type === "big_house") drawBigHouse(building, sx, sy, w, h, variant, roofless);
+  else if (type === "treehouse") drawTreehouse(building, sx, sy, w, h, variant, roofless);
+  else if (type === "castle") drawCastle(building, sx, sy, w, h, variant, roofless);
+  else drawHouse(building, sx, sy, w, h, variant, roofless);
+
+  // Owner name or for-sale sign
+  const key = `${building.x},${building.y}`;
+  const ownerName = state.buildingOwnership.get(key);
+  ctx.font = "bold 11px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.lineWidth = 2.5;
+  const labelX = sx + w / 2;
+  const labelY = sy + h + 18;
+  if (ownerName) {
+    ctx.strokeStyle = "rgba(0,0,0,0.85)";
+    ctx.fillStyle = "#e8c040";
+    ctx.strokeText(`⌂ ${ownerName}`, labelX, labelY);
+    ctx.fillText(`⌂ ${ownerName}`, labelX, labelY);
+  } else if (building.forSale) {
+    ctx.strokeStyle = "rgba(0,0,0,0.85)";
+    ctx.fillStyle = "#4fc06a";
+    ctx.strokeText("For Sale", labelX, labelY);
+    ctx.fillText("For Sale", labelX, labelY);
+  }
 }
 
 function getBuildingVariant(building) {
@@ -3509,7 +3581,7 @@ const BUILDING_PALETTES = {
   ember:  { roofBase: "#2c1c10", roofDark: "#140c08", roofMid: "#482818", roofLight: "#7a3c1c", roofRidge: "#080404", eave: "#0c0604", wall: "#281410", wallLight: "#483028", wallDark: "#140a08", wallLine: "#0c0604", win: "#ff8820", door: "#0c0404", doorFrame: "#8c3410", ground: "#2c2014" },
 };
 
-function drawHouse(building, sx, sy, w, h, variant) {
+function drawHouse(building, sx, sy, w, h, variant, roofless) {
   const p = BUILDING_PALETTES[variant] || BUILDING_PALETTES.timber;
   const wallH = Math.max(38, Math.min(56, Math.round(h * 0.26)));
   const roofH = h - wallH;
@@ -3523,52 +3595,56 @@ function drawHouse(building, sx, sy, w, h, variant) {
   ctx.shadowOffsetX = 4;
   ctx.shadowOffsetY = 6;
 
-  // --- ROOF ---
-  ctx.fillStyle = p.roofBase;
-  ctx.fillRect(sx + inset, sy + 2, rw, roofH - 2);
+  if (!roofless) {
+    // --- ROOF ---
+    ctx.fillStyle = p.roofBase;
+    ctx.fillRect(sx + inset, sy + 2, rw, roofH - 2);
 
-  ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+    ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
 
-  // Shingles: horizontal bands
-  const shingleH = 5;
-  for (let ly = 6; ly < roofH - 2; ly += shingleH + 2) {
-    ctx.fillStyle = ly % (shingleH * 3) < shingleH ? p.roofMid : p.roofBase;
-    ctx.fillRect(sx + inset, sy + 2 + ly, rw, shingleH);
-    ctx.fillStyle = p.roofDark;
-    ctx.fillRect(sx + inset, sy + 2 + ly + shingleH, rw, 2);
-  }
+    // Shingles: horizontal bands
+    const shingleH = 5;
+    for (let ly = 6; ly < roofH - 2; ly += shingleH + 2) {
+      ctx.fillStyle = ly % (shingleH * 3) < shingleH ? p.roofMid : p.roofBase;
+      ctx.fillRect(sx + inset, sy + 2 + ly, rw, shingleH);
+      ctx.fillStyle = p.roofDark;
+      ctx.fillRect(sx + inset, sy + 2 + ly + shingleH, rw, 2);
+    }
 
-  // Ridge line (runs left–right at roof center)
-  const ridgeY = sy + 2 + Math.round(roofH * 0.28);
-  ctx.fillStyle = p.roofRidge;
-  ctx.fillRect(sx + inset, ridgeY, rw, 4);
-  ctx.fillStyle = p.roofLight;
-  ctx.fillRect(sx + inset, ridgeY + 1, rw, 2);
+    // Ridge line (runs left–right at roof center)
+    const ridgeY = sy + 2 + Math.round(roofH * 0.28);
+    ctx.fillStyle = p.roofRidge;
+    ctx.fillRect(sx + inset, ridgeY, rw, 4);
+    ctx.fillStyle = p.roofLight;
+    ctx.fillRect(sx + inset, ridgeY + 1, rw, 2);
 
-  // Top highlight
-  ctx.fillStyle = p.roofLight;
-  ctx.fillRect(sx + inset + 4, sy + 3, Math.round(rw * 0.55), 3);
+    // Top highlight
+    ctx.fillStyle = p.roofLight;
+    ctx.fillRect(sx + inset + 4, sy + 3, Math.round(rw * 0.55), 3);
 
-  // Eave (dark overhang strip at wall join)
-  ctx.fillStyle = p.eave;
-  ctx.fillRect(sx + inset - 2, wallY - 6, rw + 4, 8);
-  ctx.fillStyle = blend(p.eave, "#000000", 0.5);
-  ctx.fillRect(sx + inset - 2, wallY + 2, rw + 4, 3);
+    // Eave (dark overhang strip at wall join)
+    ctx.fillStyle = p.eave;
+    ctx.fillRect(sx + inset - 2, wallY - 6, rw + 4, 8);
+    ctx.fillStyle = blend(p.eave, "#000000", 0.5);
+    ctx.fillRect(sx + inset - 2, wallY + 2, rw + 4, 3);
 
-  // Chimney (on roof, slightly right of center)
-  const chimneyX = sx + Math.round(w * 0.65);
-  const chimneyBotY = ridgeY + 2;
-  ctx.fillStyle = blend(p.wall, "#000000", 0.35);
-  ctx.fillRect(chimneyX - 5, sy + 3, 11, 4);
-  ctx.fillStyle = p.wall;
-  ctx.fillRect(chimneyX - 4, sy + 4, 9, chimneyBotY - sy - 4);
-  ctx.fillStyle = p.wallLight;
-  ctx.fillRect(chimneyX - 4, sy + 5, 3, 3);
-  if (variant !== "ember") {
-    ctx.fillStyle = "rgba(200,200,200,0.3)";
-    ctx.beginPath();
-    ctx.ellipse(chimneyX, sy + 1, 3, 5, 0, 0, Math.PI * 2);
-    ctx.fill();
+    // Chimney (on roof, slightly right of center)
+    const chimneyX = sx + Math.round(w * 0.65);
+    const chimneyBotY = ridgeY + 2;
+    ctx.fillStyle = blend(p.wall, "#000000", 0.35);
+    ctx.fillRect(chimneyX - 5, sy + 3, 11, 4);
+    ctx.fillStyle = p.wall;
+    ctx.fillRect(chimneyX - 4, sy + 4, 9, chimneyBotY - sy - 4);
+    ctx.fillStyle = p.wallLight;
+    ctx.fillRect(chimneyX - 4, sy + 5, 3, 3);
+    if (variant !== "ember") {
+      ctx.fillStyle = "rgba(200,200,200,0.3)";
+      ctx.beginPath();
+      ctx.ellipse(chimneyX, sy + 1, 3, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else {
+    ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
   }
 
   // --- FRONT WALL ---
@@ -3616,8 +3692,8 @@ function drawHouse(building, sx, sy, w, h, variant) {
   }
 
   // --- DOOR ---
-  const doorW = Math.max(14, Math.round(w * 0.14));
-  const doorH = wallH - 4;
+  const doorW = Math.max(22, Math.round(w * 0.18));
+  const doorH = wallH;
   const doorX = sx + Math.round(w / 2) - Math.round(doorW / 2);
   const doorY = wallY + wallH - doorH;
   ctx.fillStyle = p.doorFrame;
@@ -3638,7 +3714,7 @@ function drawHouse(building, sx, sy, w, h, variant) {
   drawBuildingFrontDetail(sx + inset - 2, sx + inset - 2 + rw + 4, sy + h, variant, p);
 }
 
-function drawHut(building, sx, sy, w, h, variant) {
+function drawHut(building, sx, sy, w, h, variant, roofless) {
   const p = BUILDING_PALETTES[variant] || BUILDING_PALETTES.timber;
   const roofH = Math.round(h * 0.52);
   const wallH = h - roofH;
@@ -3650,25 +3726,35 @@ function drawHut(building, sx, sy, w, h, variant) {
   ctx.shadowOffsetX = 3;
   ctx.shadowOffsetY = 5;
 
-  // Thatched roof: wider and steeper than normal house
-  ctx.fillStyle = variant === "desert" ? "#b89040" : variant === "ember" ? "#3a2010" : "#8a7230";
-  ctx.beginPath();
-  ctx.moveTo(sx - 4, wallY);
-  ctx.lineTo(sx + w / 2, sy + 2);
-  ctx.lineTo(sx + w + 4, wallY);
-  ctx.closePath();
-  ctx.fill();
+  if (!roofless) {
+    // Thatched roof: wider and steeper than normal house
+    ctx.fillStyle = variant === "desert" ? "#b89040" : variant === "ember" ? "#3a2010" : "#8a7230";
+    ctx.beginPath();
+    ctx.moveTo(sx - 4, wallY);
+    ctx.lineTo(sx + w / 2, sy + 2);
+    ctx.lineTo(sx + w + 4, wallY);
+    ctx.closePath();
+    ctx.fill();
 
-  ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+    ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
 
-  // Thatch texture: staggered horizontal stripes
-  const thatchLight = variant === "desert" ? "#d4b860" : variant === "ember" ? "#5a3020" : "#a09050";
-  const thatchDark  = variant === "desert" ? "#7a6020" : variant === "ember" ? "#221008" : "#504020";
-  for (let i = 0; i < 6; i += 1) {
-    const ty2 = wallY - 4 - i * (roofH - 8) / 6;
-    const halfSpan = ((ty2 - sy) / (wallY - sy)) * (w / 2 + 4);
-    ctx.fillStyle = i % 2 === 0 ? thatchLight : thatchDark;
-    ctx.fillRect(sx + w / 2 - halfSpan, ty2 - 3, halfSpan * 2, 5);
+    // Thatch texture: staggered horizontal stripes
+    const thatchLight = variant === "desert" ? "#d4b860" : variant === "ember" ? "#5a3020" : "#a09050";
+    const thatchDark  = variant === "desert" ? "#7a6020" : variant === "ember" ? "#221008" : "#504020";
+    for (let i = 0; i < 6; i += 1) {
+      const ty2 = wallY - 4 - i * (roofH - 8) / 6;
+      const halfSpan = ((ty2 - sy) / (wallY - sy)) * (w / 2 + 4);
+      ctx.fillStyle = i % 2 === 0 ? thatchLight : thatchDark;
+      ctx.fillRect(sx + w / 2 - halfSpan, ty2 - 3, halfSpan * 2, 5);
+    }
+
+    // Eave overhang
+    ctx.fillStyle = p.eave;
+    ctx.fillRect(sx - 4, wallY - 5, w + 8, 7);
+    ctx.fillStyle = blend(p.eave, "#000", 0.5);
+    ctx.fillRect(sx - 4, wallY + 2, w + 8, 2);
+  } else {
+    ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
   }
 
   // Round wall (circular hut feel)
@@ -3679,12 +3765,6 @@ function drawHut(building, sx, sy, w, h, variant) {
   ctx.fillStyle = "rgba(0,0,0,0.18)";
   ctx.fillRect(sx + 2, wallY, 3, wallH);
   ctx.fillRect(sx + w - 5, wallY, 3, wallH);
-
-  // Eave overhang
-  ctx.fillStyle = p.eave;
-  ctx.fillRect(sx - 4, wallY - 5, w + 8, 7);
-  ctx.fillStyle = blend(p.eave, "#000", 0.5);
-  ctx.fillRect(sx - 4, wallY + 2, w + 8, 2);
 
   // Single small window
   const winW = 10; const winH = Math.max(8, wallH - 12);
@@ -3711,7 +3791,7 @@ function drawHut(building, sx, sy, w, h, variant) {
   drawBuildingFrontDetail(sx + 2, sx + w - 2, sy + h, variant, p);
 }
 
-function drawBigHouse(building, sx, sy, w, h, variant) {
+function drawBigHouse(building, sx, sy, w, h, variant, roofless) {
   const p = BUILDING_PALETTES[variant] || BUILDING_PALETTES.timber;
   const wallH = Math.max(52, Math.min(72, Math.round(h * 0.28)));
   const roofH = h - wallH;
@@ -3725,50 +3805,54 @@ function drawBigHouse(building, sx, sy, w, h, variant) {
   ctx.shadowOffsetX = 5;
   ctx.shadowOffsetY = 8;
 
-  // Roof
-  ctx.fillStyle = p.roofBase;
-  ctx.fillRect(sx + inset, sy + 2, rw, roofH - 2);
-  ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+  if (!roofless) {
+    // Roof
+    ctx.fillStyle = p.roofBase;
+    ctx.fillRect(sx + inset, sy + 2, rw, roofH - 2);
+    ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
 
-  const shingleH = 5;
-  for (let ly = 6; ly < roofH - 2; ly += shingleH + 2) {
-    ctx.fillStyle = ly % (shingleH * 3) < shingleH ? p.roofMid : p.roofBase;
-    ctx.fillRect(sx + inset, sy + 2 + ly, rw, shingleH);
-    ctx.fillStyle = p.roofDark;
-    ctx.fillRect(sx + inset, sy + 2 + ly + shingleH, rw, 2);
-  }
-
-  // Ridge and dormers (two small dormer windows on roof)
-  const ridgeY = sy + 2 + Math.round(roofH * 0.28);
-  ctx.fillStyle = p.roofRidge;
-  ctx.fillRect(sx + inset, ridgeY, rw, 4);
-  ctx.fillStyle = p.roofLight;
-  ctx.fillRect(sx + inset, ridgeY + 1, rw, 2);
-  ctx.fillStyle = p.roofLight;
-  ctx.fillRect(sx + inset + 4, sy + 3, Math.round(rw * 0.55), 3);
-
-  // Two chimneys
-  for (const cFrac of [0.28, 0.72]) {
-    const chx = sx + Math.round(w * cFrac);
-    ctx.fillStyle = blend(p.wall, "#000", 0.35);
-    ctx.fillRect(chx - 4, sy + 3, 9, 4);
-    ctx.fillStyle = p.wall;
-    ctx.fillRect(chx - 3, sy + 4, 7, ridgeY - sy - 4);
-    ctx.fillStyle = p.wallLight;
-    ctx.fillRect(chx - 3, sy + 5, 3, 3);
-    if (variant !== "ember") {
-      ctx.fillStyle = "rgba(200,200,200,0.28)";
-      ctx.beginPath();
-      ctx.ellipse(chx, sy + 1, 3, 5, 0, 0, Math.PI * 2);
-      ctx.fill();
+    const shingleH = 5;
+    for (let ly = 6; ly < roofH - 2; ly += shingleH + 2) {
+      ctx.fillStyle = ly % (shingleH * 3) < shingleH ? p.roofMid : p.roofBase;
+      ctx.fillRect(sx + inset, sy + 2 + ly, rw, shingleH);
+      ctx.fillStyle = p.roofDark;
+      ctx.fillRect(sx + inset, sy + 2 + ly + shingleH, rw, 2);
     }
-  }
 
-  // Eave
-  ctx.fillStyle = p.eave;
-  ctx.fillRect(sx + inset - 3, wallY - 6, rw + 6, 8);
-  ctx.fillStyle = blend(p.eave, "#000", 0.5);
-  ctx.fillRect(sx + inset - 3, wallY + 2, rw + 6, 3);
+    // Ridge and dormers (two small dormer windows on roof)
+    const ridgeY = sy + 2 + Math.round(roofH * 0.28);
+    ctx.fillStyle = p.roofRidge;
+    ctx.fillRect(sx + inset, ridgeY, rw, 4);
+    ctx.fillStyle = p.roofLight;
+    ctx.fillRect(sx + inset, ridgeY + 1, rw, 2);
+    ctx.fillStyle = p.roofLight;
+    ctx.fillRect(sx + inset + 4, sy + 3, Math.round(rw * 0.55), 3);
+
+    // Two chimneys
+    for (const cFrac of [0.28, 0.72]) {
+      const chx = sx + Math.round(w * cFrac);
+      ctx.fillStyle = blend(p.wall, "#000", 0.35);
+      ctx.fillRect(chx - 4, sy + 3, 9, 4);
+      ctx.fillStyle = p.wall;
+      ctx.fillRect(chx - 3, sy + 4, 7, ridgeY - sy - 4);
+      ctx.fillStyle = p.wallLight;
+      ctx.fillRect(chx - 3, sy + 5, 3, 3);
+      if (variant !== "ember") {
+        ctx.fillStyle = "rgba(200,200,200,0.28)";
+        ctx.beginPath();
+        ctx.ellipse(chx, sy + 1, 3, 5, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Eave
+    ctx.fillStyle = p.eave;
+    ctx.fillRect(sx + inset - 3, wallY - 6, rw + 6, 8);
+    ctx.fillStyle = blend(p.eave, "#000", 0.5);
+    ctx.fillRect(sx + inset - 3, wallY + 2, rw + 6, 3);
+  } else {
+    ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+  }
 
   // Front wall with two-story band
   ctx.fillStyle = p.wall;
@@ -3833,7 +3917,7 @@ function drawBigHouse(building, sx, sy, w, h, variant) {
   drawBuildingFrontDetail(sx + inset - 3, sx + inset - 3 + rw + 6, sy + h, variant, p);
 }
 
-function drawTreehouse(building, sx, sy, w, h, variant) {
+function drawTreehouse(building, sx, sy, w, h, variant, roofless) {
   const p = BUILDING_PALETTES[variant] || BUILDING_PALETTES.wood;
   const stiltsH = Math.round(h * 0.22);
   const houseH = h - stiltsH;
@@ -3890,27 +3974,29 @@ function drawTreehouse(building, sx, sy, w, h, variant) {
     ctx.beginPath(); ctx.moveTo(ladderX - 5, ry); ctx.lineTo(ladderX + 3, ry); ctx.stroke();
   }
 
-  // Roof (pointed / organic)
-  ctx.fillStyle = "#5c3818";
-  ctx.fillRect(sx + 2, houseTopY + 2, w - 4, roofH - 2);
-  const shingleH = 4;
-  for (let ly = 4; ly < roofH - 2; ly += shingleH + 2) {
-    ctx.fillStyle = ly % (shingleH * 3) < shingleH ? "#7a5028" : "#5c3818";
-    ctx.fillRect(sx + 2, houseTopY + 2 + ly, w - 4, shingleH);
-    ctx.fillStyle = "#341e0c";
-    ctx.fillRect(sx + 2, houseTopY + 2 + ly + shingleH, w - 4, 2);
-  }
-  const ridgeY = houseTopY + 2 + Math.round(roofH * 0.3);
-  ctx.fillStyle = "#200e04";
-  ctx.fillRect(sx + 2, ridgeY, w - 4, 3);
-  ctx.fillStyle = "#9a7040";
-  ctx.fillRect(sx + 2, ridgeY + 1, w - 4, 2);
+  if (!roofless) {
+    // Roof (pointed / organic)
+    ctx.fillStyle = "#5c3818";
+    ctx.fillRect(sx + 2, houseTopY + 2, w - 4, roofH - 2);
+    const shingleH = 4;
+    for (let ly = 4; ly < roofH - 2; ly += shingleH + 2) {
+      ctx.fillStyle = ly % (shingleH * 3) < shingleH ? "#7a5028" : "#5c3818";
+      ctx.fillRect(sx + 2, houseTopY + 2 + ly, w - 4, shingleH);
+      ctx.fillStyle = "#341e0c";
+      ctx.fillRect(sx + 2, houseTopY + 2 + ly + shingleH, w - 4, 2);
+    }
+    const ridgeY = houseTopY + 2 + Math.round(roofH * 0.3);
+    ctx.fillStyle = "#200e04";
+    ctx.fillRect(sx + 2, ridgeY, w - 4, 3);
+    ctx.fillStyle = "#9a7040";
+    ctx.fillRect(sx + 2, ridgeY + 1, w - 4, 2);
 
-  // Eave
-  ctx.fillStyle = "#200e04";
-  ctx.fillRect(sx, wallY - 5, w, 7);
-  ctx.fillStyle = "#0e0604";
-  ctx.fillRect(sx, wallY + 2, w, 2);
+    // Eave
+    ctx.fillStyle = "#200e04";
+    ctx.fillRect(sx, wallY - 5, w, 7);
+    ctx.fillStyle = "#0e0604";
+    ctx.fillRect(sx, wallY + 2, w, 2);
+  }
 
   // Wall (wood planks)
   ctx.fillStyle = "#4a2e14";
@@ -3955,7 +4041,7 @@ function drawTreehouse(building, sx, sy, w, h, variant) {
   ctx.restore();
 }
 
-function drawCastle(building, sx, sy, w, h, variant) {
+function drawCastle(building, sx, sy, w, h, variant, roofless) {
   const p = BUILDING_PALETTES[variant] || BUILDING_PALETTES.stone;
   const wallH = Math.max(60, Math.min(90, Math.round(h * 0.30)));
   const roofH = h - wallH;
@@ -3969,23 +4055,27 @@ function drawCastle(building, sx, sy, w, h, variant) {
   ctx.shadowOffsetX = 6;
   ctx.shadowOffsetY = 10;
 
-  // Roof / upper keep
-  ctx.fillStyle = p.roofBase;
-  ctx.fillRect(sx + towerW, sy + 4, w - towerW * 2, roofH - 4);
-  ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+  if (!roofless) {
+    // Roof / upper keep
+    ctx.fillStyle = p.roofBase;
+    ctx.fillRect(sx + towerW, sy + 4, w - towerW * 2, roofH - 4);
+    ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
 
-  const shingleH = 6;
-  for (let ly = 8; ly < roofH - 4; ly += shingleH + 2) {
-    ctx.fillStyle = ly % (shingleH * 3) < shingleH ? p.roofMid : p.roofBase;
-    ctx.fillRect(sx + towerW, sy + 4 + ly, w - towerW * 2, shingleH);
-    ctx.fillStyle = p.roofDark;
-    ctx.fillRect(sx + towerW, sy + 4 + ly + shingleH, w - towerW * 2, 2);
+    const shingleH = 6;
+    for (let ly = 8; ly < roofH - 4; ly += shingleH + 2) {
+      ctx.fillStyle = ly % (shingleH * 3) < shingleH ? p.roofMid : p.roofBase;
+      ctx.fillRect(sx + towerW, sy + 4 + ly, w - towerW * 2, shingleH);
+      ctx.fillStyle = p.roofDark;
+      ctx.fillRect(sx + towerW, sy + 4 + ly + shingleH, w - towerW * 2, 2);
+    }
+    const ridgeY = sy + 4 + Math.round(roofH * 0.28);
+    ctx.fillStyle = p.roofRidge;
+    ctx.fillRect(sx + towerW, ridgeY, w - towerW * 2, 5);
+    ctx.fillStyle = p.roofLight;
+    ctx.fillRect(sx + towerW, ridgeY + 1, w - towerW * 2, 3);
+  } else {
+    ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
   }
-  const ridgeY = sy + 4 + Math.round(roofH * 0.28);
-  ctx.fillStyle = p.roofRidge;
-  ctx.fillRect(sx + towerW, ridgeY, w - towerW * 2, 5);
-  ctx.fillStyle = p.roofLight;
-  ctx.fillRect(sx + towerW, ridgeY + 1, w - towerW * 2, 3);
 
   // Side towers (drawn behind wall)
   for (const tx of [sx, sx + w - towerW]) {
@@ -4169,7 +4259,7 @@ function drawPortal(sx, sy, tx, ty) {
   const T = TILE_SIZE;
   const cx = sx + T + T / 2;
   const cy = sy + T;
-  const gateR = T * 2.8;
+  const gateR = T * 2.0;
   const pulse = 0.5 + Math.sin(time * 3) * 0.5;
 
   drawEllipseShadow(cx - gateR - 4, cy + gateR + 2, gateR * 2 + 8, 16, 0.5);

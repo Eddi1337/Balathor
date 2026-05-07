@@ -4,6 +4,7 @@ const http = require("node:http");
 const path = require("node:path");
 const {
   CHUNK_SIZE,
+  BUILDINGS: BUILDING_LIST,
   ENEMY_CAMPS,
   canAttackAt,
   generateChunk,
@@ -224,6 +225,9 @@ let tick = 0;
 let lastSimulateWallMs = Date.now();
 const simulateWallIntervals = [];
 const SIM_WALL_SAMPLES_MAX = 60;
+
+const ownedBuildings = new Map(); // key: "x,y" → { ownerId, ownerName, price }
+const FOR_SALE_BUILDINGS = BUILDING_LIST.filter(b => b.forSale);
 
 const accountStore = loadAccountStore();
 seedModAccounts();
@@ -584,10 +588,10 @@ function simulate() {
       const nextX = client.player.x + dx * speed * dt;
       const nextY = client.player.y + dy * speed * dt;
 
-      if (!isBlockedCircle(nextX, client.player.y)) {
+      if (!isBlockedCircle(nextX, client.player.y) && !isDoorLockedForPlayer(nextX, client.player.y, client.player.id)) {
         client.player.x = nextX;
       }
-      if (!isBlockedCircle(client.player.x, nextY)) {
+      if (!isBlockedCircle(client.player.x, nextY) && !isDoorLockedForPlayer(client.player.x, nextY, client.player.id)) {
         client.player.y = nextY;
       }
 
@@ -610,30 +614,30 @@ function simulate() {
 }
 
 function handleDoorTravel(client) {
-  const now = Date.now();
-  if (now - client.lastDoorAt < DOOR_COOLDOWN_MS) {
-    return;
+  // Walk-in architecture: players walk through doors naturally, no teleportation
+}
+
+function isDoorLockedForPlayer(x, y, playerId) {
+  const r = 0.28;
+  for (let tx = Math.floor(x - r); tx <= Math.ceil(x + r); tx++) {
+    for (let ty = Math.floor(y - r); ty <= Math.ceil(y + r); ty++) {
+      for (const b of FOR_SALE_BUILDINGS) {
+        const doorX = b.x + Math.floor(b.w / 2);
+        if (tx === doorX && (ty === b.y || ty === b.y + b.h - 1)) {
+          const key = `${b.x},${b.y}`;
+          const ownership = ownedBuildings.get(key);
+          if (!ownership) return true; // unowned for-sale building = locked
+          return ownership.ownerId !== playerId;
+        }
+      }
+    }
   }
+  return false;
+}
 
-  const transition = getDoorTransitionAt(client.player.x, client.player.y);
-  if (!transition) {
-    return;
-  }
-
-  client.lastDoorAt = now;
-  client.player.x = transition.x;
-  client.player.y = transition.y;
-  client.player.moving = false;
-  client.input = normalizeInput();
-
-  send(client, {
-    type: "teleport",
-    portalId: "door",
-    name: transition.name,
-    x: client.player.x,
-    y: client.player.y
-  });
-  streamChunks(client, nearbyChunks(client.player.x, client.player.y, 3));
+function getBuildingPrice(building) {
+  const prices = { hut: 200, treehouse: 350, house: 500, big_house: 900, castle: 2000 };
+  return prices[building.type] || 500;
 }
 
 function handlePortalTravel(client) {
@@ -817,6 +821,23 @@ function handleMessage(client, raw) {
 
   if (message.type === "modTeleport") {
     handleModTeleport(client, message);
+    return;
+  }
+
+  if (message.type === "buyBuilding") {
+    const { buildingX, buildingY } = message;
+    const building = FOR_SALE_BUILDINGS.find(b => b.x === buildingX && b.y === buildingY);
+    if (!building) return;
+    const key = `${building.x},${building.y}`;
+    if (ownedBuildings.has(key)) return; // already owned
+    const price = getBuildingPrice(building);
+    if (!client.player || client.player.gold < price) return;
+    // Check proximity
+    if (Math.hypot(client.player.x - (building.x + building.w/2), client.player.y - (building.y + building.h - 1)) > 4) return;
+    client.player.gold -= price;
+    ownedBuildings.set(key, { ownerId: client.player.id, ownerName: client.player.name, price });
+    // Broadcast ownership update
+    broadcast({ type: "buildingBought", buildingX: building.x, buildingY: building.y, ownerName: client.player.name });
   }
 }
 
@@ -932,6 +953,14 @@ function joinWorld(client, message, savedCharacter = null) {
     chunkSize: CHUNK_SIZE,
     spawn
   });
+
+  if (ownedBuildings.size > 0) {
+    const ownership = {};
+    for (const [key, val] of ownedBuildings) {
+      ownership[key] = val.ownerName;
+    }
+    send(client, { type: "buildingOwnership", data: ownership });
+  }
 
   send(client, {
     type: "chatHistory",
