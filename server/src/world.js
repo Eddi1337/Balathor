@@ -125,13 +125,18 @@ const STREET_SEGMENTS = [
   // Portal destination villages
   // Oasis
   { x1: 574, y1: 482, x2: 628, y2: 482 },         // horizontal cross-road
-  { x1: 600, y1: 470, x2: 600, y2: 522 },         // vertical: buildings to portal
+  { x1: 600, y1: 470, x2: 600, y2: 519 },         // vertical: buildings to portal approach
   // Frost
   { x1: -622, y1: -484, x2: -578, y2: -484 },     // horizontal cross-road
-  { x1: -600, y1: -500, x2: -600, y2: -458 },     // vertical: buildings to portal
+  { x1: -600, y1: -497, x2: -600, y2: -458 },     // vertical: buildings to portal approach
   // Ember
   { x1: 558, y1: -524, x2: 596, y2: -524 },       // horizontal cross-road
-  { x1: 580, y1: -540, x2: 580, y2: -503 },       // vertical: buildings to portal
+  { x1: 580, y1: -537, x2: 580, y2: -503 },       // vertical: buildings to portal approach
+
+  // Central portal approach spurs (dead-end roads leading to each portal)
+  { x1: 46, y1: 3, x2: 46, y2: 8 },              // Oasis Gate south approach
+  { x1: -46, y1: 3, x2: -46, y2: 8 },            // Frost Gate south approach
+  { x1: 3, y1: 60, x2: 8, y2: 60 },              // Ember Gate east approach
 ];
 
 const PORTALS = [
@@ -905,6 +910,17 @@ function isStreet(x, y) {
   return false;
 }
 
+// Stone plaza tiles surrounding each portal (approach road side left open by road checks)
+function isPortalPlaza(x, y) {
+  for (const portal of PORTALS) {
+    const dx = x - portal.x;
+    const dy = y - portal.y;
+    if (dx === 0 && dy === 0) continue;
+    if (Math.abs(dx) <= 3 && Math.abs(dy) <= 2) return true;
+  }
+  return false;
+}
+
 function getPortalAtTile(x, y) {
   return PORTALS.find((portal) => portal.x === x && portal.y === y) || null;
 }
@@ -998,6 +1014,11 @@ function generateExteriorTile(x, y) {
   // Village internal street network.
   if (isStreet(x, y)) {
     return TILE.PATH;
+  }
+
+  // Stone plaza surrounding each portal (roads already handled above, so only non-road tiles reach here)
+  if (isPortalPlaza(x, y)) {
+    return TILE.STONE;
   }
 
   // Inner clearing around the landmark tree — scattered flowers and dark grass.

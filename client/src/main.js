@@ -51,6 +51,9 @@ const inventorySlots = document.querySelector("#inventorySlots");
 const abilityBar = document.querySelector("#abilityBar");
 const abilityBarToggle = document.querySelector("#abilityBarToggle");
 const abilitySlotsEl = document.querySelector("#abilitySlots");
+const potionSlotEl = document.querySelector("#potionSlot");
+const potionCountEl = document.querySelector("#potionCount");
+const potionSlotIconCanvas = document.querySelector("#potionSlotIcon");
 const nearbyLoot = document.querySelector("#nearbyLoot");
 const interactButton = document.querySelector("#interactButton");
 const goldText = document.querySelector("#goldText");
@@ -556,6 +559,7 @@ function handleServerMessage(message) {
     renderEquipment();
     renderBags();
     renderAbilityBar();
+    renderPotionSlot();
     renderShop();
     if (state.activeWindow === "trader") {
       renderTraderStock();
@@ -1135,6 +1139,9 @@ function wireUi() {
     send({ type: "setAbilitySlot", slot: Number(slot.dataset.slot), spellId: null });
   });
 
+  // Potion slot click to use potion
+  potionSlotEl?.addEventListener("click", () => { if (state.joined) useHealthPotion(); });
+
   makeDraggable(equipmentPanel);
   makeDraggable(bagsPanel);
   makeDraggable(shopPanel);
@@ -1320,6 +1327,13 @@ function wireUi() {
       return;
     }
 
+    // Q — use health potion
+    if (event.key.toLowerCase() === "q" && state.joined && !isTextEntryTarget(event.target)) {
+      event.preventDefault();
+      useHealthPotion();
+      return;
+    }
+
     updateInput(event, true);
   });
   window.addEventListener("keyup", (event) => updateInput(event, false));
@@ -1487,6 +1501,65 @@ function renderAbilityBar() {
     // Store current spell on element so the handler reads fresh data without closure drift
     slot.dataset.currentSpell = spellId || "";
   });
+}
+
+function useHealthPotion() {
+  const potionSlot = findPotionInInventory();
+  if (potionSlot === -1) return;
+  send({ type: "useItem", slot: potionSlot });
+}
+
+function findPotionInInventory() {
+  if (!state.inventory) return -1;
+  for (let i = 0; i < state.inventory.length; i++) {
+    const item = state.inventory[i];
+    if (item && item.type === "potion") return i;
+  }
+  return -1;
+}
+
+function countPotionsInInventory() {
+  if (!state.inventory) return 0;
+  return state.inventory.filter(item => item && item.type === "potion").length;
+}
+
+let potionIconDrawn = false;
+function renderPotionSlot() {
+  if (!potionSlotEl || !potionCountEl) return;
+  const count = countPotionsInInventory();
+  potionCountEl.textContent = count;
+  potionSlotEl.classList.toggle("has-potions", count > 0);
+  potionSlotEl.classList.toggle("no-potions", count === 0);
+
+  // Draw potion icon once
+  if (!potionIconDrawn && potionSlotIconCanvas) {
+    potionIconDrawn = true;
+    const c = potionSlotIconCanvas.getContext("2d");
+    const w = potionSlotIconCanvas.width;
+    const h = potionSlotIconCanvas.height;
+    // Bottle body
+    c.fillStyle = "#1a3a1a";
+    c.fillRect(w * 0.3, h * 0.35, w * 0.4, h * 0.55);
+    // Red liquid fill
+    c.fillStyle = "#cc2244";
+    c.fillRect(w * 0.3 + 2, h * 0.5, w * 0.4 - 4, h * 0.38);
+    // Bottle neck
+    c.fillStyle = "#1a3a1a";
+    c.fillRect(w * 0.38, h * 0.2, w * 0.24, h * 0.18);
+    // Cork
+    c.fillStyle = "#8b5e3c";
+    c.fillRect(w * 0.36, h * 0.15, w * 0.28, h * 0.08);
+    // Gloss highlight
+    c.fillStyle = "rgba(255,255,255,0.2)";
+    c.fillRect(w * 0.34, h * 0.4, w * 0.1, h * 0.2);
+    // Red glow
+    c.fillStyle = "#ff4466";
+    c.globalAlpha = 0.3;
+    c.beginPath();
+    c.ellipse(w / 2, h * 0.68, w * 0.22, h * 0.14, 0, 0, Math.PI * 2);
+    c.fill();
+    c.globalAlpha = 1;
+  }
 }
 
 function sendInteract(target = null) {
@@ -4828,6 +4901,41 @@ function drawLighting() {
   ctx.restore();
 }
 
+function drawPortalPedestal(cx, cy, gateR, color) {
+  const baseY = cy + gateR - 8;
+  const steps = [
+    { w: gateR * 2 + 64, h: 18 },
+    { w: gateR * 2 + 40, h: 15 },
+    { w: gateR * 2 + 18, h: 12 },
+  ];
+  let stepY = baseY;
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
+    const half = step.w / 2;
+    // Shadow bottom
+    ctx.fillStyle = "#0e0804";
+    ctx.fillRect(cx - half, stepY + step.h - 4, step.w, 4);
+    // Main stone
+    ctx.fillStyle = i === 0 ? "#2a1e10" : i === 1 ? "#332414" : "#3c2a18";
+    ctx.fillRect(cx - half, stepY, step.w, step.h - 4);
+    // Top highlight edge
+    ctx.fillStyle = "#5a4020";
+    ctx.fillRect(cx - half, stepY, step.w, 3);
+    // Side highlight
+    ctx.fillStyle = "#4a3018";
+    ctx.fillRect(cx - half, stepY + 3, 3, step.h - 7);
+    ctx.fillRect(cx + half - 3, stepY + 3, 3, step.h - 7);
+    // Portal color tint on top step
+    if (i === steps.length - 1) {
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.12;
+      ctx.fillRect(cx - half + 3, stepY + 3, step.w - 6, step.h - 7);
+      ctx.globalAlpha = 1;
+    }
+    stepY += step.h;
+  }
+}
+
 function drawPortal(sx, sy, tx, ty) {
   const portal = getPortalAtTile(tx, ty);
   if (!portal) return;
@@ -4840,6 +4948,7 @@ function drawPortal(sx, sy, tx, ty) {
   const gateR = T * 2.0;
   const pulse = 0.5 + Math.sin(time * 3) * 0.5;
 
+  drawPortalPedestal(cx, cy, gateR, color);
   drawEllipseShadow(cx - gateR - 4, cy + gateR + 2, gateR * 2 + 8, 16, 0.5);
 
   ctx.save();
