@@ -115,20 +115,20 @@ const STREET_SEGMENTS = [
   { x1:  65, y1: -15, x2:  65, y2: -22 },
   // Portal destination villages
   { x1: 585, y1: 490, x2: 615, y2: 490 },
-  { x1: 600, y1: 475, x2: 600, y2: 505 },
+  { x1: 600, y1: 475, x2: 600, y2: 522 },  // extended south to portal
   { x1: -615, y1: -490, x2: -585, y2: -490 },
-  { x1: -600, y1: -505, x2: -600, y2: -475 },
+  { x1: -600, y1: -505, x2: -600, y2: -458 },  // extended south to portal
   { x1: 565, y1: -530, x2: 595, y2: -530 },
-  { x1: 580, y1: -545, x2: 580, y2: -515 },
+  { x1: 580, y1: -545, x2: 580, y2: -503 },  // extended south to portal
 ];
 
 const PORTALS = [
-  { id: "portal_oasis", name: "Oasis Gate",  x:  46, y:  0, targetX: 600, targetY: 490, color: "#f2c45f" },
-  { id: "portal_frost", name: "Frost Gate",   x: -46, y:  0, targetX: -600, targetY: -490, color: "#9ee7ff" },
-  { id: "portal_ember", name: "Ember Gate",   x:   0, y: 60, targetX: 580, targetY: -530, color: "#ff7a45" },
-  { id: "portal_hub_oasis", name: "Hub Gate", x: 600, y: 490, targetX: 0, targetY: 0, color: "#8fe388" },
-  { id: "portal_hub_frost", name: "Hub Gate", x: -600, y: -490, targetX: 0, targetY: 0, color: "#8fe388" },
-  { id: "portal_hub_ember", name: "Hub Gate", x: 580, y: -530, targetX: 0, targetY: 0, color: "#8fe388" },
+  { id: "portal_oasis", name: "Oasis Gate",  x:  46, y:  0, targetX: 600, targetY: 522, color: "#f2c45f" },
+  { id: "portal_frost", name: "Frost Gate",   x: -46, y:  0, targetX: -600, targetY: -458, color: "#9ee7ff" },
+  { id: "portal_ember", name: "Ember Gate",   x:   0, y: 60, targetX: 580, targetY: -503, color: "#ff7a45" },
+  { id: "portal_hub_oasis", name: "Hub Gate", x: 600, y: 522, targetX: 0, targetY: 0, color: "#8fe388" },
+  { id: "portal_hub_frost", name: "Hub Gate", x: -600, y: -458, targetX: 0, targetY: 0, color: "#8fe388" },
+  { id: "portal_hub_ember", name: "Hub Gate", x: 580, y: -503, targetX: 0, targetY: 0, color: "#8fe388" },
 ];
 
 function nearFixedBuilding(tx, ty, pad = 9) {
