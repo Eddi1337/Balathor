@@ -31,8 +31,8 @@ const INTERIOR_SPACING = 40;
 const INTERIOR_EXTERIOR_MARGIN = 12;
 const PROCEDURAL_INTERIOR_GRID_SIZE = 1024;
 const PROCEDURAL_INTERIOR_GRID_OFFSET = 512;
-const STARTING_AREA = { x: 0, y: 4, radius: 72 };
-const START_SPAWN = { x: 0, y: -8 };
+const STARTING_AREA = { x: 0, y: 0, radius: 80 };
+const START_SPAWN = { x: 0, y: 0 };
 
 function hash2(x, y, seed = 1337) {
   let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ seed;
@@ -43,83 +43,95 @@ function hash2(x, y, seed = 1337) {
 
 // Hand-crafted buildings: starting town + portal destinations only.
 const BUILDINGS = [
-  // Central village – dense starting zone
-  { x:  -6, y: -19, w: 11, h:  9, name: "Home",             type: "house",     forSale: false },
-  { x: -20, y:  -6, w:  8, h:  7, name: "Weaver's Hut",     type: "hut",       forSale: false },
-  { x:  12, y: -18, w:  8, h:  7, name: "Smith's Hut",       type: "hut",       forSale: false },
-  { x: -44, y: -24, w: 12, h:  9, name: "Blue Tavern",       type: "house",     forSale: false },
-  { x:  30, y: -32, w: 16, h: 12, name: "Red Manor",         type: "big_house", forSale: true  },
-  { x: -56, y:  10, w:  8, h:  7, name: "Miller's Hut",      type: "hut",       forSale: true  },
-  { x: -52, y:  20, w: 12, h:  9, name: "Market Hall",       type: "house",     forSale: false },
-  { x:  42, y:   6, w: 12, h:  9, name: "Garden House",      type: "house",     forSale: true  },
-  { x:  52, y:  22, w:  8, h:  7, name: "Herb Hut",          type: "hut",       forSale: true  },
-  { x: -22, y: -54, w: 10, h:  8, name: "Ranger's Post",     type: "treehouse", forSale: false },
-  { x:  32, y:  -6, w:  8, h:  7, name: "East Hut",          type: "hut",       forSale: true  },
-  { x: -12, y:  28, w: 20, h: 16, name: "Town Keep",         type: "castle",    forSale: false },
-  { x:  20, y:  46, w:  8, h:  7, name: "South Hut",         type: "hut",       forSale: true  },
-  { x: -40, y:  46, w:  8, h:  7, name: "West Hut",          type: "hut",       forSale: true  },
-  { x:  60, y: -22, w: 10, h:  8, name: "Hunter's Lodge",    type: "treehouse", forSale: false },
-  // Desert Oasis
-  { x: 585, y: 475, w: 16, h: 12, name: "Oasis Palace",      type: "big_house", forSale: false },
-  { x: 604, y: 477, w:  8, h:  7, name: "Sun Hut",           type: "hut",       forSale: false },
-  { x: 594, y: 489, w: 10, h:  8, name: "Clay House",        type: "house",     forSale: false },
-  { x: 610, y: 490, w:  8, h:  7, name: "Sand Hut",          type: "hut",       forSale: false },
-  { x: 586, y: 487, w: 20, h: 16, name: "Oasis Keep",        type: "castle",    forSale: false },
+  // Central village – spread around the circular plaza, each with its own approach path.
+  // North
+  { x:  -6, y: -28, w: 11, h:  9, name: "Home",             type: "house",     forSale: false },
+  { x:  20, y: -36, w:  8, h:  7, name: "Smith's Hut",       type: "hut",       forSale: false },
+  { x: -30, y: -50, w: 10, h:  8, name: "Ranger's Post",     type: "treehouse", forSale: false },
+  { x: -48, y: -26, w: 12, h:  9, name: "Blue Tavern",       type: "house",     forSale: false },
+  // East
+  { x:  38, y: -24, w: 16, h: 12, name: "Red Manor",         type: "big_house", forSale: true  },
+  { x:  64, y: -20, w: 10, h:  8, name: "Hunter's Lodge",    type: "treehouse", forSale: false },
+  { x:  34, y:   4, w:  8, h:  7, name: "East Hut",          type: "hut",       forSale: true  },
+  { x:  48, y:  20, w: 12, h:  9, name: "Garden House",      type: "house",     forSale: true  },
+  { x:  54, y:  36, w:  8, h:  7, name: "Herb Hut",          type: "hut",       forSale: true  },
+  // West
+  { x: -28, y: -10, w:  8, h:  7, name: "Weaver's Hut",      type: "hut",       forSale: false },
+  { x: -54, y:   8, w:  8, h:  7, name: "Miller's Hut",      type: "hut",       forSale: true  },
+  { x: -52, y:  22, w: 12, h:  9, name: "Market Hall",       type: "house",     forSale: false },
+  // South
+  { x: -14, y:  36, w: 20, h: 16, name: "Town Keep",         type: "castle",    forSale: false },
+  { x:  18, y:  56, w:  8, h:  7, name: "South Hut",         type: "hut",       forSale: true  },
+  { x: -38, y:  56, w:  8, h:  7, name: "West Hut",          type: "hut",       forSale: true  },
+  // Desert Oasis – no overlaps, each building separated by ≥8 tiles
+  { x: 574, y: 472, w: 20, h: 16, name: "Oasis Keep",        type: "castle",    forSale: false },
+  { x: 604, y: 470, w: 16, h: 12, name: "Oasis Palace",      type: "big_house", forSale: false },
+  { x: 588, y: 496, w: 10, h:  8, name: "Clay House",        type: "house",     forSale: false },
+  { x: 618, y: 490, w:  8, h:  7, name: "Sun Hut",           type: "hut",       forSale: false },
   // Frost Village
-  { x: -614, y: -504, w: 20, h: 16, name: "Frost Keep",      type: "castle",    forSale: false },
-  { x: -593, y: -502, w: 10, h:  8, name: "Snow House",      type: "house",     forSale: false },
-  { x: -607, y: -488, w:  8, h:  7, name: "Pine Hut",        type: "hut",       forSale: false },
-  { x: -593, y: -489, w: 10, h:  8, name: "Ranger Post",     type: "treehouse", forSale: false },
+  { x: -622, y: -500, w: 20, h: 16, name: "Frost Keep",      type: "castle",    forSale: false },
+  { x: -596, y: -500, w: 10, h:  8, name: "Snow House",      type: "house",     forSale: false },
+  { x: -614, y: -478, w:  8, h:  7, name: "Pine Hut",        type: "hut",       forSale: false },
+  { x: -590, y: -480, w: 10, h:  8, name: "Ranger Post",     type: "treehouse", forSale: false },
   // Ember Camp
-  { x: 566, y: -544, w: 20, h: 16, name: "Ember Citadel",    type: "castle",    forSale: false },
-  { x: 589, y: -542, w: 10, h:  8, name: "Ash House",        type: "house",     forSale: false },
-  { x: 573, y: -528, w:  8, h:  7, name: "Forge Hut",        type: "hut",       forSale: false },
-  { x: 589, y: -529, w: 10, h:  8, name: "Watcher's Perch",  type: "treehouse", forSale: false },
+  { x: 558, y: -540, w: 20, h: 16, name: "Ember Citadel",    type: "castle",    forSale: false },
+  { x: 584, y: -540, w: 10, h:  8, name: "Ash House",        type: "house",     forSale: false },
+  { x: 566, y: -518, w:  8, h:  7, name: "Forge Hut",        type: "hut",       forSale: false },
+  { x: 582, y: -520, w: 10, h:  8, name: "Watcher's Perch",  type: "treehouse", forSale: false },
 ];
 
 // Fixed village clearing zones — only starting town + portal destinations.
 const VILLAGES = [
-  { cx:   0, cy:   4, r: 76 }, // Central Village (expanded)
-  { cx: 600, cy: 490, r: 48 },
-  { cx: -600, cy: -490, r: 48 },
-  { cx: 580, cy: -530, r: 48 },
+  { cx:   0, cy:   0, r: 82 }, // Central Village
+  { cx: 600, cy: 490, r: 52 },
+  { cx: -600, cy: -490, r: 52 },
+  { cx: 580, cy: -530, r: 52 },
 ];
 
 // Road segments for fixed villages only.
 const STREET_SEGMENTS = [
-  // Main roads (wide, w=1 = 3 tiles wide)
-  { x1: -62, y1:  0, x2:  62, y2:  0, w: 1 },  // East-west main road
-  { x1:   0, y1: -62, x2:   0, y2: 62, w: 1 },  // North-south main road
+  // Main roads radiate outward from the circular plaza (wide, w=1 = 3 tiles wide)
+  { x1: -70, y1:  0, x2:  70, y2:  0, w: 1 },  // East-west main road
+  { x1:   0, y1: -70, x2:   0, y2: 70, w: 1 },  // North-south main road
 
-  // Building approach paths
-  { x1: -1,  y1: -11, x2:  0, y2: -11 },  // Home spur
-  { x1: -1,  y1: -18, x2: -1, y2: -11 },  // Home north
-  { x1: 16,  y1: -12, x2: 16, y2:  0  },  // Smith's Hut
-  { x1:  0,  y1: -12, x2: 16, y2: -12 },  // Smith's Hut branch
-  { x1: -38, y1: -16, x2: -38, y2:  0  }, // Blue Tavern
-  { x1: -44, y1: -16, x2: -38, y2: -16 },
-  { x1:  38, y1: -21, x2:  38, y2:  0  }, // Red Manor
-  { x1: -52, y1:  16, x2: -52, y2: 20  }, // Miller's Hut approach
-  { x1: -46, y1:  20, x2: -46, y2: 28  }, // Market Hall
-  { x1: -46, y1:   0, x2: -46, y2: 20  }, // Market Hall north
-  { x1:  48, y1:   0, x2:  48, y2: 14  }, // Garden House
-  { x1:  56, y1:  14, x2:  56, y2: 28  }, // Herb Hut
-  { x1:  48, y1:  14, x2:  56, y2: 14  }, // Garden→Herb connector
-  { x1: -17, y1: -47, x2:  0, y2: -47  }, // Ranger's Post approach
-  { x1: -17, y1: -47, x2: -17, y2: -62 },
-  { x1: -2,  y1:  43, x2:   0, y2:  43 }, // Town Keep south door spur
-  { x1:  26, y1:   0, x2:  26, y2:  42 }, // South Hut
-  { x1: -36, y1:   0, x2: -36, y2:  42 }, // West Hut
-  { x1:  62, y1: -15, x2:  62, y2:   0 }, // Hunter's Lodge extension
-  { x1:  62, y1: -15, x2:  65, y2: -15 },
-  { x1:  65, y1: -15, x2:  65, y2: -22 },
+  // North buildings — branch off N-S road
+  { x1:   0, y1: -28, x2:   1, y2: -28 },        // Home: N-S road already passes door
+  { x1:  24, y1: -36, x2:  24, y2:   0 },         // Smith's Hut spur
+  { x1: -25, y1: -42, x2:   0, y2: -42 },         // Ranger's Post: east branch
+  { x1: -25, y1: -50, x2: -25, y2: -42 },         // Ranger's Post: north spur
+  { x1: -42, y1: -17, x2: -42, y2:   0 },         // Blue Tavern spur
+  { x1: -48, y1: -17, x2: -42, y2: -17 },         // Blue Tavern: west branch
+
+  // East buildings — branch off E-W road
+  { x1:  46, y1: -12, x2:  46, y2:   0 },         // Red Manor spur
+  { x1:  62, y1: -12, x2:  62, y2:   0 },         // Hunter's Lodge south spur
+  { x1:  62, y1: -12, x2:  69, y2: -12 },         // Hunter's Lodge east branch
+  { x1:  38, y1:   0, x2:  38, y2:  11 },         // East Hut spur
+  { x1:  54, y1:   0, x2:  54, y2:  29 },         // Garden House spur
+  { x1:  54, y1:  29, x2:  58, y2:  29 },         // Garden→Herb connector
+  { x1:  58, y1:  29, x2:  58, y2:  43 },         // Herb Hut spur
+
+  // West buildings — branch off E-W road
+  { x1: -24, y1:   0, x2: -24, y2:  -3 },         // Weaver's Hut spur
+  { x1: -50, y1:   0, x2: -50, y2:  15 },         // Miller's Hut spur
+  { x1: -46, y1:   0, x2: -46, y2:  31 },         // Market Hall spur
+  { x1: -52, y1:  22, x2: -46, y2:  22 },         // Market Hall west branch
+
+  // South buildings — branch off N-S road
+  { x1:  -7, y1:  36, x2:   0, y2:  36 },         // Town Keep north door branch
+  { x1:  22, y1:   0, x2:  22, y2:  63 },         // South Hut spur
+  { x1: -34, y1:   0, x2: -34, y2:  63 },         // West Hut spur
+
   // Portal destination villages
-  { x1: 585, y1: 490, x2: 615, y2: 490 },
-  { x1: 600, y1: 475, x2: 600, y2: 522 },  // extended south to portal
-  { x1: -615, y1: -490, x2: -585, y2: -490 },
-  { x1: -600, y1: -505, x2: -600, y2: -458 },  // extended south to portal
-  { x1: 565, y1: -530, x2: 595, y2: -530 },
-  { x1: 580, y1: -545, x2: 580, y2: -503 },  // extended south to portal
+  // Oasis
+  { x1: 574, y1: 482, x2: 628, y2: 482 },         // horizontal cross-road
+  { x1: 600, y1: 470, x2: 600, y2: 522 },         // vertical: buildings to portal
+  // Frost
+  { x1: -622, y1: -484, x2: -578, y2: -484 },     // horizontal cross-road
+  { x1: -600, y1: -500, x2: -600, y2: -458 },     // vertical: buildings to portal
+  // Ember
+  { x1: 558, y1: -524, x2: 596, y2: -524 },       // horizontal cross-road
+  { x1: 580, y1: -540, x2: 580, y2: -503 },       // vertical: buildings to portal
 ];
 
 const PORTALS = [
@@ -284,10 +296,10 @@ function getSettlementAt(gx, gy) {
   const cy = gy * SETTLE_GRID + 10 + Math.floor(hash2(gx, gy, 202) * (SETTLE_GRID - 20));
 
   // Stay clear of starting town and portal destinations.
-  if (Math.hypot(cx, cy) < 82) return null;
-  if (Math.hypot(cx - 600, cy - 490) < 46) return null;
-  if (Math.hypot(cx + 600, cy + 490) < 46) return null;
-  if (Math.hypot(cx - 580, cy + 530) < 46) return null;
+  if (Math.hypot(cx, cy) < 86) return null;
+  if (Math.hypot(cx - 600, cy - 490) < 56) return null;
+  if (Math.hypot(cx + 600, cy + 490) < 56) return null;
+  if (Math.hypot(cx - 580, cy + 530) < 56) return null;
 
   const numSlots = 2 + Math.floor(hash2(gx, gy, 203) * 4);
   const clearRadius = 20 + Math.floor(hash2(gx, gy, 204) * 12);
@@ -876,32 +888,31 @@ function generateExteriorTile(x, y) {
   const ay = Math.abs(y);
   const dist = Math.hypot(x, y);
 
-  // Central stone plaza outside Home.
-  if (ax <= 11 && ay <= 9) {
-    return TILE.STONE;
+  // Landmark big tree: 3×3 cluster at the very centre of the plaza.
+  if (ax <= 1 && ay <= 1) {
+    return TILE.TREE;
   }
 
-  // Main cross-paths, extended outward from the hub.
+  // Main cross-roads radiate outward from the ring.
   if ((ax <= 1 && ay <= 200) || (ay <= 1 && ax <= 200)) {
     return TILE.PATH;
   }
 
-  // Village internal cross-streets.
+  // Circular ring road (town-square perimeter, radius 7–9).
+  if (dist >= 7 && dist <= 9) {
+    return TILE.PATH;
+  }
+
+  // Village internal street network.
   if (isStreet(x, y)) {
     return TILE.PATH;
   }
 
-  // Flower borders alongside main roads within the starting town.
-  if (dist <= 36) {
-    if (ax >= 3 && ax <= 5 && ay >= 7 && ay <= 28) return TILE.FLOWERS;
-    if (ay >= 3 && ay <= 5 && ax >= 9 && ax <= 28) return TILE.FLOWERS;
-  }
-
-  // Central grass clearing — richer variety of ground cover.
-  if (dist <= 16) {
+  // Inner clearing around the landmark tree — scattered flowers and dark grass.
+  if (dist < 7) {
     const r = hash2(x, y, 44);
-    if (r > 0.82) return TILE.FLOWERS;
-    if (r > 0.60) return TILE.DARK_GRASS;
+    if (r > 0.78) return TILE.FLOWERS;
+    if (r > 0.52) return TILE.DARK_GRASS;
     return TILE.GRASS;
   }
 
@@ -1034,8 +1045,9 @@ function isBlockedCircle(x, y, radius = 0.28) {
 }
 
 function spawnPoint(index = 0) {
-  const angle = index * 2.399963229728653;
-  const radius = (index % 8) * 0.08;
+  // Spread players in a ring around the central tree (radius 4–5).
+  const angle = index * 2.399963229728653; // golden-angle spiral
+  const radius = 4 + (index % 3) * 0.6;
   return {
     x: START_SPAWN.x + Math.cos(angle) * radius,
     y: START_SPAWN.y + Math.sin(angle) * radius
