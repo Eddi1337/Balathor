@@ -2105,7 +2105,7 @@ function drawModCape(px, py, scale, bob, dirX, dirY) {
 }
 
 function drawCharacter(entity, x, y, isNpc = false) {
-  const scale = 3;
+  const s = 3;
   const phase = entity.walkPhase || 0;
   const moving = Boolean(entity.renderMoving);
   const facing = Number.isFinite(entity.facing) ? entity.facing : Math.PI / 2;
@@ -2114,72 +2114,75 @@ function drawCharacter(entity, x, y, isNpc = false) {
   const sideX = -dirY;
   const sideY = dirX;
 
-  const walkFreq = 2.2;
-  const sinPhase = moving ? Math.sin(phase * walkFreq) : 0;
-  const cosPhase = moving ? Math.cos(phase * walkFreq) : 0;
-  const bob = moving ? Math.round(Math.abs(cosPhase) * 1.5 - 0.5) : 0;
-  const sway = moving ? Math.round(sinPhase * 0.8) : 0;
+  const wf = 2.4;
+  const sin1 = moving ? Math.sin(phase * wf) : 0;
+  const cos1 = moving ? Math.cos(phase * wf) : 0;
+  const bob = moving ? Math.round(Math.abs(cos1) * 2 - 0.6) : 0;
+  const sway = moving ? Math.round(sin1 * 0.6) : 0;
 
-  const faceOffX = Math.round(dirX * 2);
-  const faceOffY = Math.round(dirY * 1.2);
+  const fx = Math.round(dirX * 2);
+  const fy = Math.round(dirY * 1.4);
 
-  const px = x - 8 * scale + sway;
-  const py = y - 10 * scale + bob;
   const torsoColor = entity.torsoColor || entity.primary || "#5cc8ff";
   const weaponColor = entity.weaponColor || entity.accent || "#ffd166";
   const torsoStyle = entity.torsoStyle || "tunic";
+  const skinColor = "#f0c9a2";
+  const skinShadow = "#d4a87a";
+  const pantColor = "#2a3044";
+  const bootColor = "#1a1e2c";
 
-  drawEllipseShadow(x - 16, y + 10, 32, 7, 0.28);
+  const bx = x + sway;
+  const by = y + bob;
+
+  drawEllipseShadow(x - 16, y + 14, 32, 8, 0.3);
 
   if (entity.isMod) {
-    drawModCape(px, py, scale, bob, dirX, dirY);
+    drawModCape(x - 8 * s, y - 10 * s + bob, s, bob, dirX, dirY);
   }
 
-  pixel(px, py, 5 + faceOffX, 1 + faceOffY, 6, 2, weaponColor, scale);
-  drawTorso(px, py, torsoStyle, torsoColor, weaponColor, scale);
-  pixel(px, py, 6 + faceOffX, 4 + faceOffY, 4, 3, "#f0c9a2", scale);
+  const legSwing = moving ? sin1 * 4 : 0;
+  const lFwdX = Math.round(dirX * legSwing);
+  const lFwdY = Math.round(dirY * legSwing);
 
-  const legSwing = moving ? sinPhase * 3 : 0;
-  const leftLegFwd = Math.round(dirX * legSwing);
-  const leftLegFwdY = Math.round(dirY * legSwing);
-  const rightLegFwd = -leftLegFwd;
-  const rightLegFwdY = -leftLegFwdY;
+  drawLeg(bx - 5 * s + lFwdX, by + 2 * s + lFwdY, s, pantColor, bootColor, dirX, dirY, moving, sin1, 1);
+  drawLeg(bx + 2 * s - lFwdX, by + 2 * s - lFwdY, s, pantColor, bootColor, dirX, dirY, moving, sin1, -1);
 
-  const leftKneeX = 5 + Math.round(leftLegFwd * 0.5);
-  const leftKneeY = 7 + Math.round(leftLegFwdY * 0.5);
-  const rightKneeX = 9 + Math.round(rightLegFwd * 0.5);
-  const rightKneeY = 7 + Math.round(rightLegFwdY * 0.5);
-  const leftFootX = 4 + leftLegFwd;
-  const leftFootY = 10 + leftLegFwdY;
-  const rightFootX = 10 + rightLegFwd;
-  const rightFootY = 10 + rightLegFwdY;
+  const torsoX = bx - 6 * s;
+  const torsoY = by - 8 * s;
+  drawTorso2(torsoX, torsoY, s, torsoStyle, torsoColor, weaponColor, entity.classId, fx, fy);
 
-  pixel(px, py, leftKneeX, leftKneeY, 3, 4, "#202437", scale);
-  pixel(px, py, rightKneeX, rightKneeY, 3, 4, "#202437", scale);
-  pixel(px, py, leftFootX, leftFootY, 3, 2, "#111722", scale);
-  pixel(px, py, rightFootX, rightFootY, 3, 2, "#111722", scale);
+  const armSwing = moving ? sin1 * 3 : 0;
+  const laX = bx - 7 * s + Math.round(-dirX * armSwing);
+  const laY = by - 5 * s + Math.round(-dirY * armSwing);
+  const raX = bx + 4 * s + Math.round(dirX * armSwing);
+  const raY = by - 5 * s + Math.round(dirY * armSwing);
+  ctx.fillStyle = skinColor;
+  ctx.fillRect(laX, laY, 3 * s, 2 * s);
+  ctx.fillRect(raX, raY, 3 * s, 2 * s);
+  ctx.fillStyle = skinShadow;
+  ctx.fillRect(laX, laY + 2 * s, 3 * s, 4 * s);
+  ctx.fillRect(raX, raY + 2 * s, 3 * s, 4 * s);
 
-  const armSwing = moving ? sinPhase * 2 : 0;
-  const leftArmX = 3 + Math.round(-dirX * armSwing);
-  const leftArmY = 6 + Math.round(-dirY * armSwing);
-  const rightArmX = 11 + Math.round(dirX * armSwing);
-  const rightArmY = 6 + Math.round(dirY * armSwing);
-  pixel(px, py, leftArmX, leftArmY, 3, 4, weaponColor, scale);
-  pixel(px, py, rightArmX, rightArmY, 3, 4, weaponColor, scale);
+  const hx = bx - 4 * s + fx * s;
+  const hy = by - 14 * s + fy * s;
+  ctx.fillStyle = skinColor;
+  ctx.fillRect(hx, hy, 8 * s, 6 * s);
+  ctx.fillStyle = skinShadow;
+  ctx.fillRect(hx, hy + 6 * s, 8 * s, 2 * s);
 
+  ctx.fillStyle = weaponColor;
+  ctx.fillRect(hx, hy, 8 * s, 2 * s);
   if (entity.classId === "mage") {
-    pixel(px, py, 3, 2, 10, 2, weaponColor, scale);
-    pixel(px, py, 7 + faceOffX, -1 + faceOffY, 3, 4, torsoColor, scale);
-  } else if (entity.classId === "knight") {
-    pixel(px, py, 4, 2, 8, 2, "#d4dae2", scale);
-    pixel(px, py, 3, 7, 10, 4, "#8a929e", scale);
-  } else {
-    pixel(px, py, 2, 5, 3, 5, weaponColor, scale);
-    pixel(px, py, 11, 5, 3, 5, weaponColor, scale);
+    ctx.fillRect(hx + s, hy - 2 * s, 6 * s, 2 * s);
   }
+
+  ctx.fillStyle = "#1d2430";
+  const eyeY = hy + 3 * s;
+  ctx.fillRect(hx + 2 * s + Math.max(0, fx) * s, eyeY, s, s);
+  ctx.fillRect(hx + 5 * s + Math.max(0, fx) * s, eyeY, s, s);
 
   if (!isNpc) {
-    drawClassEquipment(entity, x + sway, y + bob, dirX, dirY, sideX, sideY, weaponColor);
+    drawClassEquipment(entity, bx, by, dirX, dirY, sideX, sideY, weaponColor);
   }
 
   ctx.font = "12px ui-sans-serif, system-ui";
@@ -2187,14 +2190,73 @@ function drawCharacter(entity, x, y, isNpc = false) {
   ctx.lineWidth = 3;
   ctx.strokeStyle = "rgba(8, 12, 18, 0.82)";
   ctx.fillStyle = isNpc ? "#ffd27a" : entity.isMod ? "#c79cff" : "#f7f3df";
-  ctx.strokeText(entity.name, x, y - 38);
-  ctx.fillText(entity.name, x, y - 38);
+  ctx.strokeText(entity.name, x, y - 46);
+  ctx.fillText(entity.name, x, y - 46);
 
   if (!isNpc && Number.isFinite(entity.hp) && Number.isFinite(entity.maxHp)) {
-    drawHealthBar(x - 18, y - 32, 36, 4, entity.hp, entity.maxHp);
+    drawHealthBar(x - 18, y - 40, 36, 4, entity.hp, entity.maxHp);
   }
 
-  drawSpeechBubble(entity, x, y - 54);
+  drawSpeechBubble(entity, x, y - 62);
+}
+
+function drawLeg(lx, ly, s, pantColor, bootColor, dirX, dirY, moving, sinVal, side) {
+  const thighH = 4 * s;
+  const shinH = 3 * s;
+  const footH = 2 * s;
+  const legW = 3 * s;
+  const kneeShift = moving ? Math.round(sinVal * side * 1.2) : 0;
+
+  ctx.fillStyle = pantColor;
+  ctx.fillRect(lx, ly, legW, thighH);
+
+  ctx.fillStyle = blend(pantColor, "#000000", 0.15);
+  ctx.fillRect(lx + kneeShift, ly + thighH, legW, shinH);
+
+  ctx.fillStyle = bootColor;
+  ctx.fillRect(lx + kneeShift, ly + thighH + shinH, legW + s, footH);
+}
+
+function drawTorso2(tx, ty, s, style, torsoColor, trimColor, classId, fx, fy) {
+  const w = 12 * s;
+  const h = 10 * s;
+
+  if (style === "armor") {
+    ctx.fillStyle = "#5a6577";
+    ctx.fillRect(tx, ty, w, h);
+    ctx.fillStyle = "#6f7b86";
+    ctx.fillRect(tx + s, ty + s, w - 2 * s, h - 2 * s);
+    ctx.fillStyle = "#d4dae2";
+    ctx.fillRect(tx + 2 * s, ty + 2 * s, w - 4 * s, s);
+    ctx.fillRect(tx + 5 * s, ty, 2 * s, h);
+    ctx.fillStyle = blend(torsoColor, "#ffffff", 0.3);
+    ctx.fillRect(tx + 2 * s, ty + 5 * s, w - 4 * s, s);
+    ctx.fillStyle = trimColor;
+    ctx.fillRect(tx, ty + h - 2 * s, w, 2 * s);
+    return;
+  }
+
+  if (style === "robe") {
+    ctx.fillStyle = torsoColor;
+    ctx.fillRect(tx, ty, w, h + 3 * s);
+    ctx.fillStyle = blend(torsoColor, "#000000", 0.2);
+    ctx.fillRect(tx, ty + h, w, 3 * s);
+    ctx.fillStyle = trimColor;
+    ctx.fillRect(tx, ty, s, h + 3 * s);
+    ctx.fillRect(tx + w - s, ty, s, h + 3 * s);
+    ctx.fillStyle = blend(torsoColor, "#ffffff", 0.15);
+    ctx.fillRect(tx + 5 * s, ty, 2 * s, h);
+    return;
+  }
+
+  ctx.fillStyle = torsoColor;
+  ctx.fillRect(tx, ty, w, h);
+  ctx.fillStyle = blend(torsoColor, "#000000", 0.18);
+  ctx.fillRect(tx, ty + h - 2 * s, w, 2 * s);
+  ctx.fillStyle = trimColor;
+  ctx.fillRect(tx + 3 * s, ty, w - 6 * s, s);
+  ctx.fillStyle = blend(torsoColor, "#ffffff", 0.12);
+  ctx.fillRect(tx + 5 * s, ty + s, 2 * s, h - 3 * s);
 }
 
 function drawSpeechBubble(entity, x, y) {
@@ -2274,28 +2336,6 @@ function roundedRect(x, y, width, height, radius) {
   ctx.quadraticCurveTo(x, y + height, x, y + height - r);
   ctx.lineTo(x, y + r);
   ctx.quadraticCurveTo(x, y, x + r, y);
-}
-
-function drawTorso(px, py, style, torsoColor, trimColor, scale) {
-  if (style === "armor") {
-    pixel(px, py, 4, 3, 8, 7, "#6f7b86", scale);
-    pixel(px, py, 5, 4, 6, 1, "#d4dae2", scale);
-    pixel(px, py, 5, 6, 6, 1, blend(torsoColor, "#ffffff", 0.25), scale);
-    pixel(px, py, 7, 3, 2, 7, trimColor, scale);
-    return;
-  }
-
-  if (style === "robe") {
-    pixel(px, py, 4, 3, 8, 8, torsoColor, scale);
-    pixel(px, py, 3, 7, 10, 4, blend(torsoColor, "#000000", 0.18), scale);
-    pixel(px, py, 4, 3, 1, 8, trimColor, scale);
-    pixel(px, py, 11, 3, 1, 8, trimColor, scale);
-    return;
-  }
-
-  pixel(px, py, 4, 3, 8, 7, torsoColor, scale);
-  pixel(px, py, 4, 7, 8, 2, blend(torsoColor, "#000000", 0.22), scale);
-  pixel(px, py, 6, 3, 4, 1, trimColor, scale);
 }
 
 function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent) {

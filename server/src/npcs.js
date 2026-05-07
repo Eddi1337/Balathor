@@ -121,6 +121,19 @@ const DEFINITIONS = [
     ],
   },
   {
+    id: "npc_greta", name: "Provisioner Greta",
+    classId: "ranger", primary: "#6b4e2f", accent: "#e8c84a",
+    homeX: -2, homeY: 58, patrolRadius: 6,
+    isTrader: true,
+    dialogue: [
+      "Potions, rations, and remedies — all in stock!",
+      "The hamlet folk keep me busy with orders.",
+      "A prepared adventurer is a living adventurer.",
+      "My tonics are brewed from the finest local herbs.",
+      "Heading into the wilds? You will want supplies.",
+    ],
+  },
+  {
     id: "npc_dot", name: "Miller Dot",
     classId: "mage", primary: "#c8a86b", accent: "#fff8dc",
     homeX: -8, homeY: 61, patrolRadius: 7,
@@ -146,6 +159,19 @@ const DEFINITIONS = [
   },
 
   // --- West Ruins ---
+  {
+    id: "npc_voss", name: "Curio Dealer Voss",
+    classId: "mage", primary: "#3a2f4a", accent: "#c79cff",
+    homeX: -55, homeY: -4, patrolRadius: 6,
+    isTrader: true,
+    dialogue: [
+      "Relics and curiosities, salvaged from the deep halls.",
+      "Every item I sell has a story. Most of them tragic.",
+      "The scholars pay well for enchanted trinkets.",
+      "I accept coin, not questions about my sources.",
+      "Rare finds today — the ruins were generous.",
+    ],
+  },
   {
     id: "npc_mira", name: "Sage Mira",
     classId: "mage", primary: "#2d3a4a", accent: "#9370db",
@@ -184,6 +210,19 @@ const DEFINITIONS = [
   },
 
   // --- Central Hub ---
+  {
+    id: "npc_kael", name: "Bazaar Kael",
+    classId: "knight", primary: "#8b5e3c", accent: "#ffd166",
+    homeX: 5, homeY: -3, patrolRadius: 5,
+    isTrader: true,
+    dialogue: [
+      "Welcome to Kael's Bazaar! Best prices in the hub!",
+      "Fresh stock every day, straight from the caravans.",
+      "Buy, sell, trade — I do it all.",
+      "The portal travellers always need supplies.",
+      "My prices are fair. Mostly.",
+    ],
+  },
   {
     id: "npc_ebb", name: "Town Crier Ebb",
     classId: "ranger", primary: "#c8001a", accent: "#ffd700",
