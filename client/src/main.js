@@ -40,8 +40,17 @@ const equipmentPanel = document.querySelector("#equipmentPanel");
 const bagsPanel = document.querySelector("#bagsPanel");
 const equipmentClose = document.querySelector("#equipmentClose");
 const bagsClose = document.querySelector("#bagsClose");
-const equipmentSlots = document.querySelector("#equipmentSlots");
+const equipSlotsLeft = document.querySelector("#equipSlotsLeft");
+const equipSlotsRight = document.querySelector("#equipSlotsRight");
+const charPreviewCanvas = document.querySelector("#charPreview");
+const charStatsEl = document.querySelector("#charStats");
+const talentPointsText = document.querySelector("#talentPointsText");
+const talentTabsEl = document.querySelector("#talentTabs");
+const talentTreeEl = document.querySelector("#talentTree");
 const inventorySlots = document.querySelector("#inventorySlots");
+const abilityBar = document.querySelector("#abilityBar");
+const abilityBarToggle = document.querySelector("#abilityBarToggle");
+const abilitySlotsEl = document.querySelector("#abilitySlots");
 const nearbyLoot = document.querySelector("#nearbyLoot");
 const interactButton = document.querySelector("#interactButton");
 const goldText = document.querySelector("#goldText");
@@ -67,8 +76,61 @@ const traderClose = document.querySelector("#traderClose");
 const TILE_SIZE = 32;
 const CHUNK_SIZE = 16;
 const chunkCanvasCache = new Map();
-// Client-side predicted base player speed (tiles per second). Match server base.
 const CLIENT_PLAYER_SPEED = 5.2;
+
+const TALENT_TREES = {
+  mage: [
+    { name: "Fire", spells: [
+      { id: "fireball",   name: "Fireball",    desc: "Hurl a ball of flame at enemies" },
+      { id: "fire_nova",  name: "Fire Nova",   desc: "Burst of fire around you" },
+      { id: "inferno",    name: "Inferno",     desc: "Channel a cone of scorching flame" }
+    ]},
+    { name: "Frost", spells: [
+      { id: "ice_shard",      name: "Ice Shard",      desc: "Frost bolt that slows enemies" },
+      { id: "frost_barrier",  name: "Frost Barrier",  desc: "Ice shield absorbs incoming damage" },
+      { id: "blizzard",       name: "Blizzard",       desc: "AoE frost storm at target location" }
+    ]},
+    { name: "Arcane", spells: [
+      { id: "arcane_bolt",  name: "Arcane Bolt",  desc: "Fast-moving arcane projectile" },
+      { id: "mana_shield",  name: "Mana Shield",  desc: "Convert damage taken to mana loss" },
+      { id: "time_warp",    name: "Time Warp",    desc: "Slow all nearby enemies briefly" }
+    ]}
+  ],
+  knight: [
+    { name: "Protection", spells: [
+      { id: "shield_bash",    name: "Shield Bash",    desc: "Stun an enemy with your shield" },
+      { id: "divine_shield",  name: "Divine Shield",  desc: "Brief invincibility bubble" },
+      { id: "fortify",        name: "Fortify",        desc: "Massively boost armour temporarily" }
+    ]},
+    { name: "Retribution", spells: [
+      { id: "holy_strike",    name: "Holy Strike",    desc: "Holy-charged powerful melee blow" },
+      { id: "consecration",   name: "Consecration",   desc: "Bless the ground, damaging nearby foes" },
+      { id: "divine_wrath",   name: "Divine Wrath",   desc: "Smite enemies in a wide arc" }
+    ]},
+    { name: "Recovery", spells: [
+      { id: "healing_aura",  name: "Healing Aura",  desc: "Regenerate HP over time" },
+      { id: "lay_on_hands",  name: "Lay on Hands",  desc: "Large instant self-heal" },
+      { id: "battle_cry",    name: "Battle Cry",    desc: "Boost speed and strength briefly" }
+    ]}
+  ],
+  ranger: [
+    { name: "Marksmanship", spells: [
+      { id: "precise_shot",    name: "Precise Shot",    desc: "High-damage single arrow" },
+      { id: "piercing_arrow",  name: "Piercing Arrow",  desc: "Arrow that passes through enemies" },
+      { id: "rain_of_arrows",  name: "Rain of Arrows",  desc: "Barrage of arrows over an area" }
+    ]},
+    { name: "Survival", spells: [
+      { id: "caltrops",     name: "Caltrops",    desc: "Drop spikes that slow enemies" },
+      { id: "evasion",      name: "Evasion",     desc: "Become hard to hit briefly" },
+      { id: "camouflage",   name: "Camouflage",  desc: "Vanish from enemies temporarily" }
+    ]},
+    { name: "Trickery", spells: [
+      { id: "multishot",   name: "Multishot",   desc: "Fire three arrows simultaneously" },
+      { id: "smoke_bomb",  name: "Smoke Bomb",  desc: "Disorient nearby enemies" },
+      { id: "volley",      name: "Volley",      desc: "Rapid burst of arrows" }
+    ]}
+  ]
+};
 const PRODUCTION_SERVER_URL = "wss://balathor.edmundmurphy.com/ws";
 const SERVER_URL_STORAGE_KEY = "balathor.serverUrl";
 const DEBUG_HUD_STORAGE_KEY = "balathor.debugHud";
@@ -435,6 +497,7 @@ function handleServerMessage(message) {
     progression.classList.remove("hidden");
     chat.classList.remove("hidden");
     mobileControls.classList.remove("hidden");
+    abilityBar.classList.remove("hidden");
     state.camera.x = message.spawn.x * TILE_SIZE;
     state.camera.y = message.spawn.y * TILE_SIZE;
     requestVisibleChunks();
@@ -492,6 +555,7 @@ function handleServerMessage(message) {
     updateSelfInventory();
     renderEquipment();
     renderBags();
+    renderAbilityBar();
     renderShop();
     if (state.activeWindow === "trader") {
       renderTraderStock();
@@ -610,6 +674,19 @@ function handleServerMessage(message) {
 
   if (message.type === "buildingBought") {
     state.buildingOwnership.set(`${message.buildingX},${message.buildingY}`, message.ownerName);
+    return;
+  }
+
+  if (message.type === "spellCast") {
+    state.spellFx = state.spellFx || [];
+    state.spellFx.push({
+      spellId: message.spellId,
+      casterId: message.casterId,
+      x: message.x,
+      y: message.y,
+      createdAt: performance.now(),
+      ttl: 800
+    });
     return;
   }
 }
@@ -1031,11 +1108,9 @@ function wireUi() {
     }
   });
 
-  equipmentSlots.addEventListener("pointerdown", (event) => {
+  equipmentPanel.addEventListener("pointerdown", (event) => {
     const button = event.target.closest("[data-equipment-action]");
-    if (!button) {
-      return;
-    }
+    if (!button) return;
     event.preventDefault();
     event.stopPropagation();
     const equipmentSlot = button.dataset.equipmentSlot;
@@ -1044,6 +1119,20 @@ function wireUi() {
     } else if (button.dataset.equipmentAction === "drop") {
       send({ type: "unequipItem", equipmentSlot, drop: true });
     }
+  });
+
+  // Ability bar toggle
+  abilityBarToggle.addEventListener("click", () => {
+    const minimized = abilityBar.classList.toggle("minimized");
+    abilityBarToggle.textContent = minimized ? "+" : "−";
+  });
+
+  // Ability slot right-click to clear
+  abilitySlotsEl.addEventListener("contextmenu", (event) => {
+    const slot = event.target.closest("[data-slot]");
+    if (!slot) return;
+    event.preventDefault();
+    send({ type: "setAbilitySlot", slot: Number(slot.dataset.slot), spellId: null });
   });
 
   inventorySlots.addEventListener("pointerdown", (event) => {
@@ -1186,6 +1275,14 @@ function wireUi() {
       return;
     }
 
+    // Ability bar keybinds 1-5
+    const abilityKey = parseInt(event.key, 10);
+    if (abilityKey >= 1 && abilityKey <= 5 && state.joined && !isTextEntryTarget(event.target)) {
+      event.preventDefault();
+      castAbilitySlot(abilityKey - 1);
+      return;
+    }
+
     updateInput(event, true);
   });
   window.addEventListener("keyup", (event) => updateInput(event, false));
@@ -1307,6 +1404,52 @@ function sendHome() {
     if (!state.joined) return;
     send({ type: "home" });
   }, HOME_CAST_MS);
+}
+
+function castAbilitySlot(slotIndex) {
+  const self = state.players.get(state.selfId);
+  if (!self) return;
+  const spellId = (self.abilityBar || [])[slotIndex];
+  if (!spellId) return;
+  send({ type: "castSpell", spellId, slot: slotIndex });
+}
+
+function renderAbilityBar() {
+  const self = state.players.get(state.selfId);
+  if (!self || !state.joined) return;
+  const bar = self.abilityBar || [null, null, null, null, null];
+  abilityBar.classList.remove("hidden");
+
+  const slots = abilitySlotsEl.querySelectorAll(".ability-slot");
+  slots.forEach((slot, i) => {
+    const spellId = bar[i] || null;
+    slot.classList.toggle("filled", Boolean(spellId));
+    // Remove existing content (keep .ability-key span)
+    const keySpan = slot.querySelector(".ability-key");
+    slot.replaceChildren(keySpan || (() => {
+      const k = document.createElement("span");
+      k.className = "ability-key";
+      k.textContent = String(i + 1);
+      return k;
+    })());
+    if (spellId) {
+      const ic = document.createElement("canvas");
+      ic.width = 32; ic.height = 32;
+      ic.style.cssText = "position:absolute;top:4px;left:50%;transform:translateX(-50%);image-rendering:pixelated;";
+      drawSpellIcon(ic, spellId, true);
+      slot.prepend(ic);
+      const nm = document.createElement("div");
+      nm.className = "ability-slot-name";
+      nm.style.cssText = "position:absolute;top:38px;left:0;right:0;";
+      const spellInfo = Object.values(TALENT_TREES).flat()
+        .flatMap(t => t.spells)
+        .find(s => s.id === spellId);
+      nm.textContent = spellInfo?.name || spellId;
+      slot.append(nm);
+    }
+    const kSpan = slot.querySelector(".ability-key");
+    if (kSpan) slot.append(kSpan);
+  });
 }
 
 function sendInteract(target = null) {
@@ -1584,6 +1727,7 @@ function resetToConnection(message) {
   equipmentPanel.classList.add("hidden");
   bagsPanel.classList.add("hidden");
   traderPanel.classList.add("hidden");
+  abilityBar.classList.add("hidden");
   chat.classList.add("hidden");
   mobileControls.classList.add("hidden");
   setChatMinimized(false);
@@ -1857,64 +2001,205 @@ function renderProgression(self) {
   });
 }
 
-function renderEquipment() {
-  const slots = [
-    ["weapon", "Weapon"],
-    ["body", "Body"],
-    ["ring1", "Ring"],
-    ["ring2", "Ring"]
-  ];
-  equipmentSlots.replaceChildren();
+let equipTalentTreeIndex = 0;
 
-  for (const [slot, label] of slots) {
-    const item = state.equipment?.[slot] || null;
-    const cell = document.createElement("div");
-    cell.className = `equipment-slot ${item ? item.rarity || "common" : "empty"}`;
+function makeEquipSlotEl(slot, label) {
+  const item = state.equipment?.[slot] || null;
+  const cell = document.createElement("div");
+  cell.className = `equip-slot-mini ${item ? item.rarity || "common" : "empty"}`;
+  cell.dataset.equipmentSlot = slot;
 
-    const labelEl = document.createElement("span");
-    labelEl.className = "slot-label";
-    labelEl.textContent = label;
+  const lbl = document.createElement("span");
+  lbl.className = "slot-label";
+  lbl.textContent = label;
 
-    if (!item) {
-      const empty = document.createElement("strong");
-      empty.textContent = "Empty";
-      cell.append(labelEl, empty);
-      equipmentSlots.append(cell);
-      continue;
-    }
+  const nameEl = document.createElement("span");
+  nameEl.className = "slot-name";
+  nameEl.textContent = item ? item.name : "Empty";
 
-    const icon = createItemIcon(item);
-    const name = document.createElement("strong");
-    name.textContent = item.name;
+  cell.append(lbl, nameEl);
 
-    const stats = document.createElement("span");
-    stats.className = "item-stats";
-    stats.textContent = formatItemStats(item);
-
-    const actions = document.createElement("div");
-    actions.className = "item-actions";
+  if (item) {
+    const statsEl = document.createElement("span");
+    statsEl.className = "item-stats";
+    statsEl.style.fontSize = "10px";
+    statsEl.textContent = formatItemStats(item);
+    const actEl = document.createElement("div");
+    actEl.className = "item-actions";
     const unequip = document.createElement("button");
     unequip.type = "button";
+    unequip.style.fontSize = "10px";
+    unequip.style.minHeight = "22px";
     unequip.dataset.equipmentAction = "unequip";
     unequip.dataset.equipmentSlot = slot;
     unequip.textContent = "Unequip";
     const drop = document.createElement("button");
     drop.type = "button";
+    drop.style.fontSize = "10px";
+    drop.style.minHeight = "22px";
     drop.dataset.equipmentAction = "drop";
     drop.dataset.equipmentSlot = slot;
     drop.textContent = "Drop";
-    actions.append(unequip, drop);
+    actEl.append(unequip, drop);
+    cell.append(statsEl, actEl);
+  }
+  return cell;
+}
 
-    const info = document.createElement("div");
-    info.className = "item-info";
-    info.append(name, stats, actions);
-    const body = document.createElement("div");
-    body.className = "item-body";
-    body.append(icon, info);
-    cell.append(labelEl, body);
-    equipmentSlots.append(cell);
+function renderCharPreview(self) {
+  if (!charPreviewCanvas || !self) return;
+  const oc = new OffscreenCanvas(charPreviewCanvas.width, charPreviewCanvas.height);
+  const mainCtx = ctx;
+  ctx = oc.getContext("2d", { alpha: true });
+  ctx.clearRect(0, 0, oc.width, oc.height);
+  ctx.imageSmoothingEnabled = false;
+  const previewEnt = {
+    ...self,
+    renderX: 0, renderY: 0,
+    facing: Math.PI / 2,
+    renderMoving: false,
+    walkPhase: 0,
+    equipment: state.equipment
+  };
+  drawCharacter(previewEnt, oc.width / 2, oc.height / 2 + 10);
+  ctx = mainCtx;
+  const pCtx = charPreviewCanvas.getContext("2d");
+  pCtx.clearRect(0, 0, charPreviewCanvas.width, charPreviewCanvas.height);
+  pCtx.drawImage(oc, 0, 0);
+}
+
+function renderTalentTree(self) {
+  if (!talentTreeEl || !self) return;
+  const classId = self.classId || "ranger";
+  const trees = TALENT_TREES[classId] || TALENT_TREES.ranger;
+  const tree = trees[equipTalentTreeIndex] || trees[0];
+  const unlockedTalents = self.talents || {};
+  const abilityBarData = self.abilityBar || [null, null, null, null, null];
+
+  // Rebuild tabs
+  talentTabsEl.replaceChildren();
+  trees.forEach((t, i) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `talent-tab${i === equipTalentTreeIndex ? " active" : ""}`;
+    btn.textContent = t.name;
+    btn.addEventListener("click", () => { equipTalentTreeIndex = i; renderTalentTree(self); });
+    talentTabsEl.append(btn);
+  });
+
+  // Render spell nodes
+  talentTreeEl.replaceChildren();
+  tree.spells.forEach((spell, tier) => {
+    const unlocked = Boolean(unlockedTalents[spell.id]);
+    const prevUnlocked = tier === 0 || Boolean(unlockedTalents[tree.spells[tier - 1].id]);
+    const equipped = abilityBarData.some(s => s === spell.id);
+
+    const node = document.createElement("div");
+    node.className = `talent-node${unlocked ? " unlocked" : ""}${!prevUnlocked ? " locked" : ""}${equipped ? " equipped" : ""}`;
+
+    const tierLabel = document.createElement("span");
+    tierLabel.className = "talent-node-tier";
+    tierLabel.textContent = `T${tier + 1}`;
+
+    const ic = document.createElement("canvas");
+    ic.className = "talent-node-icon";
+    ic.width = 28; ic.height = 28;
+    drawSpellIcon(ic, spell.id, unlocked);
+
+    const nameEl = document.createElement("div");
+    nameEl.className = "talent-node-name";
+    nameEl.textContent = spell.name;
+
+    const desc = document.createElement("div");
+    desc.className = "talent-node-desc";
+    desc.textContent = spell.desc;
+
+    node.append(tierLabel, ic, nameEl, desc);
+
+    if (!unlocked && prevUnlocked) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.style.cssText = "margin-top:4px;font-size:10px;min-height:20px;padding:0 6px;border:1px solid #7a5a1e;border-radius:3px;background:#2e1e08;color:#e8c86a;cursor:pointer;";
+      btn.textContent = "Unlock (1pt)";
+      btn.addEventListener("click", () => send({ type: "spendTalent", talentId: spell.id }));
+      node.append(btn);
+    } else if (unlocked && !equipped) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.style.cssText = "margin-top:4px;font-size:10px;min-height:20px;padding:0 6px;border:1px solid #22c55e;border-radius:3px;background:#0e2010;color:#22c55e;cursor:pointer;";
+      btn.textContent = "Equip to bar";
+      btn.addEventListener("click", () => {
+        const freeSlot = (self.abilityBar || []).findIndex(s => s === null);
+        if (freeSlot === -1) return;
+        send({ type: "setAbilitySlot", slot: freeSlot, spellId: spell.id });
+      });
+      node.append(btn);
+    }
+
+    talentTreeEl.append(node);
+  });
+}
+
+function renderEquipment() {
+  const self = state.players.get(state.selfId);
+  if (!self) return;
+
+  const leftSlots  = [["weapon", "Weapon"], ["ring1", "Ring 1"]];
+  const rightSlots = [["body", "Body"],     ["ring2", "Ring 2"]];
+
+  equipSlotsLeft.replaceChildren(...leftSlots.map(([s, l]) => makeEquipSlotEl(s, l)));
+  equipSlotsRight.replaceChildren(...rightSlots.map(([s, l]) => makeEquipSlotEl(s, l)));
+
+  renderCharPreview(self);
+
+  const stats = self.stats || {};
+  charStatsEl.innerHTML = "";
+  for (const [label, val] of [
+    ["HP",  `${self.hp || 0} / ${self.maxHp || 0}`],
+    ["Spd", stats.speed || 0],
+    ["Str", stats.strength || 0],
+    ["Arm", stats.armour || 0],
+    ["Hth", stats.health || 0]
+  ]) {
+    const row = document.createElement("div");
+    row.className = "char-stat-row";
+    row.innerHTML = `<span>${label}</span><strong>${val}</strong>`;
+    charStatsEl.append(row);
+  }
+
+  const tp = self.talentPoints || 0;
+  talentPointsText.textContent = `${tp} talent point${tp === 1 ? "" : "s"}`;
+
+  renderTalentTree(self);
+}
+
+function drawSpellIcon(iconCanvas, spellId, unlocked) {
+  const c = iconCanvas.getContext("2d");
+  c.clearRect(0, 0, 28, 28);
+  const col = unlocked ? SPELL_ICON_COLORS[spellId] || "#c79cff" : "#3a2810";
+  c.fillStyle = col;
+  c.beginPath();
+  c.ellipse(14, 14, 10, 10, 0, 0, Math.PI * 2);
+  c.fill();
+  if (unlocked) {
+    c.fillStyle = "rgba(255,255,255,0.25)";
+    c.beginPath();
+    c.ellipse(11, 11, 4, 4, 0, 0, Math.PI * 2);
+    c.fill();
   }
 }
+
+const SPELL_ICON_COLORS = {
+  fireball: "#ff6b1a", fire_nova: "#ff8c00", inferno: "#ff3300",
+  ice_shard: "#88ccff", frost_barrier: "#a0d8ef", blizzard: "#6ab0e0",
+  arcane_bolt: "#c79cff", mana_shield: "#9966ff", time_warp: "#cc88ff",
+  shield_bash: "#8899aa", divine_shield: "#ffe066", fortify: "#aabbcc",
+  holy_strike: "#ffee88", consecration: "#ffd700", divine_wrath: "#ffcc44",
+  healing_aura: "#66ff88", lay_on_hands: "#44dd66", battle_cry: "#ffaa44",
+  precise_shot: "#88ff44", piercing_arrow: "#aaff66", rain_of_arrows: "#66dd22",
+  caltrops: "#aaa066", evasion: "#ccbb44", camouflage: "#448844",
+  multishot: "#88dd44", smoke_bomb: "#777766", volley: "#99cc44"
+};
 
 function renderBags() {
   renderNearbyLoot();
@@ -2117,6 +2402,9 @@ function setActiveGameWindow(windowName) {
   traderPanel.classList.toggle("hidden", windowName !== "trader");
   equipmentButton.classList.toggle("selected", windowName === "equipment");
   bagsButton.classList.toggle("selected", windowName === "bags");
+  if (windowName === "equipment") {
+    renderEquipment();
+  }
   if (windowName !== "trader") {
     state.traderNpcId = null;
     state.traderItems = [];
@@ -2614,16 +2902,36 @@ function drawItemIcon(item, x, y) {
 }
 
 function drawModCape(px, py, scale, bob, dirX, dirY) {
-  // Cape drapes behind the character: two overlapping rectangles that sway with movement
   const capeX = px + 4 * scale;
   const capeY = py + 2 * scale + bob;
   const sway = Math.round(dirX * 2);
-  ctx.fillStyle = "#2d9e3a";
-  ctx.fillRect(capeX, capeY, 8 * scale, 6 * scale);
-  ctx.fillStyle = "#1a6828";
-  ctx.fillRect(capeX + sway, capeY + 4 * scale, 8 * scale, 5 * scale);
-  ctx.fillStyle = "#6dcc7a";
-  ctx.fillRect(capeX + 1, capeY, 2, 3 * scale);
+  // Dark purple cape — wide body + flowing lower half
+  ctx.fillStyle = "#1a0a30";
+  ctx.fillRect(capeX - scale, capeY, 10 * scale, 7 * scale);
+  ctx.fillStyle = "#120820";
+  ctx.fillRect(capeX + sway - scale, capeY + 5 * scale, 10 * scale, 7 * scale);
+  // Gold trim along top edge
+  ctx.fillStyle = "#b8902a";
+  ctx.fillRect(capeX - scale, capeY, 10 * scale, scale);
+}
+
+function drawModHood(hx, hy, scale, dirX, torsoColor) {
+  // Cowl base — extends above and around the standard head rect
+  ctx.fillStyle = "#1a0a30";
+  ctx.fillRect(hx - scale, hy - scale, 7 * scale, 6 * scale);
+  // Shadow inside hood
+  ctx.fillStyle = "#0a0418";
+  ctx.fillRect(hx, hy, 5 * scale, 4 * scale);
+  // Peek of face in shadow
+  ctx.fillStyle = "#c08060";
+  ctx.fillRect(hx + scale + Math.max(0, dirX) * scale, hy + scale, 3 * scale, 2 * scale);
+  // Eyes glowing slightly
+  ctx.fillStyle = "#c79cff";
+  ctx.fillRect(hx + scale + Math.max(0, dirX) * scale, hy + scale, scale, scale);
+  ctx.fillRect(hx + 3 * scale + Math.max(0, dirX) * scale, hy + scale, scale, scale);
+  // Gold trim on cowl rim
+  ctx.fillStyle = "#b8902a";
+  ctx.fillRect(hx - scale, hy - scale, 7 * scale, scale);
 }
 
 function drawCharacter(entity, x, y, isNpc = false) {
@@ -2643,20 +2951,21 @@ function drawCharacter(entity, x, y, isNpc = false) {
   const fx   = Math.round(dirX);
   const fy   = Math.round(dirY * 0.6);
 
-  const torsoColor = entity.torsoColor || entity.primary || "#5cc8ff";
+  const isMod       = entity.isMod;
+  const torsoColor  = isMod ? "#1a0a30" : (entity.torsoColor || entity.primary || "#5cc8ff");
   const weaponColor = entity.weaponColor || entity.accent || "#ffd166";
-  const torsoStyle  = entity.torsoStyle || "tunic";
+  const torsoStyle  = isMod ? "robe" : (entity.torsoStyle || "tunic");
   const skinColor   = "#f0c9a2";
   const skinShadow  = "#c88a60";
-  const pantColor   = "#2a3044";
-  const bootColor   = "#1a1e2c";
+  const pantColor   = isMod ? "#0e0620" : "#2a3044";
+  const bootColor   = isMod ? "#0a0418" : "#1a1e2c";
 
   const bx = x;
   const by = y + bob;
 
   drawEllipseShadow(x - 12, y + 12, 24, 6, 0.28);
 
-  if (entity.isMod) {
+  if (isMod) {
     drawModCape(bx - 5 * s, by - 4 * s, s, bob, dirX, dirY);
   }
 
@@ -2678,32 +2987,34 @@ function drawCharacter(entity, x, y, isNpc = false) {
   const lAY = by - 2 * s - armSwing;
   const rAX = bx + 4 * s;
   const rAY = by - 2 * s + armSwing;
-  ctx.fillStyle = skinColor;
+  ctx.fillStyle = isMod ? "#1a0a30" : skinColor;
   ctx.fillRect(lAX, lAY, 2 * s, 4 * s);
   ctx.fillRect(rAX, rAY, 2 * s, 4 * s);
 
-  // Small head
+  // Head / hood
   const hx = bx - 2 * s + fx * s;
   const hy = by - 7 * s + fy;
-  ctx.fillStyle = skinColor;
-  ctx.fillRect(hx, hy, 5 * s, 4 * s);
-  ctx.fillStyle = skinShadow;
-  ctx.fillRect(hx, hy + 3 * s, 5 * s, s);
-
-  // Hair / hat stripe
-  ctx.fillStyle = weaponColor;
-  ctx.fillRect(hx, hy, 5 * s, s + 1);
-  if (entity.classId === "mage") {
-    ctx.fillRect(hx + s,           hy - 2 * s, 3 * s, 2 * s);
-    ctx.fillRect(hx + s + (s >> 1), hy - 3 * s, 2 * s, s);
+  if (isMod) {
+    drawModHood(hx, hy, s, dirX, torsoColor);
+  } else {
+    ctx.fillStyle = skinColor;
+    ctx.fillRect(hx, hy, 5 * s, 4 * s);
+    ctx.fillStyle = skinShadow;
+    ctx.fillRect(hx, hy + 3 * s, 5 * s, s);
+    // Hair / hat stripe
+    ctx.fillStyle = weaponColor;
+    ctx.fillRect(hx, hy, 5 * s, s + 1);
+    if (entity.classId === "mage") {
+      ctx.fillRect(hx + s,           hy - 2 * s, 3 * s, 2 * s);
+      ctx.fillRect(hx + s + (s >> 1), hy - 3 * s, 2 * s, s);
+    }
+    // Eyes
+    ctx.fillStyle = "#1d2430";
+    const eyeY = hy + 2 * s;
+    const eo   = Math.max(0, fx) * s;
+    ctx.fillRect(hx +     s + eo, eyeY, s, s);
+    ctx.fillRect(hx + 3 * s + eo, eyeY, s, s);
   }
-
-  // Eyes
-  ctx.fillStyle = "#1d2430";
-  const eyeY = hy + 2 * s;
-  const eo   = Math.max(0, fx) * s;
-  ctx.fillRect(hx +     s + eo, eyeY, s, s);
-  ctx.fillRect(hx + 3 * s + eo, eyeY, s, s);
 
   // Weapon / equipment
   if (!isNpc) {
@@ -3570,79 +3881,6 @@ function drawCenterTreehouse(sx, sy) {
   ctx.fillStyle = "#1e5a1e";
   ctx.beginPath(); ctx.ellipse(cx - 62, cy - 24, 30, 42, -0.28, 0, Math.PI * 2); ctx.fill();
   ctx.beginPath(); ctx.ellipse(cx + 62, cy - 24, 30, 42,  0.28, 0, Math.PI * 2); ctx.fill();
-  ctx.shadowBlur = 0;
-
-  // Platform
-  const platY = cy - 32;
-  ctx.fillStyle = "#2e1608";
-  ctx.fillRect(cx - 60, platY - 8, 120, 12);
-  ctx.fillStyle = "#4e2e14";
-  for (let i = 0; i < 120; i += 11) ctx.fillRect(cx - 60 + i, platY - 8, 9, 12);
-  ctx.fillStyle = "#1a0c04";
-  ctx.fillRect(cx - 60, platY - 8, 120, 2);
-
-  // Treehouse walls
-  const hW = 88; const hH = 52;
-  const hX = cx - hW / 2; const hY = platY - hH - 6;
-  ctx.fillStyle = "#3a2410";
-  ctx.fillRect(hX, hY, hW, hH);
-  ctx.fillStyle = "#1a0c04";
-  for (let i = 0; i < hW; i += 8) ctx.fillRect(hX + i, hY, 1, hH);
-
-  // Roof peak
-  ctx.fillStyle = "#200e04";
-  ctx.beginPath();
-  ctx.moveTo(hX - 8, hY);
-  ctx.lineTo(cx,     hY - 26);
-  ctx.lineTo(hX + hW + 8, hY);
-  ctx.fill();
-  ctx.fillStyle = "#3a1e0a";
-  ctx.fillRect(hX - 8, hY - 4, hW + 16, 6);
-  // Shingle rows
-  for (let row = 0; row < 4; row++) {
-    ctx.fillStyle = row % 2 === 0 ? "#2e1608" : "#4a2814";
-    ctx.fillRect(hX - 8 + row * 3, hY - 4 + row * 5, hW + 16 - row * 6, 5);
-  }
-
-  // Glowing windows
-  ctx.shadowColor = "#ffe080"; ctx.shadowBlur = 10;
-  ctx.fillStyle = "#ffe898";
-  ctx.fillRect(hX + 10, hY + 12, 16, 14);
-  ctx.fillRect(hX + hW - 26, hY + 12, 16, 14);
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = "#1a0c04";
-  ctx.fillRect(hX + 17, hY + 12, 2, 14); ctx.fillRect(hX + 10, hY + 18, 16, 2);
-  ctx.fillRect(hX + hW - 19, hY + 12, 2, 14); ctx.fillRect(hX + hW - 26, hY + 18, 16, 2);
-
-  // Door
-  const dW = 18; const dH = 28;
-  ctx.fillStyle = "#7a4a18";
-  ctx.fillRect(cx - dW / 2 - 2, hY + hH - dH - 2, dW + 4, dH + 2);
-  ctx.fillStyle = "#0e0604";
-  ctx.fillRect(cx - dW / 2, hY + hH - dH, dW, dH);
-  ctx.fillStyle = "#e8b030";
-  ctx.fillRect(cx + dW / 2 - 5, hY + hH - dH / 2, 3, 3);
-
-  // Rope ladder
-  const rLX = cx + 20;
-  ctx.strokeStyle = "#7a5830"; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(rLX - 4, platY + 4); ctx.lineTo(rLX - 4, platY + 55); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(rLX + 4, platY + 4); ctx.lineTo(rLX + 4, platY + 55); ctx.stroke();
-  ctx.lineWidth = 1.5;
-  for (let ry = platY + 10; ry < platY + 53; ry += 7) {
-    ctx.beginPath(); ctx.moveTo(rLX - 4, ry); ctx.lineTo(rLX + 4, ry); ctx.stroke();
-  }
-
-  // Hanging lanterns
-  ctx.shadowColor = "#ffe080"; ctx.shadowBlur = 10;
-  for (const [lx, ly] of [[cx - 46, platY], [cx + 46, platY], [cx, hY - 2]]) {
-    ctx.strokeStyle = "#6a4820"; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(lx, ly - 6); ctx.lineTo(lx, ly); ctx.stroke();
-    ctx.fillStyle = "#ffe080";
-    ctx.fillRect(lx - 4, ly, 8, 9);
-    ctx.fillStyle = "#fff4a0";
-    ctx.fillRect(lx - 2, ly + 2, 4, 5);
-  }
   ctx.shadowBlur = 0;
 
   ctx.restore();

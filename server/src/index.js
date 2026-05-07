@@ -476,6 +476,9 @@ function serializePlayer(player) {
     xp: player.xp,
     level: player.level,
     statPoints: player.statPoints,
+    talentPoints: player.talentPoints || 0,
+    talents: player.talents || {},
+    abilityBar: player.abilityBar || [null, null, null, null, null],
     stats: player.stats,
     gold: player.gold,
     inventory: player.inventory,
@@ -847,6 +850,36 @@ function handleMessage(client, raw) {
     // Broadcast ownership update to all clients
     for (const c of clients.values()) send(c, { type: "buildingBought", buildingX: building.x, buildingY: building.y, ownerName: client.player.name });
   }
+
+  if (message.type === "spendTalent") {
+    const p = client.player;
+    if (!p || (p.talentPoints || 0) < 1) return;
+    const talentId = typeof message.talentId === "string" ? message.talentId.slice(0, 32) : null;
+    if (!talentId || p.talents[talentId]) return;
+    p.talentPoints -= 1;
+    p.talents[talentId] = true;
+    saveClientCharacter(client);
+  }
+
+  if (message.type === "setAbilitySlot") {
+    const p = client.player;
+    if (!p) return;
+    const slot = Number(message.slot);
+    if (!Number.isInteger(slot) || slot < 0 || slot > 4) return;
+    const spellId = message.spellId === null ? null : typeof message.spellId === "string" ? message.spellId.slice(0, 32) : null;
+    if (spellId !== null && !p.talents[spellId]) return;
+    p.abilityBar = p.abilityBar || [null, null, null, null, null];
+    p.abilityBar[slot] = spellId;
+    saveClientCharacter(client);
+  }
+
+  if (message.type === "castSpell") {
+    const p = client.player;
+    if (!p) return;
+    const spellId = typeof message.spellId === "string" ? message.spellId : null;
+    if (!spellId || !p.talents[spellId]) return;
+    handleCastSpell(client, spellId);
+  }
 }
 
 function handleAuth(client, message) {
@@ -936,6 +969,11 @@ function joinWorld(client, message, savedCharacter = null) {
       torsoColor,
       weaponColor
     }),
+    talentPoints: clampInteger(savedCharacter?.talentPoints ?? 0, 0, 10000),
+    talents: savedCharacter?.talents || {},
+    abilityBar: Array.isArray(savedCharacter?.abilityBar)
+      ? savedCharacter.abilityBar.slice(0, 5).map(v => (typeof v === "string" ? v : null))
+      : [null, null, null, null, null],
     x: spawn.x,
     y: spawn.y,
     facing: 0,
@@ -1414,6 +1452,7 @@ function awardXp(player, amount) {
     player.xp -= player.xpToNext;
     player.level += 1;
     player.statPoints += 1;
+    player.talentPoints = (player.talentPoints || 0) + 1;
     levelsGained += 1;
     player.xpToNext = xpForNextLevel(player.level);
   }
@@ -3074,4 +3113,38 @@ function sendJson(res, status, payload) {
     "cache-control": "no-store"
   });
   res.end(JSON.stringify(payload));
+}
+
+const SPELL_COOLDOWNS = new Map();
+const SPELL_COOLDOWN_MS = {
+  fireball: 2000, fire_nova: 4000, inferno: 8000,
+  ice_shard: 2000, frost_barrier: 12000, blizzard: 10000,
+  arcane_bolt: 1500, mana_shield: 15000, time_warp: 20000,
+  shield_bash: 4000, divine_shield: 30000, fortify: 20000,
+  holy_strike: 2000, consecration: 8000, divine_wrath: 10000,
+  healing_aura: 12000, lay_on_hands: 30000, battle_cry: 15000,
+  precise_shot: 2000, piercing_arrow: 3000, rain_of_arrows: 8000,
+  caltrops: 6000, evasion: 12000, camouflage: 20000,
+  multishot: 3000, smoke_bomb: 8000, volley: 6000
+};
+
+function handleCastSpell(client, spellId) {
+  const p = client.player;
+  const now = Date.now();
+  const cdKey = `${p.id}:${spellId}`;
+  const cd = SPELL_COOLDOWN_MS[spellId] || 3000;
+  if ((SPELL_COOLDOWNS.get(cdKey) || 0) + cd > now) return;
+  SPELL_COOLDOWNS.set(cdKey, now);
+
+  if (spellId === "healing_aura" || spellId === "lay_on_hands") {
+    const heal = spellId === "lay_on_hands" ? Math.round(p.maxHp * 0.5) : Math.round(p.maxHp * 0.05);
+    p.hp = Math.min(p.maxHp, p.hp + heal);
+  }
+  if (spellId === "battle_cry" || spellId === "evasion" || spellId === "camouflage") {
+    p._buffExpires = now + 5000;
+    p._buff = spellId;
+  }
+  for (const c of clients.values()) {
+    send(c, { type: "spellCast", casterId: p.id, spellId, x: p.x, y: p.y });
+  }
 }

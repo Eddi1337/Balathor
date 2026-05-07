@@ -127,8 +127,33 @@
         <strong>Equipment</strong>
         <button id="equipmentClose" class="window-close" type="button" aria-label="Close equipment">Close</button>
       </div>
-      <div id="equipmentSlots" class="equipment-slots"></div>
+      <div class="equip-layout">
+        <div class="equip-slots-left" id="equipSlotsLeft"></div>
+        <div class="equip-center">
+          <canvas id="charPreview" width="80" height="110" aria-label="Character preview"></canvas>
+          <div id="charStats" class="char-stats"></div>
+        </div>
+        <div class="equip-slots-right" id="equipSlotsRight"></div>
+      </div>
+      <div class="talent-section">
+        <div class="talent-header">
+          <span id="talentPointsText" class="talent-points-label">0 talent points</span>
+          <div id="talentTabs" class="talent-tabs"></div>
+        </div>
+        <div id="talentTree" class="talent-tree"></div>
+      </div>
     </aside>
+
+    <div id="abilityBar" class="ability-bar hidden" aria-label="Ability bar">
+      <button id="abilityBarToggle" class="ability-bar-toggle" type="button" title="Minimise">&#8722;</button>
+      <div id="abilitySlots" class="ability-slots">
+        <div class="ability-slot" data-slot="0"><span class="ability-key">1</span></div>
+        <div class="ability-slot" data-slot="1"><span class="ability-key">2</span></div>
+        <div class="ability-slot" data-slot="2"><span class="ability-key">3</span></div>
+        <div class="ability-slot" data-slot="3"><span class="ability-key">4</span></div>
+        <div class="ability-slot" data-slot="4"><span class="ability-key">5</span></div>
+      </div>
+    </div>
 
     <aside id="bagsPanel" class="game-window bags-window hidden" aria-label="Bags">
       <div class="window-head">
