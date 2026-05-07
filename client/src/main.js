@@ -1240,6 +1240,7 @@ function updateInput(event, pressed) {
   }
   event.preventDefault();
   state.input[key] = pressed;
+  if (pressed && homeCastTimer) cancelHomeCast(); // movement cancels cast
 }
 
 function clearMovementInput() {
@@ -1274,12 +1275,38 @@ function sendInput() {
   });
 }
 
+let homeCastTimer = null;
+const HOME_CAST_MS = 3000;
+
+function cancelHomeCast() {
+  if (homeCastTimer) {
+    clearTimeout(homeCastTimer);
+    homeCastTimer = null;
+  }
+  const bar = document.getElementById("cast-bar");
+  if (bar) bar.classList.remove("casting");
+}
+
 function sendHome() {
-  if (!state.joined) {
+  if (!state.joined) return;
+  if (homeCastTimer) {
+    cancelHomeCast();
     return;
   }
   clearMovementInput();
-  send({ type: "home" });
+  const bar  = document.getElementById("cast-bar");
+  const fill = document.getElementById("cast-bar-fill");
+  if (bar)  bar.classList.add("casting");
+  if (fill) { fill.style.transition = "none"; fill.style.width = "0%"; }
+  requestAnimationFrame(() => {
+    if (fill) { fill.style.transition = `width ${HOME_CAST_MS}ms linear`; fill.style.width = "100%"; }
+  });
+  homeCastTimer = setTimeout(() => {
+    homeCastTimer = null;
+    if (bar) bar.classList.remove("casting");
+    if (!state.joined) return;
+    send({ type: "home" });
+  }, HOME_CAST_MS);
 }
 
 function sendInteract(target = null) {
