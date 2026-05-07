@@ -1876,7 +1876,13 @@ function renderEquipment() {
     drop.textContent = "Drop";
     actions.append(unequip, drop);
 
-    cell.append(labelEl, icon, name, stats, actions);
+    const info = document.createElement("div");
+    info.className = "item-info";
+    info.append(name, stats, actions);
+    const body = document.createElement("div");
+    body.className = "item-body";
+    body.append(icon, info);
+    cell.append(labelEl, body);
     equipmentSlots.append(cell);
   }
 }
@@ -1914,7 +1920,13 @@ function renderBags() {
       actions.append(itemActionButton("use", slot, "Use"));
     }
     actions.append(itemActionButton("drop", slot, "Drop"));
-    cell.append(createItemIcon(item), name, stats, actions);
+    const info = document.createElement("div");
+    info.className = "item-info";
+    info.append(name, stats, actions);
+    const body = document.createElement("div");
+    body.className = "item-body";
+    body.append(createItemIcon(item), info);
+    cell.append(body);
     inventorySlots.append(cell);
   });
 }
@@ -2638,6 +2650,20 @@ function drawTorso2(tx, ty, s, style, torsoColor, trimColor, classId, fx, fy) {
   const w = 12 * s;
   const h = 10 * s;
 
+  if (style === "legendary") {
+    ctx.shadowColor = "#ffd166";
+    ctx.shadowBlur = 10;
+    // draw same as "armor" style but with gold trim
+    ctx.fillStyle = torsoColor;
+    ctx.fillRect(tx - 5 * s, ty, 10 * s, 10 * s);
+    ctx.fillStyle = "#ffd166";
+    ctx.fillRect(tx - 5 * s, ty, 10 * s, 2 * s);
+    ctx.fillRect(tx - 5 * s, ty + 8 * s, 10 * s, 2 * s);
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = "transparent";
+    return;
+  }
+
   if (style === "armor") {
     ctx.fillStyle = "#5a6577";
     ctx.fillRect(tx, ty, w, h);
@@ -2761,20 +2787,27 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
   if (!entity.weaponKind) {
     return;
   }
+  const isLegendary = style === "legendary";
   ctx.save();
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
+  if (isLegendary) {
+    ctx.save();
+    ctx.shadowColor = "#ffd166";
+    ctx.shadowBlur = 14;
+  }
+
   if (weaponKind === "staff") {
     const tipX = lHandX + dirX * 8 - sideX * 4;
     const tipY = lHandY - 40 + dirY * 8 - sideY * 4;
-    ctx.strokeStyle = style === "ornate" ? accent : "#6b4428";
+    ctx.strokeStyle = style === "ornate" || style === "legendary" ? accent : "#6b4428";
     ctx.lineWidth = style === "heavy" ? 7 : 5;
     ctx.beginPath();
     ctx.moveTo(lHandX, lHandY);
     ctx.lineTo(tipX, tipY);
     ctx.stroke();
-    ctx.fillStyle = style === "ornate" ? "#c79cff" : "#ff7a45";
+    ctx.fillStyle = style === "ornate" || style === "legendary" ? "#c79cff" : "#ff7a45";
     ctx.beginPath();
     ctx.arc(tipX, tipY, style === "heavy" ? 8 : 6, 0, Math.PI * 2);
     ctx.fill();
@@ -2783,7 +2816,7 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
   } else if (weaponKind === "sword") {
     const swordTipX = rHandX + dirX * 28 + sideX * 6;
     const swordTipY = rHandY - 10 + dirY * 28 + sideY * 6;
-    ctx.strokeStyle = style === "ornate" ? accent : "#edf3f7";
+    ctx.strokeStyle = style === "ornate" || style === "legendary" ? accent : "#edf3f7";
     ctx.lineWidth = style === "heavy" ? 7 : 5;
     ctx.beginPath();
     ctx.moveTo(rHandX, rHandY);
@@ -2805,11 +2838,11 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
     ctx.stroke();
     ctx.fillStyle = accent;
     ctx.fillRect(lHandX - 2, lHandY - 14, 4, 20);
-    if (style === "ornate") {
+    if (style === "ornate" || style === "legendary") {
       ctx.fillRect(lHandX - 7, lHandY - 6, 14, 4);
     }
   } else {
-    ctx.strokeStyle = style === "ornate" ? accent : "#8b5a34";
+    ctx.strokeStyle = style === "ornate" || style === "legendary" ? accent : "#8b5a34";
     ctx.lineWidth = style === "heavy" ? 7 : 5;
     ctx.beginPath();
     ctx.moveTo(lHandX - dirX * 12, lHandY - 12 - dirY * 12);
@@ -2827,6 +2860,10 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
     ctx.moveTo(rHandX, rHandY);
     ctx.lineTo(rHandX + dirX * 16, rHandY - 14 + dirY * 16);
     ctx.stroke();
+  }
+
+  if (isLegendary) {
+    ctx.restore();
   }
 
   ctx.restore();
@@ -3724,6 +3761,9 @@ function drawHut(building, sx, sy, w, h, variant, roofless) {
   ctx.shadowOffsetY = 5;
 
   if (!roofless) {
+    // Fill full footprint so no interior bleeds through triangular gaps
+    ctx.fillStyle = variant === "desert" ? "#9a7020" : variant === "ember" ? "#241208" : "#5a4818";
+    ctx.fillRect(sx - 5, sy, w + 10, h);
     // Thatched roof: full-width triangle from sy (no top gap)
     ctx.fillStyle = variant === "desert" ? "#b89040" : variant === "ember" ? "#3a2010" : "#8a7230";
     ctx.beginPath();

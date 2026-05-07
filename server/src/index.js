@@ -99,7 +99,8 @@ const BLOCK_CHANCE_BY_RARITY = Object.freeze({
   common: 0.20,
   uncommon: 0.28,
   rare: 0.36,
-  epic: 0.45
+  epic: 0.45,
+  legendary: 0.62
 });
 const MOB_TYPES = Object.freeze({
   forest: {
@@ -2001,19 +2002,29 @@ function createTraderStock(traderId, seed) {
   return stock;
 }
 
+const ITEM_COLORS = [
+  "#ff6b6b", "#ff9f43", "#ffd166", "#a8e673", "#26de81",
+  "#45aaf2", "#a55eea", "#fd79a8", "#00cec9", "#6c5ce7",
+  "#e17055", "#74b9ff", "#55efc4", "#fdcb6e", "#c8a0ff",
+  "#ff7675", "#00b894", "#e84393", "#0984e3", "#f39c12"
+];
+
 function createItemDatabase() {
   const types = ["weapon", "armor", "ring", "potion"];
   const rarities = [
-    { id: "common", label: "Common", multiplier: 1, color: "#d7e4ef" },
-    { id: "uncommon", label: "Uncommon", multiplier: 1.35, color: "#8fe388" },
-    { id: "rare", label: "Rare", multiplier: 1.8, color: "#5cc8ff" },
-    { id: "epic", label: "Epic", multiplier: 2.35, color: "#c79cff" },
+    { id: "common",    label: "Common",    multiplier: 1 },
+    { id: "uncommon",  label: "Uncommon",  multiplier: 1.35 },
+    { id: "rare",      label: "Rare",      multiplier: 1.8 },
+    { id: "epic",      label: "Epic",      multiplier: 2.35 },
+    { id: "legendary", label: "Legendary", multiplier: 3.5 },
   ];
   const result = [];
 
-  for (let i = 0; i < 96; i += 1) {
+  for (let i = 0; i < 120; i += 1) {
     const type = types[i % types.length];
-    const rarity = rarities[Math.min(rarities.length - 1, Math.floor(hash2(i, 11, 700) * rarities.length))];
+    const r = hash2(i, 11, 700);
+    const rarityIdx = r > 0.97 ? 4 : r > 0.85 ? 3 : r > 0.65 ? 2 : r > 0.35 ? 1 : 0;
+    const rarity = rarities[rarityIdx];
     result.push(createItemTemplate(type, rarity, i));
   }
 
@@ -2028,17 +2039,19 @@ function createItemTemplate(type, rarity, index) {
     const weaponKind = kind.toLowerCase();
     const damage = Math.round((4 + hash2(index, 2, 711) * 8) * rarity.multiplier);
     const strength = hash2(index, 3, 712) > 0.68 ? Math.ceil(rarity.multiplier) : 0;
+    const itemColor = ITEM_COLORS[index % ITEM_COLORS.length];
+    const weaponVisualStyle = rarity.id === "legendary" ? "legendary" : visualStyles[index % visualStyles.length];
     return {
       templateId: `weapon_${index}`,
       type,
-      name: `${rarity.label} ${kind}`,
+      name: rarity.id === "legendary" ? `⚜ ${kind} of Legend` : `${rarity.label} ${kind}`,
       icon: weaponKind,
       rarity: rarity.id,
-      color: rarity.color,
+      color: itemColor,
       weaponKind,
       visual: {
-        weaponStyle: visualStyles[index % visualStyles.length],
-        weaponColor: rarity.color
+        weaponStyle: weaponVisualStyle,
+        weaponColor: itemColor
       },
       value: Math.round((28 + damage * 4 + strength * 12) * rarity.multiplier),
       stats: { damage, strength }
@@ -2056,10 +2069,10 @@ function createItemTemplate(type, rarity, index) {
     return {
       templateId: `ring_${index}`,
       type,
-      name: `${rarity.label} ${kind}`,
+      name: rarity.id === "legendary" ? `⚜ ${kind} of Legend` : `${rarity.label} ${kind}`,
       icon: "ring",
       rarity: rarity.id,
-      color: rarity.color,
+      color: ITEM_COLORS[index % ITEM_COLORS.length],
       value: Math.round((32 + value * (statKey === "health" ? 2 : 18)) * rarity.multiplier),
       stats: { [statKey]: value }
     };
@@ -2071,16 +2084,18 @@ function createItemTemplate(type, rarity, index) {
     const kind = armorKinds[index % armorKinds.length];
     const health = Math.round((8 + hash2(index, 4, 713) * 22) * rarity.multiplier);
     const armour = Math.max(1, Math.round((1 + hash2(index, 5, 714) * 3) * rarity.multiplier));
+    const itemColor = ITEM_COLORS[index % ITEM_COLORS.length];
+    const armorVisualStyle = rarity.id === "legendary" ? "legendary" : visualStyles[index % visualStyles.length];
     return {
       templateId: `armor_${index}`,
       type,
-      name: `${rarity.label} ${kind}`,
+      name: rarity.id === "legendary" ? `⚜ ${kind} of Legend` : `${rarity.label} ${kind}`,
       icon: "armor",
       rarity: rarity.id,
-      color: rarity.color,
+      color: itemColor,
       visual: {
-        torsoStyle: visualStyles[index % visualStyles.length],
-        torsoColor: rarity.color
+        torsoStyle: armorVisualStyle,
+        torsoColor: itemColor
       },
       value: Math.round((24 + health * 1.5 + armour * 14) * rarity.multiplier),
       stats: { health, armour }
@@ -2115,7 +2130,7 @@ function createChests() {
 
 function createLootItem(seedX, seedY, qualityBias = 0) {
   const roll = hash2(seedX + nextItemId, seedY - nextItemId, 820) + qualityBias;
-  const highQuality = roll > 0.92 ? "epic" : roll > 0.74 ? "rare" : roll > 0.46 ? "uncommon" : null;
+  const highQuality = roll > 0.97 ? "legendary" : roll > 0.92 ? "epic" : roll > 0.74 ? "rare" : roll > 0.46 ? "uncommon" : null;
   const candidates = highQuality
     ? itemDatabase.filter((item) => item.rarity === highQuality)
     : itemDatabase;
@@ -2143,7 +2158,8 @@ function getItemValue(item) {
     common: 1,
     uncommon: 1.35,
     rare: 1.8,
-    epic: 2.35
+    epic: 2.35,
+    legendary: 3.5
   }[item?.rarity] || 1;
   const statValue =
     (Number(stats.damage) || 0) * 4 +
