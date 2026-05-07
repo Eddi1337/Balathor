@@ -3654,7 +3654,7 @@ function drawLighting() {
 
 function drawPortal(sx, sy, tx, ty) {
   const portal = getPortalAtTile(tx, ty);
-  if (!portal || tx !== portal.x || ty !== portal.y) return;
+  if (!portal) return;
 
   const time = performance.now() / 1000;
   const color = portal.color || "#75f0ff";
@@ -4040,7 +4040,7 @@ function getTile(tileX, tileY) {
 
 function getPortalAtTile(tileX, tileY) {
   for (const portal of state.portals.values()) {
-    if (Math.abs(tileX - portal.x) <= 1 && Math.abs(tileY - portal.y) <= 1) {
+    if (portal.x === tileX && portal.y === tileY) {
       return portal;
     }
   }
