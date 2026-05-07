@@ -19,9 +19,10 @@ const TILE = {
   BED: 15,
   TABLE: 16,
   SHELF: 17,
+  FIREPLACE: 18,
 };
 
-const BLOCKED_TILES = new Set([TILE.WATER, TILE.WALL, TILE.LAVA, TILE.BED, TILE.TABLE, TILE.SHELF]);
+const BLOCKED_TILES = new Set([TILE.WATER, TILE.WALL, TILE.LAVA, TILE.BED, TILE.TABLE, TILE.SHELF, TILE.FIREPLACE]);
 const PORTAL_RADIUS = 1.6;
 const DOOR_RADIUS = 0.52;
 const INTERIOR_BASE_X = 10000;
@@ -30,7 +31,7 @@ const INTERIOR_SPACING = 40;
 const INTERIOR_EXTERIOR_MARGIN = 12;
 const PROCEDURAL_INTERIOR_GRID_SIZE = 1024;
 const PROCEDURAL_INTERIOR_GRID_OFFSET = 512;
-const STARTING_AREA = { x: 0, y: 4, radius: 46 };
+const STARTING_AREA = { x: 0, y: 4, radius: 68 };
 const START_SPAWN = { x: 0, y: -8 };
 
 function hash2(x, y, seed = 1337) {
@@ -43,32 +44,38 @@ function hash2(x, y, seed = 1337) {
 // Hand-crafted buildings: starting town + portal destinations only.
 const BUILDINGS = [
   // Central village
-  { x:  -5, y: -17, w: 10, h: 8, name: "Home" },
-  { x: -38, y: -28, w: 10, h: 8, name: "Blue Roof House" },
-  { x:  28, y: -27, w: 10, h: 8, name: "Red Roof House" },
-  { x: -50, y:  10, w: 12, h: 8, name: "Market House" },
-  { x:  39, y:  15, w: 12, h: 8, name: "Garden House" },
-  { x:  -7, y:  35, w: 14, h: 9, name: "Town Hall" },
+  { x:  -5, y: -17, w: 10, h:  8, name: "Home",            type: "house" },
+  { x: -40, y: -30, w: 10, h:  8, name: "Blue Roof House",  type: "house" },
+  { x:  26, y: -31, w: 16, h: 12, name: "Red Manor",        type: "big_house" },
+  { x: -52, y:  -6, w:  7, h:  6, name: "Woodcutter Hut",   type: "hut" },
+  { x: -50, y:  10, w: 12, h:  8, name: "Market House",     type: "house" },
+  { x:  39, y:  15, w: 12, h:  8, name: "Garden House",     type: "house" },
+  { x:  50, y:  28, w:  7, h:  6, name: "Herb Hut",         type: "hut" },
+  { x: -22, y: -52, w:  9, h:  8, name: "Ranger's Lodge",   type: "treehouse" },
+  { x: -10, y:  38, w: 20, h: 16, name: "Town Keep",        type: "castle" },
   // Desert Oasis (portal destination ~600, 490)
-  { x: 590, y: 479, w: 12, h: 8, name: "Oasis House" },
-  { x: 607, y: 480, w: 10, h: 7, name: "Sun House" },
-  { x: 596, y: 492, w:  9, h: 7, name: "Clay House" },
+  { x: 585, y: 476, w: 16, h: 12, name: "Oasis Palace",     type: "big_house" },
+  { x: 607, y: 478, w:  7, h:  6, name: "Sun Hut",          type: "hut" },
+  { x: 594, y: 491, w:  9, h:  7, name: "Clay House",       type: "house" },
+  { x: 608, y: 489, w:  7, h:  6, name: "Sand Hut",         type: "hut" },
   // Frost Village (portal destination ~-600, -490)
-  { x: -608, y: -499, w: 12, h: 8, name: "Frost Lodge" },
-  { x: -591, y: -498, w: 10, h: 7, name: "Snow House" },
-  { x: -603, y: -487, w:  9, h: 7, name: "Pine Cabin" },
+  { x: -612, y: -502, w: 20, h: 16, name: "Frost Keep",     type: "castle" },
+  { x: -591, y: -500, w: 10, h:  8, name: "Snow House",     type: "house" },
+  { x: -605, y: -486, w:  7, h:  6, name: "Pine Hut",       type: "hut" },
+  { x: -591, y: -487, w:  9, h:  8, name: "Ranger Post",    type: "treehouse" },
   // Ember Camp (portal destination ~580, -530)
-  { x: 570, y: -539, w: 12, h: 8, name: "Ember Hall" },
-  { x: 587, y: -538, w: 10, h: 7, name: "Ash House" },
-  { x: 576, y: -527, w:  9, h: 7, name: "Forge Hut" },
+  { x: 568, y: -542, w: 20, h: 16, name: "Ember Citadel",   type: "castle" },
+  { x: 589, y: -540, w: 10, h:  8, name: "Ash House",       type: "house" },
+  { x: 575, y: -526, w:  7, h:  6, name: "Forge Hut",       type: "hut" },
+  { x: 589, y: -527, w:  9, h:  8, name: "Watcher's Perch", type: "treehouse" },
 ];
 
 // Fixed village clearing zones — only starting town + portal destinations.
 const VILLAGES = [
-  { cx:   0, cy:   4, r: 64 }, // Central Village
-  { cx:  600, cy:  490, r: 30 }, // Desert Oasis
-  { cx: -600, cy: -490, r: 30 }, // Frost Village
-  { cx:  580, cy: -530, r: 30 }, // Ember Camp
+  { cx:   0, cy:   4, r: 72 }, // Central Village
+  { cx:  600, cy:  490, r: 42 }, // Desert Oasis
+  { cx: -600, cy: -490, r: 42 }, // Frost Village
+  { cx:  580, cy: -530, r: 42 }, // Ember Camp
 ];
 
 // Road segments for fixed villages only.
@@ -497,33 +504,85 @@ function getInteriorTile(x, y) {
 
   const localX = x - interior.x;
   const localY = y - interior.y;
-  const doorX = Math.floor(interior.w / 2);
+  const { w, h } = interior;
+  const doorX = Math.floor(w / 2);
 
-  if (localX === doorX && (localY === 0 || localY === interior.h - 1)) {
+  if (localX === doorX && (localY === 0 || localY === h - 1)) {
     return TILE.DOOR;
   }
 
-  if (localX === 0 || localX === interior.w - 1 || localY === 0 || localY === interior.h - 1) {
+  if (localX === 0 || localX === w - 1 || localY === 0 || localY === h - 1) {
     return TILE.WALL;
   }
 
+  const type = interior.building.type || "house";
+
+  if (type === "hut") {
+    // Fireplace centered on north wall interior
+    if (localX === Math.floor(w / 2) && localY === 1) return TILE.FIREPLACE;
+    // Single bed in corner
+    if (localX >= 1 && localX <= 2 && localY >= 2 && localY <= 3) return TILE.BED;
+    // Small rug
+    if (localX >= 2 && localX <= w - 3 && localY === h - 3) return TILE.CARPET;
+    return TILE.FLOOR;
+  }
+
+  if (type === "treehouse") {
+    // Shelf on east wall
+    if (localX === w - 2 && localY === 2) return TILE.SHELF;
+    // Bed in west corner
+    if (localX >= 1 && localX <= 2 && localY >= 2 && localY <= 3) return TILE.BED;
+    // Rug strip
+    if (localX >= 2 && localX <= w - 3 && localY >= h - 4 && localY <= h - 3) return TILE.CARPET;
+    return TILE.FLOOR;
+  }
+
+  if (type === "big_house") {
+    // Fireplace on north wall interior center
+    if (localX === Math.floor(w / 2) && localY === 1) return TILE.FIREPLACE;
+    // Two beds on west side
+    if (localX >= 2 && localX <= 4 && localY >= 2 && localY <= 3) return TILE.BED;
+    if (localX >= 2 && localX <= 4 && localY >= 5 && localY <= 6) return TILE.BED;
+    // Dining table
+    if (localX >= w - 6 && localX <= w - 3 && localY >= 3 && localY <= 5) return TILE.TABLE;
+    // Shelf on east wall
+    const shelf = getInteriorShopShelf(interior);
+    if (x === shelf.x && y === shelf.y) return TILE.SHELF;
+    // Wide carpet down center
+    if (localX >= 3 && localX <= w - 4 && localY >= h - 5 && localY <= h - 2) return TILE.CARPET;
+    return TILE.FLOOR;
+  }
+
+  if (type === "castle") {
+    const midX = Math.floor(w / 2);
+    // Fireplace on north interior wall
+    if (localX === midX && localY === 1) return TILE.FIREPLACE;
+    // Throne / head table at north center
+    if (localX >= midX - 2 && localX <= midX + 2 && localY >= 3 && localY <= 4) return TILE.TABLE;
+    // Long banquet tables
+    if (localX >= 3 && localX <= w - 4 && localY >= 6 && localY <= 7) return TILE.TABLE;
+    if (localX >= 3 && localX <= w - 4 && localY >= 9 && localY <= 10) return TILE.TABLE;
+    // Armory shelf on east wall
+    if (localX === w - 2 && localY >= 3 && localY <= 5) return TILE.SHELF;
+    // Grand carpet aisle
+    if (localX >= midX - 2 && localX <= midX + 2 && localY >= 3 && localY <= h - 2) return TILE.CARPET;
+    return TILE.FLOOR;
+  }
+
+  // Default "house" layout
   const shelf = getInteriorShopShelf(interior);
   if (x === shelf.x && y === shelf.y) {
     return TILE.SHELF;
   }
-
-  if (interior.w >= 9 && interior.h >= 7 && localX >= 2 && localX <= 4 && localY >= 2 && localY <= 3) {
+  if (w >= 9 && h >= 7 && localX >= 2 && localX <= 4 && localY >= 2 && localY <= 3) {
     return TILE.BED;
   }
-
-  if (interior.w >= 10 && interior.h >= 7 && localX >= interior.w - 4 && localX <= interior.w - 3 && localY >= 4 && localY <= 5) {
+  if (w >= 10 && h >= 7 && localX >= w - 4 && localX <= w - 3 && localY >= 4 && localY <= 5) {
     return TILE.TABLE;
   }
-
-  if (interior.w >= 8 && interior.h >= 7 && localX >= 3 && localX <= interior.w - 4 && localY >= interior.h - 4 && localY <= interior.h - 2) {
+  if (w >= 8 && h >= 7 && localX >= 3 && localX <= w - 4 && localY >= h - 4 && localY <= h - 2) {
     return TILE.CARPET;
   }
-
   return TILE.FLOOR;
 }
 
