@@ -684,7 +684,7 @@ function isStreet(x, y) {
 }
 
 function getPortalAtTile(x, y) {
-  return PORTALS.find((portal) => Math.abs(x - portal.x) <= 1 && Math.abs(y - portal.y) <= 1) || null;
+  return PORTALS.find((portal) => portal.x === x && portal.y === y) || null;
 }
 
 function getPortalAt(x, y) {
