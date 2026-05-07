@@ -18,16 +18,18 @@ const TILE = {
   CARPET: 14,
   BED: 15,
   TABLE: 16,
+  SHELF: 17,
 };
 
-const BLOCKED_TILES = new Set([TILE.WATER, TILE.WALL, TILE.LAVA, TILE.BED, TILE.TABLE]);
+const BLOCKED_TILES = new Set([TILE.WATER, TILE.WALL, TILE.LAVA, TILE.BED, TILE.TABLE, TILE.SHELF]);
 const PORTAL_RADIUS = 1.6;
 const DOOR_RADIUS = 0.52;
 const INTERIOR_BASE_X = 10000;
 const INTERIOR_BASE_Y = 10000;
 const INTERIOR_SPACING = 40;
-const INTERIOR_WIDTH = 12;
-const INTERIOR_HEIGHT = 10;
+const INTERIOR_EXTERIOR_MARGIN = 12;
+const PROCEDURAL_INTERIOR_GRID_SIZE = 1024;
+const PROCEDURAL_INTERIOR_GRID_OFFSET = 512;
 const STARTING_AREA = { x: 0, y: 4, radius: 46 };
 const START_SPAWN = { x: 0, y: -8 };
 
@@ -220,13 +222,7 @@ const BASE_ENEMY_CAMPS = [
 
 const ENEMY_CAMPS = [...BASE_ENEMY_CAMPS, ...buildScatterEnemyCamps()];
 
-const BUILDING_INTERIORS = BUILDINGS.map((building, index) => ({
-  building,
-  x: INTERIOR_BASE_X + index * INTERIOR_SPACING,
-  y: INTERIOR_BASE_Y,
-  w: INTERIOR_WIDTH,
-  h: INTERIOR_HEIGHT
-}));
+const BUILDING_INTERIORS = BUILDINGS.map((building, index) => createInteriorForBuilding(building, index));
 
 // ---------------------------------------------------------------------------
 // Procedural settlement system
@@ -281,6 +277,9 @@ function getSettlementBuildingList(s) {
       w: slot.w,
       h: slot.h,
       name: names[i % names.length],
+      gx: s.gx,
+      gy: s.gy,
+      slotIndex: i,
     });
   }
   return result;
@@ -402,40 +401,141 @@ function getBuildingTile(x, y) {
   return null;
 }
 
-function getInteriorTile(x, y) {
-  for (const interior of BUILDING_INTERIORS) {
-    if (x < interior.x || x >= interior.x + interior.w || y < interior.y || y >= interior.y + interior.h) {
-      continue;
-    }
+function createInteriorForBuilding(building, index) {
+  return {
+    id: `interior_${index}`,
+    index,
+    building,
+    x: INTERIOR_BASE_X + index * INTERIOR_SPACING,
+    y: INTERIOR_BASE_Y,
+    w: building.w,
+    h: building.h
+  };
+}
 
-    const localX = x - interior.x;
-    const localY = y - interior.y;
-    const doorX = Math.floor(interior.w / 2);
-
-    if (localX === doorX && localY === interior.h - 1) {
-      return TILE.DOOR;
-    }
-
-    if (localX === 0 || localX === interior.w - 1 || localY === 0 || localY === interior.h - 1) {
-      return TILE.WALL;
-    }
-
-    if (localX >= 2 && localX <= 4 && localY >= 2 && localY <= 3) {
-      return TILE.BED;
-    }
-
-    if (localX >= 7 && localX <= 8 && localY >= 4 && localY <= 5) {
-      return TILE.TABLE;
-    }
-
-    if (localX >= 4 && localX <= 7 && localY >= 5 && localY <= 7) {
-      return TILE.CARPET;
-    }
-
-    return TILE.FLOOR;
+function getProceduralInteriorIndex(building) {
+  if (!Number.isInteger(building.gx) || !Number.isInteger(building.gy) || !Number.isInteger(building.slotIndex)) {
+    return null;
   }
 
+  const gx = building.gx + PROCEDURAL_INTERIOR_GRID_OFFSET;
+  const gy = building.gy + PROCEDURAL_INTERIOR_GRID_OFFSET;
+  if (gx < 0 || gx >= PROCEDURAL_INTERIOR_GRID_SIZE || gy < 0 || gy >= PROCEDURAL_INTERIOR_GRID_SIZE) {
+    return null;
+  }
+
+  return BUILDINGS.length + ((gx * PROCEDURAL_INTERIOR_GRID_SIZE + gy) * SETTLE_SLOTS.length) + building.slotIndex;
+}
+
+function getInteriorByIndex(index) {
+  if (index < 0) {
+    return null;
+  }
+
+  if (index < BUILDING_INTERIORS.length) {
+    return BUILDING_INTERIORS[index] || null;
+  }
+
+  const procedural = index - BUILDINGS.length;
+  const slotIndex = procedural % SETTLE_SLOTS.length;
+  const cell = Math.floor(procedural / SETTLE_SLOTS.length);
+  const gx = Math.floor(cell / PROCEDURAL_INTERIOR_GRID_SIZE) - PROCEDURAL_INTERIOR_GRID_OFFSET;
+  const gy = (cell % PROCEDURAL_INTERIOR_GRID_SIZE) - PROCEDURAL_INTERIOR_GRID_OFFSET;
+  const settlement = getSettlementAt(gx, gy);
+  if (!settlement) {
+    return null;
+  }
+
+  const building = getSettlementBuildingList(settlement)[slotIndex];
+  if (!building) {
+    return null;
+  }
+
+  return createInteriorForBuilding(building, index);
+}
+
+function getCandidateInteriorsNear(x) {
+  const rough = Math.floor((x - INTERIOR_BASE_X) / INTERIOR_SPACING);
+  const interiors = [];
+  for (let index = rough - 1; index <= rough + 1; index += 1) {
+    const interior = getInteriorByIndex(index);
+    if (interior) {
+      interiors.push(interior);
+    }
+  }
+  return interiors;
+}
+
+function getInteriorAreaAt(x, y, margin = 0) {
+  for (const interior of getCandidateInteriorsNear(x)) {
+    if (
+      x >= interior.x - margin &&
+      x < interior.x + interior.w + margin &&
+      y >= interior.y - margin &&
+      y < interior.y + interior.h + margin
+    ) {
+      return interior;
+    }
+  }
   return null;
+}
+
+function getInteriorShopShelf(interior) {
+  return {
+    id: `shop_${interior.index}`,
+    name: `${interior.building.name} Shelf`,
+    x: interior.x + Math.max(2, interior.w - 3),
+    y: interior.y + 2
+  };
+}
+
+function getInteriorTile(x, y) {
+  const interior = getInteriorAreaAt(x, y);
+  if (!interior) {
+    return null;
+  }
+
+  const localX = x - interior.x;
+  const localY = y - interior.y;
+  const doorX = Math.floor(interior.w / 2);
+
+  if (localX === doorX && (localY === 0 || localY === interior.h - 1)) {
+    return TILE.DOOR;
+  }
+
+  if (localX === 0 || localX === interior.w - 1 || localY === 0 || localY === interior.h - 1) {
+    return TILE.WALL;
+  }
+
+  const shelf = getInteriorShopShelf(interior);
+  if (x === shelf.x && y === shelf.y) {
+    return TILE.SHELF;
+  }
+
+  if (interior.w >= 9 && interior.h >= 7 && localX >= 2 && localX <= 4 && localY >= 2 && localY <= 3) {
+    return TILE.BED;
+  }
+
+  if (interior.w >= 10 && interior.h >= 7 && localX >= interior.w - 4 && localX <= interior.w - 3 && localY >= 4 && localY <= 5) {
+    return TILE.TABLE;
+  }
+
+  if (interior.w >= 8 && interior.h >= 7 && localX >= 3 && localX <= interior.w - 4 && localY >= interior.h - 4 && localY <= interior.h - 2) {
+    return TILE.CARPET;
+  }
+
+  return TILE.FLOOR;
+}
+
+function getInteriorExteriorTile(x, y) {
+  const interior = getInteriorAreaAt(x, y, INTERIOR_EXTERIOR_MARGIN);
+  if (!interior || getInteriorAreaAt(x, y)) {
+    return null;
+  }
+
+  const sourceX = interior.building.x + (x - interior.x);
+  const sourceY = interior.building.y + (y - interior.y);
+  return generateExteriorTile(sourceX, sourceY);
 }
 
 function isInteriorCoordinate(x, y) {
@@ -451,57 +551,102 @@ function canAttackAt(x, y) {
 }
 
 function isInteriorDistrict(x, y) {
-  return (
-    x >= INTERIOR_BASE_X - 4 &&
-    x < INTERIOR_BASE_X + BUILDING_INTERIORS.length * INTERIOR_SPACING + INTERIOR_WIDTH + 4 &&
-    y >= INTERIOR_BASE_Y - 4 &&
-    y < INTERIOR_BASE_Y + INTERIOR_HEIGHT + 4
-  );
+  return getInteriorAreaAt(x, y, INTERIOR_EXTERIOR_MARGIN) !== null;
 }
 
 function getInteriorAt(x, y) {
-  return BUILDING_INTERIORS.find((interior) => (
-    x >= interior.x &&
-    x < interior.x + interior.w &&
-    y >= interior.y &&
-    y < interior.y + interior.h
-  )) || null;
+  return getInteriorAreaAt(x, y);
 }
 
-function getBuildingDoor(building) {
-  return {
-    x: building.x + Math.floor(building.w / 2),
-    y: building.y + building.h - 1
-  };
+function getBuildingDoors(building) {
+  const x = building.x + Math.floor(building.w / 2);
+  return [
+    { side: "north", x, y: building.y, outsideY: building.y - 1.15, insideOffsetY: 1.15 },
+    { side: "south", x, y: building.y + building.h - 1, outsideY: building.y + building.h + 0.15, insideOffsetY: -1.15 }
+  ];
 }
 
-function getInteriorDoor(interior) {
-  return {
-    x: interior.x + Math.floor(interior.w / 2),
-    y: interior.y + interior.h - 1
-  };
+function getInteriorDoors(interior) {
+  const x = interior.x + Math.floor(interior.w / 2);
+  return [
+    { side: "north", x, y: interior.y, outsideY: interior.building.y - 1.15, insideOffsetY: 1.15 },
+    { side: "south", x, y: interior.y + interior.h - 1, outsideY: interior.building.y + interior.building.h + 0.15, insideOffsetY: -1.15 }
+  ];
+}
+
+function getBuildingsNearDoor(x, y) {
+  const buildings = BUILDINGS.filter((building) => (
+    x >= building.x - 2 &&
+    x < building.x + building.w + 2 &&
+    y >= building.y - 2 &&
+    y < building.y + building.h + 2
+  ));
+
+  for (const settlement of getNearbySettlements(x, y)) {
+    for (const building of getSettlementBuildingList(settlement)) {
+      if (
+        x >= building.x - 2 &&
+        x < building.x + building.w + 2 &&
+        y >= building.y - 2 &&
+        y < building.y + building.h + 2
+      ) {
+        buildings.push(building);
+      }
+    }
+  }
+
+  return buildings;
 }
 
 function getDoorTransitionAt(x, y) {
-  for (const interior of BUILDING_INTERIORS) {
-    const door = getInteriorDoor(interior);
-    if (Math.hypot(x - door.x, y - door.y) <= DOOR_RADIUS) {
-      const exit = getBuildingDoor(interior.building);
-      return {
-        type: "door",
-        name: interior.building.name,
-        x: exit.x,
-        y: exit.y + 1.15
-      };
+  for (const interior of getCandidateInteriorsNear(x)) {
+    for (const door of getInteriorDoors(interior)) {
+      if (Math.hypot(x - door.x, y - door.y) <= DOOR_RADIUS) {
+        return {
+          type: "door",
+          name: interior.building.name,
+          x: interior.building.x + Math.floor(interior.building.w / 2),
+          y: door.outsideY
+        };
+      }
     }
+  }
 
-    const entrance = getBuildingDoor(interior.building);
-    if (Math.hypot(x - entrance.x, y - entrance.y) <= DOOR_RADIUS) {
+  for (const building of getBuildingsNearDoor(x, y)) {
+    const index = Number.isInteger(building.slotIndex) ? getProceduralInteriorIndex(building) : BUILDINGS.indexOf(building);
+    if (index === null || index < 0) {
+      continue;
+    }
+    const interior = createInteriorForBuilding(building, index);
+    for (const entrance of getBuildingDoors(building)) {
+      if (Math.hypot(x - entrance.x, y - entrance.y) <= DOOR_RADIUS) {
+        const door = getInteriorDoors(interior).find((item) => item.side === entrance.side);
+        if (!door) {
+          continue;
+        }
+        return {
+          type: "door",
+          name: building.name,
+          x: door.x,
+          y: door.y + entrance.insideOffsetY
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+function getShopFixtureAt(x, y) {
+  for (const interior of getCandidateInteriorsNear(x)) {
+    const shelf = getInteriorShopShelf(interior);
+    if (Math.hypot(x - (shelf.x + 0.5), y - (shelf.y + 0.5)) <= 1.25) {
       return {
-        type: "door",
-        name: interior.building.name,
-        x: door.x,
-        y: door.y - 1.15
+        id: shelf.id,
+        name: "Trader Shelf",
+        buildingName: interior.building.name,
+        x: shelf.x + 0.5,
+        y: shelf.y + 0.5
       };
     }
   }
@@ -599,10 +744,19 @@ function generateTile(x, y) {
     return interiorTile;
   }
 
+  const interiorExteriorTile = getInteriorExteriorTile(x, y);
+  if (interiorExteriorTile !== null) {
+    return interiorExteriorTile;
+  }
+
   if (isInteriorDistrict(x, y)) {
     return TILE.WALL;
   }
 
+  return generateExteriorTile(x, y);
+}
+
+function generateExteriorTile(x, y) {
   const portal = getPortalAtTile(x, y);
   if (portal) {
     return TILE.PORTAL;
@@ -856,6 +1010,7 @@ module.exports = {
   getBiome,
   canAttackAt,
   getDoorTransitionAt,
+  getShopFixtureAt,
   getPortalAt,
   hash2,
   isInteriorCoordinate,

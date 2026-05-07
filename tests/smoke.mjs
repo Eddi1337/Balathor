@@ -18,6 +18,20 @@ for (const camp of world.ENEMY_CAMPS) {
 const originChunk = world.generateChunk(0, 0);
 assert.equal(originChunk.tiles.length, world.CHUNK_SIZE * world.CHUNK_SIZE);
 assert.equal(world.isBlocked(0, 0), false);
+const home = world.BUILDINGS.find((building) => building.name === "Home");
+const homeDoorX = home.x + Math.floor(home.w / 2);
+const homeSouthDoorY = home.y + home.h - 1;
+const homeInterior = world.getDoorTransitionAt(homeDoorX, homeSouthDoorY);
+assert.equal(homeInterior.name, "Home");
+const homeInteriorDoorY = Math.round(homeInterior.y + 1.15);
+const homeInteriorX = homeInterior.x - Math.floor(home.w / 2);
+const homeInteriorY = homeInteriorDoorY - home.h + 1;
+assert.equal(world.generateTile(homeInteriorX, homeInteriorY), world.TILE.WALL);
+assert.equal(world.generateTile(homeInteriorX + home.w - 1, homeInteriorY + home.h - 1), world.TILE.WALL);
+assert.equal(world.generateTile(homeInteriorX + Math.floor(home.w / 2), homeInteriorY + home.h - 1), world.TILE.DOOR);
+assert.equal(world.generateTile(homeInteriorX + home.w - 3, homeInteriorY + 2), world.TILE.SHELF);
+assert.equal(world.generateTile(homeInteriorX - 1, homeInteriorY + home.h), world.generateTile(home.x - 1, home.y + home.h));
+assert.equal(Boolean(world.getShopFixtureAt(homeInteriorX + home.w - 2.5, homeInteriorY + 2.5)), true);
 
 const basePort = 18000 + (process.pid % 1000);
 const serverPort = basePort;
@@ -63,6 +77,8 @@ try {
   assert.match(index, /accountForm/);
   assert.match(index, /equipmentButton/);
   assert.match(index, /bagsButton/);
+  assert.match(index, /goldText/);
+  assert.match(index, /shopPanel/);
 
   const messages = await joinViaWebSocket(serverPort, {
     action: "create",
@@ -92,6 +108,7 @@ try {
     player.xp === 0 &&
     player.xpToNext > 0 &&
     player.statPoints === 0 &&
+    player.gold === 120 &&
     Array.isArray(player.inventory) &&
     player.inventory.length === 10 &&
     player.equipment?.weapon?.type === "weapon" &&
@@ -286,6 +303,7 @@ async function joinViaWebSocket(port, account) {
         messages.some((message) => message.type === "snapshot" && message.players?.some((player) => (
           player.level === 1 &&
           player.stats?.speed === 0 &&
+          player.gold === 120 &&
           Array.isArray(player.inventory) &&
           player.inventory.length === 10 &&
           player.equipment?.weapon?.type === "weapon" &&

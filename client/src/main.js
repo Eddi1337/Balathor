@@ -44,6 +44,13 @@ const equipmentSlots = document.querySelector("#equipmentSlots");
 const inventorySlots = document.querySelector("#inventorySlots");
 const nearbyLoot = document.querySelector("#nearbyLoot");
 const interactButton = document.querySelector("#interactButton");
+const goldText = document.querySelector("#goldText");
+const shopPanel = document.querySelector("#shopPanel");
+const shopTitle = document.querySelector("#shopTitle");
+const shopClose = document.querySelector("#shopClose");
+const shopGold = document.querySelector("#shopGold");
+const shopBuyList = document.querySelector("#shopBuyList");
+const shopSellList = document.querySelector("#shopSellList");
 const chat = document.querySelector("#chat");
 const chatMessages = document.querySelector("#chatMessages");
 const chatForm = document.querySelector("#chatForm");
@@ -77,6 +84,7 @@ const TILE = {
   CARPET: 14,
   BED: 15,
   TABLE: 16,
+  SHELF: 17,
 };
 
 const kenneyRpgBase = new Image();
@@ -108,6 +116,8 @@ const state = {
   groundItems: [],
   inventory: Array(10).fill(null),
   equipment: { weapon: null, body: null, ring1: null, ring2: null },
+  gold: 0,
+  shop: null,
   speechBubbles: new Map(),
   combatFx: [],
   levelUpFx: [],
@@ -262,6 +272,7 @@ const tilePalette = {
   [TILE.CARPET]: ["#7b2e3a", "#b84f58", "#53212b"],
   [TILE.BED]: ["#4b6d88", "#8fb8d8", "#2d3e56"],
   [TILE.TABLE]: ["#6c4528", "#9b6a3e", "#3f291c"],
+  [TILE.SHELF]: ["#5a3824", "#b8844d", "#2b1a10"],
 };
 
 resize();
@@ -469,6 +480,24 @@ function handleServerMessage(message) {
     updateSelfInventory();
     renderEquipment();
     renderBags();
+    renderShop();
+    return;
+  }
+
+  if (message.type === "shop") {
+    state.shop = {
+      open: true,
+      id: message.id,
+      name: message.name || "Trader Shelf",
+      buildingName: message.buildingName || "",
+      x: message.x,
+      y: message.y,
+      gold: Number.isFinite(message.gold) ? message.gold : state.gold,
+      stock: Array.isArray(message.stock) ? message.stock : []
+    };
+    state.gold = state.shop.gold;
+    renderShop();
+    shopPanel?.classList.remove("hidden");
     return;
   }
 
@@ -523,6 +552,10 @@ function handleServerMessage(message) {
       });
     } else if (message.message === "inventory_full") {
       appendChat({ kind: "system", name: "Realm", text: "Inventory is full" });
+    } else if (message.message === "not_enough_gold") {
+      appendChat({ kind: "system", name: "Realm", text: "Not enough gold" });
+    } else if (message.message === "shop_not_nearby") {
+      appendChat({ kind: "system", name: "Realm", text: "Move closer to the shelf" });
     } else if (message.itemName) {
       appendChat({ kind: "system", name: "Realm", text: `${message.itemName}` });
     }
@@ -595,10 +628,15 @@ function updateSelfInventory() {
   if (!self) {
     state.inventory = Array(10).fill(null);
     state.equipment = { weapon: null, body: null, ring1: null, ring2: null };
+    state.gold = 0;
     return;
   }
   state.inventory = Array.isArray(self.inventory) ? self.inventory : Array(10).fill(null);
   state.equipment = self.equipment || { weapon: null, body: null, ring1: null, ring2: null };
+  state.gold = Number.isFinite(self.gold) ? self.gold : state.gold;
+  if (state.shop?.open) {
+    state.shop.gold = state.gold;
+  }
 }
 
 function applyNpcSnapshot(snapshotNpcs) {
@@ -912,6 +950,10 @@ function wireUi() {
     setActiveGameWindow(null);
   });
 
+  shopClose?.addEventListener("click", () => {
+    closeShop();
+  });
+
   interactButton.addEventListener("click", () => {
     sendInteract();
   });
@@ -949,6 +991,28 @@ function wireUi() {
     }
   });
 
+  shopPanel?.addEventListener("pointerdown", (event) => {
+    const button = event.target.closest("[data-shop-action]");
+    if (!button || !state.shop?.open) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const payload = {
+      x: state.shop.x,
+      y: state.shop.y
+    };
+    if (button.dataset.shopAction === "buy") {
+      send({ type: "shopBuy", templateId: button.dataset.templateId, ...payload });
+    } else if (button.dataset.shopAction === "sell") {
+      send({ type: "shopSell", slot: Number(button.dataset.slot), ...payload });
+    }
+  });
+
+  shopPanel?.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+  });
+
   resumeButton.addEventListener("click", () => {
     closeMenu();
   });
@@ -982,35 +1046,24 @@ function wireUi() {
       return;
     }
     event.preventDefault();
+    if (tryInteractClickedFixture(event)) {
+      return;
+    }
     if (tryPickupClickedGroundItem(event)) {
       return;
     }
     // compute world coordinates and send with attack direction
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const cx = (event.clientX - rect.left) * scaleX;
-    const cy = (event.clientY - rect.top) * scaleY;
-    const halfW = canvas.width / 2;
-    const halfH = canvas.height / 2;
-    const worldX = (cx - halfW) / (TILE_SIZE * state.zoom) + state.camera.x / TILE_SIZE;
-    const worldY = (cy - halfH) / (TILE_SIZE * state.zoom) + state.camera.y / TILE_SIZE;
-    state.lastPointerWorldX = worldX;
-    state.lastPointerWorldY = worldY;
-    sendAttack(worldX, worldY);
+    const world = screenEventToWorld(event);
+    state.lastPointerWorldX = world.x;
+    state.lastPointerWorldY = world.y;
+    sendAttack(world.x, world.y);
   });
 
   // track latest pointer world position for keyboard/mobile attacks
   canvas.addEventListener("pointermove", (event) => {
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const cx = (event.clientX - rect.left) * scaleX;
-    const cy = (event.clientY - rect.top) * scaleY;
-    const halfW = canvas.width / 2;
-    const halfH = canvas.height / 2;
-    state.lastPointerWorldX = (cx - halfW) / (TILE_SIZE * state.zoom) + state.camera.x / TILE_SIZE;
-    state.lastPointerWorldY = (cy - halfH) / (TILE_SIZE * state.zoom) + state.camera.y / TILE_SIZE;
+    const world = screenEventToWorld(event);
+    state.lastPointerWorldX = world.x;
+    state.lastPointerWorldY = world.y;
   });
 
   window.addEventListener("keydown", (event) => {
@@ -1148,11 +1201,43 @@ function sendHome() {
   send({ type: "home" });
 }
 
-function sendInteract() {
+function sendInteract(target = null) {
   if (!state.joined) {
     return;
   }
-  send({ type: "interact" });
+  send(target ? { type: "interact", ...target } : { type: "interact" });
+}
+
+function screenEventToWorld(event) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const cx = (event.clientX - rect.left) * scaleX;
+  const cy = (event.clientY - rect.top) * scaleY;
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  return {
+    x: (cx - halfW) / (TILE_SIZE * state.zoom) + state.camera.x / TILE_SIZE,
+    y: (cy - halfH) / (TILE_SIZE * state.zoom) + state.camera.y / TILE_SIZE
+  };
+}
+
+function tryInteractClickedFixture(event) {
+  const world = screenEventToWorld(event);
+  const tileX = Math.floor(world.x);
+  const tileY = Math.floor(world.y);
+  const tile = getTile(tileX, tileY);
+  if (tile !== TILE.SHELF && tile !== TILE.TABLE) {
+    return false;
+  }
+
+  const self = state.players.get(state.selfId);
+  if (self && Math.hypot(tileX + 0.5 - self.x, tileY + 0.5 - self.y) > 2.6) {
+    return false;
+  }
+
+  sendInteract({ x: tileX + 0.5, y: tileY + 0.5 });
+  return true;
 }
 
 function tryPickupClickedGroundItem(event) {
@@ -1396,6 +1481,8 @@ function clearWorldState() {
   state.groundItems = [];
   state.inventory = Array(10).fill(null);
   state.equipment = { weapon: null, body: null, ring1: null, ring2: null };
+  state.gold = 0;
+  closeShop();
   state.speechBubbles.clear();
   state.combatFx = [];
   state.levelUpFx = [];
@@ -1632,6 +1719,9 @@ function renderProgression(self) {
 
   levelText.textContent = `Level ${level}`;
   statPointsEl.textContent = `${statPoints} point${statPoints === 1 ? "" : "s"}`;
+  if (goldText) {
+    goldText.textContent = `${state.gold || 0} gold`;
+  }
   xpFill.style.width = `${xpPct}%`;
   xpText.textContent = `${xp} / ${xpToNext} XP`;
   statSpeed.textContent = stats.speed || 0;
@@ -1733,6 +1823,80 @@ function renderBags() {
     cell.append(createItemIcon(item), name, stats, actions);
     inventorySlots.append(cell);
   });
+}
+
+function renderShop() {
+  if (!shopPanel || !shopBuyList || !shopSellList || !shopGold || !shopTitle) {
+    return;
+  }
+
+  if (!state.shop?.open) {
+    shopPanel.classList.add("hidden");
+    return;
+  }
+
+  const gold = Number.isFinite(state.shop.gold) ? state.shop.gold : state.gold;
+  shopTitle.textContent = state.shop.buildingName ? `${state.shop.buildingName} Shelf` : state.shop.name;
+  shopGold.textContent = `${gold || 0} gold`;
+  shopBuyList.replaceChildren();
+  shopSellList.replaceChildren();
+
+  for (const item of state.shop.stock || []) {
+    const row = createShopRow(item, `${item.price || 1}g`, "Buy");
+    const button = row.querySelector("button");
+    button.dataset.shopAction = "buy";
+    button.dataset.templateId = item.templateId;
+    button.disabled = (state.gold || 0) < (item.price || 1);
+    shopBuyList.append(row);
+  }
+
+  if (!state.shop.stock?.length) {
+    const empty = document.createElement("div");
+    empty.className = "shop-row empty";
+    empty.textContent = "No stock";
+    shopBuyList.append(empty);
+  }
+
+  let sellCount = 0;
+  state.inventory.forEach((item, slot) => {
+    if (!item) {
+      return;
+    }
+    sellCount += 1;
+    const price = Math.max(1, Math.floor((Number(item.value) || 1) * 0.5));
+    const row = createShopRow(item, `${price}g`, "Sell");
+    const button = row.querySelector("button");
+    button.dataset.shopAction = "sell";
+    button.dataset.slot = String(slot);
+    shopSellList.append(row);
+  });
+
+  if (!sellCount) {
+    const empty = document.createElement("div");
+    empty.className = "shop-row empty";
+    empty.textContent = "Nothing to sell";
+    shopSellList.append(empty);
+  }
+}
+
+function createShopRow(item, priceText, actionText) {
+  const row = document.createElement("div");
+  row.className = `shop-row ${item.rarity || "common"}`;
+  const name = document.createElement("strong");
+  name.textContent = item.name;
+  const stats = document.createElement("span");
+  stats.className = "item-stats";
+  stats.textContent = [formatItemStats(item), priceText].filter(Boolean).join(" · ");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = actionText;
+  row.append(createItemIcon(item), name, stats, button);
+  return row;
+}
+
+function closeShop() {
+  state.shop = null;
+  shopPanel?.classList.add("hidden");
 }
 
 function renderNearbyLoot() {
@@ -1925,7 +2089,7 @@ function drawWorld() {
 }
 
 function drawTile(tile, sx, sy, tx, ty) {
-  if (isInteriorTileCoordinate(tx, ty)) {
+  if (isInteriorTileCoordinate(tx, ty) && isInteriorDrawTile(tile)) {
     drawInteriorTile(tile, sx, sy, tx, ty);
     return;
   }
@@ -2011,6 +2175,16 @@ function drawTile(tile, sx, sy, tx, ty) {
     drawPortal(sx, sy, tx, ty);
     return;
   }
+}
+
+function isInteriorDrawTile(tile) {
+  return tile === TILE.WALL ||
+    tile === TILE.FLOOR ||
+    tile === TILE.DOOR ||
+    tile === TILE.CARPET ||
+    tile === TILE.BED ||
+    tile === TILE.TABLE ||
+    tile === TILE.SHELF;
 }
 
 function drawPlayers() {
@@ -2723,6 +2897,22 @@ function drawInteriorTile(tile, sx, sy, tx, ty) {
     ctx.fillRect(sx + 5, sy + 9, 22, 13);
     ctx.fillStyle = "#d2a963";
     ctx.fillRect(sx + 10, sy + 12, 5, 3);
+    return;
+  }
+
+  if (tile === TILE.SHELF) {
+    drawEllipseShadow(sx + 5, sy + 24, 22, 6, 0.24);
+    ctx.fillStyle = colors[2];
+    ctx.fillRect(sx + 5, sy + 8, 22, 21);
+    ctx.fillStyle = colors[1];
+    ctx.fillRect(sx + 7, sy + 10, 18, 4);
+    ctx.fillRect(sx + 7, sy + 18, 18, 4);
+    ctx.fillStyle = "#e4c26a";
+    ctx.fillRect(sx + 10, sy + 6, 4, 4);
+    ctx.fillStyle = "#c85b5b";
+    ctx.fillRect(sx + 18, sy + 15, 5, 5);
+    ctx.fillStyle = "#8fe388";
+    ctx.fillRect(sx + 10, sy + 23, 6, 4);
     return;
   }
 }
