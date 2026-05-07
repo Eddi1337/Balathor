@@ -288,7 +288,8 @@ button:focus-visible {
 }
 
 .progress-head span,
-.xp-text {
+.xp-text,
+.gold-text {
   color: var(--muted);
 }
 
@@ -342,7 +343,8 @@ button:focus-visible {
 .window-actions button,
 .window-close,
 .interact-button,
-.item-actions button {
+.item-actions button,
+.shop-list button {
   min-height: 30px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 6px;
@@ -375,6 +377,13 @@ button:focus-visible {
   width: min(380px, calc(100vw - 32px));
 }
 
+.shop-window {
+  left: 16px;
+  right: auto;
+  top: 96px;
+  width: min(520px, calc(100vw - 32px));
+}
+
 .window-head {
   display: flex;
   align-items: center;
@@ -384,7 +393,9 @@ button:focus-visible {
 
 .slot-label,
 .nearby-loot span,
-.item-stats {
+.item-stats,
+.shop-columns span,
+.shop-gold {
   color: var(--muted);
 }
 
@@ -474,6 +485,54 @@ button:focus-visible {
   min-height: 24px;
   padding: 0 6px;
   font-size: 12px;
+}
+
+.shop-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.shop-columns section {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.shop-list {
+  max-height: 300px;
+  overflow-y: auto;
+  display: grid;
+  gap: 6px;
+}
+
+.shop-row {
+  min-height: 64px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  background: rgba(17, 24, 39, 0.72);
+}
+
+.shop-row.empty {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 42px;
+  color: var(--muted);
+}
+
+.shop-row strong,
+.shop-row .item-stats {
+  overflow-wrap: anywhere;
+}
+
+.shop-list button {
+  min-width: 58px;
+  padding: 0 8px;
+  white-space: nowrap;
 }
 
 .chat {
@@ -717,6 +776,15 @@ button:focus-visible {
     right: auto;
     top: 310px;
     width: min(300px, calc(100vw - 16px));
+  }
+
+  .shop-window {
+    top: 132px;
+    width: min(360px, calc(100vw - 16px));
+  }
+
+  .shop-columns {
+    grid-template-columns: 1fr;
   }
 
   .equipment-slots,

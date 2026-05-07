@@ -108,6 +108,7 @@
           <span id="xpFill"></span>
         </div>
         <span id="xpText" class="xp-text">0 / 100 XP</span>
+        <span id="goldText" class="gold-text">0 gold</span>
         <div class="stat-grid">
           <button type="button" data-stat="speed">Speed <span id="statSpeed">0</span></button>
           <button type="button" data-stat="strength">Strength <span id="statStrength">0</span></button>
@@ -137,6 +138,24 @@
       <div id="nearbyLoot" class="nearby-loot"></div>
       <div id="inventorySlots" class="inventory-slots"></div>
       <button id="interactButton" class="interact-button" type="button">Open / Pick Up</button>
+    </aside>
+
+    <aside id="shopPanel" class="game-window shop-window hidden" aria-label="Trader shelf">
+      <div class="window-head">
+        <strong id="shopTitle">Trader Shelf</strong>
+        <button id="shopClose" class="window-close" type="button" aria-label="Close trader shelf">Close</button>
+      </div>
+      <div id="shopGold" class="shop-gold">0 gold</div>
+      <div class="shop-columns">
+        <section>
+          <span>Buy</span>
+          <div id="shopBuyList" class="shop-list"></div>
+        </section>
+        <section>
+          <span>Sell</span>
+          <div id="shopSellList" class="shop-list"></div>
+        </section>
+      </div>
     </aside>
 
     <section id="chat" class="chat hidden" aria-label="Realm chat">
