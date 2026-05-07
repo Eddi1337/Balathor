@@ -15,7 +15,7 @@ const {
   isBlockedCircle,
   spawnPoint
 } = require("./world");
-const { updateNpcs, getNpcSnapshot } = require("./npcs");
+const { updateNpcs, getNpcSnapshot, getNpcById, getTraderDefinitions } = require("./npcs");
 
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 8080);
@@ -46,6 +46,7 @@ const INTERACT_RADIUS = 1.8;
 const SHOP_INTERACT_RADIUS = 1.75;
 const STARTING_GOLD = 120;
 const MAX_GROUND_ITEMS = 140;
+const TRADER_INTERACT_RADIUS = 3.5;
 const MOB_AGGRO_RADIUS = 7.5;
 const MOB_ATTACK_RADIUS = 1.15;
 const MOB_ATTACK_COOLDOWN_MS = 1300;
@@ -233,6 +234,10 @@ const itemDatabase = createItemDatabase();
 const chests = createChests();
 const groundItems = [];
 const mobs = createMobs();
+const traderStocks = new Map();
+for (const def of getTraderDefinitions()) {
+  traderStocks.set(def.id, createTraderStock(def.id, def.homeX * 100 + def.homeY));
+}
 
 syncNextItemIdFromAccounts();
 
@@ -795,6 +800,21 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "traderOpen") {
+    handleTraderOpen(client, message);
+    return;
+  }
+
+  if (message.type === "buyItem") {
+    handleBuyItem(client, message);
+    return;
+  }
+
+  if (message.type === "sellItem") {
+    handleSellItem(client, message);
+    return;
+  }
+
   if (message.type === "modTeleport") {
     handleModTeleport(client, message);
   }
@@ -1009,6 +1029,9 @@ function handleAttack(client, message = {}) {
       const progress = awardXp(client.player, xpForMob(hit));
       event.xpGained = progress.xpGained;
       event.levelsGained = progress.levelsGained;
+      const goldReward = goldForMob(hit);
+      client.player.gold += goldReward;
+      event.goldGained = goldReward;
       dropLootForMob(hit);
     }
 
@@ -1248,6 +1271,75 @@ function handleDropItem(client, message) {
   broadcastSnapshot();
 }
 
+function handleTraderOpen(client, message) {
+  if (!client.player) return;
+  const npcId = String(message.npcId || "").slice(0, 64);
+  const npc = getNpcById(npcId);
+  if (!npc || !npc.isTrader) return;
+  if (Math.hypot(npc.x - client.player.x, npc.y - client.player.y) > TRADER_INTERACT_RADIUS) return;
+  const stock = traderStocks.get(npcId);
+  if (!stock) return;
+  send(client, {
+    type: "traderInventory",
+    npcId,
+    npcName: npc.name,
+    items: stock.map((entry, index) => ({
+      index,
+      item: entry.item,
+      price: entry.price,
+      sold: entry.sold || false
+    }))
+  });
+}
+
+function handleBuyItem(client, message) {
+  if (!client.player) return;
+  const npcId = String(message.npcId || "").slice(0, 64);
+  const npc = getNpcById(npcId);
+  if (!npc || !npc.isTrader) return;
+  if (Math.hypot(npc.x - client.player.x, npc.y - client.player.y) > TRADER_INTERACT_RADIUS) return;
+  const stock = traderStocks.get(npcId);
+  if (!stock) return;
+  const idx = clampInteger(message.index, 0, stock.length - 1);
+  const entry = stock[idx];
+  if (!entry || entry.sold) {
+    send(client, { type: "serverMessage", message: "item_sold_out" });
+    return;
+  }
+  if (client.player.gold < entry.price) {
+    send(client, { type: "serverMessage", message: "not_enough_gold" });
+    return;
+  }
+  if (!addItemToInventory(client.player, cloneItem(entry.item))) {
+    send(client, { type: "serverMessage", message: "inventory_full" });
+    return;
+  }
+  client.player.gold -= entry.price;
+  entry.sold = true;
+  saveClientCharacter(client);
+  send(client, { type: "serverMessage", message: "item_bought", itemName: entry.item.name });
+  handleTraderOpen(client, { npcId });
+  broadcastSnapshot();
+}
+
+function handleSellItem(client, message) {
+  if (!client.player) return;
+  const npcId = String(message.npcId || "").slice(0, 64);
+  const npc = getNpcById(npcId);
+  if (!npc || !npc.isTrader) return;
+  if (Math.hypot(npc.x - client.player.x, npc.y - client.player.y) > TRADER_INTERACT_RADIUS) return;
+  const slot = clampInteger(message.slot, 0, INVENTORY_SIZE - 1);
+  const item = client.player.inventory[slot];
+  if (!item) return;
+  const price = getSellPrice(item);
+  client.player.inventory[slot] = null;
+  client.player.gold = Math.min(100000000, (client.player.gold || 0) + price);
+  saveClientCharacter(client);
+  send(client, { type: "serverMessage", message: "item_sold", itemName: item.name, goldGained: price });
+  handleTraderOpen(client, { npcId });
+  broadcastSnapshot();
+}
+
 function createBaseStats() {
   return {
     speed: 0,
@@ -1269,6 +1361,12 @@ function xpForMob(mob) {
     return 120 + mob.level * 24 + Math.max(0, mob.maxHp - 120);
   }
   return 18 + mob.level * 8 + Math.floor(mob.maxHp / 8);
+}
+
+function goldForMob(mob) {
+  if (mob.isCritter) return 1;
+  if (mob.isBoss) return 25 + mob.level * 5;
+  return 3 + mob.level * 2;
 }
 
 function awardXp(player, amount) {
@@ -1860,6 +1958,18 @@ function createStarterEquipment(classId, appearance) {
     ring1: null,
     ring2: null
   };
+}
+
+function createTraderStock(traderId, seed) {
+  const stock = [];
+  const count = 8;
+  for (let i = 0; i < count; i += 1) {
+    const roll = hash2(seed + i, traderId.length + i, 900);
+    const qualityBias = roll > 0.85 ? 0.8 : roll > 0.55 ? 0.5 : roll > 0.3 ? 0.25 : 0;
+    const item = createLootItem(seed + i * 7, traderId.length * 13 + i, qualityBias);
+    stock.push({ item, price: getBuyPrice(item) });
+  }
+  return stock;
 }
 
 function createItemDatabase() {
