@@ -954,7 +954,7 @@ function getPortalsInChunk(cx, cy) {
       targetX: portal.targetX,
       targetY: portal.targetY,
       color: portal.color,
-      preview: generatePortalPreview(portal.targetX, portal.targetY + 1, 4)
+      preview: generatePortalPreview(portal.targetX, portal.targetY + 1, 7)
     }));
 }
 

@@ -3495,143 +3495,160 @@ function drawLighting() {
 
 function drawPortal(sx, sy, tx, ty) {
   const portal = getPortalAtTile(tx, ty);
-  if (!portal || (tx !== portal.x || ty !== portal.y)) return;
+  if (!portal || tx !== portal.x || ty !== portal.y) return;
 
   const time = performance.now() / 1000;
   const color = portal.color || "#75f0ff";
   const T = TILE_SIZE;
   const cx = sx + T + T / 2;
-  const cy = sy + T + T / 2;
-  const orbR = T * 1.18;
-  const orbY = cy - T * 0.45;
-  const pulse = 0.5 + Math.sin(time * 3.1) * 0.5;
+  const cy = sy + T;
+  const gateR = T * 2.8;
+  const pulse = 0.5 + Math.sin(time * 3) * 0.5;
 
-  drawPortalBase(cx, cy + T * 0.78, orbR, color, time);
+  drawEllipseShadow(cx - gateR - 4, cy + gateR + 2, gateR * 2 + 8, 16, 0.5);
 
   ctx.save();
   ctx.beginPath();
-  ctx.arc(cx, orbY, orbR - 7, 0, Math.PI * 2);
+  ctx.arc(cx, cy, gateR - 10, 0, Math.PI * 2);
   ctx.clip();
-  drawPortalPreview(cx, orbY, (orbR - 7) * 2, (orbR - 7) * 2, portal, time);
+  drawPortalEventHorizon(cx, cy, gateR - 10, portal, time);
   ctx.restore();
 
-  drawRoundPortalOverlay(cx, orbY, orbR, color, time, pulse);
+  drawStargateRing(cx, cy, gateR, color, time, pulse);
 
-  ctx.font = "11px ui-sans-serif, system-ui";
+  ctx.font = "bold 13px ui-sans-serif, system-ui";
   ctx.textAlign = "center";
   ctx.lineWidth = 3;
-  ctx.strokeStyle = "rgba(8,12,18,0.8)";
+  ctx.strokeStyle = "rgba(8,12,18,0.85)";
   ctx.fillStyle = color;
-  ctx.strokeText(portal.name, cx, cy + T * 1.55);
-  ctx.fillText(portal.name, cx, cy + T * 1.55);
+  ctx.strokeText(portal.name, cx, cy + gateR + 20);
+  ctx.fillText(portal.name, cx, cy + gateR + 20);
 }
 
-function drawPortalBase(cx, cy, radius, color, time) {
-  drawEllipseShadow(cx - radius * 1.08, cy + 6, radius * 2.16, 14, 0.45);
+function drawStargateRing(cx, cy, r, color, time, pulse) {
+  const rgb = hexToRgb(color);
 
   ctx.save();
-  ctx.fillStyle = "#4f5363";
-  ctx.fillRect(cx - radius * 0.92, cy - 10, radius * 1.84, 14);
-  ctx.fillStyle = "#707889";
-  ctx.fillRect(cx - radius * 0.72, cy - 20, radius * 1.44, 12);
-  ctx.fillStyle = "#303544";
-  ctx.fillRect(cx - radius * 0.58, cy - 27, radius * 1.16, 9);
-  ctx.fillStyle = `rgba(${hexToRgb(color)}, ${0.2 + Math.sin(time * 4) * 0.08})`;
-  ctx.fillRect(cx - radius * 0.46, cy - 28, radius * 0.92, 5);
-  ctx.restore();
-}
-
-function drawRoundPortalOverlay(cx, cy, radius, color, time, pulse) {
-  ctx.save();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 7;
   ctx.shadowColor = color;
-  ctx.shadowBlur = 18 + pulse * 8;
+  ctx.shadowBlur = 22 + pulse * 10;
+  ctx.strokeStyle = "#3a3e4e";
+  ctx.lineWidth = 12;
   ctx.beginPath();
-  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.stroke();
-
-  ctx.lineWidth = 2;
   ctx.shadowBlur = 0;
-  ctx.strokeStyle = "rgba(255,255,255,0.58)";
+
+  ctx.strokeStyle = "#555b6e";
+  ctx.lineWidth = 10;
   ctx.beginPath();
-  ctx.arc(cx, cy, radius + 5 + pulse * 2, 0, Math.PI * 2);
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.stroke();
 
-  ctx.globalCompositeOperation = "screen";
-  const glow = ctx.createRadialGradient(cx, cy, radius * 0.15, cx, cy, radius * 1.05);
-  glow.addColorStop(0, `rgba(${hexToRgb(color)}, 0.06)`);
-  glow.addColorStop(0.62, `rgba(${hexToRgb(color)}, 0.22)`);
-  glow.addColorStop(1, `rgba(${hexToRgb(color)}, 0.05)`);
-  ctx.fillStyle = glow;
+  ctx.strokeStyle = "#6e748a";
+  ctx.lineWidth = 6;
   ctx.beginPath();
-  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.arc(cx, cy, r + 5, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = "#494f63";
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r - 5, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = 0.6 + pulse * 0.4;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  const numChevrons = 9;
+  for (let i = 0; i < numChevrons; i += 1) {
+    const angle = (Math.PI * 2 * i) / numChevrons - Math.PI / 2;
+    const chx = cx + Math.cos(angle) * r;
+    const chy = cy + Math.sin(angle) * r;
+    const lit = Math.sin(time * 2 + i * 0.9) > 0;
+    ctx.save();
+    ctx.translate(chx, chy);
+    ctx.rotate(angle + Math.PI / 2);
+    ctx.fillStyle = lit ? "#ffd166" : "#4a4230";
+    ctx.shadowColor = lit ? "#ffd166" : "transparent";
+    ctx.shadowBlur = lit ? 8 : 0;
+    ctx.beginPath();
+    ctx.moveTo(0, -8);
+    ctx.lineTo(-6, 5);
+    ctx.lineTo(6, 5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#2a2820";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawPortalEventHorizon(cx, cy, r, portal, time) {
+  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  grad.addColorStop(0, "#0e0828");
+  grad.addColorStop(0.7, "#120a30");
+  grad.addColorStop(1, "#1a1040");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fill();
 
-  for (let i = 0; i < 3; i += 1) {
-    const spin = time * (0.8 + i * 0.24) + i * 2.1;
-    ctx.strokeStyle = `rgba(255,255,255,${0.18 - i * 0.035})`;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.ellipse(
-      cx,
-      cy,
-      radius * (0.56 + i * 0.12),
-      radius * (0.18 + i * 0.05),
-      spin,
-      0,
-      Math.PI * 2
-    );
-    ctx.stroke();
-  }
-  ctx.restore();
-}
+  if (portal?.preview?.tiles) {
+    const size = portal.preview.size;
+    const viewD = r * 2;
+    const cellW = viewD / size;
+    const cellH = viewD / size;
+    const ox = cx - r;
+    const oy = cy - r;
 
-function drawPortalPreview(cx, cy, w, h, portal, time) {
-  if (!portal?.preview?.tiles) {
-    ctx.fillStyle = "#180e30";
-    ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
-    return;
-  }
-
-  const size = portal.preview.size;
-  const cellW = w / size;
-  const cellH = h / size;
-  const startX = cx - w / 2;
-  const startY = cy - h / 2;
-
-  for (let py = 0; py < size; py += 1) {
-    for (let px = 0; px < size; px += 1) {
-      const tile = portal.preview.tiles[py * size + px];
-      const waveOff = Math.sin(time * 2.5 + py * 0.7 + px * 0.3) * 2;
-      drawPortalPreviewTile(
-        tile,
-        startX + px * cellW + waveOff,
-        startY + py * cellH,
-        cellW + 1,
-        cellH + 1,
-        px,
-        py,
-        time
-      );
+    for (let py = 0; py < size; py += 1) {
+      for (let px = 0; px < size; px += 1) {
+        const dx = (px + 0.5) / size - 0.5;
+        const dy = (py + 0.5) / size - 0.5;
+        const dist = Math.hypot(dx, dy) * 2;
+        if (dist > 1.05) continue;
+        const tile = portal.preview.tiles[py * size + px];
+        const waveX = Math.sin(time * 1.6 + py * 0.4 + px * 0.2) * 3 * (0.3 + dist);
+        const waveY = Math.cos(time * 1.2 + px * 0.3 + py * 0.25) * 2.5 * (0.3 + dist);
+        drawPortalPreviewTile(tile, ox + px * cellW + waveX, oy + py * cellH + waveY, cellW + 1, cellH + 1, px, py, time);
+      }
     }
   }
 
-  ctx.fillStyle = `rgba(${hexToRgb(portal.color || "#75f0ff")}, 0.12)`;
-  ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
+  const rgb = hexToRgb(portal?.color || "#75f0ff");
+  ctx.fillStyle = `rgba(${rgb}, 0.1)`;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
 
-  for (let i = 0; i < 5; i += 1) {
-    const wy = cy - h / 2 + (((time * 30 + i * h / 5) % h));
-    const waveAmp = 3 + Math.sin(time * 1.5 + i) * 2;
-    ctx.strokeStyle = `rgba(255,255,255,${0.08 + Math.sin(time + i) * 0.04})`;
+  for (let ring = 0; ring < 5; ring += 1) {
+    const rr = ((time * 20 + ring * r / 5) % r);
+    const alpha = 0.15 * (1 - rr / r);
+    ctx.strokeStyle = `rgba(${rgb},${alpha})`;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    for (let wx = -w / 2; wx <= w / 2; wx += 4) {
-      const yy = wy + Math.sin(time * 3 + wx * 0.08 + i) * waveAmp;
-      if (wx === -w / 2) ctx.moveTo(cx + wx, yy);
-      else ctx.lineTo(cx + wx, yy);
-    }
+    ctx.arc(cx, cy, rr, 0, Math.PI * 2);
     ctx.stroke();
+  }
+
+  for (let i = 0; i < 8; i += 1) {
+    const angle = time * 0.6 + i * Math.PI / 4;
+    const sr = r * 0.15 + Math.sin(time * 1.8 + i * 1.3) * r * 0.35;
+    const sx = cx + Math.cos(angle) * sr;
+    const sy = cy + Math.sin(angle) * sr;
+    const shimmer = ctx.createRadialGradient(sx, sy, 0, sx, sy, 10);
+    shimmer.addColorStop(0, `rgba(255,255,255,${0.2 + Math.sin(time * 2.5 + i) * 0.1})`);
+    shimmer.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = shimmer;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 10, 0, Math.PI * 2);
+    ctx.fill();
   }
 }
 
