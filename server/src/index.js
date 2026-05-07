@@ -10,6 +10,7 @@ const {
   getBiome,
   getDoorTransitionAt,
   getPortalAt,
+  getShopFixtureAt,
   hash2,
   isBlockedCircle,
   spawnPoint
@@ -42,6 +43,8 @@ const PLAYER_MAX_HP = 100;
 const MOB_RESPAWN_MS = 7000;
 const INVENTORY_SIZE = 10;
 const INTERACT_RADIUS = 1.8;
+const SHOP_INTERACT_RADIUS = 1.75;
+const STARTING_GOLD = 120;
 const MAX_GROUND_ITEMS = 140;
 const MOB_AGGRO_RADIUS = 7.5;
 const MOB_ATTACK_RADIUS = 1.15;
@@ -90,6 +93,12 @@ const CLASS_LOADOUTS = Object.freeze({
 });
 const KNIGHT_SHIELD_ARC = Math.PI * 0.72;
 const KNIGHT_SHIELD_DAMAGE_MULTIPLIER = 0.45;
+const BLOCK_CHANCE_BY_RARITY = Object.freeze({
+  common: 0.20,
+  uncommon: 0.28,
+  rare: 0.36,
+  epic: 0.45
+});
 const MOB_TYPES = Object.freeze({
   forest: {
     enemies: [
@@ -451,6 +460,7 @@ function serializePlayer(player) {
     level: player.level,
     statPoints: player.statPoints,
     stats: player.stats,
+    gold: player.gold,
     inventory: player.inventory,
     equipment: player.equipment,
     x: Number(player.x.toFixed(3)),
@@ -741,7 +751,17 @@ function handleMessage(client, raw) {
   }
 
   if (message.type === "interact") {
-    handleInteract(client);
+    handleInteract(client, message);
+    return;
+  }
+
+  if (message.type === "shopBuy") {
+    handleShopBuy(client, message);
+    return;
+  }
+
+  if (message.type === "shopSell") {
+    handleShopSell(client, message);
     return;
   }
 
@@ -859,6 +879,7 @@ function joinWorld(client, message, savedCharacter = null) {
     xpToNext: xpForNextLevel(clampInteger(savedCharacter?.level ?? 1, 1, 1000)),
     statPoints: isMod ? 9999 : clampInteger(savedCharacter?.statPoints ?? 0, 0, 1000),
     stats: sanitizeStats(savedCharacter?.stats),
+    gold: clampInteger(savedCharacter?.gold ?? STARTING_GOLD, 0, 100000000),
     inventory: sanitizeInventory(savedCharacter?.inventory),
     equipment: sanitizeEquipment(savedCharacter?.equipment) || createStarterEquipment(classId, {
       torsoStyle: baseTorsoStyle,
@@ -1077,8 +1098,14 @@ function handleModTeleport(client, message) {
   broadcastSnapshot();
 }
 
-function handleInteract(client) {
+function handleInteract(client, message = {}) {
   if (!client.player) {
+    return;
+  }
+
+  const shop = nearestShopFixture(client.player, message);
+  if (shop) {
+    sendShopWindow(client, shop);
     return;
   }
 
@@ -1565,6 +1592,7 @@ function broadcastSnapshot() {
       xpToNext: p.xpToNext,
       statPoints: p.statPoints,
       stats: p.stats,
+      gold: p.gold,
       inventory: p.inventory,
       equipment: p.equipment,
       moveSpeed: Number(getPlayerSpeed(p).toFixed(2)),
@@ -1774,6 +1802,13 @@ function isShieldBlocking(target, attacker) {
   return delta <= KNIGHT_SHIELD_ARC / 2;
 }
 
+function rollBlockChance(player) {
+  const weapon = player.equipment?.weapon;
+  if (weapon?.weaponKind !== "sword") return false;
+  const chance = BLOCK_CHANCE_BY_RARITY[weapon.rarity] ?? BLOCK_CHANCE_BY_RARITY.common;
+  return Math.random() < chance;
+}
+
 function distance(a, b) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
@@ -1799,6 +1834,7 @@ function createStarterEquipment(classId, appearance) {
       icon: weaponKind,
       rarity: "common",
       color: appearance.weaponColor,
+      value: 10,
       weaponKind,
       visual: {
         weaponStyle: appearance.weaponStyle,
@@ -1814,6 +1850,7 @@ function createStarterEquipment(classId, appearance) {
       icon: "armor",
       rarity: "common",
       color: appearance.torsoColor,
+      value: 12,
       visual: {
         torsoStyle: appearance.torsoStyle,
         torsoColor: appearance.torsoColor
@@ -1864,6 +1901,7 @@ function createItemTemplate(type, rarity, index) {
         weaponStyle: visualStyles[index % visualStyles.length],
         weaponColor: rarity.color
       },
+      value: Math.round((28 + damage * 4 + strength * 12) * rarity.multiplier),
       stats: { damage, strength }
     };
   }
@@ -1883,6 +1921,7 @@ function createItemTemplate(type, rarity, index) {
       icon: "ring",
       rarity: rarity.id,
       color: rarity.color,
+      value: Math.round((32 + value * (statKey === "health" ? 2 : 18)) * rarity.multiplier),
       stats: { [statKey]: value }
     };
   }
@@ -1904,6 +1943,7 @@ function createItemTemplate(type, rarity, index) {
         torsoStyle: visualStyles[index % visualStyles.length],
         torsoColor: rarity.color
       },
+      value: Math.round((24 + health * 1.5 + armour * 14) * rarity.multiplier),
       stats: { health, armour }
     };
   }
@@ -1916,6 +1956,7 @@ function createItemTemplate(type, rarity, index) {
     icon: "potion",
     rarity: rarity.id,
     color: "#f26d6d",
+    value: Math.round((12 + healing * 0.8) * rarity.multiplier),
     stats: { healing }
   };
 }
@@ -1950,6 +1991,37 @@ function cloneItem(template) {
     stats: { ...(template.stats || {}) },
     visual: { ...(template.visual || {}) }
   };
+}
+
+function getItemValue(item) {
+  const direct = Number(item?.value);
+  if (Number.isFinite(direct) && direct > 0) {
+    return Math.round(direct);
+  }
+
+  const stats = item?.stats || {};
+  const rarityMultiplier = {
+    common: 1,
+    uncommon: 1.35,
+    rare: 1.8,
+    epic: 2.35
+  }[item?.rarity] || 1;
+  const statValue =
+    (Number(stats.damage) || 0) * 4 +
+    (Number(stats.strength) || 0) * 14 +
+    (Number(stats.armour) || 0) * 12 +
+    (Number(stats.health) || 0) * 1.2 +
+    (Number(stats.speed) || 0) * 60 +
+    (Number(stats.healing) || 0) * 0.7;
+  return Math.max(1, Math.round((12 + statValue) * rarityMultiplier));
+}
+
+function getBuyPrice(item) {
+  return Math.max(1, Math.ceil(getItemValue(item) * 1.3));
+}
+
+function getSellPrice(item) {
+  return Math.max(1, Math.floor(getItemValue(item) * 0.5));
 }
 
 function addItemToInventory(player, item) {
@@ -1995,6 +2067,134 @@ function nearestGroundItem(player) {
   return groundItems
     .filter((ground) => Math.hypot(ground.x - player.x, ground.y - player.y) <= INTERACT_RADIUS)
     .sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0] || null;
+}
+
+function nearestShopFixture(player, message = {}) {
+  const targetX = Number(message.x);
+  const targetY = Number(message.y);
+  if (Number.isFinite(targetX) && Number.isFinite(targetY)) {
+    const targeted = getShopFixtureAt(targetX, targetY);
+    if (targeted && Math.hypot(targeted.x - player.x, targeted.y - player.y) <= SHOP_INTERACT_RADIUS + 0.65) {
+      return targeted;
+    }
+  }
+
+  const nearby = getShopFixtureAt(player.x, player.y);
+  if (nearby && Math.hypot(nearby.x - player.x, nearby.y - player.y) <= SHOP_INTERACT_RADIUS) {
+    return nearby;
+  }
+
+  return null;
+}
+
+function getShopStock(shop) {
+  const stock = [];
+  const seedX = Math.floor(shop.x * 10);
+  const seedY = Math.floor(shop.y * 10);
+  for (let i = 0; i < 8; i += 1) {
+    const index = Math.floor(hash2(seedX + i * 13, seedY - i * 7, 911) * itemDatabase.length);
+    const template = itemDatabase[index] || itemDatabase[i % itemDatabase.length];
+    if (template) {
+      stock.push(template);
+    }
+  }
+  return stock;
+}
+
+function publicShopItem(template) {
+  return {
+    templateId: template.templateId,
+    type: template.type,
+    name: template.name,
+    icon: template.icon,
+    rarity: template.rarity,
+    color: template.color,
+    weaponKind: template.weaponKind,
+    stats: template.stats || {},
+    visual: template.visual || {},
+    value: getItemValue(template),
+    price: getBuyPrice(template),
+    sellPrice: getSellPrice(template)
+  };
+}
+
+function sendShopWindow(client, shop) {
+  send(client, {
+    type: "shop",
+    id: shop.id,
+    name: shop.name,
+    buildingName: shop.buildingName,
+    x: shop.x,
+    y: shop.y,
+    gold: client.player?.gold || 0,
+    stock: getShopStock(shop).map(publicShopItem)
+  });
+}
+
+function handleShopBuy(client, message) {
+  if (!client.player) {
+    return;
+  }
+
+  const shop = nearestShopFixture(client.player, message);
+  if (!shop) {
+    send(client, { type: "serverMessage", message: "shop_not_nearby" });
+    return;
+  }
+
+  const templateId = String(message.templateId || "");
+  const template = getShopStock(shop).find((item) => item.templateId === templateId);
+  if (!template) {
+    send(client, { type: "serverMessage", message: "shop_item_missing" });
+    return;
+  }
+
+  const price = getBuyPrice(template);
+  if ((client.player.gold || 0) < price) {
+    send(client, { type: "serverMessage", message: "not_enough_gold" });
+    sendShopWindow(client, shop);
+    return;
+  }
+
+  const item = cloneItem(template);
+  if (!addItemToInventory(client.player, item)) {
+    send(client, { type: "serverMessage", message: "inventory_full" });
+    sendShopWindow(client, shop);
+    return;
+  }
+
+  client.player.gold = Math.max(0, (client.player.gold || 0) - price);
+  saveClientCharacter(client);
+  send(client, { type: "serverMessage", message: "shop_bought", itemName: item.name });
+  sendShopWindow(client, shop);
+  broadcastSnapshot();
+}
+
+function handleShopSell(client, message) {
+  if (!client.player) {
+    return;
+  }
+
+  const shop = nearestShopFixture(client.player, message);
+  if (!shop) {
+    send(client, { type: "serverMessage", message: "shop_not_nearby" });
+    return;
+  }
+
+  const slot = clampInteger(message.slot, 0, INVENTORY_SIZE - 1);
+  const item = client.player.inventory[slot];
+  if (!item) {
+    sendShopWindow(client, shop);
+    return;
+  }
+
+  const price = getSellPrice(item);
+  client.player.inventory[slot] = null;
+  client.player.gold = Math.min(100000000, (client.player.gold || 0) + price);
+  saveClientCharacter(client);
+  send(client, { type: "serverMessage", message: "shop_sold", itemName: item.name });
+  sendShopWindow(client, shop);
+  broadcastSnapshot();
 }
 
 function getPlayerAppearance(player) {
@@ -2329,7 +2529,7 @@ function attackPlayerWithMob(mob, player, now) {
 
   mob.lastAttackAt = now;
   let damage = mob.attackDamage || (mob.isBoss ? BOSS_ATTACK_DAMAGE : MOB_ATTACK_DAMAGE);
-  const blocked = isShieldBlocking(player, mob);
+  const blocked = rollBlockChance(player);
   if (blocked) {
     damage = Math.max(1, Math.round(damage * KNIGHT_SHIELD_DAMAGE_MULTIPLIER));
   }
@@ -2646,6 +2846,7 @@ function sanitizeItem(item) {
     type,
     name: String(item.name || "Item").slice(0, 48),
     id: String(item.id || `item_${nextItemId++}`).slice(0, 48),
+    value: clampInteger(item.value ?? getItemValue(item), 0, 1000000),
     stats: typeof item.stats === "object" && item.stats ? { ...item.stats } : {},
     visual: typeof item.visual === "object" && item.visual ? { ...item.visual } : {}
   };
