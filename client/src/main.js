@@ -2195,6 +2195,7 @@ function draw() {
   ctx.translate(-halfW, -halfH);
 
   drawWorld();
+  drawPortals();
   drawPlayers();
   drawTreeCanopies();
   drawCombatFx();
@@ -2245,6 +2246,16 @@ function drawWorld() {
   drawWorldAssets(minTileX, maxTileX, minTileY, maxTileY);
   drawWorldLoot();
   drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY);
+}
+
+function drawPortals() {
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  for (const portal of state.portals.values()) {
+    const sx = Math.floor(portal.x * TILE_SIZE - state.camera.x + halfW);
+    const sy = Math.floor(portal.y * TILE_SIZE - state.camera.y + halfH);
+    drawPortal(sx, sy, portal.x, portal.y);
+  }
 }
 
 function drawTile(tile, sx, sy, tx, ty) {
@@ -2331,7 +2342,7 @@ function drawTile(tile, sx, sy, tx, ty) {
   }
 
   if (tile === TILE.PORTAL) {
-    drawPortal(sx, sy, tx, ty);
+    drawGroundPatch(TILE.STONE, sx, sy, tx, ty, tilePalette[TILE.STONE]);
     return;
   }
 }
@@ -3685,74 +3696,122 @@ function drawPortal(sx, sy, tx, ty) {
 }
 
 function drawStargateRing(cx, cy, r, color, time, pulse) {
-  const rgb = hexToRgb(color);
-
   ctx.save();
+  // Outer magical aura
   ctx.shadowColor = color;
-  ctx.shadowBlur = 22 + pulse * 10;
-  ctx.strokeStyle = "#3a3e4e";
-  ctx.lineWidth = 12;
+  ctx.shadowBlur = 28 + pulse * 16;
+  ctx.strokeStyle = "#0e0a06";
+  ctx.lineWidth = 26;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.stroke();
   ctx.shadowBlur = 0;
 
-  ctx.strokeStyle = "#555b6e";
-  ctx.lineWidth = 10;
+  // Stone body layers
+  ctx.strokeStyle = "#3a2a18";
+  ctx.lineWidth = 22;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.stroke();
 
-  ctx.strokeStyle = "#6e748a";
-  ctx.lineWidth = 6;
+  ctx.strokeStyle = "#4e3820";
+  ctx.lineWidth = 14;
   ctx.beginPath();
-  ctx.arc(cx, cy, r + 5, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.strokeStyle = "#494f63";
-  ctx.lineWidth = 6;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r - 5, 0, Math.PI * 2);
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.stroke();
 
+  ctx.strokeStyle = "#5e4830";
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Carved grooves
+  ctx.strokeStyle = "#1a100a";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r + 11, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r - 11, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Inner color glow rim
   ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
-  ctx.globalAlpha = 0.6 + pulse * 0.4;
+  ctx.lineWidth = 3;
+  ctx.globalAlpha = 0.5 + pulse * 0.5;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 10;
   ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.arc(cx, cy, r - 11, 0, Math.PI * 2);
   ctx.stroke();
   ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
   ctx.restore();
 
-  const numChevrons = 9;
-  for (let i = 0; i < numChevrons; i += 1) {
-    const angle = (Math.PI * 2 * i) / numChevrons - Math.PI / 2;
-    const chx = cx + Math.cos(angle) * r;
-    const chy = cy + Math.sin(angle) * r;
-    const lit = Math.sin(time * 2 + i * 0.9) > 0;
+  // Arcane gem stones at 8 equidistant points
+  const numGems = 8;
+  for (let i = 0; i < numGems; i += 1) {
+    const angle = (Math.PI * 2 * i) / numGems - Math.PI / 2;
+    const gx = cx + Math.cos(angle) * r;
+    const gy = cy + Math.sin(angle) * r;
+    const litPhase = Math.sin(time * 1.6 + i * 0.8);
+    const lit = litPhase > 0;
+    const glowStr = Math.max(0, litPhase);
+
     ctx.save();
-    ctx.translate(chx, chy);
-    ctx.rotate(angle + Math.PI / 2);
-    ctx.fillStyle = lit ? "#ffd166" : "#4a4230";
-    ctx.shadowColor = lit ? "#ffd166" : "transparent";
-    ctx.shadowBlur = lit ? 8 : 0;
+    ctx.translate(gx, gy);
+    const gs = i % 2 === 0 ? 7 : 5;
     ctx.beginPath();
-    ctx.moveTo(0, -8);
-    ctx.lineTo(-6, 5);
-    ctx.lineTo(6, 5);
+    ctx.moveTo(0, -gs);
+    ctx.lineTo(gs * 0.65, 0);
+    ctx.lineTo(0, gs);
+    ctx.lineTo(-gs * 0.65, 0);
     ctx.closePath();
+    ctx.fillStyle = lit ? color : "#251a10";
+    ctx.shadowColor = color;
+    ctx.shadowBlur = lit ? 8 + glowStr * 10 : 0;
     ctx.fill();
-    ctx.strokeStyle = "#2a2820";
+    ctx.strokeStyle = "#0a0806";
     ctx.lineWidth = 1;
     ctx.stroke();
+    ctx.restore();
+  }
+
+  // Crystal clusters at cardinal points (N, E, S, W)
+  const cardinalAngles = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2];
+  for (const baseAngle of cardinalAngles) {
+    const kx = cx + Math.cos(baseAngle) * (r + 9);
+    const ky = cy + Math.sin(baseAngle) * (r + 9);
+    ctx.save();
+    ctx.translate(kx, ky);
+    ctx.rotate(baseAngle + Math.PI / 2);
+    for (let c = -1; c <= 1; c += 1) {
+      const cLen = c === 0 ? 12 : 7;
+      const cOff = c * 5;
+      ctx.fillStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 5 + pulse * 9;
+      ctx.globalAlpha = 0.65 + pulse * 0.35;
+      ctx.beginPath();
+      ctx.moveTo(cOff, -cLen);
+      ctx.lineTo(cOff + 3, 0);
+      ctx.lineTo(cOff - 3, 0);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
     ctx.restore();
   }
 }
 
 function drawPortalEventHorizon(cx, cy, r, portal, time) {
+  // Deep arcane void
   const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-  grad.addColorStop(0, "#0e0828");
-  grad.addColorStop(0.7, "#120a30");
-  grad.addColorStop(1, "#1a1040");
+  grad.addColorStop(0, "#0a0420");
+  grad.addColorStop(0.55, "#0e0828");
+  grad.addColorStop(1, "#18103a");
   ctx.fillStyle = grad;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
@@ -3781,34 +3840,69 @@ function drawPortalEventHorizon(cx, cy, r, portal, time) {
   }
 
   const rgb = hexToRgb(portal?.color || "#75f0ff");
-  ctx.fillStyle = `rgba(${rgb}, 0.1)`;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fill();
 
-  for (let ring = 0; ring < 5; ring += 1) {
-    const rr = ((time * 20 + ring * r / 5) % r);
-    const alpha = 0.15 * (1 - rr / r);
-    ctx.strokeStyle = `rgba(${rgb},${alpha})`;
-    ctx.lineWidth = 2;
+  // Magical vortex wisps rotating around center
+  for (let wisp = 0; wisp < 3; wisp += 1) {
+    const wispAngle = time * 0.7 + (wisp / 3) * Math.PI * 2;
+    const wx = cx + Math.cos(wispAngle) * r * 0.28;
+    const wy = cy + Math.sin(wispAngle) * r * 0.28;
+    const wispGrad = ctx.createRadialGradient(wx, wy, 0, cx, cy, r);
+    wispGrad.addColorStop(0, `rgba(${rgb}, 0.38)`);
+    wispGrad.addColorStop(0.45, `rgba(${rgb}, 0.08)`);
+    wispGrad.addColorStop(1, `rgba(${rgb}, 0)`);
+    ctx.fillStyle = wispGrad;
+    ctx.globalAlpha = 0.7;
     ctx.beginPath();
-    ctx.arc(cx, cy, rr, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-
-  for (let i = 0; i < 8; i += 1) {
-    const angle = time * 0.6 + i * Math.PI / 4;
-    const sr = r * 0.15 + Math.sin(time * 1.8 + i * 1.3) * r * 0.35;
-    const sx = cx + Math.cos(angle) * sr;
-    const sy = cy + Math.sin(angle) * sr;
-    const shimmer = ctx.createRadialGradient(sx, sy, 0, sx, sy, 10);
-    shimmer.addColorStop(0, `rgba(255,255,255,${0.2 + Math.sin(time * 2.5 + i) * 0.1})`);
-    shimmer.addColorStop(1, "rgba(255,255,255,0)");
-    ctx.fillStyle = shimmer;
-    ctx.beginPath();
-    ctx.arc(sx, sy, 10, 0, Math.PI * 2);
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fill();
   }
+  ctx.globalAlpha = 1;
+
+  // Rotating spiral arms
+  ctx.save();
+  for (let arm = 0; arm < 2; arm += 1) {
+    ctx.beginPath();
+    const armOffset = arm * Math.PI;
+    for (let step = 0; step <= 40; step += 1) {
+      const t = step / 40;
+      const angle = time * 0.9 + armOffset + t * Math.PI * 3.5;
+      const sr = t * r * 0.88;
+      const spx = cx + Math.cos(angle) * sr;
+      const spy = cy + Math.sin(angle) * sr;
+      if (step === 0) ctx.moveTo(spx, spy);
+      else ctx.lineTo(spx, spy);
+    }
+    ctx.strokeStyle = `rgba(${rgb}, 0.25)`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // Central arcane glow
+  const coreGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 0.45);
+  coreGrad.addColorStop(0, `rgba(255, 255, 255, 0.18)`);
+  coreGrad.addColorStop(0.5, `rgba(${rgb}, 0.12)`);
+  coreGrad.addColorStop(1, `rgba(${rgb}, 0)`);
+  ctx.fillStyle = coreGrad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.45, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Floating arcane motes
+  for (let i = 0; i < 6; i += 1) {
+    const moteAngle = time * 0.5 + i * (Math.PI / 3);
+    const moteR = r * 0.2 + Math.sin(time * 1.4 + i * 1.1) * r * 0.3;
+    const mx = cx + Math.cos(moteAngle) * moteR;
+    const my = cy + Math.sin(moteAngle) * moteR;
+    const brightness = 0.5 + Math.sin(time * 2.5 + i * 0.9) * 0.4;
+    ctx.shadowColor = `rgba(${rgb}, 0.9)`;
+    ctx.shadowBlur = 6;
+    ctx.fillStyle = `rgba(255,255,255,${brightness * 0.7})`;
+    ctx.beginPath();
+    ctx.arc(mx, my, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
 }
 
 function drawPortalPreviewTile(tile, x, y, w, h, px, py, time) {
