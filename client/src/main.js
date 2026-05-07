@@ -1,5 +1,5 @@
 const canvas = document.querySelector("#game");
-const ctx = canvas.getContext("2d", {
+let ctx = canvas.getContext("2d", {
   alpha: false,
   desynchronized: true,
   willReadFrequently: false
@@ -66,6 +66,7 @@ const traderClose = document.querySelector("#traderClose");
 
 const TILE_SIZE = 32;
 const CHUNK_SIZE = 16;
+const chunkCanvasCache = new Map();
 // Client-side predicted base player speed (tiles per second). Match server base.
 const CLIENT_PLAYER_SPEED = 5.2;
 const PRODUCTION_SERVER_URL = "wss://balathor.edmundmurphy.com/ws";
@@ -458,6 +459,7 @@ function handleServerMessage(message) {
     state.camera.x = message.x * TILE_SIZE;
     state.camera.y = message.y * TILE_SIZE;
     state.requestedChunks.clear();
+    chunkCanvasCache.clear();
     clearMovementInput();
     requestVisibleChunks();
     appendChat({
@@ -2275,26 +2277,52 @@ function drawTitleWorld() {
   }
 }
 
+function getChunkCanvas(cx, cy) {
+  const key = `${cx},${cy}`;
+  if (chunkCanvasCache.has(key)) return chunkCanvasCache.get(key);
+
+  const oc = new OffscreenCanvas(CHUNK_SIZE * TILE_SIZE, CHUNK_SIZE * TILE_SIZE);
+  const mainCtx = ctx;
+  ctx = oc.getContext("2d", { alpha: false });
+  ctx.imageSmoothingEnabled = false;
+  for (let tly = 0; tly < CHUNK_SIZE; tly++) {
+    for (let tlx = 0; tlx < CHUNK_SIZE; tlx++) {
+      const wx = cx * CHUNK_SIZE + tlx;
+      const wy = cy * CHUNK_SIZE + tly;
+      const tile = getTile(wx, wy);
+      drawTile(tile, tlx * TILE_SIZE, tly * TILE_SIZE, wx, wy);
+    }
+  }
+  ctx = mainCtx;
+  chunkCanvasCache.set(key, oc);
+  return oc;
+}
+
 function drawWorld() {
   const zoom = state.zoom || 1;
-  const screenHalfW = canvas.width / 2;
-  const screenHalfH = canvas.height / 2;
-  const visHalfW = screenHalfW / zoom;
-  const visHalfH = screenHalfH / zoom;
-  const minTileX = Math.floor((state.camera.x - visHalfW) / TILE_SIZE) - 1;
-  const maxTileX = Math.ceil((state.camera.x + visHalfW) / TILE_SIZE) + 1;
-  const minTileY = Math.floor((state.camera.y - visHalfH) / TILE_SIZE) - 1;
-  const maxTileY = Math.ceil((state.camera.y + visHalfH) / TILE_SIZE) + 1;
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const visHalfW = halfW / zoom;
+  const visHalfH = halfH / zoom;
+  const minChunkX = Math.floor((state.camera.x - visHalfW) / (CHUNK_SIZE * TILE_SIZE)) - 1;
+  const maxChunkX = Math.ceil( (state.camera.x + visHalfW) / (CHUNK_SIZE * TILE_SIZE)) + 1;
+  const minChunkY = Math.floor((state.camera.y - visHalfH) / (CHUNK_SIZE * TILE_SIZE)) - 1;
+  const maxChunkY = Math.ceil( (state.camera.y + visHalfH) / (CHUNK_SIZE * TILE_SIZE)) + 1;
 
-  for (let ty = minTileY; ty <= maxTileY; ty += 1) {
-    for (let tx = minTileX; tx <= maxTileX; tx += 1) {
-      const tile = getTile(tx, ty);
-      const sx = Math.floor(tx * TILE_SIZE - state.camera.x + screenHalfW);
-      const sy = Math.floor(ty * TILE_SIZE - state.camera.y + screenHalfH);
-      drawTile(tile, sx, sy, tx, ty);
+  for (let cy = minChunkY; cy <= maxChunkY; cy++) {
+    for (let cx = minChunkX; cx <= maxChunkX; cx++) {
+      if (!state.chunks.has(`${cx},${cy}`)) continue;
+      const chunkCanvas = getChunkCanvas(cx, cy);
+      const sx = Math.floor(cx * CHUNK_SIZE * TILE_SIZE - state.camera.x + halfW);
+      const sy = Math.floor(cy * CHUNK_SIZE * TILE_SIZE - state.camera.y + halfH);
+      ctx.drawImage(chunkCanvas, sx, sy);
     }
   }
 
+  const minTileX = minChunkX * CHUNK_SIZE - 1;
+  const maxTileX = (maxChunkX + 1) * CHUNK_SIZE + 1;
+  const minTileY = minChunkY * CHUNK_SIZE - 1;
+  const maxTileY = (maxChunkY + 1) * CHUNK_SIZE + 1;
   drawWorldAssets(minTileX, maxTileX, minTileY, maxTileY);
   drawWorldLoot();
   drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY);
@@ -2495,9 +2523,47 @@ function drawItemIcon(item, x, y) {
   }
 
   if (item?.type === "armor") {
-    ctx.fillRect(x - 7, y - 8, 14, 14);
-    ctx.fillStyle = "rgba(255,255,255,0.34)";
-    ctx.fillRect(x - 4, y - 5, 8, 2);
+    const vstyle = item.visual?.torsoStyle || item.torsoStyle || "";
+    const nm     = (item.name || "").toLowerCase();
+    const isHeavy = vstyle === "armor"  || nm.includes("chestplate") || nm.includes("plate");
+    const isRobe  = vstyle === "robe"   || nm.includes("robe");
+
+    if (isHeavy) {
+      // Breastplate — wide shoulders, centre seam
+      ctx.fillStyle = color;
+      ctx.fillRect(x - 7, y - 9, 14, 12);
+      ctx.fillRect(x - 9, y - 8,  4,  7);  // left pauldron
+      ctx.fillRect(x + 5, y - 8,  4,  7);  // right pauldron
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.fillRect(x - 1, y - 9, 2, 12);   // centre seam
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.fillRect(x - 6, y - 8, 4, 2);    // highlight
+    } else if (isRobe) {
+      // Robe — trapezoid, magic trim
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(x - 4, y - 10);
+      ctx.lineTo(x + 4, y - 10);
+      ctx.lineTo(x + 8, y + 3);
+      ctx.lineTo(x - 8, y + 3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "rgba(180,120,255,0.75)";
+      ctx.fillRect(x - 4, y - 10, 8, 2);
+      ctx.fillRect(x - 8, y + 1,  16, 2);
+    } else {
+      // Leather jerkin — compact, diagonal strap
+      ctx.fillStyle = color;
+      ctx.fillRect(x - 5, y - 8, 10, 11);
+      ctx.strokeStyle = "rgba(0,0,0,0.4)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x - 4, y - 6);
+      ctx.lineTo(x + 4, y + 2);
+      ctx.stroke();
+      ctx.fillStyle = "rgba(255,255,255,0.35)";
+      ctx.fillRect(x - 4, y - 7, 4, 2);
+    }
     return;
   }
 
@@ -2535,171 +2601,167 @@ function drawModCape(px, py, scale, bob, dirX, dirY) {
 
 function drawCharacter(entity, x, y, isNpc = false) {
   const s = 3;
-  const phase = entity.walkPhase || 0;
+  const phase  = entity.walkPhase || 0;
   const moving = Boolean(entity.renderMoving);
   const facing = Number.isFinite(entity.facing) ? entity.facing : Math.PI / 2;
   const dirX = Math.cos(facing);
   const dirY = Math.sin(facing);
   const sideX = -dirY;
-  const sideY = dirX;
+  const sideY =  dirX;
 
-  const wf = 2.4;
+  const wf   = 2.6;
   const sin1 = moving ? Math.sin(phase * wf) : 0;
   const cos1 = moving ? Math.cos(phase * wf) : 0;
-  const bob = moving ? Math.round(Math.abs(cos1) * 2 - 0.6) : 0;
-  const sway = moving ? Math.round(sin1 * 0.6) : 0;
-
-  const fx = Math.round(dirX * 2);
-  const fy = Math.round(dirY * 1.4);
+  const bob  = moving ? Math.round(Math.abs(cos1) * 1.5 - 0.4) : 0;
+  const fx   = Math.round(dirX);
+  const fy   = Math.round(dirY * 0.6);
 
   const torsoColor = entity.torsoColor || entity.primary || "#5cc8ff";
   const weaponColor = entity.weaponColor || entity.accent || "#ffd166";
-  const torsoStyle = entity.torsoStyle || "tunic";
-  const skinColor = "#f0c9a2";
-  const skinShadow = "#d4a87a";
-  const pantColor = "#2a3044";
-  const bootColor = "#1a1e2c";
+  const torsoStyle  = entity.torsoStyle || "tunic";
+  const skinColor   = "#f0c9a2";
+  const skinShadow  = "#c88a60";
+  const pantColor   = "#2a3044";
+  const bootColor   = "#1a1e2c";
 
-  const bx = x + sway;
+  const bx = x;
   const by = y + bob;
 
-  drawEllipseShadow(x - 16, y + 14, 32, 8, 0.3);
+  drawEllipseShadow(x - 12, y + 12, 24, 6, 0.28);
 
   if (entity.isMod) {
-    drawModCape(x - 8 * s, y - 10 * s + bob, s, bob, dirX, dirY);
+    drawModCape(bx - 5 * s, by - 4 * s, s, bob, dirX, dirY);
   }
 
-  const legSwing = moving ? sin1 * 4 : 0;
-  const lFwdX = Math.round(dirX * legSwing);
-  const lFwdY = Math.round(dirY * legSwing);
+  // Tiny stump legs (RotMG style)
+  const legWalk = moving ? Math.round(sin1 * 2) : 0;
+  ctx.fillStyle = pantColor;
+  ctx.fillRect(bx - 4 * s,     by + 3 * s - legWalk, 3 * s, 2 * s);
+  ctx.fillRect(bx +     s,     by + 3 * s + legWalk, 3 * s, 2 * s);
+  ctx.fillStyle = bootColor;
+  ctx.fillRect(bx - 4 * s - 1, by + 5 * s,           4 * s, 2 * s);
+  ctx.fillRect(bx +     s,     by + 5 * s + legWalk,  4 * s, 2 * s);
 
-  drawLeg(bx - 5 * s + lFwdX, by + 2 * s + lFwdY, s, pantColor, bootColor, dirX, dirY, moving, sin1, 1);
-  drawLeg(bx + 2 * s - lFwdX, by + 2 * s - lFwdY, s, pantColor, bootColor, dirX, dirY, moving, sin1, -1);
+  // Torso
+  drawTorso2(bx - 4 * s, by - 3 * s, s, torsoStyle, torsoColor, weaponColor, entity.classId, fx, fy);
 
-  const torsoX = bx - 6 * s;
-  const torsoY = by - 8 * s;
-  drawTorso2(torsoX, torsoY, s, torsoStyle, torsoColor, weaponColor, entity.classId, fx, fy);
-
-  const armSwing = moving ? sin1 * 3 : 0;
-  const laX = bx - 7 * s + Math.round(-dirX * armSwing);
-  const laY = by - 5 * s + Math.round(-dirY * armSwing);
-  const raX = bx + 4 * s + Math.round(dirX * armSwing);
-  const raY = by - 5 * s + Math.round(dirY * armSwing);
+  // Short arms
+  const armSwing = moving ? Math.round(sin1 * 2) : 0;
+  const lAX = bx - 6 * s;
+  const lAY = by - 2 * s - armSwing;
+  const rAX = bx + 4 * s;
+  const rAY = by - 2 * s + armSwing;
   ctx.fillStyle = skinColor;
-  ctx.fillRect(laX, laY, 3 * s, 2 * s);
-  ctx.fillRect(raX, raY, 3 * s, 2 * s);
-  ctx.fillStyle = skinShadow;
-  ctx.fillRect(laX, laY + 2 * s, 3 * s, 4 * s);
-  ctx.fillRect(raX, raY + 2 * s, 3 * s, 4 * s);
+  ctx.fillRect(lAX, lAY, 2 * s, 4 * s);
+  ctx.fillRect(rAX, rAY, 2 * s, 4 * s);
 
-  const hx = bx - 4 * s + fx * s;
-  const hy = by - 14 * s + fy * s;
+  // Small head
+  const hx = bx - 2 * s + fx * s;
+  const hy = by - 7 * s + fy;
   ctx.fillStyle = skinColor;
-  ctx.fillRect(hx, hy, 8 * s, 6 * s);
+  ctx.fillRect(hx, hy, 5 * s, 4 * s);
   ctx.fillStyle = skinShadow;
-  ctx.fillRect(hx, hy + 6 * s, 8 * s, 2 * s);
+  ctx.fillRect(hx, hy + 3 * s, 5 * s, s);
 
+  // Hair / hat stripe
   ctx.fillStyle = weaponColor;
-  ctx.fillRect(hx, hy, 8 * s, 2 * s);
+  ctx.fillRect(hx, hy, 5 * s, s + 1);
   if (entity.classId === "mage") {
-    ctx.fillRect(hx + s, hy - 2 * s, 6 * s, 2 * s);
+    ctx.fillRect(hx + s,           hy - 2 * s, 3 * s, 2 * s);
+    ctx.fillRect(hx + s + (s >> 1), hy - 3 * s, 2 * s, s);
   }
 
+  // Eyes
   ctx.fillStyle = "#1d2430";
-  const eyeY = hy + 3 * s;
-  ctx.fillRect(hx + 2 * s + Math.max(0, fx) * s, eyeY, s, s);
-  ctx.fillRect(hx + 5 * s + Math.max(0, fx) * s, eyeY, s, s);
+  const eyeY = hy + 2 * s;
+  const eo   = Math.max(0, fx) * s;
+  ctx.fillRect(hx +     s + eo, eyeY, s, s);
+  ctx.fillRect(hx + 3 * s + eo, eyeY, s, s);
 
+  // Weapon / equipment
   if (!isNpc) {
-    drawClassEquipment(entity, bx, by, dirX, dirY, sideX, sideY, weaponColor, raX + 1.5 * s, raY + 3 * s, laX + 1.5 * s, laY + 3 * s);
+    drawClassEquipment(entity, bx, by, dirX, dirY, sideX, sideY, weaponColor,
+      rAX + s, rAY + 2 * s,
+      lAX + s, lAY + 2 * s);
   }
 
-  ctx.font = "12px ui-sans-serif, system-ui";
+  // Name tag
+  ctx.font = "11px ui-sans-serif, system-ui";
   ctx.textAlign = "center";
   ctx.lineWidth = 3;
-  ctx.strokeStyle = "rgba(8, 12, 18, 0.82)";
+  ctx.strokeStyle = "rgba(8,12,18,0.82)";
   ctx.fillStyle = isNpc ? "#ffd27a" : entity.isMod ? "#c79cff" : "#f7f3df";
-  ctx.strokeText(entity.name, x, y - 46);
-  ctx.fillText(entity.name, x, y - 46);
+  ctx.strokeText(entity.name, x, y - 28);
+  ctx.fillText(entity.name,   x, y - 28);
 
   if (!isNpc && Number.isFinite(entity.hp) && Number.isFinite(entity.maxHp)) {
-    drawHealthBar(x - 18, y - 40, 36, 4, entity.hp, entity.maxHp);
+    drawHealthBar(x - 16, y - 22, 32, 3, entity.hp, entity.maxHp);
   }
 
-  drawSpeechBubble(entity, x, y - 62);
+  drawSpeechBubble(entity, x, y - 44);
 }
 
 function drawLeg(lx, ly, s, pantColor, bootColor, dirX, dirY, moving, sinVal, side) {
-  const thighH = 4 * s;
-  const shinH = 3 * s;
-  const footH = 2 * s;
-  const legW = 3 * s;
-  const kneeShift = moving ? Math.round(sinVal * side * 1.2) : 0;
-
   ctx.fillStyle = pantColor;
-  ctx.fillRect(lx, ly, legW, thighH);
-
-  ctx.fillStyle = blend(pantColor, "#000000", 0.15);
-  ctx.fillRect(lx + kneeShift, ly + thighH, legW, shinH);
-
+  ctx.fillRect(lx, ly, 3 * s, 2 * s);
   ctx.fillStyle = bootColor;
-  ctx.fillRect(lx + kneeShift, ly + thighH + shinH, legW + s, footH);
+  ctx.fillRect(lx - 1, ly + 2 * s, 4 * s, 2 * s);
 }
 
 function drawTorso2(tx, ty, s, style, torsoColor, trimColor, classId, fx, fy) {
-  const w = 12 * s;
-  const h = 10 * s;
+  const w = 8 * s;
+  const h = 6 * s;
 
   if (style === "legendary") {
     ctx.shadowColor = "#ffd166";
-    ctx.shadowBlur = 10;
-    // draw same as "armor" style but with gold trim
+    ctx.shadowBlur = 8;
     ctx.fillStyle = torsoColor;
-    ctx.fillRect(tx - 5 * s, ty, 10 * s, 10 * s);
+    ctx.fillRect(tx, ty, w, h);
     ctx.fillStyle = "#ffd166";
-    ctx.fillRect(tx - 5 * s, ty, 10 * s, 2 * s);
-    ctx.fillRect(tx - 5 * s, ty + 8 * s, 10 * s, 2 * s);
+    ctx.fillRect(tx, ty,         w, s);
+    ctx.fillRect(tx, ty + h - s, w, s);
     ctx.shadowBlur = 0;
     ctx.shadowColor = "transparent";
     return;
   }
 
   if (style === "armor") {
+    // Chestplate — boxy, metallic
     ctx.fillStyle = "#5a6577";
     ctx.fillRect(tx, ty, w, h);
-    ctx.fillStyle = "#6f7b86";
+    ctx.fillStyle = "#7c8c9a";
     ctx.fillRect(tx + s, ty + s, w - 2 * s, h - 2 * s);
     ctx.fillStyle = "#d4dae2";
-    ctx.fillRect(tx + 2 * s, ty + 2 * s, w - 4 * s, s);
-    ctx.fillRect(tx + 5 * s, ty, 2 * s, h);
-    ctx.fillStyle = blend(torsoColor, "#ffffff", 0.3);
-    ctx.fillRect(tx + 2 * s, ty + 5 * s, w - 4 * s, s);
+    ctx.fillRect(tx + 2 * s, ty + s, w - 4 * s, s);
+    ctx.fillRect(tx + (w >> 1) - 1, ty, 2, h);
     ctx.fillStyle = trimColor;
-    ctx.fillRect(tx, ty + h - 2 * s, w, 2 * s);
+    ctx.fillRect(tx, ty + h - s, w, s);
     return;
   }
 
   if (style === "robe") {
+    // Flowing robe — coloured, wider skirt
     ctx.fillStyle = torsoColor;
-    ctx.fillRect(tx, ty, w, h + 3 * s);
-    ctx.fillStyle = blend(torsoColor, "#000000", 0.2);
-    ctx.fillRect(tx, ty + h, w, 3 * s);
+    ctx.fillRect(tx, ty, w, h + 2 * s);
+    ctx.fillStyle = blend(torsoColor, "#000000", 0.22);
+    ctx.fillRect(tx, ty + h, w, 2 * s);
     ctx.fillStyle = trimColor;
-    ctx.fillRect(tx, ty, s, h + 3 * s);
-    ctx.fillRect(tx + w - s, ty, s, h + 3 * s);
-    ctx.fillStyle = blend(torsoColor, "#ffffff", 0.15);
-    ctx.fillRect(tx + 5 * s, ty, 2 * s, h);
+    ctx.fillRect(tx,         ty, s, h + 2 * s);
+    ctx.fillRect(tx + w - s, ty, s, h + 2 * s);
+    ctx.fillStyle = blend(torsoColor, "#ffffff", 0.1);
+    ctx.fillRect(tx + (w >> 1) - s, ty + s, 2 * s, h - 2 * s);
     return;
   }
 
+  // Default tunic
   ctx.fillStyle = torsoColor;
   ctx.fillRect(tx, ty, w, h);
-  ctx.fillStyle = blend(torsoColor, "#000000", 0.18);
-  ctx.fillRect(tx, ty + h - 2 * s, w, 2 * s);
+  ctx.fillStyle = blend(torsoColor, "#000000", 0.2);
+  ctx.fillRect(tx, ty + h - s, w, s);
   ctx.fillStyle = trimColor;
-  ctx.fillRect(tx + 3 * s, ty, w - 6 * s, s);
+  ctx.fillRect(tx + 2 * s, ty, w - 4 * s, s);
   ctx.fillStyle = blend(torsoColor, "#ffffff", 0.12);
-  ctx.fillRect(tx + 5 * s, ty + s, 2 * s, h - 3 * s);
+  ctx.fillRect(tx + (w >> 1) - s, ty + s, 2 * s, h - 2 * s);
 }
 
 function drawSpeechBubble(entity, x, y) {
@@ -2870,51 +2932,81 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
 }
 
 function drawMob(entity, x, y) {
-  const phase = entity.walkPhase || 0;
-  const bounce = Math.round(Math.sin(phase * 3) * 2);
-  const primary = entity.primary || "#56b88f";
-  const accent = entity.accent || "#c7f5b0";
-  const isBoss = Boolean(entity.isBoss);
+  const phase     = entity.walkPhase || 0;
+  const primary   = entity.primary  || "#56b88f";
+  const accent    = entity.accent   || "#c7f5b0";
+  const isBoss    = Boolean(entity.isBoss);
   const isCritter = Boolean(entity.isCritter);
-  const bodyW = isBoss ? 30 : isCritter ? 15 : 24;
-  const bodyH = isBoss ? 14 : isCritter ? 7 : 10;
-  const headW = isBoss ? 26 : isCritter ? 12 : 20;
-  const headH = isBoss ? 18 : isCritter ? 8 : 14;
-  const nameY = isBoss ? y - 34 : isCritter ? y - 20 : y - 26;
-  const barW = isBoss ? 44 : isCritter ? 22 : 32;
 
-  drawEllipseShadow(x - bodyW / 2, y + 8, bodyW, isBoss ? 8 : isCritter ? 4 : 6, isCritter ? 0.2 : 0.28);
-  ctx.fillStyle = blend(primary, "#000000", 0.25);
-  ctx.fillRect(x - bodyW / 2, y - 1 + bounce, bodyW, bodyH);
+  const sc  = isBoss ? 2.0 : isCritter ? 0.65 : 1.0;
+  const bW  = Math.round(22 * sc);
+  const bH  = Math.round(9  * sc);
+  const hW  = Math.round(18 * sc);
+  const hH  = Math.round(11 * sc);
+  const legW = Math.round(6  * sc);
+  const legH = Math.round(4  * sc);
+  const bounce = Math.round(Math.sin(phase * 3) * (isCritter ? 1.5 : 1));
+
+  const nameY = y - (isBoss ? 42 : isCritter ? 20 : 28);
+  const barW  = isBoss ? 48 : isCritter ? 22 : 30;
+  const barY  = y - (isBoss ? 35 : isCritter ? 14 : 22);
+
+  drawEllipseShadow(x - bW / 2, y + 8, bW, Math.round(isBoss ? 9 : isCritter ? 3 : 5), isCritter ? 0.18 : 0.28);
+
+  // Stump legs
+  if (!isCritter) {
+    const legY = Math.round(y + bH / 2 + bounce);
+    ctx.fillStyle = blend(primary, "#000000", 0.38);
+    ctx.fillRect(x - legW - 1, legY, legW, legH);
+    ctx.fillRect(x + 1,        legY, legW, legH);
+  }
+
+  // Body
+  ctx.fillStyle = blend(primary, "#000000", 0.22);
+  ctx.fillRect(x - bW / 2, Math.round(y - bH / 2 + bounce), bW, bH);
   ctx.fillStyle = primary;
-  ctx.fillRect(x - headW / 2, y - 8 + bounce - (isBoss ? 3 : isCritter ? 1 : 0), headW, headH);
+  ctx.fillRect(x - bW / 2, Math.round(y - bH / 2 + bounce), bW, bH - 2);
+
+  // Head
+  const headY = Math.round(y - bH / 2 - hH + bounce);
+  ctx.fillStyle = primary;
+  ctx.fillRect(x - hW / 2, headY, hW, hH);
+  ctx.fillStyle = blend(primary, "#ffffff", 0.18);
+  ctx.fillRect(x - hW / 2, headY, hW, 3);
+
+  // Eyes / ears (accent)
   ctx.fillStyle = accent;
   if (isCritter) {
-    const earX = bounce % 3;
-    ctx.fillRect(x - 6 + earX, y - 12 + bounce, 4, 5);
-    ctx.fillRect(x + 2 - earX, y - 12 + bounce, 4, 5);
+    const eW = Math.round(hW * 0.22);
+    const eH = Math.round(hH * 0.5);
+    ctx.fillRect(x - Math.round(hW * 0.38), headY - eH + 2, eW, eH);
+    ctx.fillRect(x + Math.round(hW * 0.16), headY - eH + 2, eW, eH);
   } else {
-    ctx.fillRect(x - 6, y - 4 + bounce, 3, 3);
-    ctx.fillRect(x + 4, y - 4 + bounce, 3, 3);
+    const eyeSz = Math.max(2, Math.round(3 * sc));
+    const eyeY  = headY + Math.round(hH * 0.38);
+    ctx.fillRect(x - Math.round(hW * 0.3),  eyeY, eyeSz, eyeSz);
+    ctx.fillRect(x + Math.round(hW * 0.08), eyeY, eyeSz, eyeSz);
   }
+
+  // Boss crown / horns
   if (isBoss) {
     ctx.fillStyle = "#ffd166";
-    ctx.fillRect(x - 11, y - 16 + bounce, 5, 5);
-    ctx.fillRect(x + 6, y - 16 + bounce, 5, 5);
+    ctx.fillRect(x - 14, headY - 8,  6, 8);
+    ctx.fillRect(x -  3, headY - 12, 6, 12);
+    ctx.fillRect(x +  8, headY - 8,  6, 8);
   }
-  ctx.fillStyle = "rgba(255, 255, 255, 0.22)";
-  ctx.fillRect(x - Math.min(headW / 3, 7), y - 9 + bounce, 6, 2);
 
-  ctx.font = `${isBoss ? 13 : isCritter ? 10 : 12}px ui-sans-serif, system-ui`;
+  // Label
+  ctx.font = `${isBoss ? 13 : isCritter ? 10 : 11}px ui-sans-serif, system-ui`;
   ctx.textAlign = "center";
   ctx.lineWidth = isCritter ? 2 : 3;
-  ctx.strokeStyle = "rgba(8, 12, 18, 0.82)";
-  ctx.fillStyle = isBoss ? "#ffd166" : isCritter ? "#d8eec8" : "#ffc0a0";
-  const label =
-    Number.isFinite(entity.level) && !isCritter ? `Lv ${entity.level} ${entity.name}` : entity.name;
+  ctx.strokeStyle = "rgba(8,12,18,0.82)";
+  ctx.fillStyle   = isBoss ? "#ffd166" : isCritter ? "#d8eec8" : "#ffc0a0";
+  const label = Number.isFinite(entity.level) && !isCritter
+    ? `Lv ${entity.level} ${entity.name}` : entity.name;
   ctx.strokeText(label, x, nameY);
-  ctx.fillText(label, x, nameY);
-  drawHealthBar(x - barW / 2, y - (isBoss ? 27 : isCritter ? 16 : 20), barW, isCritter ? 3 : 4, entity.hp, entity.maxHp);
+  ctx.fillText(label,   x, nameY);
+  drawHealthBar(x - barW / 2, barY, barW, isCritter ? 3 : 4, entity.hp, entity.maxHp);
 }
 
 function drawCombatFx() {
@@ -3413,6 +3505,122 @@ function drawTownPlanter(sx, sy, tx, ty) {
   }
 }
 
+function drawCenterTreehouse(sx, sy) {
+  // sx,sy = screen pos of tile (0,0) top-left. Treehouse centered on 3×3 cluster.
+  const cx = sx + 16;
+  const cy = sy + 16;
+  ctx.save();
+
+  // Giant trunk
+  ctx.shadowColor = "rgba(0,0,0,0.45)";
+  ctx.shadowBlur  = 14;
+  ctx.fillStyle = "#2a1a08";
+  ctx.fillRect(cx - 22, cy + 8, 44, 70);
+  ctx.fillStyle = "#3d2512";
+  for (let i = 4; i < 44; i += 12) ctx.fillRect(cx - 22 + i, cy + 8, 2, 70);
+
+  // Root buttresses
+  ctx.fillStyle = "#1e1008";
+  ctx.beginPath(); ctx.moveTo(cx - 22, cy + 70); ctx.lineTo(cx - 55, cy + 82); ctx.lineTo(cx - 18, cy + 18); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(cx + 22, cy + 70); ctx.lineTo(cx + 55, cy + 82); ctx.lineTo(cx + 18, cy + 18); ctx.fill();
+
+  // Tree crown layers (bottom-up for depth)
+  ctx.shadowBlur = 22;
+  ctx.shadowColor = "rgba(0,0,0,0.55)";
+  ctx.fillStyle = "#143214";
+  ctx.beginPath(); ctx.ellipse(cx, cy - 50, 88, 105, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#1e5a1e";
+  ctx.beginPath(); ctx.ellipse(cx - 8, cy - 58, 74, 88, -0.08, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#2a7a2a";
+  ctx.beginPath(); ctx.ellipse(cx + 4, cy - 66, 62, 74, 0.08, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#3a943a";
+  ctx.beginPath(); ctx.ellipse(cx, cy - 72, 50, 60, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Side canopy clusters
+  ctx.fillStyle = "#143214";
+  ctx.beginPath(); ctx.ellipse(cx - 68, cy - 18, 38, 52, -0.28, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx + 68, cy - 18, 38, 52,  0.28, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "#1e5a1e";
+  ctx.beginPath(); ctx.ellipse(cx - 62, cy - 24, 30, 42, -0.28, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx + 62, cy - 24, 30, 42,  0.28, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Platform
+  const platY = cy - 32;
+  ctx.fillStyle = "#2e1608";
+  ctx.fillRect(cx - 60, platY - 8, 120, 12);
+  ctx.fillStyle = "#4e2e14";
+  for (let i = 0; i < 120; i += 11) ctx.fillRect(cx - 60 + i, platY - 8, 9, 12);
+  ctx.fillStyle = "#1a0c04";
+  ctx.fillRect(cx - 60, platY - 8, 120, 2);
+
+  // Treehouse walls
+  const hW = 88; const hH = 52;
+  const hX = cx - hW / 2; const hY = platY - hH - 6;
+  ctx.fillStyle = "#3a2410";
+  ctx.fillRect(hX, hY, hW, hH);
+  ctx.fillStyle = "#1a0c04";
+  for (let i = 0; i < hW; i += 8) ctx.fillRect(hX + i, hY, 1, hH);
+
+  // Roof peak
+  ctx.fillStyle = "#200e04";
+  ctx.beginPath();
+  ctx.moveTo(hX - 8, hY);
+  ctx.lineTo(cx,     hY - 26);
+  ctx.lineTo(hX + hW + 8, hY);
+  ctx.fill();
+  ctx.fillStyle = "#3a1e0a";
+  ctx.fillRect(hX - 8, hY - 4, hW + 16, 6);
+  // Shingle rows
+  for (let row = 0; row < 4; row++) {
+    ctx.fillStyle = row % 2 === 0 ? "#2e1608" : "#4a2814";
+    ctx.fillRect(hX - 8 + row * 3, hY - 4 + row * 5, hW + 16 - row * 6, 5);
+  }
+
+  // Glowing windows
+  ctx.shadowColor = "#ffe080"; ctx.shadowBlur = 10;
+  ctx.fillStyle = "#ffe898";
+  ctx.fillRect(hX + 10, hY + 12, 16, 14);
+  ctx.fillRect(hX + hW - 26, hY + 12, 16, 14);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#1a0c04";
+  ctx.fillRect(hX + 17, hY + 12, 2, 14); ctx.fillRect(hX + 10, hY + 18, 16, 2);
+  ctx.fillRect(hX + hW - 19, hY + 12, 2, 14); ctx.fillRect(hX + hW - 26, hY + 18, 16, 2);
+
+  // Door
+  const dW = 18; const dH = 28;
+  ctx.fillStyle = "#7a4a18";
+  ctx.fillRect(cx - dW / 2 - 2, hY + hH - dH - 2, dW + 4, dH + 2);
+  ctx.fillStyle = "#0e0604";
+  ctx.fillRect(cx - dW / 2, hY + hH - dH, dW, dH);
+  ctx.fillStyle = "#e8b030";
+  ctx.fillRect(cx + dW / 2 - 5, hY + hH - dH / 2, 3, 3);
+
+  // Rope ladder
+  const rLX = cx + 20;
+  ctx.strokeStyle = "#7a5830"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(rLX - 4, platY + 4); ctx.lineTo(rLX - 4, platY + 55); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(rLX + 4, platY + 4); ctx.lineTo(rLX + 4, platY + 55); ctx.stroke();
+  ctx.lineWidth = 1.5;
+  for (let ry = platY + 10; ry < platY + 53; ry += 7) {
+    ctx.beginPath(); ctx.moveTo(rLX - 4, ry); ctx.lineTo(rLX + 4, ry); ctx.stroke();
+  }
+
+  // Hanging lanterns
+  ctx.shadowColor = "#ffe080"; ctx.shadowBlur = 10;
+  for (const [lx, ly] of [[cx - 46, platY], [cx + 46, platY], [cx, hY - 2]]) {
+    ctx.strokeStyle = "#6a4820"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(lx, ly - 6); ctx.lineTo(lx, ly); ctx.stroke();
+    ctx.fillStyle = "#ffe080";
+    ctx.fillRect(lx - 4, ly, 8, 9);
+    ctx.fillStyle = "#fff4a0";
+    ctx.fillRect(lx - 2, ly + 2, 4, 5);
+  }
+  ctx.shadowBlur = 0;
+
+  ctx.restore();
+}
+
 function drawTreeCanopies() {
   const zoom = state.zoom || 1;
   const screenHalfW = canvas.width / 2;
@@ -3426,11 +3634,14 @@ function drawTreeCanopies() {
 
   for (let ty = minTileY; ty <= maxTileY; ty += 1) {
     for (let tx = minTileX; tx <= maxTileX; tx += 1) {
-      if (getTile(tx, ty) === TILE.TREE) {
-        const sx = Math.floor(tx * TILE_SIZE - state.camera.x + screenHalfW);
-        const sy = Math.floor(ty * TILE_SIZE - state.camera.y + screenHalfH);
-        drawTreeCanopy(sx, sy, tx, ty);
+      if (getTile(tx, ty) !== TILE.TREE) continue;
+      const sx = Math.floor(tx * TILE_SIZE - state.camera.x + screenHalfW);
+      const sy = Math.floor(ty * TILE_SIZE - state.camera.y + screenHalfH);
+      if (Math.abs(tx) <= 1 && Math.abs(ty) <= 1) {
+        if (tx === 0 && ty === 0) drawCenterTreehouse(sx, sy);
+        continue;
       }
+      drawTreeCanopy(sx, sy, tx, ty);
     }
   }
 }
@@ -4814,14 +5025,9 @@ function parseHexColor(hex) {
 }
 
 function resize() {
-  const ratio = Math.max(1, window.devicePixelRatio || 1);
-  canvas.width = Math.floor(window.innerWidth * ratio);
-  canvas.height = Math.floor(window.innerHeight * ratio);
-  canvas.style.width = `${window.innerWidth}px`;
-  canvas.style.height = `${window.innerHeight}px`;
-  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-  canvas.width = window.innerWidth;
+  canvas.width  = window.innerWidth;
   canvas.height = window.innerHeight;
+  chunkCanvasCache.clear();
 }
 
 function setStatus(text) {
