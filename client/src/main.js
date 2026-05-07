@@ -2182,7 +2182,7 @@ function drawCharacter(entity, x, y, isNpc = false) {
   ctx.fillRect(hx + 5 * s + Math.max(0, fx) * s, eyeY, s, s);
 
   if (!isNpc) {
-    drawClassEquipment(entity, bx, by, dirX, dirY, sideX, sideY, weaponColor);
+    drawClassEquipment(entity, bx, by, dirX, dirY, sideX, sideY, weaponColor, raX + 1.5 * s, raY + 3 * s, laX + 1.5 * s, laY + 3 * s);
   }
 
   ctx.font = "12px ui-sans-serif, system-ui";
@@ -2338,7 +2338,7 @@ function roundedRect(x, y, width, height, radius) {
   ctx.quadraticCurveTo(x, y, x + r, y);
 }
 
-function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent) {
+function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHandX, rHandY, lHandX, lHandY) {
   const style = entity.weaponStyle || "classic";
   const weaponKind = entity.weaponKind || (entity.classId === "mage" ? "staff" : entity.classId === "knight" ? "sword" : "bow");
   if (!entity.weaponKind) {
@@ -2349,74 +2349,66 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent) {
   ctx.lineJoin = "round";
 
   if (weaponKind === "staff") {
-    const baseX = x - sideX * 17 - dirX * 3;
-    const baseY = y + 12 - sideY * 17 - dirY * 3;
-    const tipX = x - sideX * 21 + dirX * 13;
-    const tipY = y - 30 - sideY * 21 + dirY * 13;
+    const tipX = lHandX + dirX * 8 - sideX * 4;
+    const tipY = lHandY - 40 + dirY * 8 - sideY * 4;
     ctx.strokeStyle = style === "ornate" ? accent : "#6b4428";
-    ctx.lineWidth = style === "heavy" ? 8 : 5;
+    ctx.lineWidth = style === "heavy" ? 7 : 5;
     ctx.beginPath();
-    ctx.moveTo(baseX, baseY);
+    ctx.moveTo(lHandX, lHandY);
     ctx.lineTo(tipX, tipY);
     ctx.stroke();
     ctx.fillStyle = style === "ornate" ? "#c79cff" : "#ff7a45";
     ctx.beginPath();
-    ctx.arc(tipX, tipY, style === "heavy" ? 8 : 7, 0, Math.PI * 2);
+    ctx.arc(tipX, tipY, style === "heavy" ? 8 : 6, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = "#ffd166";
     ctx.fillRect(tipX - 3, tipY - 3, 6, 6);
   } else if (weaponKind === "sword") {
-    const swordBaseX = x + dirX * 11 + sideX * 6;
-    const swordBaseY = y + 2 + dirY * 11 + sideY * 6;
-    const swordTipX = x + dirX * 34 + sideX * 11;
-    const swordTipY = y - 8 + dirY * 34 + sideY * 11;
+    const swordTipX = rHandX + dirX * 28 + sideX * 6;
+    const swordTipY = rHandY - 10 + dirY * 28 + sideY * 6;
     ctx.strokeStyle = style === "ornate" ? accent : "#edf3f7";
-    ctx.lineWidth = style === "heavy" ? 8 : 5;
+    ctx.lineWidth = style === "heavy" ? 7 : 5;
     ctx.beginPath();
-    ctx.moveTo(swordBaseX, swordBaseY);
+    ctx.moveTo(rHandX, rHandY);
     ctx.lineTo(swordTipX, swordTipY);
     ctx.stroke();
     ctx.strokeStyle = "#7b532f";
     ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.moveTo(swordBaseX - sideX * 7, swordBaseY - sideY * 7);
-    ctx.lineTo(swordBaseX + sideX * 7, swordBaseY + sideY * 7);
+    ctx.moveTo(rHandX - sideX * 6, rHandY - sideY * 6);
+    ctx.lineTo(rHandX + sideX * 6, rHandY + sideY * 6);
     ctx.stroke();
 
-    const shieldX = x - sideX * 17 + dirX * 4;
-    const shieldY = y + 2 - sideY * 17 + dirY * 4;
     ctx.fillStyle = style === "heavy" ? "#2f3744" : "#3f4b5e";
     ctx.beginPath();
-    ctx.ellipse(shieldX, shieldY, 11, 15, entity.facing || 0, 0, Math.PI * 2);
+    ctx.ellipse(lHandX, lHandY - 4, 10, 14, entity.facing || 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = "#d4dae2";
     ctx.lineWidth = 2;
     ctx.stroke();
     ctx.fillStyle = accent;
-    ctx.fillRect(shieldX - 3, shieldY - 10, 6, 20);
+    ctx.fillRect(lHandX - 2, lHandY - 14, 4, 20);
     if (style === "ornate") {
-      ctx.fillRect(shieldX - 8, shieldY - 3, 16, 6);
+      ctx.fillRect(lHandX - 7, lHandY - 6, 14, 4);
     }
   } else {
-    const bowX = x - sideX * 18 + dirX * 3;
-    const bowY = y - 10 - sideY * 18 + dirY * 3;
     ctx.strokeStyle = style === "ornate" ? accent : "#8b5a34";
-    ctx.lineWidth = style === "heavy" ? 8 : 5;
+    ctx.lineWidth = style === "heavy" ? 7 : 5;
     ctx.beginPath();
-    ctx.moveTo(bowX - dirX * 13 - dirY * 6, bowY - dirY * 13 + dirX * 6);
-    ctx.quadraticCurveTo(bowX + sideX * 10, bowY + sideY * 10, bowX + dirX * 13 + dirY * 6, bowY + dirY * 13 - dirX * 6);
+    ctx.moveTo(lHandX - dirX * 12, lHandY - 12 - dirY * 12);
+    ctx.quadraticCurveTo(lHandX + sideX * 8, lHandY + sideY * 8, lHandX + dirX * 12, lHandY + 6 + dirY * 12);
     ctx.stroke();
     ctx.strokeStyle = style === "heavy" ? "#d7e4ef" : "#f4ead3";
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(bowX - dirX * 13 - dirY * 6, bowY - dirY * 13 + dirX * 6);
-    ctx.lineTo(bowX + dirX * 13 + dirY * 6, bowY + dirY * 13 - dirX * 6);
+    ctx.moveTo(lHandX - dirX * 12, lHandY - 12 - dirY * 12);
+    ctx.lineTo(lHandX + dirX * 12, lHandY + 6 + dirY * 12);
     ctx.stroke();
     ctx.strokeStyle = accent;
     ctx.lineWidth = style === "heavy" ? 4 : 3;
     ctx.beginPath();
-    ctx.moveTo(x + sideX * 11 - dirX * 14, y - 17 + sideY * 11 - dirY * 14);
-    ctx.lineTo(x + sideX * 11 + dirX * 11, y - 4 + sideY * 11 + dirY * 11);
+    ctx.moveTo(rHandX, rHandY);
+    ctx.lineTo(rHandX + dirX * 16, rHandY - 14 + dirY * 16);
     ctx.stroke();
   }
 
@@ -3293,54 +3285,110 @@ function drawLighting() {
 
 function drawPortal(sx, sy, tx, ty) {
   const portal = getPortalAtTile(tx, ty);
-  const time = performance.now() / 1000;
-  const pulse = 0.5 + Math.sin(time * 4 + tx * 0.3) * 0.5;
-  const color = portal?.color || "#75f0ff";
+  if (!portal || (tx !== portal.x || ty !== portal.y)) return;
 
-  drawEllipseShadow(sx + 2, sy + 23, TILE_SIZE - 4, 8, 0.42);
-  drawPortalPreview(sx, sy, portal);
+  const time = performance.now() / 1000;
+  const color = portal.color || "#75f0ff";
+  const T = TILE_SIZE;
+  const cx = sx + T + T / 2;
+  const cy = sy + T + T / 2;
+  const archW = T * 2.4;
+  const archH = T * 3.2;
+  const innerW = archW - 10;
+  const innerH = archH - 10;
+
+  drawEllipseShadow(cx - archW / 2, cy + archH / 2 - 4, archW, 12, 0.45);
 
   ctx.save();
-  ctx.translate(sx + 16, sy + 16);
-  ctx.rotate(time * 1.8);
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 3;
-  ctx.globalAlpha = 0.85;
-  ctx.strokeRect(-10, -10, 20, 20);
-  ctx.rotate(-time * 3.1);
-  ctx.strokeStyle = "#f87dff";
-  ctx.globalAlpha = 0.42 + pulse * 0.35;
-  ctx.strokeRect(-7, -7, 14, 14);
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - archH * 0.1, innerW / 2, innerH / 2, 0, 0, Math.PI * 2);
+  ctx.clip();
+  drawPortalPreview(cx, cy, innerW, innerH, portal, time);
   ctx.restore();
 
-  ctx.fillStyle = "rgba(255, 255, 255, 0.68)";
-  ctx.fillRect(sx + 15, sy + 3 + Math.round(pulse * 3), 2, 5);
-  ctx.fillRect(sx + 25, sy + 15, 3, 2);
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 6;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 14;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - archH * 0.1, archW / 2, archH / 2, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.lineWidth = 2;
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = "rgba(255,255,255,0.5)";
+  ctx.beginPath();
+  ctx.ellipse(cx, cy - archH * 0.1, archW / 2 + 4, archH / 2 + 4, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  const pulse = 0.5 + Math.sin(time * 3) * 0.5;
+  ctx.save();
+  ctx.globalAlpha = 0.6 + pulse * 0.3;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(cx, cy - archH / 2 - 6, 4 + pulse * 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.font = "11px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(8,12,18,0.8)";
+  ctx.fillStyle = color;
+  ctx.strokeText(portal.name, cx, cy + archH / 2 + 14);
+  ctx.fillText(portal.name, cx, cy + archH / 2 + 14);
 }
 
-function drawPortalPreview(sx, sy, portal) {
+function drawPortalPreview(cx, cy, w, h, portal, time) {
+  const oy = cy - h * 0.1;
+
   if (!portal?.preview?.tiles) {
-    ctx.fillStyle = "#241844";
-    ctx.fillRect(sx + 8, sy + 8, 16, 16);
+    ctx.fillStyle = "#180e30";
+    ctx.fillRect(cx - w / 2, oy - h / 2, w, h);
     return;
   }
 
   const size = portal.preview.size;
-  const sampleSize = 4;
-  const startX = sx + 6;
-  const startY = sy + 6;
+  const cellW = w / size;
+  const cellH = h / size;
+  const startX = cx - w / 2;
+  const startY = oy - h / 2;
 
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      const tile = portal.preview.tiles[y * size + x];
+  for (let py = 0; py < size; py += 1) {
+    for (let px = 0; px < size; px += 1) {
+      const tile = portal.preview.tiles[py * size + px];
       const colors = tilePalette[tile] || tilePalette[TILE.GRASS];
+      const waveOff = Math.sin(time * 2.5 + py * 0.7 + px * 0.3) * 2;
       ctx.fillStyle = colors[0];
-      ctx.fillRect(startX + x * sampleSize, startY + y * sampleSize, sampleSize, sampleSize);
+      ctx.fillRect(startX + px * cellW + waveOff, startY + py * cellH, cellW + 1, cellH + 1);
     }
   }
 
-  ctx.fillStyle = "rgba(255, 255, 255, 0.18)";
-  ctx.fillRect(startX + 4, startY + 4, 8, 3);
+  ctx.fillStyle = `rgba(${hexToRgb(portal.color || "#75f0ff")}, 0.12)`;
+  ctx.fillRect(cx - w / 2, oy - h / 2, w, h);
+
+  for (let i = 0; i < 5; i += 1) {
+    const wy = oy - h / 2 + (((time * 30 + i * h / 5) % h));
+    const waveAmp = 3 + Math.sin(time * 1.5 + i) * 2;
+    ctx.strokeStyle = `rgba(255,255,255,${0.08 + Math.sin(time + i) * 0.04})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let wx = -w / 2; wx <= w / 2; wx += 4) {
+      const yy = wy + Math.sin(time * 3 + wx * 0.08 + i) * waveAmp;
+      if (wx === -w / 2) ctx.moveTo(cx + wx, yy);
+      else ctx.lineTo(cx + wx, yy);
+    }
+    ctx.stroke();
+  }
+}
+
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `${r},${g},${b}`;
 }
 
 function drawTree(sx, sy, tx, ty) {
@@ -3472,7 +3520,12 @@ function getTile(tileX, tileY) {
 }
 
 function getPortalAtTile(tileX, tileY) {
-  return state.portals.get(`${tileX},${tileY}`) || null;
+  for (const portal of state.portals.values()) {
+    if (Math.abs(tileX - portal.x) <= 1 && Math.abs(tileY - portal.y) <= 1) {
+      return portal;
+    }
+  }
+  return null;
 }
 
 function isInteriorTileCoordinate(tileX, tileY) {

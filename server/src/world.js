@@ -21,7 +21,7 @@ const TILE = {
 };
 
 const BLOCKED_TILES = new Set([TILE.WATER, TILE.WALL, TILE.LAVA, TILE.BED, TILE.TABLE]);
-const PORTAL_RADIUS = 0.58;
+const PORTAL_RADIUS = 1.6;
 const DOOR_RADIUS = 0.52;
 const INTERIOR_BASE_X = 10000;
 const INTERIOR_BASE_Y = 10000;
@@ -539,7 +539,7 @@ function isStreet(x, y) {
 }
 
 function getPortalAtTile(x, y) {
-  return PORTALS.find((portal) => portal.x === x && portal.y === y) || null;
+  return PORTALS.find((portal) => Math.abs(x - portal.x) <= 1 && Math.abs(y - portal.y) <= 1) || null;
 }
 
 function getPortalAt(x, y) {
@@ -800,7 +800,7 @@ function getPortalsInChunk(cx, cy) {
       targetX: portal.targetX,
       targetY: portal.targetY,
       color: portal.color,
-      preview: generatePortalPreview(portal.targetX, portal.targetY + 1)
+      preview: generatePortalPreview(portal.targetX, portal.targetY + 1, 4)
     }));
 }
 
