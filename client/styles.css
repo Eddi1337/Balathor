@@ -381,6 +381,7 @@ button:focus-visible {
 
 .game-window {
   position: fixed;
+  z-index: 70;
   right: 16px;
   top: 246px;
   width: min(360px, calc(100vw - 32px));
@@ -1306,6 +1307,7 @@ button:focus-visible {
   touch-action: manipulation;
   display: block;
   width: 100%;
+  user-select: none;
 }
 
 .talent-unlock-btn {

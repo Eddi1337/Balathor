@@ -3217,6 +3217,6 @@ function handleCastSpell(client, spellId) {
     p._buff = spellId;
   }
   for (const c of clients.values()) {
-    send(c, { type: "spellCast", casterId: p.id, spellId, x: p.x, y: p.y });
+    send(c, { type: "spellCast", casterId: p.id, spellId, x: p.x, y: p.y, facing: p.facing });
   }
 }

@@ -193,6 +193,7 @@ const state = {
   shop: null,
   speechBubbles: new Map(),
   combatFx: [],
+  spellFx: [],
   levelUpFx: [],
   portalTransition: null,
   chunks: new Map(),
@@ -700,14 +701,14 @@ function handleServerMessage(message) {
   }
 
   if (message.type === "spellCast") {
-    state.spellFx = state.spellFx || [];
     state.spellFx.push({
       spellId: message.spellId,
       casterId: message.casterId,
       x: message.x,
       y: message.y,
+      facing: message.facing,
       createdAt: performance.now(),
-      ttl: 800
+      ttl: SPELL_ANIMATION_CONFIG[message.spellId]?.ttl || 900
     });
     return;
   }
@@ -938,6 +939,7 @@ function updateSmoothPlayers(dt) {
 
   const now = performance.now();
   state.combatFx = state.combatFx.filter((fx) => now - fx.createdAt < fx.ttl);
+  state.spellFx = state.spellFx.filter((fx) => now - fx.createdAt < fx.ttl);
   state.levelUpFx = state.levelUpFx.filter((fx) => now - fx.createdAt < fx.ttl);
 }
 
@@ -1101,10 +1103,12 @@ function wireUi() {
   });
 
   // Delegated handler for the Talent window
-  talentPanel.addEventListener("click", (e) => {
+  talentPanel.addEventListener("pointerdown", (e) => {
     // Unlock talent (optimistic)
     const unlockBtn = e.target.closest("[data-unlock-talent]");
     if (unlockBtn) {
+      e.preventDefault();
+      e.stopPropagation();
       const talentId = unlockBtn.dataset.unlockTalent;
       const fresh = state.players.get(state.selfId);
       if (!fresh || (fresh.talentPoints || 0) < 1) return;
@@ -1121,6 +1125,8 @@ function wireUi() {
     // Equip talent to ability bar (optimistic)
     const equipBtn = e.target.closest("[data-equip-talent]");
     if (equipBtn) {
+      e.preventDefault();
+      e.stopPropagation();
       const spellId = equipBtn.dataset.equipTalent;
       const fresh = state.players.get(state.selfId);
       const freeSlot = (fresh?.abilityBar || []).findIndex(s => s === null);
@@ -2426,6 +2432,36 @@ const SPELL_ICON_COLORS = {
   multishot: "#88dd44", smoke_bomb: "#777766", volley: "#99cc44"
 };
 
+const SPELL_ANIMATION_CONFIG = {
+  fireball: { kind: "bolt", color: "#ff6b1a", accent: "#ffd166", ttl: 760 },
+  fire_nova: { kind: "burst", color: "#ff8c00", accent: "#ffd166", ttl: 900 },
+  inferno: { kind: "cone", color: "#ff3300", accent: "#ffb347", ttl: 980 },
+  ice_shard: { kind: "bolt", color: "#88ccff", accent: "#e6f8ff", ttl: 720 },
+  frost_barrier: { kind: "barrier", color: "#a0d8ef", accent: "#e6f8ff", ttl: 1000 },
+  blizzard: { kind: "storm", color: "#6ab0e0", accent: "#e6f8ff", ttl: 1200 },
+  arcane_bolt: { kind: "bolt", color: "#c79cff", accent: "#fff0ff", ttl: 660 },
+  mana_shield: { kind: "barrier", color: "#9966ff", accent: "#d9c4ff", ttl: 1050 },
+  time_warp: { kind: "time", color: "#cc88ff", accent: "#5cc8ff", ttl: 1100 },
+  shield_bash: { kind: "shield", color: "#8899aa", accent: "#d7e4ef", ttl: 620 },
+  divine_shield: { kind: "barrier", color: "#ffe066", accent: "#ffffff", ttl: 1100 },
+  fortify: { kind: "fortify", color: "#aabbcc", accent: "#edf3f7", ttl: 1000 },
+  holy_strike: { kind: "melee", color: "#ffee88", accent: "#ffffff", ttl: 620 },
+  consecration: { kind: "ground", color: "#ffd700", accent: "#ffee88", ttl: 1100 },
+  divine_wrath: { kind: "wrath", color: "#ffcc44", accent: "#ffffff", ttl: 980 },
+  healing_aura: { kind: "heal", color: "#66ff88", accent: "#d8ffd8", ttl: 1100 },
+  lay_on_hands: { kind: "heal_big", color: "#44dd66", accent: "#ffffff", ttl: 1200 },
+  battle_cry: { kind: "cry", color: "#ffaa44", accent: "#ffd166", ttl: 900 },
+  precise_shot: { kind: "arrow", color: "#88ff44", accent: "#f4ead3", ttl: 680 },
+  piercing_arrow: { kind: "pierce", color: "#aaff66", accent: "#f4ead3", ttl: 760 },
+  rain_of_arrows: { kind: "arrow_rain", color: "#66dd22", accent: "#f4ead3", ttl: 1150 },
+  caltrops: { kind: "trap", color: "#aaa066", accent: "#e8c86a", ttl: 900 },
+  evasion: { kind: "dash", color: "#ccbb44", accent: "#fff3a0", ttl: 820 },
+  camouflage: { kind: "vanish", color: "#448844", accent: "#9fe29f", ttl: 1000 },
+  multishot: { kind: "multi_arrow", color: "#88dd44", accent: "#f4ead3", ttl: 760 },
+  smoke_bomb: { kind: "smoke", color: "#777766", accent: "#c7c7b8", ttl: 1100 },
+  volley: { kind: "volley", color: "#99cc44", accent: "#f4ead3", ttl: 980 }
+};
+
 function renderBags() {
   renderNearbyLoot();
   inventorySlots.replaceChildren();
@@ -2800,6 +2836,7 @@ function draw() {
   drawPlayers();
   drawTreeCanopies();
   drawCombatFx();
+  drawTalentSpellFx();
   drawLevelUpFx();
   drawLighting();
 
@@ -3697,6 +3734,369 @@ function drawDamageFx(fx, pct, halfW, halfH) {
   ctx.textAlign = "center";
   ctx.fillText(fx.blocked ? `blocked -${fx.damage}` : `-${fx.damage}`, tx, ty - 22 - pct * 18);
   ctx.globalAlpha = 1;
+}
+
+function drawTalentSpellFx() {
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const now = performance.now();
+
+  for (const fx of state.spellFx) {
+    const cfg = SPELL_ANIMATION_CONFIG[fx.spellId] || { kind: "burst", color: "#c79cff", accent: "#ffffff", ttl: 900 };
+    const age = now - fx.createdAt;
+    const pct = Math.max(0, Math.min(1, age / fx.ttl));
+    const caster = state.players.get(fx.casterId);
+    const worldX = Number.isFinite(caster?.renderX) ? caster.renderX : fx.x;
+    const worldY = Number.isFinite(caster?.renderY) ? caster.renderY : fx.y;
+    const sx = worldX * TILE_SIZE - state.camera.x + halfW;
+    const sy = worldY * TILE_SIZE - state.camera.y + halfH;
+    const angle = Number.isFinite(fx.facing) ? fx.facing : Number.isFinite(caster?.facing) ? caster.facing : 0;
+
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, 1 - pct * 0.85);
+    switch (cfg.kind) {
+      case "bolt":
+        drawSpellBolt(sx, sy, angle, pct, cfg, 122);
+        break;
+      case "arrow":
+        drawSpellArrow(sx, sy, angle, pct, cfg, [0], 136);
+        break;
+      case "pierce":
+        drawSpellArrow(sx, sy, angle, pct, cfg, [0], 170);
+        drawSpellRing(sx + Math.cos(angle) * 88, sy + Math.sin(angle) * 88, 8 + pct * 20, cfg.accent);
+        break;
+      case "multi_arrow":
+        drawSpellArrow(sx, sy, angle, pct, cfg, [-0.22, 0, 0.22], 126);
+        break;
+      case "volley":
+        drawSpellArrow(sx, sy, angle, pct, cfg, [-0.3, -0.1, 0.1, 0.3], 112);
+        break;
+      case "arrow_rain":
+        drawArrowRain(sx, sy, pct, cfg);
+        break;
+      case "burst":
+        drawSpellBurst(sx, sy, pct, cfg);
+        break;
+      case "cone":
+        drawSpellCone(sx, sy, angle, pct, cfg);
+        break;
+      case "barrier":
+        drawSpellBarrier(sx, sy, pct, cfg, fx.spellId === "divine_shield" ? 4 : 2);
+        break;
+      case "storm":
+        drawSpellStorm(sx, sy, pct, cfg);
+        break;
+      case "time":
+        drawTimeWarp(sx, sy, pct, cfg);
+        break;
+      case "shield":
+        drawShieldBash(sx, sy, angle, pct, cfg);
+        break;
+      case "fortify":
+        drawFortify(sx, sy, pct, cfg);
+        break;
+      case "melee":
+        drawHolyStrike(sx, sy, angle, pct, cfg);
+        break;
+      case "ground":
+        drawConsecration(sx, sy, pct, cfg);
+        break;
+      case "wrath":
+        drawDivineWrath(sx, sy, angle, pct, cfg);
+        break;
+      case "heal":
+      case "heal_big":
+        drawHeal(sx, sy, pct, cfg, cfg.kind === "heal_big");
+        break;
+      case "cry":
+        drawBattleCry(sx, sy, angle, pct, cfg);
+        break;
+      case "trap":
+        drawCaltrops(sx, sy, pct, cfg);
+        break;
+      case "dash":
+        drawEvasion(sx, sy, angle, pct, cfg);
+        break;
+      case "vanish":
+        drawCamouflage(sx, sy, pct, cfg);
+        break;
+      case "smoke":
+        drawSmokeBomb(sx, sy, pct, cfg);
+        break;
+      default:
+        drawSpellBurst(sx, sy, pct, cfg);
+        break;
+    }
+    ctx.restore();
+  }
+}
+
+function drawSpellRing(x, y, radius, color) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(x, y - 8, radius, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+function drawSpellBolt(x, y, angle, pct, cfg, distance) {
+  const travel = Math.min(1, pct * 1.2);
+  const px = x + Math.cos(angle) * distance * travel;
+  const py = y + Math.sin(angle) * distance * travel - 10;
+  const glow = ctx.createRadialGradient(px, py, 2, px, py, 18);
+  glow.addColorStop(0, cfg.accent);
+  glow.addColorStop(0.45, cfg.color);
+  glow.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(px - 18, py - 18, 36, 36);
+  ctx.strokeStyle = cfg.color;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(x + Math.cos(angle) * 16, y + Math.sin(angle) * 16 - 10);
+  ctx.lineTo(px, py);
+  ctx.stroke();
+}
+
+function drawSpellArrow(x, y, angle, pct, cfg, offsets, distance) {
+  for (const offset of offsets) {
+    const a = angle + offset;
+    const travel = Math.min(1, pct * 1.35);
+    const px = x + Math.cos(a) * distance * travel;
+    const py = y + Math.sin(a) * distance * travel - 10;
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(a);
+    ctx.strokeStyle = cfg.accent;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-18, 0);
+    ctx.lineTo(10, 0);
+    ctx.stroke();
+    ctx.fillStyle = cfg.color;
+    ctx.beginPath();
+    ctx.moveTo(16, 0);
+    ctx.lineTo(6, -5);
+    ctx.lineTo(6, 5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawSpellBurst(x, y, pct, cfg) {
+  for (let i = 0; i < 3; i += 1) {
+    drawSpellRing(x, y, 12 + pct * (24 + i * 14), i === 0 ? cfg.accent : cfg.color);
+  }
+}
+
+function drawSpellCone(x, y, angle, pct, cfg) {
+  ctx.save();
+  ctx.translate(x, y - 8);
+  ctx.rotate(angle);
+  ctx.fillStyle = cfg.color;
+  ctx.globalAlpha *= 0.34;
+  ctx.beginPath();
+  ctx.moveTo(12, 0);
+  ctx.arc(12, 0, 112 * pct, -0.42, 0.42);
+  ctx.closePath();
+  ctx.fill();
+  ctx.globalAlpha *= 1.8;
+  ctx.strokeStyle = cfg.accent;
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawSpellBarrier(x, y, pct, cfg, rings) {
+  for (let i = 0; i < rings; i += 1) {
+    drawSpellRing(x, y, 22 + i * 7 + Math.sin(pct * Math.PI) * 8, i % 2 === 0 ? cfg.color : cfg.accent);
+  }
+}
+
+function drawSpellStorm(x, y, pct, cfg) {
+  drawSpellRing(x, y, 42 + pct * 18, cfg.color);
+  for (let i = 0; i < 12; i += 1) {
+    const ox = ((i % 4) - 1.5) * 24;
+    const fall = ((pct * 72 + i * 11) % 72) - 36;
+    ctx.strokeStyle = i % 2 ? cfg.color : cfg.accent;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x + ox - 6, y - 64 + fall);
+    ctx.lineTo(x + ox + 4, y - 42 + fall);
+    ctx.stroke();
+  }
+}
+
+function drawTimeWarp(x, y, pct, cfg) {
+  for (let i = 0; i < 4; i += 1) {
+    ctx.strokeStyle = i % 2 ? cfg.color : cfg.accent;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(x, y - 8, 24 + pct * 44, 10 + i * 8, pct * Math.PI * 2 + i, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+function drawShieldBash(x, y, angle, pct, cfg) {
+  ctx.save();
+  ctx.translate(x, y - 8);
+  ctx.rotate(angle);
+  ctx.fillStyle = cfg.color;
+  ctx.globalAlpha *= 0.55;
+  ctx.fillRect(20 + pct * 28, -18, 14, 36);
+  ctx.strokeStyle = cfg.accent;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(18 + pct * 34, 0, 26, -0.9, 0.9);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawFortify(x, y, pct, cfg) {
+  for (let i = 0; i < 5; i += 1) {
+    ctx.fillStyle = i % 2 ? cfg.color : cfg.accent;
+    const ox = (i - 2) * 10;
+    ctx.fillRect(x + ox - 4, y - 8 - pct * 20, 8, 28);
+  }
+  drawSpellRing(x, y, 26 + pct * 8, cfg.color);
+}
+
+function drawHolyStrike(x, y, angle, pct, cfg) {
+  ctx.save();
+  ctx.translate(x, y - 8);
+  ctx.rotate(angle);
+  ctx.strokeStyle = cfg.accent;
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.arc(26, 0, 34 + pct * 10, -0.8 + pct * 0.5, 0.8 + pct * 0.5);
+  ctx.stroke();
+  ctx.strokeStyle = cfg.color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(10, -34);
+  ctx.lineTo(54, 34);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawConsecration(x, y, pct, cfg) {
+  drawSpellRing(x, y, 36, cfg.color);
+  drawSpellRing(x, y, 52 * pct, cfg.accent);
+  ctx.strokeStyle = cfg.accent;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x - 28, y - 8);
+  ctx.lineTo(x + 28, y - 8);
+  ctx.moveTo(x, y - 36);
+  ctx.lineTo(x, y + 20);
+  ctx.stroke();
+}
+
+function drawDivineWrath(x, y, angle, pct, cfg) {
+  drawSpellCone(x, y, angle, pct, cfg);
+  for (let i = 0; i < 3; i += 1) {
+    const ox = Math.cos(angle) * (34 + i * 22);
+    const oy = Math.sin(angle) * (34 + i * 22);
+    ctx.strokeStyle = cfg.accent;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x + ox, y - 72 + oy);
+    ctx.lineTo(x + ox - 10, y - 12 + oy);
+    ctx.stroke();
+  }
+}
+
+function drawHeal(x, y, pct, cfg, big) {
+  drawSpellRing(x, y, (big ? 34 : 24) + pct * 18, cfg.color);
+  const count = big ? 8 : 5;
+  for (let i = 0; i < count; i += 1) {
+    const a = (i / count) * Math.PI * 2;
+    const px = x + Math.cos(a) * (18 + pct * 18);
+    const py = y - 8 + Math.sin(a) * 10 - pct * 30;
+    ctx.strokeStyle = i % 2 ? cfg.color : cfg.accent;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(px - 5, py);
+    ctx.lineTo(px + 5, py);
+    ctx.moveTo(px, py - 5);
+    ctx.lineTo(px, py + 5);
+    ctx.stroke();
+  }
+}
+
+function drawBattleCry(x, y, angle, pct, cfg) {
+  drawSpellRing(x, y, 22 + pct * 46, cfg.color);
+  ctx.save();
+  ctx.translate(x, y - 20);
+  ctx.rotate(angle);
+  ctx.strokeStyle = cfg.accent;
+  ctx.lineWidth = 3;
+  for (let i = -1; i <= 1; i += 1) {
+    ctx.beginPath();
+    ctx.arc(20, i * 10, 16 + pct * 32, -0.45, 0.45);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawArrowRain(x, y, pct, cfg) {
+  for (let i = 0; i < 12; i += 1) {
+    const ox = ((i % 6) - 2.5) * 18;
+    const fall = ((pct * 96 + i * 13) % 96) - 48;
+    drawSpellArrow(x + ox, y - 38 + fall, Math.PI / 2, 0.7, cfg, [0], 34);
+  }
+  drawSpellRing(x, y, 46, cfg.color);
+}
+
+function drawCaltrops(x, y, pct, cfg) {
+  for (let i = 0; i < 7; i += 1) {
+    const a = (i / 7) * Math.PI * 2;
+    const px = x + Math.cos(a) * (12 + pct * 28);
+    const py = y + Math.sin(a) * (7 + pct * 15);
+    ctx.strokeStyle = i % 2 ? cfg.color : cfg.accent;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(px - 5, py + 4);
+    ctx.lineTo(px, py - 7);
+    ctx.lineTo(px + 5, py + 4);
+    ctx.stroke();
+  }
+}
+
+function drawEvasion(x, y, angle, pct, cfg) {
+  for (let i = 0; i < 4; i += 1) {
+    const back = 18 + i * 10 + pct * 30;
+    ctx.strokeStyle = i % 2 ? cfg.color : cfg.accent;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x - Math.cos(angle) * back, y - 8 - Math.sin(angle) * back);
+    ctx.lineTo(x - Math.cos(angle) * (back + 18), y - 8 - Math.sin(angle) * (back + 18));
+    ctx.stroke();
+  }
+}
+
+function drawCamouflage(x, y, pct, cfg) {
+  ctx.globalAlpha *= 0.7;
+  drawSpellRing(x, y, 34 + Math.sin(pct * Math.PI) * 12, cfg.color);
+  for (let i = 0; i < 8; i += 1) {
+    const a = (i / 8) * Math.PI * 2 + pct * 2;
+    ctx.fillStyle = i % 2 ? cfg.color : cfg.accent;
+    ctx.fillRect(x + Math.cos(a) * 24 - 3, y - 8 + Math.sin(a) * 18 - 3, 6, 6);
+  }
+}
+
+function drawSmokeBomb(x, y, pct, cfg) {
+  for (let i = 0; i < 8; i += 1) {
+    const a = (i / 8) * Math.PI * 2;
+    const r = 12 + pct * (20 + i * 2);
+    const px = x + Math.cos(a) * r;
+    const py = y - 8 + Math.sin(a) * r * 0.6;
+    const smoke = ctx.createRadialGradient(px, py, 2, px, py, 18);
+    smoke.addColorStop(0, cfg.accent);
+    smoke.addColorStop(1, "rgba(119,119,102,0)");
+    ctx.fillStyle = smoke;
+    ctx.fillRect(px - 18, py - 18, 36, 36);
+  }
 }
 
 function drawLevelUpFx() {
