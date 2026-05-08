@@ -43,6 +43,8 @@ const equipSlotsLeft = document.querySelector("#equipSlotsLeft");
 const equipSlotsRight = document.querySelector("#equipSlotsRight");
 const charPreviewCanvas = document.querySelector("#charPreview");
 const charStatsEl = document.querySelector("#charStats");
+const talentPanel = document.querySelector("#talentPanel");
+const talentClose = document.querySelector("#talentClose");
 const talentPointsText = document.querySelector("#talentPointsText");
 const talentTabsEl = document.querySelector("#talentTabs");
 const talentTreeEl = document.querySelector("#talentTree");
@@ -555,7 +557,7 @@ function handleServerMessage(message) {
       self.talentPoints = message.talentPoints;
       self.talents = message.talents;
       self.abilityBar = message.abilityBar;
-      renderEquipment();
+      if (state.activeWindow === "talent") renderTalentPanel();
       renderAbilityBar();
     }
     return;
@@ -572,7 +574,8 @@ function handleServerMessage(message) {
     state.chests = message.chests || [];
     state.groundItems = message.groundItems || [];
     updateSelfInventory();
-    renderEquipment();
+    if (state.activeWindow === "equipment") renderEquipment();
+    if (state.activeWindow === "talent") renderTalentPanel();
     renderBags();
     renderAbilityBar();
     renderPotionSlot();
@@ -1077,23 +1080,36 @@ function wireUi() {
     changeServer(menuServerUrlInput.value);
   });
 
-  // Single delegated handler for everything inside the character/equipment panel
+  // Delegated handler for the Character window
   equipmentPanel.addEventListener("click", (e) => {
-    // Stat allocation + button
+    // Open talents window
+    if (e.target.closest("#talentsButton")) {
+      toggleGameWindow("talent");
+      return;
+    }
+    // Stat allocation + button (optimistic update)
     const statBtn = e.target.closest("[data-stat]");
     if (statBtn && !statBtn.disabled) {
+      const fresh = state.players.get(state.selfId);
+      if (!fresh || (fresh.statPoints || 0) < 1) return;
+      fresh.statPoints -= 1;
+      fresh.stats = Object.assign({}, fresh.stats);
+      fresh.stats[statBtn.dataset.stat] = (fresh.stats[statBtn.dataset.stat] || 0) + 1;
+      renderEquipment();
       send({ type: "spendStat", stat: statBtn.dataset.stat });
       return;
     }
+  });
 
-    // Talent tree tab switch
+  // Delegated handler for the Talent window
+  talentPanel.addEventListener("click", (e) => {
+    // Tab switch
     const tabBtn = e.target.closest("[data-talent-tab]");
     if (tabBtn) {
       equipTalentTreeIndex = Number(tabBtn.dataset.talentTab);
-      renderEquipment();
+      renderTalentPanel();
       return;
     }
-
     // Unlock talent (optimistic)
     const unlockBtn = e.target.closest("[data-unlock-talent]");
     if (unlockBtn) {
@@ -1105,12 +1121,11 @@ function wireUi() {
       fresh.abilityBar = (fresh.abilityBar || [null, null, null, null, null]).slice();
       const freeSlot = fresh.abilityBar.findIndex(s => s === null);
       if (freeSlot !== -1) fresh.abilityBar[freeSlot] = talentId;
-      renderEquipment();
+      renderTalentPanel();
       renderAbilityBar();
       send({ type: "spendTalent", talentId });
       return;
     }
-
     // Equip talent to ability bar (optimistic)
     const equipBtn = e.target.closest("[data-equip-talent]");
     if (equipBtn) {
@@ -1122,7 +1137,7 @@ function wireUi() {
       fresh.abilityBar[freeSlot] = spellId;
       renderAbilityBar();
       send({ type: "setAbilitySlot", slot: freeSlot, spellId });
-      renderEquipment();
+      renderTalentPanel();
       return;
     }
   });
@@ -1135,13 +1150,9 @@ function wireUi() {
     toggleGameWindow("bags");
   });
 
-  equipmentClose.addEventListener("click", () => {
-    setActiveGameWindow(null);
-  });
-
-  bagsClose.addEventListener("click", () => {
-    setActiveGameWindow(null);
-  });
+  equipmentClose.addEventListener("click", () => setActiveGameWindow(null));
+  bagsClose.addEventListener("click", () => setActiveGameWindow(null));
+  talentClose.addEventListener("click", () => setActiveGameWindow(null));
 
   shopClose?.addEventListener("click", () => {
     closeShop();
@@ -1206,6 +1217,7 @@ function wireUi() {
   makeDraggable(bagsPanel);
   makeDraggable(shopPanel);
   makeDraggable(traderPanel);
+  makeDraggable(talentPanel);
 
   // Delegated dragstart for ability slots (avoids listener accumulation across renders)
   abilitySlotsEl.addEventListener("dragstart", (e) => {
@@ -1396,7 +1408,7 @@ function wireUi() {
       return;
     }
 
-    // B — toggle bags, C — toggle character window
+    // B — bags, C — character, T — talents
     if (event.key.toLowerCase() === "b" && state.joined && !isTextEntryTarget(event.target)) {
       event.preventDefault();
       toggleGameWindow("bags");
@@ -1405,6 +1417,11 @@ function wireUi() {
     if (event.key.toLowerCase() === "c" && state.joined && !isTextEntryTarget(event.target)) {
       event.preventDefault();
       toggleGameWindow("equipment");
+      return;
+    }
+    if (event.key.toLowerCase() === "t" && state.joined && !isTextEntryTarget(event.target)) {
+      event.preventDefault();
+      toggleGameWindow("talent");
       return;
     }
 
@@ -2375,15 +2392,17 @@ function renderEquipment() {
     charStatsEl.prepend(pts);
   }
 
+}
+
+function renderTalentPanel() {
+  const self = state.players.get(state.selfId);
+  if (!self) return;
   const tp = self.talentPoints || 0;
+  const pct = ((self.level % 5) / 5) * 100;
   const talentProgressFill = document.getElementById("talentProgressFill");
-  if (talentProgressFill) {
-    const pct = ((self.level % 5) / 5) * 100;
-    talentProgressFill.style.width = `${pct}%`;
-  }
+  if (talentProgressFill) talentProgressFill.style.width = `${pct}%`;
   const nextTalentLevel = self.level + (5 - (self.level % 5 || 5));
   talentPointsText.textContent = `${tp} talent pt${tp !== 1 ? "s" : ""} · next at lv ${self.level % 5 === 0 ? self.level + 5 : nextTalentLevel}`;
-
   renderTalentTree(self);
 }
 
@@ -2623,18 +2642,16 @@ function setActiveGameWindow(windowName) {
   equipmentPanel.classList.toggle("hidden", windowName !== "equipment");
   bagsPanel.classList.toggle("hidden", windowName !== "bags");
   traderPanel.classList.toggle("hidden", windowName !== "trader");
+  talentPanel.classList.toggle("hidden", windowName !== "talent");
   equipmentButton.classList.toggle("selected", windowName === "equipment");
   bagsButton.classList.toggle("selected", windowName === "bags");
-  if (windowName === "equipment") {
-    renderEquipment();
-  }
+  if (windowName === "equipment") renderEquipment();
+  if (windowName === "talent") renderTalentPanel();
   if (windowName !== "trader") {
     state.traderNpcId = null;
     state.traderItems = [];
   }
-  if (!windowName) {
-    clearMovementInput();
-  }
+  if (!windowName) clearMovementInput();
 }
 
 function tryOpenTraderAtClick(worldX, worldY) {
