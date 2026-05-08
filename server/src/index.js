@@ -888,6 +888,7 @@ function handleMessage(client, raw) {
     p.talentPoints -= 1;
     p.talents[talentId] = true;
     saveClientCharacter(client);
+    broadcastSnapshot();
   }
 
   if (message.type === "setAbilitySlot") {
@@ -900,6 +901,7 @@ function handleMessage(client, raw) {
     p.abilityBar = p.abilityBar || [null, null, null, null, null];
     p.abilityBar[slot] = spellId;
     saveClientCharacter(client);
+    broadcastSnapshot();
   }
 
   if (message.type === "swapAbilitySlots") {
@@ -913,6 +915,7 @@ function handleMessage(client, raw) {
     p.abilityBar[from] = p.abilityBar[to];
     p.abilityBar[to] = tmp;
     saveClientCharacter(client);
+    broadcastSnapshot();
   }
 
   if (message.type === "castSpell") {

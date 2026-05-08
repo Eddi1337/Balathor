@@ -1,3 +1,6 @@
+const isMobile = navigator.maxTouchPoints > 0 || window.matchMedia("(pointer: coarse)").matches;
+if (isMobile) document.body.classList.add("mobile");
+
 const canvas = document.querySelector("#game");
 let ctx = canvas.getContext("2d", {
   alpha: false,
@@ -30,10 +33,6 @@ const levelText = document.querySelector("#levelText");
 const statPointsEl = document.querySelector("#statPoints");
 const xpFill = document.querySelector("#xpFill");
 const xpText = document.querySelector("#xpText");
-const statSpeed = document.querySelector("#statSpeed");
-const statStrength = document.querySelector("#statStrength");
-const statArmour = document.querySelector("#statArmour");
-const statHealth = document.querySelector("#statHealth");
 const equipmentButton = document.querySelector("#equipmentButton");
 const bagsButton = document.querySelector("#bagsButton");
 const equipmentPanel = document.querySelector("#equipmentPanel");
@@ -501,6 +500,10 @@ function handleServerMessage(message) {
     chat.classList.remove("hidden");
     mobileControls.classList.remove("hidden");
     abilityBar.classList.remove("hidden");
+    if (isMobile) {
+      setChatMinimized(true);
+      setProgressionMinimized(true);
+    }
     state.camera.x = message.spawn.x * TILE_SIZE;
     state.camera.y = message.spawn.y * TILE_SIZE;
     requestVisibleChunks();
@@ -2101,11 +2104,6 @@ function renderProgression(self) {
   statPointsEl.textContent = `${statPoints} point${statPoints === 1 ? "" : "s"}`;
   xpFill.style.width = `${xpPct}%`;
   xpText.textContent = `${xp} / ${xpToNext} XP`;
-  statSpeed.textContent = stats.speed || 0;
-  statStrength.textContent = stats.strength || 0;
-  statArmour.textContent = stats.armour || 0;
-  statHealth.textContent = stats.health || 0;
-
   document.querySelectorAll("[data-stat]").forEach((button) => {
     button.disabled = statPoints <= 0;
   });
@@ -2193,7 +2191,7 @@ function renderTalentTree(self) {
     btn.type = "button";
     btn.className = `talent-tab${i === equipTalentTreeIndex ? " active" : ""}`;
     btn.textContent = t.name;
-    btn.addEventListener("click", () => { equipTalentTreeIndex = i; renderTalentTree(self); });
+    btn.addEventListener("click", () => { equipTalentTreeIndex = i; renderEquipment(); });
     talentTabsEl.append(btn);
   });
 
@@ -2239,7 +2237,8 @@ function renderTalentTree(self) {
       btn.style.cssText = "margin-top:4px;font-size:10px;min-height:20px;padding:0 6px;border:1px solid #22c55e;border-radius:3px;background:#0e2010;color:#22c55e;cursor:pointer;";
       btn.textContent = "Equip to bar";
       btn.addEventListener("click", () => {
-        const freeSlot = (self.abilityBar || []).findIndex(s => s === null);
+        const fresh = state.players.get(state.selfId);
+        const freeSlot = (fresh?.abilityBar || []).findIndex(s => s === null);
         if (freeSlot === -1) return;
         send({ type: "setAbilitySlot", slot: freeSlot, spellId: spell.id });
       });

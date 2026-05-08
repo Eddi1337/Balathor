@@ -1376,3 +1376,34 @@ button:focus-visible {
   line-height: 1;
   pointer-events: none;
 }
+
+/* ── Mobile ability bar: vertical stack on right side, 3 slots ── */
+body.mobile .ability-bar {
+  bottom: auto;
+  left: auto;
+  top: 50%;
+  right: 16px;
+  transform: translateY(-50%);
+  flex-direction: column;
+  gap: 6px;
+}
+
+body.mobile .ability-slots {
+  flex-direction: column;
+  gap: 4px;
+}
+
+body.mobile .ability-bar-divider {
+  width: 40px;
+  height: 1px;
+  align-self: center;
+}
+
+body.mobile .ability-bar-toggle {
+  order: -1;
+}
+
+body.mobile .ability-slot[data-slot="3"],
+body.mobile .ability-slot[data-slot="4"] {
+  display: none;
+}
