@@ -67,6 +67,7 @@ const chatMessages = document.querySelector("#chatMessages");
 const chatForm = document.querySelector("#chatForm");
 const chatInput = document.querySelector("#chatInput");
 const chatToggle = document.querySelector("#chatToggle");
+const chatIconBtn = document.querySelector("#chatIconBtn");
 const mobileControls = document.querySelector("#mobileControls");
 const joystickCanvas = document.querySelector("#joystick");
 const traderPanel = document.querySelector("#traderPanel");
@@ -1249,6 +1250,9 @@ function wireUi() {
   chatToggle.addEventListener("click", () => {
     setChatMinimized(!state.chatMinimized);
   });
+  chatIconBtn?.addEventListener("click", () => {
+    setChatMinimized(false);
+  });
 
   progressionToggle.addEventListener("click", () => {
     setProgressionMinimized(!state.progressionMinimized);
@@ -2226,6 +2230,7 @@ function renderTalentTree(self) {
     btn.type = "button";
     btn.className = `talent-tab${i === equipTalentTreeIndex ? " active" : ""}`;
     btn.textContent = t.name;
+    btn.style.touchAction = "manipulation";
     btn.addEventListener("click", () => { equipTalentTreeIndex = i; renderEquipment(); });
     talentTabsEl.append(btn);
   });
@@ -2262,20 +2267,37 @@ function renderTalentTree(self) {
     if (!unlocked && prevUnlocked) {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.style.cssText = "margin-top:4px;font-size:10px;min-height:20px;padding:0 6px;border:1px solid #7a5a1e;border-radius:3px;background:#2e1e08;color:#e8c86a;cursor:pointer;";
+      btn.style.cssText = "margin-top:4px;font-size:10px;min-height:20px;padding:0 6px;border:1px solid #7a5a1e;border-radius:3px;background:#2e1e08;color:#e8c86a;cursor:pointer;touch-action:manipulation;";
       btn.textContent = "Unlock (1pt)";
-      btn.addEventListener("click", () => send({ type: "spendTalent", talentId: spell.id }));
+      btn.addEventListener("click", () => {
+        const fresh = state.players.get(state.selfId);
+        if (!fresh || (fresh.talentPoints || 0) < 1) return;
+        // Optimistic update so the user sees instant feedback
+        fresh.talents = { ...(fresh.talents || {}), [spell.id]: true };
+        fresh.talentPoints -= 1;
+        fresh.abilityBar = (fresh.abilityBar || [null, null, null, null, null]).slice();
+        const freeSlot = fresh.abilityBar.findIndex(s => s === null);
+        if (freeSlot !== -1) fresh.abilityBar[freeSlot] = spell.id;
+        renderEquipment();
+        renderAbilityBar();
+        send({ type: "spendTalent", talentId: spell.id });
+      });
       node.append(btn);
     } else if (unlocked && !equipped) {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.style.cssText = "margin-top:4px;font-size:10px;min-height:20px;padding:0 6px;border:1px solid #22c55e;border-radius:3px;background:#0e2010;color:#22c55e;cursor:pointer;";
+      btn.style.cssText = "margin-top:4px;font-size:10px;min-height:20px;padding:0 6px;border:1px solid #22c55e;border-radius:3px;background:#0e2010;color:#22c55e;cursor:pointer;touch-action:manipulation;";
       btn.textContent = "Equip to bar";
       btn.addEventListener("click", () => {
         const fresh = state.players.get(state.selfId);
         const freeSlot = (fresh?.abilityBar || []).findIndex(s => s === null);
         if (freeSlot === -1) return;
+        // Optimistic update
+        fresh.abilityBar = (fresh.abilityBar || [null, null, null, null, null]).slice();
+        fresh.abilityBar[freeSlot] = spell.id;
+        renderAbilityBar();
         send({ type: "setAbilitySlot", slot: freeSlot, spellId: spell.id });
+        renderEquipment();
       });
       node.append(btn);
     }
