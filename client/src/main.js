@@ -548,6 +548,18 @@ function handleServerMessage(message) {
     return;
   }
 
+  if (message.type === "talentUpdate") {
+    const self = state.players.get(state.selfId);
+    if (self) {
+      self.talentPoints = message.talentPoints;
+      self.talents = message.talents;
+      self.abilityBar = message.abilityBar;
+      renderEquipment();
+      renderAbilityBar();
+    }
+    return;
+  }
+
   if (message.type === "snapshot") {
     if (typeof message.tick === "number") {
       state.debugServerTick = message.tick;
@@ -1064,10 +1076,9 @@ function wireUi() {
     changeServer(menuServerUrlInput.value);
   });
 
-  document.querySelectorAll("[data-stat]").forEach((button) => {
-    button.addEventListener("click", () => {
-      send({ type: "spendStat", stat: button.dataset.stat });
-    });
+  charStatsEl.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-stat]");
+    if (btn && !btn.disabled) send({ type: "spendStat", stat: btn.dataset.stat });
   });
 
   equipmentButton.addEventListener("click", () => {
@@ -1168,8 +1179,7 @@ function wireUi() {
     try {
       const data = JSON.parse(e.dataTransfer.getData("text/plain"));
       if (data.type === "inventory") {
-        // Can drop any inventory item onto a bar slot (placeholder — real use is spells/potions)
-        send({ type: "setAbilitySlot", slot: targetSlot, spellId: `inv:${data.slot}` });
+        send({ type: "setAbilitySlot", slot: targetSlot, spellId: `item:${data.slot}` });
       } else if (data.type === "abilitySlot") {
         const fromSlot = data.fromSlot;
         if (fromSlot !== targetSlot) {
@@ -1337,6 +1347,18 @@ function wireUi() {
       return;
     }
 
+    // B — toggle bags, C — toggle character window
+    if (event.key.toLowerCase() === "b" && state.joined && !isTextEntryTarget(event.target)) {
+      event.preventDefault();
+      toggleGameWindow("bags");
+      return;
+    }
+    if (event.key.toLowerCase() === "c" && state.joined && !isTextEntryTarget(event.target)) {
+      event.preventDefault();
+      toggleGameWindow("equipment");
+      return;
+    }
+
     updateInput(event, true);
   });
   window.addEventListener("keyup", (event) => updateInput(event, false));
@@ -1465,7 +1487,12 @@ function castAbilitySlot(slotIndex) {
   if (!self) return;
   const spellId = (self.abilityBar || [])[slotIndex];
   if (!spellId) return;
-  send({ type: "castSpell", spellId, slot: slotIndex });
+  if (spellId.startsWith("item:")) {
+    const itemSlot = parseInt(spellId.slice(5), 10);
+    send({ type: "useItem", slot: itemSlot });
+  } else {
+    send({ type: "castSpell", spellId, slot: slotIndex });
+  }
 }
 
 function renderAbilityBar() {
@@ -1487,16 +1514,27 @@ function renderAbilityBar() {
     keySpan.textContent = String(i + 1);
 
     if (spellId) {
-      const ic = document.createElement("canvas");
-      ic.width = 32; ic.height = 32;
-      ic.style.cssText = "position:absolute;top:4px;left:50%;transform:translateX(-50%);image-rendering:pixelated;";
-      drawSpellIcon(ic, spellId, true);
       const nm = document.createElement("div");
       nm.className = "ability-slot-name";
       nm.style.cssText = "position:absolute;top:38px;left:0;right:0;text-align:center;font-size:9px;color:#e8c86a;";
-      const spellInfo = Object.values(TALENT_TREES).flat().flatMap(t => t.spells).find(s => s.id === spellId);
-      nm.textContent = spellInfo?.name || spellId;
-      slot.replaceChildren(ic, nm, keySpan);
+      if (spellId.startsWith("item:")) {
+        const itemSlot = parseInt(spellId.slice(5), 10);
+        const item = state.inventory?.[itemSlot] || null;
+        const ic = document.createElement("span");
+        ic.className = `item-icon ${item?.icon || item?.type || "unknown"}`;
+        ic.style.cssText = "position:absolute;top:4px;left:50%;transform:translateX(-50%);";
+        if (item?.color) ic.style.setProperty("--item-color", item.color);
+        nm.textContent = item?.name || "Item";
+        slot.replaceChildren(ic, nm, keySpan);
+      } else {
+        const ic = document.createElement("canvas");
+        ic.width = 32; ic.height = 32;
+        ic.style.cssText = "position:absolute;top:4px;left:50%;transform:translateX(-50%);image-rendering:pixelated;";
+        drawSpellIcon(ic, spellId, true);
+        const spellInfo = Object.values(TALENT_TREES).flat().flatMap(t => t.spells).find(s => s.id === spellId);
+        nm.textContent = spellInfo?.name || spellId;
+        slot.replaceChildren(ic, nm, keySpan);
+      }
     } else {
       slot.replaceChildren(keySpan);
     }
@@ -2104,9 +2142,6 @@ function renderProgression(self) {
   statPointsEl.textContent = `${statPoints} point${statPoints === 1 ? "" : "s"}`;
   xpFill.style.width = `${xpPct}%`;
   xpText.textContent = `${xp} / ${xpToNext} XP`;
-  document.querySelectorAll("[data-stat]").forEach((button) => {
-    button.disabled = statPoints <= 0;
-  });
 }
 
 let equipTalentTreeIndex = 0;
@@ -2262,18 +2297,38 @@ function renderEquipment() {
   renderCharPreview(self);
 
   const stats = self.stats || {};
+  const statPoints = Number.isFinite(self.statPoints) ? self.statPoints : 0;
   charStatsEl.innerHTML = "";
-  for (const [label, val] of [
-    ["HP",  `${self.hp || 0} / ${self.maxHp || 0}`],
-    ["Spd", stats.speed || 0],
-    ["Str", stats.strength || 0],
-    ["Arm", stats.armour || 0],
-    ["Hth", stats.health || 0]
+  for (const [label, val, statKey] of [
+    ["HP",  `${self.hp || 0} / ${self.maxHp || 0}`, null],
+    ["Speed",    stats.speed    || 0, "speed"],
+    ["Strength", stats.strength || 0, "strength"],
+    ["Armour",   stats.armour   || 0, "armour"],
+    ["Health",   stats.health   || 0, "health"]
   ]) {
     const row = document.createElement("div");
     row.className = "char-stat-row";
-    row.innerHTML = `<span>${label}</span><strong>${val}</strong>`;
+    const labelEl = document.createElement("span");
+    labelEl.textContent = label;
+    const valEl = document.createElement("strong");
+    valEl.textContent = val;
+    row.append(labelEl, valEl);
+    if (statKey) {
+      const plusBtn = document.createElement("button");
+      plusBtn.type = "button";
+      plusBtn.className = "stat-plus-btn";
+      plusBtn.textContent = "+";
+      plusBtn.dataset.stat = statKey;
+      plusBtn.disabled = statPoints <= 0;
+      row.append(plusBtn);
+    }
     charStatsEl.append(row);
+  }
+  if (statPoints > 0) {
+    const pts = document.createElement("div");
+    pts.className = "char-stat-points";
+    pts.textContent = `${statPoints} point${statPoints === 1 ? "" : "s"} to spend`;
+    charStatsEl.prepend(pts);
   }
 
   const tp = self.talentPoints || 0;

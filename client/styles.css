@@ -1067,14 +1067,52 @@ button:focus-visible {
 
 .char-stat-row {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
   gap: 4px;
   color: var(--muted);
+}
+
+.char-stat-row span {
+  flex: 1;
 }
 
 .char-stat-row strong {
   color: #e8c86a;
   font-size: 11px;
+  min-width: 28px;
+  text-align: right;
+}
+
+.stat-plus-btn {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid #7a5a1e;
+  border-radius: 3px;
+  background: #2e1e08;
+  color: #e8c86a;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.stat-plus-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.stat-plus-btn:not(:disabled):hover {
+  background: #5a3a10;
+  border-color: #e8c86a;
+}
+
+.char-stat-points {
+  font-size: 10px;
+  color: #e8c86a;
+  text-align: center;
+  padding: 2px 0 4px;
+  font-weight: 700;
 }
 
 .equip-slot-mini {

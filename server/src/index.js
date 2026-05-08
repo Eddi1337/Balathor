@@ -887,7 +887,13 @@ function handleMessage(client, raw) {
     if (!tierValid) return; // spell not found or previous tier not unlocked
     p.talentPoints -= 1;
     p.talents[talentId] = true;
+    // Auto-assign to first free bar slot
+    p.abilityBar = p.abilityBar || [null, null, null, null, null];
+    const freeBarSlot = p.abilityBar.findIndex(s => s === null);
+    if (freeBarSlot !== -1) p.abilityBar[freeBarSlot] = talentId;
     saveClientCharacter(client);
+    // Send immediate ack so client doesn't wait for next broadcast tick
+    send(client, { type: "talentUpdate", talentPoints: p.talentPoints, talents: p.talents, abilityBar: p.abilityBar });
     broadcastSnapshot();
   }
 
@@ -896,8 +902,9 @@ function handleMessage(client, raw) {
     if (!p) return;
     const slot = Number(message.slot);
     if (!Number.isInteger(slot) || slot < 0 || slot > 4) return;
-    const spellId = message.spellId === null ? null : typeof message.spellId === "string" ? message.spellId.slice(0, 32) : null;
-    if (spellId !== null && !p.talents[spellId]) return;
+    const spellId = message.spellId === null ? null : typeof message.spellId === "string" ? message.spellId.slice(0, 48) : null;
+    const isItemRef = spellId !== null && spellId.startsWith("item:");
+    if (!isItemRef && spellId !== null && !p.talents[spellId]) return;
     p.abilityBar = p.abilityBar || [null, null, null, null, null];
     p.abilityBar[slot] = spellId;
     saveClientCharacter(client);
