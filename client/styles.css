@@ -1156,6 +1156,7 @@ button:focus-visible {
   cursor: pointer;
   flex-shrink: 0;
   touch-action: manipulation;
+  user-select: none;
 }
 
 .talents-open-btn {
@@ -1486,13 +1487,41 @@ button:focus-visible {
   border-color: #7a5a1e;
 }
 
+.ability-slot.cooling-down {
+  cursor: wait;
+}
+
 .ability-slot canvas {
   display: block;
   image-rendering: pixelated;
 }
 
+.ability-cooldown {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: rgba(0, 0, 0, 0.58);
+  pointer-events: none;
+  transform: scaleY(0);
+  transform-origin: bottom;
+}
+
+.ability-cooldown-text {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 800;
+  text-shadow: 0 1px 3px #000;
+  pointer-events: none;
+}
+
 .ability-key {
   position: absolute;
+  z-index: 4;
   bottom: 2px;
   right: 3px;
   font-size: 9px;

@@ -1242,6 +1242,7 @@ function handleSpendStat(client, message) {
     message: "stat_spent",
     stat
   });
+  saveClientCharacter(client);
   broadcastSnapshot();
 }
 
@@ -3200,12 +3201,46 @@ const SPELL_COOLDOWN_MS = {
   multishot: 3000, smoke_bomb: 8000, volley: 6000
 };
 
+const SPELL_DAMAGE_PROFILES = {
+  fireball: { damage: 95, range: 9, arc: 0.36, maxTargets: 1 },
+  fire_nova: { damage: 85, radius: 4.2 },
+  inferno: { damage: 180, range: 7.5, arc: 1.1 },
+  ice_shard: { damage: 90, range: 8.5, arc: 0.34, maxTargets: 1 },
+  frost_barrier: { damage: 70, radius: 3.2 },
+  blizzard: { damage: 150, radius: 5.4 },
+  arcane_bolt: { damage: 115, range: 9.5, arc: 0.32, maxTargets: 1 },
+  mana_shield: { damage: 70, radius: 3 },
+  time_warp: { damage: 110, radius: 5.2 },
+  shield_bash: { damage: 125, range: 2.8, arc: 1.0, maxTargets: 2 },
+  divine_shield: { damage: 95, radius: 3.5 },
+  fortify: { damage: 80, radius: 2.8 },
+  holy_strike: { damage: 150, range: 3.2, arc: 1.1, maxTargets: 2 },
+  consecration: { damage: 145, radius: 4.6 },
+  divine_wrath: { damage: 210, range: 7, arc: 1.25 },
+  healing_aura: { damage: 65, radius: 3.5 },
+  lay_on_hands: { damage: 120, radius: 4.2 },
+  battle_cry: { damage: 80, radius: 4.4 },
+  precise_shot: { damage: 145, range: 10, arc: 0.28, maxTargets: 1 },
+  piercing_arrow: { damage: 125, range: 10, arc: 0.42 },
+  rain_of_arrows: { damage: 155, radius: 5.2 },
+  caltrops: { damage: 90, radius: 3.6 },
+  evasion: { damage: 70, radius: 2.6 },
+  camouflage: { damage: 75, radius: 3.2 },
+  multishot: { damage: 100, range: 8.5, arc: 0.9, maxTargets: 3 },
+  smoke_bomb: { damage: 105, radius: 4.2 },
+  volley: { damage: 135, range: 8.5, arc: 1.0, maxTargets: 5 }
+};
+
 function handleCastSpell(client, spellId) {
   const p = client.player;
   const now = Date.now();
   const cdKey = `${p.id}:${spellId}`;
   const cd = SPELL_COOLDOWN_MS[spellId] || 3000;
-  if ((SPELL_COOLDOWNS.get(cdKey) || 0) + cd > now) return;
+  const nextReadyAt = (SPELL_COOLDOWNS.get(cdKey) || 0) + cd;
+  if (nextReadyAt > now) {
+    send(client, { type: "spellCooldown", spellId, cooldownMs: cd, readyAt: nextReadyAt });
+    return;
+  }
   SPELL_COOLDOWNS.set(cdKey, now);
 
   if (spellId === "healing_aura" || spellId === "lay_on_hands") {
@@ -3216,7 +3251,80 @@ function handleCastSpell(client, spellId) {
     p._buffExpires = now + 5000;
     p._buff = spellId;
   }
+  applySpellDamage(client, spellId, now);
   for (const c of clients.values()) {
-    send(c, { type: "spellCast", casterId: p.id, spellId, x: p.x, y: p.y, facing: p.facing });
+    send(c, { type: "spellCast", casterId: p.id, spellId, x: p.x, y: p.y, facing: p.facing, cooldownMs: cd, readyAt: now + cd });
   }
+  send(client, { type: "spellCooldown", spellId, cooldownMs: cd, readyAt: now + cd });
+  broadcastSnapshot();
+}
+
+function applySpellDamage(client, spellId, now) {
+  const player = client.player;
+  const profile = SPELL_DAMAGE_PROFILES[spellId];
+  if (!player || !profile || !canAttackAt(player.x, player.y)) {
+    return;
+  }
+
+  const targets = findSpellTargets(player, profile);
+  const baseDamage = profile.damage + player.stats.strength * STAT_POINT_STRENGTH_DAMAGE + getEquipmentStats(player).damage;
+  for (const mob of targets) {
+    const damage = Math.max(1, Math.round(baseDamage + mob.level * 3));
+    mob.hp = Math.max(0, mob.hp - damage);
+    const event = {
+      type: "combat",
+      kind: "spell",
+      weapon: spellId,
+      projectileKind: null,
+      attackerId: player.id,
+      x: Number(player.x.toFixed(3)),
+      y: Number(player.y.toFixed(3)),
+      facing: Number(player.facing.toFixed(3)),
+      range: profile.radius || profile.range || 4,
+      hit: true,
+      targetId: mob.id,
+      targetKind: "mob",
+      damage,
+      targetHp: mob.hp,
+      endX: Number(mob.x.toFixed(3)),
+      endY: Number(mob.y.toFixed(3))
+    };
+
+    if (mob.hp <= 0 && !mob.dead) {
+      mob.dead = true;
+      mob.respawnAt = now + (mob.isCritter ? 4200 : MOB_RESPAWN_MS);
+      event.defeated = true;
+      const progress = awardXp(player, xpForMob(mob));
+      event.xpGained = progress.xpGained;
+      event.levelsGained = progress.levelsGained;
+      const goldReward = goldForMob(mob);
+      player.gold += goldReward;
+      event.goldGained = goldReward;
+      dropLootForMob(mob);
+    }
+
+    broadcastCombat(event);
+  }
+}
+
+function findSpellTargets(player, profile) {
+  const targets = [];
+  for (const mob of mobs) {
+    if (mob.dead) continue;
+    const dx = mob.x - player.x;
+    const dy = mob.y - player.y;
+    const dist = Math.hypot(dx, dy);
+    if (profile.radius) {
+      if (dist > profile.radius) continue;
+    } else {
+      if (dist > profile.range || dist < 0.01) continue;
+      const targetAngle = Math.atan2(dy, dx);
+      const delta = Math.abs(normalizeAngle(targetAngle - player.facing));
+      if (delta > profile.arc / 2) continue;
+    }
+    targets.push(mob);
+  }
+
+  targets.sort((a, b) => distance(player, a) - distance(player, b));
+  return typeof profile.maxTargets === "number" ? targets.slice(0, profile.maxTargets) : targets;
 }

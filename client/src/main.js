@@ -194,6 +194,7 @@ const state = {
   speechBubbles: new Map(),
   combatFx: [],
   spellFx: [],
+  spellCooldowns: new Map(),
   levelUpFx: [],
   portalTransition: null,
   chunks: new Map(),
@@ -701,6 +702,12 @@ function handleServerMessage(message) {
   }
 
   if (message.type === "spellCast") {
+    if (message.casterId === state.selfId && message.readyAt) {
+      state.spellCooldowns.set(message.spellId, {
+        readyAt: Number(message.readyAt),
+        cooldownMs: Number(message.cooldownMs || 0)
+      });
+    }
     state.spellFx.push({
       spellId: message.spellId,
       casterId: message.casterId,
@@ -710,6 +717,15 @@ function handleServerMessage(message) {
       createdAt: performance.now(),
       ttl: SPELL_ANIMATION_CONFIG[message.spellId]?.ttl || 900
     });
+    return;
+  }
+
+  if (message.type === "spellCooldown") {
+    state.spellCooldowns.set(message.spellId, {
+      readyAt: Number(message.readyAt),
+      cooldownMs: Number(message.cooldownMs || 0)
+    });
+    updateAbilityCooldowns();
     return;
   }
 }
@@ -941,6 +957,7 @@ function updateSmoothPlayers(dt) {
   state.combatFx = state.combatFx.filter((fx) => now - fx.createdAt < fx.ttl);
   state.spellFx = state.spellFx.filter((fx) => now - fx.createdAt < fx.ttl);
   state.levelUpFx = state.levelUpFx.filter((fx) => now - fx.createdAt < fx.ttl);
+  updateAbilityCooldowns();
 }
 
 function createLevelUpFireworks() {
@@ -1088,9 +1105,13 @@ function wireUi() {
       toggleGameWindow("talent");
       return;
     }
-    // Stat allocation + button (optimistic update)
+  });
+
+  equipmentPanel.addEventListener("pointerdown", (e) => {
     const statBtn = e.target.closest("[data-stat]");
     if (statBtn && !statBtn.disabled) {
+      e.preventDefault();
+      e.stopPropagation();
       const fresh = state.players.get(state.selfId);
       if (!fresh || (fresh.statPoints || 0) < 1) return;
       fresh.statPoints -= 1;
@@ -1555,6 +1576,14 @@ function castAbilitySlot(slotIndex) {
     const itemSlot = parseInt(spellId.slice(5), 10);
     send({ type: "useItem", slot: itemSlot });
   } else {
+    const cooldownMs = CLIENT_SPELL_COOLDOWN_MS[spellId];
+    if (cooldownMs) {
+      state.spellCooldowns.set(spellId, {
+        readyAt: Date.now() + cooldownMs,
+        cooldownMs
+      });
+      updateAbilityCooldowns();
+    }
     send({ type: "castSpell", spellId, slot: slotIndex });
   }
 }
@@ -1597,7 +1626,11 @@ function renderAbilityBar() {
         drawSpellIcon(ic, spellId, true);
         const spellInfo = Object.values(TALENT_TREES).flat().flatMap(t => t.spells).find(s => s.id === spellId);
         nm.textContent = spellInfo?.name || spellId;
-        slot.replaceChildren(ic, nm, keySpan);
+        const cooldown = document.createElement("div");
+        cooldown.className = "ability-cooldown";
+        const cooldownText = document.createElement("span");
+        cooldownText.className = "ability-cooldown-text";
+        slot.replaceChildren(ic, nm, keySpan, cooldown, cooldownText);
       }
     } else {
       slot.replaceChildren(keySpan);
@@ -1605,6 +1638,34 @@ function renderAbilityBar() {
 
     // Store current spell on element so the handler reads fresh data without closure drift
     slot.dataset.currentSpell = spellId || "";
+  });
+  updateAbilityCooldowns();
+}
+
+function updateAbilityCooldowns() {
+  const self = state.players.get(state.selfId);
+  if (!self || !abilitySlotsEl) return;
+  const now = Date.now();
+  const slots = abilitySlotsEl.querySelectorAll(".ability-slot");
+  slots.forEach((slot, i) => {
+    const spellId = (self.abilityBar || [])[i];
+    const cooldown = slot.querySelector(".ability-cooldown");
+    const cooldownText = slot.querySelector(".ability-cooldown-text");
+    if (!spellId || spellId.startsWith("item:") || !cooldown || !cooldownText) return;
+    const cd = state.spellCooldowns.get(spellId);
+    const remaining = Math.max(0, Number(cd?.readyAt || 0) - now);
+    const total = Math.max(1, Number(cd?.cooldownMs || 1));
+    if (remaining > 0) {
+      const pct = Math.max(0, Math.min(1, remaining / total));
+      cooldown.style.transform = `scaleY(${pct})`;
+      cooldownText.textContent = remaining >= 1000 ? String(Math.ceil(remaining / 1000)) : "";
+      slot.classList.add("cooling-down");
+    } else {
+      cooldown.style.transform = "scaleY(0)";
+      cooldownText.textContent = "";
+      slot.classList.remove("cooling-down");
+      if (cd) state.spellCooldowns.delete(spellId);
+    }
   });
 }
 
@@ -2408,16 +2469,58 @@ function drawSpellIcon(iconCanvas, spellId, unlocked) {
   const c = iconCanvas.getContext("2d");
   c.clearRect(0, 0, 28, 28);
   const col = unlocked ? SPELL_ICON_COLORS[spellId] || "#c79cff" : "#3a2810";
+  const cfg = SPELL_ANIMATION_CONFIG[spellId] || { kind: "burst", accent: "#ffffff" };
+  c.fillStyle = unlocked ? "rgba(0,0,0,0.38)" : "#120d08";
+  c.fillRect(2, 2, 24, 24);
+  c.strokeStyle = unlocked ? col : "#3a2810";
+  c.lineWidth = 2;
+  c.strokeRect(3, 3, 22, 22);
+  c.globalAlpha = unlocked ? 1 : 0.45;
   c.fillStyle = col;
-  c.beginPath();
-  c.ellipse(14, 14, 10, 10, 0, 0, Math.PI * 2);
-  c.fill();
-  if (unlocked) {
-    c.fillStyle = "rgba(255,255,255,0.25)";
+  c.strokeStyle = col;
+  c.lineWidth = 2;
+
+  if (["bolt"].includes(cfg.kind)) {
     c.beginPath();
-    c.ellipse(11, 11, 4, 4, 0, 0, Math.PI * 2);
-    c.fill();
+    c.moveTo(7, 19); c.lineTo(14, 4); c.lineTo(13, 12); c.lineTo(21, 9); c.lineTo(12, 24); c.lineTo(13, 15);
+    c.closePath(); c.fill();
+  } else if (["arrow", "pierce", "multi_arrow", "volley", "arrow_rain"].includes(cfg.kind)) {
+    const arrows = cfg.kind === "multi_arrow" || cfg.kind === "volley" || cfg.kind === "arrow_rain" ? [9, 14, 19] : [14];
+    for (const y of arrows) {
+      c.beginPath(); c.moveTo(5, y); c.lineTo(21, y); c.stroke();
+      c.beginPath(); c.moveTo(23, y); c.lineTo(17, y - 4); c.lineTo(17, y + 4); c.closePath(); c.fill();
+    }
+  } else if (["barrier", "fortify"].includes(cfg.kind)) {
+    c.beginPath(); c.ellipse(14, 14, 9, 11, 0, 0, Math.PI * 2); c.stroke();
+    c.beginPath(); c.moveTo(14, 5); c.lineTo(21, 10); c.lineTo(18, 22); c.lineTo(14, 24); c.lineTo(10, 22); c.lineTo(7, 10); c.closePath(); c.stroke();
+  } else if (["heal", "heal_big"].includes(cfg.kind)) {
+    c.fillRect(12, 6, 4, 16);
+    c.fillRect(6, 12, 16, 4);
+    c.beginPath(); c.ellipse(14, 14, 10, 10, 0, 0, Math.PI * 2); c.stroke();
+  } else if (["cone", "wrath", "melee", "shield"].includes(cfg.kind)) {
+    c.beginPath(); c.arc(10, 18, 15, -1.2, 0.15); c.stroke();
+    c.beginPath(); c.moveTo(9, 20); c.lineTo(22, 7); c.stroke();
+  } else if (["storm", "time", "smoke"].includes(cfg.kind)) {
+    c.beginPath(); c.arc(12, 14, 6, 0, Math.PI * 1.5); c.stroke();
+    c.beginPath(); c.arc(17, 14, 6, Math.PI, Math.PI * 2.5); c.stroke();
+  } else if (["trap", "ground"].includes(cfg.kind)) {
+    for (const [x, y] of [[9, 18], [14, 10], [19, 18]]) {
+      c.beginPath(); c.moveTo(x - 4, y + 3); c.lineTo(x, y - 6); c.lineTo(x + 4, y + 3); c.stroke();
+    }
+  } else if (["dash", "vanish"].includes(cfg.kind)) {
+    c.fillRect(8, 8, 5, 5); c.fillRect(13, 13, 5, 5); c.fillRect(18, 18, 4, 4);
+    c.beginPath(); c.moveTo(6, 20); c.lineTo(20, 6); c.stroke();
+  } else if (cfg.kind === "cry") {
+    c.beginPath(); c.moveTo(7, 16); c.lineTo(12, 11); c.lineTo(12, 21); c.closePath(); c.fill();
+    c.beginPath(); c.arc(15, 16, 5, -0.8, 0.8); c.arc(18, 16, 8, -0.8, 0.8); c.stroke();
+  } else {
+    c.beginPath(); c.ellipse(14, 14, 8, 8, 0, 0, Math.PI * 2); c.fill();
   }
+
+  c.globalAlpha = unlocked ? 0.42 : 0.18;
+  c.fillStyle = cfg.accent || "#ffffff";
+  c.fillRect(6, 6, 5, 2);
+  c.globalAlpha = 1;
 }
 
 const SPELL_ICON_COLORS = {
@@ -2460,6 +2563,18 @@ const SPELL_ANIMATION_CONFIG = {
   multishot: { kind: "multi_arrow", color: "#88dd44", accent: "#f4ead3", ttl: 760 },
   smoke_bomb: { kind: "smoke", color: "#777766", accent: "#c7c7b8", ttl: 1100 },
   volley: { kind: "volley", color: "#99cc44", accent: "#f4ead3", ttl: 980 }
+};
+
+const CLIENT_SPELL_COOLDOWN_MS = {
+  fireball: 2000, fire_nova: 4000, inferno: 8000,
+  ice_shard: 2000, frost_barrier: 12000, blizzard: 10000,
+  arcane_bolt: 1500, mana_shield: 15000, time_warp: 20000,
+  shield_bash: 4000, divine_shield: 30000, fortify: 20000,
+  holy_strike: 2000, consecration: 8000, divine_wrath: 10000,
+  healing_aura: 12000, lay_on_hands: 30000, battle_cry: 15000,
+  precise_shot: 2000, piercing_arrow: 3000, rain_of_arrows: 8000,
+  caltrops: 6000, evasion: 12000, camouflage: 20000,
+  multishot: 3000, smoke_bomb: 8000, volley: 6000
 };
 
 function renderBags() {
