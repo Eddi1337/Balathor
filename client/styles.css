@@ -1269,6 +1269,40 @@ button:focus-visible {
   gap: 6px;
 }
 
+.talent-unlock-btn,
+.talent-equip-btn {
+  margin-top: 4px;
+  font-size: 10px;
+  min-height: 20px;
+  padding: 0 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  touch-action: manipulation;
+  display: block;
+  width: 100%;
+}
+
+.talent-unlock-btn {
+  border: 1px solid #7a5a1e;
+  background: #2e1e08;
+  color: #e8c86a;
+}
+
+.talent-unlock-btn:hover {
+  background: #3e2a0a;
+  border-color: #e8c86a;
+}
+
+.talent-equip-btn {
+  border: 1px solid #22c55e;
+  background: #0e2010;
+  color: #22c55e;
+}
+
+.talent-equip-btn:hover {
+  background: #162a18;
+}
+
 .talent-node {
   display: flex;
   flex-direction: column;

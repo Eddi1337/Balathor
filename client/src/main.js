@@ -1077,9 +1077,54 @@ function wireUi() {
     changeServer(menuServerUrlInput.value);
   });
 
-  charStatsEl.addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-stat]");
-    if (btn && !btn.disabled) send({ type: "spendStat", stat: btn.dataset.stat });
+  // Single delegated handler for everything inside the character/equipment panel
+  equipmentPanel.addEventListener("click", (e) => {
+    // Stat allocation + button
+    const statBtn = e.target.closest("[data-stat]");
+    if (statBtn && !statBtn.disabled) {
+      send({ type: "spendStat", stat: statBtn.dataset.stat });
+      return;
+    }
+
+    // Talent tree tab switch
+    const tabBtn = e.target.closest("[data-talent-tab]");
+    if (tabBtn) {
+      equipTalentTreeIndex = Number(tabBtn.dataset.talentTab);
+      renderEquipment();
+      return;
+    }
+
+    // Unlock talent (optimistic)
+    const unlockBtn = e.target.closest("[data-unlock-talent]");
+    if (unlockBtn) {
+      const talentId = unlockBtn.dataset.unlockTalent;
+      const fresh = state.players.get(state.selfId);
+      if (!fresh || (fresh.talentPoints || 0) < 1) return;
+      fresh.talents = { ...(fresh.talents || {}), [talentId]: true };
+      fresh.talentPoints -= 1;
+      fresh.abilityBar = (fresh.abilityBar || [null, null, null, null, null]).slice();
+      const freeSlot = fresh.abilityBar.findIndex(s => s === null);
+      if (freeSlot !== -1) fresh.abilityBar[freeSlot] = talentId;
+      renderEquipment();
+      renderAbilityBar();
+      send({ type: "spendTalent", talentId });
+      return;
+    }
+
+    // Equip talent to ability bar (optimistic)
+    const equipBtn = e.target.closest("[data-equip-talent]");
+    if (equipBtn) {
+      const spellId = equipBtn.dataset.equipTalent;
+      const fresh = state.players.get(state.selfId);
+      const freeSlot = (fresh?.abilityBar || []).findIndex(s => s === null);
+      if (freeSlot === -1) return;
+      fresh.abilityBar = (fresh.abilityBar || [null, null, null, null, null]).slice();
+      fresh.abilityBar[freeSlot] = spellId;
+      renderAbilityBar();
+      send({ type: "setAbilitySlot", slot: freeSlot, spellId });
+      renderEquipment();
+      return;
+    }
   });
 
   equipmentButton.addEventListener("click", () => {
@@ -2223,15 +2268,14 @@ function renderTalentTree(self) {
   const unlockedTalents = self.talents || {};
   const abilityBarData = self.abilityBar || [null, null, null, null, null];
 
-  // Rebuild tabs
+  // Rebuild tabs — no inline listeners; handled by delegated equipmentPanel click
   talentTabsEl.replaceChildren();
   trees.forEach((t, i) => {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = `talent-tab${i === equipTalentTreeIndex ? " active" : ""}`;
     btn.textContent = t.name;
-    btn.style.touchAction = "manipulation";
-    btn.addEventListener("click", () => { equipTalentTreeIndex = i; renderEquipment(); });
+    btn.dataset.talentTab = String(i);
     talentTabsEl.append(btn);
   });
 
@@ -2267,38 +2311,16 @@ function renderTalentTree(self) {
     if (!unlocked && prevUnlocked) {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.style.cssText = "margin-top:4px;font-size:10px;min-height:20px;padding:0 6px;border:1px solid #7a5a1e;border-radius:3px;background:#2e1e08;color:#e8c86a;cursor:pointer;touch-action:manipulation;";
+      btn.className = "talent-unlock-btn";
       btn.textContent = "Unlock (1pt)";
-      btn.addEventListener("click", () => {
-        const fresh = state.players.get(state.selfId);
-        if (!fresh || (fresh.talentPoints || 0) < 1) return;
-        // Optimistic update so the user sees instant feedback
-        fresh.talents = { ...(fresh.talents || {}), [spell.id]: true };
-        fresh.talentPoints -= 1;
-        fresh.abilityBar = (fresh.abilityBar || [null, null, null, null, null]).slice();
-        const freeSlot = fresh.abilityBar.findIndex(s => s === null);
-        if (freeSlot !== -1) fresh.abilityBar[freeSlot] = spell.id;
-        renderEquipment();
-        renderAbilityBar();
-        send({ type: "spendTalent", talentId: spell.id });
-      });
+      btn.dataset.unlockTalent = spell.id;
       node.append(btn);
     } else if (unlocked && !equipped) {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.style.cssText = "margin-top:4px;font-size:10px;min-height:20px;padding:0 6px;border:1px solid #22c55e;border-radius:3px;background:#0e2010;color:#22c55e;cursor:pointer;touch-action:manipulation;";
+      btn.className = "talent-equip-btn";
       btn.textContent = "Equip to bar";
-      btn.addEventListener("click", () => {
-        const fresh = state.players.get(state.selfId);
-        const freeSlot = (fresh?.abilityBar || []).findIndex(s => s === null);
-        if (freeSlot === -1) return;
-        // Optimistic update
-        fresh.abilityBar = (fresh.abilityBar || [null, null, null, null, null]).slice();
-        fresh.abilityBar[freeSlot] = spell.id;
-        renderAbilityBar();
-        send({ type: "setAbilitySlot", slot: freeSlot, spellId: spell.id });
-        renderEquipment();
-      });
+      btn.dataset.equipTalent = spell.id;
       node.append(btn);
     }
 
