@@ -55,6 +55,7 @@ const MOB_ATTACK_DAMAGE = 13;
 const BOSS_ATTACK_DAMAGE = 26;
 const XP_BASE_TO_LEVEL = 100;
 const XP_LEVEL_STEP = 55;
+const STARTING_TALENT_POINTS = 1;
 const STAT_IDS = ["speed", "strength", "armour", "health"];
 const STAT_POINT_HP = 20;
 const STAT_POINT_SPEED = 0.32;
@@ -505,6 +506,20 @@ function serializePlayer(player) {
     y: Number(player.y.toFixed(3)),
     facing: Number(player.facing.toFixed(3))
   };
+}
+
+function initialTalentPoints(savedCharacter, isMod) {
+  if (isMod) return 9999;
+  if (!savedCharacter) return STARTING_TALENT_POINTS;
+
+  const savedPoints = clampInteger(savedCharacter.talentPoints ?? 0, 0, 10000);
+  const savedTalents = savedCharacter.talents && typeof savedCharacter.talents === "object"
+    ? savedCharacter.talents
+    : {};
+  if (savedPoints === 0 && Object.keys(savedTalents).length === 0) {
+    return STARTING_TALENT_POINTS;
+  }
+  return savedPoints;
 }
 
 function syncNextItemIdFromAccounts() {
@@ -1021,7 +1036,7 @@ function joinWorld(client, message, savedCharacter = null) {
       torsoColor,
       weaponColor
     }),
-    talentPoints: isMod ? 9999 : clampInteger(savedCharacter?.talentPoints ?? 0, 0, 10000),
+    talentPoints: initialTalentPoints(savedCharacter, isMod),
     talents: savedCharacter?.talents || {},
     abilityBar: Array.isArray(savedCharacter?.abilityBar)
       ? savedCharacter.abilityBar.slice(0, 5).map(v => (typeof v === "string" ? v : null))

@@ -46,7 +46,6 @@ const charStatsEl = document.querySelector("#charStats");
 const talentPanel = document.querySelector("#talentPanel");
 const talentClose = document.querySelector("#talentClose");
 const talentPointsText = document.querySelector("#talentPointsText");
-const talentTabsEl = document.querySelector("#talentTabs");
 const talentTreeEl = document.querySelector("#talentTree");
 const inventorySlots = document.querySelector("#inventorySlots");
 const abilityBar = document.querySelector("#abilityBar");
@@ -1103,13 +1102,6 @@ function wireUi() {
 
   // Delegated handler for the Talent window
   talentPanel.addEventListener("click", (e) => {
-    // Tab switch
-    const tabBtn = e.target.closest("[data-talent-tab]");
-    if (tabBtn) {
-      equipTalentTreeIndex = Number(tabBtn.dataset.talentTab);
-      renderTalentPanel();
-      return;
-    }
     // Unlock talent (optimistic)
     const unlockBtn = e.target.closest("[data-unlock-talent]");
     if (unlockBtn) {
@@ -2210,8 +2202,6 @@ function renderProgression(self) {
   xpText.textContent = `${xp} / ${xpToNext} XP`;
 }
 
-let equipTalentTreeIndex = 0;
-
 function makeEquipSlotEl(slot, label) {
   const item = state.equipment?.[slot] || null;
   const cell = document.createElement("div");
@@ -2281,67 +2271,69 @@ function renderTalentTree(self) {
   if (!talentTreeEl || !self) return;
   const classId = self.classId || "ranger";
   const trees = TALENT_TREES[classId] || TALENT_TREES.ranger;
-  const tree = trees[equipTalentTreeIndex] || trees[0];
   const unlockedTalents = self.talents || {};
   const abilityBarData = self.abilityBar || [null, null, null, null, null];
 
-  // Rebuild tabs — no inline listeners; handled by delegated equipmentPanel click
-  talentTabsEl.replaceChildren();
-  trees.forEach((t, i) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = `talent-tab${i === equipTalentTreeIndex ? " active" : ""}`;
-    btn.textContent = t.name;
-    btn.dataset.talentTab = String(i);
-    talentTabsEl.append(btn);
-  });
-
-  // Render spell nodes
   talentTreeEl.replaceChildren();
-  tree.spells.forEach((spell, tier) => {
-    const unlocked = Boolean(unlockedTalents[spell.id]);
-    const prevUnlocked = tier === 0 || Boolean(unlockedTalents[tree.spells[tier - 1].id]);
-    const equipped = abilityBarData.some(s => s === spell.id);
+  trees.forEach((tree) => {
+    const section = document.createElement("section");
+    section.className = "talent-tree-group";
 
-    const node = document.createElement("div");
-    node.className = `talent-node${unlocked ? " unlocked" : ""}${!prevUnlocked ? " locked" : ""}${equipped ? " equipped" : ""}`;
+    const title = document.createElement("h3");
+    title.className = "talent-tree-title";
+    title.textContent = tree.name;
 
-    const tierLabel = document.createElement("span");
-    tierLabel.className = "talent-node-tier";
-    tierLabel.textContent = `T${tier + 1}`;
+    const spellsEl = document.createElement("div");
+    spellsEl.className = "talent-tree-spells";
 
-    const ic = document.createElement("canvas");
-    ic.className = "talent-node-icon";
-    ic.width = 28; ic.height = 28;
-    drawSpellIcon(ic, spell.id, unlocked);
+    tree.spells.forEach((spell, tier) => {
+      const unlocked = Boolean(unlockedTalents[spell.id]);
+      const prevUnlocked = tier === 0 || Boolean(unlockedTalents[tree.spells[tier - 1].id]);
+      const equipped = abilityBarData.some(s => s === spell.id);
 
-    const nameEl = document.createElement("div");
-    nameEl.className = "talent-node-name";
-    nameEl.textContent = spell.name;
+      const node = document.createElement("div");
+      node.className = `talent-node${unlocked ? " unlocked" : ""}${!prevUnlocked ? " locked" : ""}${equipped ? " equipped" : ""}`;
 
-    const desc = document.createElement("div");
-    desc.className = "talent-node-desc";
-    desc.textContent = spell.desc;
+      const tierLabel = document.createElement("span");
+      tierLabel.className = "talent-node-tier";
+      tierLabel.textContent = `T${tier + 1}`;
 
-    node.append(tierLabel, ic, nameEl, desc);
+      const ic = document.createElement("canvas");
+      ic.className = "talent-node-icon";
+      ic.width = 28; ic.height = 28;
+      drawSpellIcon(ic, spell.id, unlocked);
 
-    if (!unlocked && prevUnlocked) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "talent-unlock-btn";
-      btn.textContent = "Unlock (1pt)";
-      btn.dataset.unlockTalent = spell.id;
-      node.append(btn);
-    } else if (unlocked && !equipped) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "talent-equip-btn";
-      btn.textContent = "Equip to bar";
-      btn.dataset.equipTalent = spell.id;
-      node.append(btn);
-    }
+      const nameEl = document.createElement("div");
+      nameEl.className = "talent-node-name";
+      nameEl.textContent = spell.name;
 
-    talentTreeEl.append(node);
+      const desc = document.createElement("div");
+      desc.className = "talent-node-desc";
+      desc.textContent = spell.desc;
+
+      node.append(tierLabel, ic, nameEl, desc);
+
+      if (!unlocked && prevUnlocked) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "talent-unlock-btn";
+        btn.textContent = "Unlock (1pt)";
+        btn.dataset.unlockTalent = spell.id;
+        node.append(btn);
+      } else if (unlocked && !equipped) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "talent-equip-btn";
+        btn.textContent = "Equip to bar";
+        btn.dataset.equipTalent = spell.id;
+        node.append(btn);
+      }
+
+      spellsEl.append(node);
+    });
+
+    section.append(title, spellsEl);
+    talentTreeEl.append(section);
   });
 }
 

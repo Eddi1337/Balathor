@@ -1177,7 +1177,7 @@ button:focus-visible {
 }
 
 .talent-window {
-  width: min(480px, calc(100vw - 32px));
+  width: min(760px, calc(100vw - 32px));
   max-height: calc(100vh - 160px);
   overflow-y: auto;
   top: 200px;
@@ -1268,32 +1268,30 @@ button:focus-visible {
   font-weight: 700;
 }
 
-.talent-tabs {
-  display: flex;
-  gap: 4px;
-}
-
-.talent-tab {
-  padding: 3px 10px;
-  border: 1px solid #3a2810;
-  border-radius: 3px;
-  background: #110d06;
-  color: var(--muted);
-  font-size: 11px;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.talent-tab.active,
-.talent-tab:hover {
-  background: #2e1e08;
-  border-color: #7a5a1e;
-  color: #e8c86a;
-}
-
 .talent-tree {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.talent-tree-group {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 5px;
+  min-width: 0;
+}
+
+.talent-tree-title {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.2;
+  color: #e8c86a;
+  text-align: center;
+}
+
+.talent-tree-spells {
+  display: grid;
+  grid-template-rows: repeat(3, minmax(112px, auto));
   gap: 6px;
 }
 
@@ -1343,6 +1341,7 @@ button:focus-visible {
   cursor: pointer;
   text-align: center;
   position: relative;
+  min-width: 0;
 }
 
 .talent-node:hover:not(.locked) {
@@ -1404,6 +1403,22 @@ button:focus-visible {
   background: linear-gradient(90deg, #b8902a, #e8c86a);
   border-radius: 2px;
   transition: width 0.3s;
+}
+
+@media (max-width: 640px) {
+  .talent-window {
+    width: calc(100vw - 16px);
+    right: 8px;
+  }
+
+  .talent-tree {
+    grid-template-columns: 1fr;
+  }
+
+  .talent-tree-spells {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: none;
+  }
 }
 
 /* ── Ability bar ── */
