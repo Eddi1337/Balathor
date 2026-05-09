@@ -4549,41 +4549,68 @@ function drawItemIcon(item, x, y) {
   ctx.stroke();
 }
 
-function drawModCape(px, py, scale, bob, dirX, dirY) {
+/** Green cloak with motion tied to gait + idle sway */
+function drawModCape(px, py, scale, bob, dirX, dirY, moving, sinWalk) {
   const capeX = px + 4 * scale;
   const capeY = py + 2 * scale + bob;
-  const sway = Math.round(dirX * 2);
-  // Dark purple cape — wide body + flowing lower half
-  ctx.fillStyle = "#1a0a30";
-  ctx.fillRect(capeX - scale, capeY, 10 * scale, 7 * scale);
-  ctx.fillStyle = "#120820";
-  ctx.fillRect(capeX + sway - scale, capeY + 5 * scale, 10 * scale, 7 * scale);
-  // Gold trim along top edge
-  ctx.fillStyle = "#b8902a";
-  ctx.fillRect(capeX - scale, capeY, 10 * scale, scale);
+  const t = performance.now() * 0.0038;
+  const idleSway = Math.sin(t) * 1.2 * scale + Math.sin(t * 1.7 + dirX * 2) * 0.35 * scale;
+  const walkBurst = moving
+    ? sinWalk * 7 * Math.max(scale / 3, 1)
+      + Math.sin(t * 2.8) * 2.8 * Math.max(scale / 3, 1)
+      + dirX * 3.2 * scale
+    : 0;
+  const skew = idleSway + walkBurst;
+
+  ctx.fillStyle = "#0f4d32";
+  ctx.fillRect(
+    Math.round(capeX - scale + skew * 0.35),
+    capeY,
+    10 * scale,
+    8 * scale
+  );
+  ctx.fillStyle = "#198f55";
+  ctx.fillRect(
+    Math.round(capeX - 0.5 * scale + skew * 0.55),
+    capeY + 2.5 * scale,
+    9 * scale,
+    11 * scale
+  );
+  ctx.fillStyle = "#20965d";
+  ctx.fillRect(
+    Math.round(capeX - scale + skew),
+    capeY + 5.5 * scale,
+    10 * scale + Math.min(8, Math.abs(skew)),
+    6 * scale
+  );
+  // Fold edge catching light while moving
+  ctx.fillStyle = "#4dd68c";
+  const fold = moving ? Math.abs(sinWalk) * scale * 1.8 : Math.abs(skew) * 0.12;
+  ctx.fillRect(Math.round(capeX + 5 * scale + skew * 0.4), capeY + 4 * scale, Math.max(scale * 1.8, fold), 8 * scale);
+  // Cloak clasp / shoulder trim
+  ctx.fillStyle = "#9fecc0";
+  ctx.fillRect(capeX - scale, capeY, 10 * scale, Math.max(1.2 * scale, 2));
 }
 
-function drawModHood(hx, hy, scale, dirX, torsoColor) {
-  // Cowl base — extends above and around the standard head rect
-  ctx.fillStyle = "#1a0a30";
+function drawModHood(hx, hy, scale, dirX) {
+  ctx.fillStyle = "#4f5c6a";
   ctx.fillRect(hx - scale, hy - scale, 7 * scale, 6 * scale);
-  // Shadow inside hood
-  ctx.fillStyle = "#0a0418";
+  ctx.fillStyle = "#323943";
   ctx.fillRect(hx, hy, 5 * scale, 4 * scale);
-  // Peek of face in shadow
-  ctx.fillStyle = "#c08060";
+  ctx.fillStyle = "#9aaebf";
   ctx.fillRect(hx + scale + Math.max(0, dirX) * scale, hy + scale, 3 * scale, 2 * scale);
-  // Eyes glowing slightly
-  ctx.fillStyle = "#c79cff";
+  ctx.fillStyle = "#6b7f92";
+  ctx.fillRect(hx + scale + Math.max(0, dirX) * scale, hy + scale + scale, 3 * scale, scale);
+  ctx.fillStyle = "#263240";
   ctx.fillRect(hx + scale + Math.max(0, dirX) * scale, hy + scale, scale, scale);
   ctx.fillRect(hx + 3 * scale + Math.max(0, dirX) * scale, hy + scale, scale, scale);
-  // Gold trim on cowl rim
-  ctx.fillStyle = "#b8902a";
-  ctx.fillRect(hx - scale, hy - scale, 7 * scale, scale);
+  ctx.fillStyle = "#74c896";
+  ctx.fillRect(hx - scale, hy - scale, 7 * scale, Math.max(scale, 2));
 }
 
 function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
-  const s = 3;
+  const isMod = !!entity.isMod;
+  const s = isMod ? 3 * 1.2 : 3;
   const phase  = entity.walkPhase || 0;
   const moving = Boolean(entity.renderMoving);
   const facing = Number.isFinite(entity.facing) ? entity.facing : Math.PI / 2;
@@ -4599,14 +4626,13 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const fx   = Math.round(dirX);
   const fy   = Math.round(dirY * 0.6);
 
-  const isMod       = entity.isMod;
-  const torsoColor  = isMod ? "#1a0a30" : (entity.torsoColor || entity.primary || "#5cc8ff");
+  const torsoColor  = isMod ? "#697987" : (entity.torsoColor || entity.primary || "#5cc8ff");
   const weaponColor = entity.weaponColor || entity.accent || "#ffd166";
   const torsoStyle  = isMod ? "robe" : (entity.torsoStyle || "tunic");
   const skinColor   = "#f0c9a2";
   const skinShadow  = "#c88a60";
-  const pantColor   = isMod ? "#0e0620" : "#2a3044";
-  const bootColor   = isMod ? "#0a0418" : "#1a1e2c";
+  const pantColor   = isMod ? "#454e5c" : "#2a3044";
+  const bootColor   = isMod ? "#2f3641" : "#1a1e2c";
 
   const lyingBedPose = !!(poseOpts && poseOpts.lyingBed);
   const restingBenchPose = !!(poseOpts && poseOpts.restingBench);
@@ -4628,7 +4654,11 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
     state.pendingHomeTeleportUntil > performance.now();
 
   if (!lyingBedPose) {
-    drawEllipseShadow(x - 12, y + 12, 24, 6, 0.28);
+    if (isMod) {
+      drawEllipseShadow(x - 14, y + 13, 29, 7, 0.28);
+    } else {
+      drawEllipseShadow(x - 12, y + 12, 24, 6, 0.28);
+    }
   } else {
     drawEllipseShadow(x + 2, y + 14, 30, 5, 0.22);
   }
@@ -4641,7 +4671,7 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   }
 
   if (isMod) {
-    drawModCape(bx - 5 * s, by - 4 * s, s, bob, dirX, dirY);
+    drawModCape(bx - 5 * s, by - 4 * s, s, bob, dirX, dirY, moving, sin1);
   }
 
   // Tiny stump legs (RotMG style) — compressed when seated on benches
@@ -4664,7 +4694,7 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   drawTorso2(bx - 4 * s, by - 3 * s, s, torsoStyle, torsoColor, weaponColor, entity.classId, fx, fy);
 
   // Short arms (raised + glowing while channeling home teleport)
-  ctx.fillStyle = isMod ? "#1a0a30" : skinColor;
+  ctx.fillStyle = isMod ? torsoColor : skinColor;
   let lAX;
   let lAY;
   let rAX;
@@ -4711,7 +4741,7 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const hx = bx - 2 * s + fx * s;
   const hy = by - 7 * s + fy + headSitNudge;
   if (isMod) {
-    drawModHood(hx, hy, s, dirX, torsoColor);
+    drawModHood(hx, hy, s, dirX);
   } else {
     ctx.fillStyle = skinColor;
     ctx.fillRect(hx, hy, 5 * s, 4 * s);
@@ -4736,7 +4766,7 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   if (!isNpc && !homeCasting && !benchSeatPose && !lyingBedPose) {
     drawClassEquipment(entity, bx, by, dirX, dirY, sideX, sideY, weaponColor,
       rAX + s, rAY + 2 * s,
-      lAX + s, lAY + 2 * s, moving, sin1);
+      lAX + s, lAY + 2 * s, moving, sin1, s);
   }
 
   if (lyingBedPose) {
@@ -4751,9 +4781,10 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   ctx.textAlign = "center";
   ctx.lineWidth = 3;
   ctx.strokeStyle = "rgba(8,12,18,0.82)";
-  ctx.fillStyle = isNpc ? "#ffd27a" : entity.isMod ? "#c79cff" : "#f7f3df";
-  ctx.strokeText(entity.name, x, y - 28);
-  ctx.fillText(entity.name, x, y - 28);
+  ctx.fillStyle = isNpc ? "#ffd27a" : entity.isMod ? "#b8efd0" : "#f7f3df";
+  const nameLift = entity.isMod ? 38 : 28;
+  ctx.strokeText(entity.name, x, y - nameLift);
+  ctx.fillText(entity.name, x, y - nameLift);
 
   if (flirtLine) {
     const ly = lyingBedPose ? y - 12 : y - 40;
@@ -4766,10 +4797,12 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   }
 
   if (!isNpc && Number.isFinite(entity.hp) && Number.isFinite(entity.maxHp)) {
-    drawHealthBar(x - 16, y - 22, 32, 3, entity.hp, entity.maxHp);
+    const barW = entity.isMod ? 38 : 32;
+    const barXOff = entity.isMod ? Math.round(barW / 2) : 16;
+    drawHealthBar(x - barXOff, y - (entity.isMod ? 26 : 22), barW, 3, entity.hp, entity.maxHp);
   }
 
-  drawSpeechBubble(entity, x, y - 44);
+  drawSpeechBubble(entity, x, y - (entity.isMod ? 52 : 44));
 }
 
 function drawLeg(lx, ly, s, pantColor, bootColor, dirX, dirY, moving, sinVal, side) {
@@ -4874,8 +4907,8 @@ function drawSpeechBubble(entity, x, y) {
   const isMod = entity.isMod;
   ctx.save();
   ctx.globalAlpha = Math.min(1, (bubble.expiresAt - now) / 500);
-  ctx.fillStyle = isMod ? "rgba(220, 200, 255, 0.96)" : "rgba(247, 243, 223, 0.94)";
-  ctx.strokeStyle = isMod ? "rgba(90, 30, 168, 0.9)" : "rgba(28, 34, 46, 0.88)";
+  ctx.fillStyle = isMod ? "rgba(200, 240, 214, 0.96)" : "rgba(247, 243, 223, 0.94)";
+  ctx.strokeStyle = isMod ? "rgba(25, 80, 52, 0.95)" : "rgba(28, 34, 46, 0.88)";
   ctx.lineWidth = 2;
   roundedRect(left, top, width, height, 6);
   ctx.fill();
@@ -4889,7 +4922,7 @@ function drawSpeechBubble(entity, x, y) {
   ctx.fill();
   ctx.stroke();
 
-  ctx.fillStyle = isMod ? "#3a1060" : "#1d2430";
+  ctx.fillStyle = isMod ? "#123d28" : "#1d2430";
   ctx.font = "12px ui-sans-serif, system-ui";
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
@@ -4932,7 +4965,7 @@ function roundedRect(x, y, width, height, radius) {
   ctx.quadraticCurveTo(x, y, x + r, y);
 }
 
-function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHandX, rHandY, lHandX, lHandY, moving = false, walkSin = 0) {
+function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHandX, rHandY, lHandX, lHandY, moving = false, walkSin = 0, eqS = 3) {
   const style = entity.weaponStyle || "classic";
   const weaponKind = entity.weaponKind || (entity.classId === "mage" ? "staff" : entity.classId === "knight" ? "sword" : "bow");
   if (!weaponKind) {
@@ -4951,9 +4984,11 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
     ctx.shadowBlur = isAscendant ? 17 : 14;
   }
 
+  const ks = eqS / 3;
+
   if (weaponKind === "staff") {
     // Straight vertical shaft with body; orb centered on shaft top — whole column sways subtly with gait.
-    const s = 3;
+    const s = eqS;
     const groundY = y + 7 * s + 6;
     const gait = moving ? walkSin : 0;
     /** Staff held in right hand — same silhouette as before; horizontal anchor follows hand, not torso center. */
@@ -4961,7 +4996,7 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
     const shaftTipY = y - 13 * s - 14;
     const shaftW = style === "heavy" ? Math.max(6, Math.round(s + 2)) : Math.round(s + 1.8);
     const orn = ornateWeapon ? (isAscendant ? "#67e8f9" : "#c79cff") : "#ff7a45";
-    const orbR = style === "heavy" ? 8 : 7;
+    const orbR = (style === "heavy" ? 8 : 7) * Math.min(ks, 1.2);
     const orbCy = shaftTipY - orbR;
     const shaftTopJoin = orbCy + orbR - 1;
 
@@ -4995,51 +5030,56 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
     ctx.ellipse(cx + dirX * 0.4, groundY + 3, 6, 2.4, face, 0, Math.PI * 2);
     ctx.fill();
   } else if (weaponKind === "sword") {
-    const swordTipX = rHandX + dirX * 28 + sideX * 6;
-    const swordTipY = rHandY - 10 + dirY * 28 + sideY * 6;
+    const swordTipX = rHandX + dirX * (28 * ks) + sideX * (6 * ks);
+    const swordTipY = rHandY - 10 * ks + dirY * (28 * ks) + sideY * (6 * ks);
     ctx.strokeStyle = ornateWeapon ? accent : "#edf3f7";
-    ctx.lineWidth = style === "heavy" ? 7 : 5;
+    ctx.lineWidth = style === "heavy" ? 7 : 5 * Math.min(ks, 1.25);
     ctx.beginPath();
     ctx.moveTo(rHandX, rHandY);
     ctx.lineTo(swordTipX, swordTipY);
     ctx.stroke();
     ctx.strokeStyle = "#7b532f";
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 4 * Math.min(ks, 1.2);
     ctx.beginPath();
-    ctx.moveTo(rHandX - sideX * 6, rHandY - sideY * 6);
-    ctx.lineTo(rHandX + sideX * 6, rHandY + sideY * 6);
+    ctx.moveTo(rHandX - sideX * (6 * ks), rHandY - sideY * (6 * ks));
+    ctx.lineTo(rHandX + sideX * (6 * ks), rHandY + sideY * (6 * ks));
     ctx.stroke();
 
     ctx.fillStyle = style === "heavy" ? "#2f3744" : "#3f4b5e";
     ctx.beginPath();
-    ctx.ellipse(lHandX, lHandY - 4, 10, 14, entity.facing || 0, 0, Math.PI * 2);
+    ctx.ellipse(lHandX, lHandY - 4 * ks, 10 * ks, 14 * ks, entity.facing || 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = "#d4dae2";
-    ctx.lineWidth = 2;
+    ctx.lineWidth = Math.max(2, 2 * ks);
     ctx.stroke();
     ctx.fillStyle = accent;
-    ctx.fillRect(lHandX - 2, lHandY - 14, 4, 20);
+    ctx.fillRect(lHandX - 2 * ks, lHandY - 14 * ks, 4 * ks, 20 * ks);
     if (ornateWeapon) {
-      ctx.fillRect(lHandX - 7, lHandY - 6, 14, 4);
+      ctx.fillRect(lHandX - 7 * ks, lHandY - 6 * ks, 14 * ks, 4 * ks);
     }
   } else {
     ctx.strokeStyle = ornateWeapon ? accent : "#8b5a34";
-    ctx.lineWidth = style === "heavy" ? 7 : 5;
+    ctx.lineWidth = style === "heavy" ? 7 : 5 * Math.min(ks, 1.25);
     ctx.beginPath();
-    ctx.moveTo(lHandX - dirX * 12, lHandY - 12 - dirY * 12);
-    ctx.quadraticCurveTo(lHandX + sideX * 8, lHandY + sideY * 8, lHandX + dirX * 12, lHandY + 6 + dirY * 12);
+    ctx.moveTo(lHandX - dirX * (12 * ks), lHandY - (12 + dirY * 12) * ks);
+    ctx.quadraticCurveTo(
+      lHandX + sideX * (8 * ks),
+      lHandY + sideY * (8 * ks),
+      lHandX + dirX * (12 * ks),
+      lHandY + (6 + dirY * 12) * ks
+    );
     ctx.stroke();
     ctx.strokeStyle = style === "heavy" ? "#d7e4ef" : "#f4ead3";
-    ctx.lineWidth = 2;
+    ctx.lineWidth = Math.max(2, 2 * ks);
     ctx.beginPath();
-    ctx.moveTo(lHandX - dirX * 12, lHandY - 12 - dirY * 12);
-    ctx.lineTo(lHandX + dirX * 12, lHandY + 6 + dirY * 12);
+    ctx.moveTo(lHandX - dirX * (12 * ks), lHandY - (12 + dirY * 12) * ks);
+    ctx.lineTo(lHandX + dirX * (12 * ks), lHandY + (6 + dirY * 12) * ks);
     ctx.stroke();
     ctx.strokeStyle = accent;
-    ctx.lineWidth = style === "heavy" ? 4 : 3;
+    ctx.lineWidth = style === "heavy" ? 4 * ks : Math.max(2, 3 * ks);
     ctx.beginPath();
     ctx.moveTo(rHandX, rHandY);
-    ctx.lineTo(rHandX + dirX * 16, rHandY - 14 + dirY * 16);
+    ctx.lineTo(rHandX + dirX * (16 * ks), rHandY + (-14 + dirY * 16) * ks);
     ctx.stroke();
   }
 
