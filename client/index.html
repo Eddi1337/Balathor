@@ -122,15 +122,24 @@
         <button id="equipmentClose" class="window-close" type="button" aria-label="Close character">Close</button>
       </div>
       <div class="equip-layout">
-        <div class="equip-slots-left" id="equipSlotsLeft"></div>
-        <div class="equip-center">
-          <canvas id="charPreview" width="80" height="110" aria-label="Character preview"></canvas>
-          <div id="charStats" class="char-stats"></div>
+        <div class="equip-main-row">
+          <div class="equip-slots-left" id="equipSlotsLeft"></div>
+          <div class="equip-center">
+            <canvas id="charPreview" width="80" height="110" aria-label="Character preview"></canvas>
+          </div>
+          <div class="equip-slots-right" id="equipSlotsRight"></div>
         </div>
-        <div class="equip-slots-right" id="equipSlotsRight"></div>
-      </div>
-      <div style="padding:8px 10px 10px;">
-        <button id="talentsButton" class="talents-open-btn" type="button">Talents (T)</button>
+        <div id="charStats" class="char-stats-bar"></div>
+        <section class="char-talents-mini-section" aria-label="Talents summary">
+          <div class="char-talents-mini-head">
+            <strong>Unlocked talents</strong>
+            <span id="charTalentPointsMini" class="char-talent-pts-mini"></span>
+          </div>
+          <div id="charTalentMini" class="char-talent-mini-icons"></div>
+        </section>
+        <div class="equip-window-footer">
+          <button id="talentsButton" class="talents-open-btn" type="button">Talents (T)</button>
+        </div>
       </div>
     </aside>
 
