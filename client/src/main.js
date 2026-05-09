@@ -1616,6 +1616,9 @@ function wireUi() {
     if (tryPickupClickedGroundItem(event)) {
       return;
     }
+    if (tryRoadsideBenchClickInteract(event)) {
+      return;
+    }
     const world = screenEventToWorld(event);
     state.lastPointerWorldX = world.x;
     state.lastPointerWorldY = world.y;
@@ -2636,6 +2639,41 @@ function tryInteractClickedFixture(event) {
   }
 
   sendInteract({ x: tileX + 0.5, y: tileY + 0.5 });
+  return true;
+}
+
+/** Prefer sitting when the pointer clearly hits an upright roadside bench */
+function tryRoadsideBenchClickInteract(event) {
+  const world = screenEventToWorld(event);
+  const self = state.players.get(state.selfId);
+  if (!self) return false;
+
+  let bestD = Infinity;
+  let bx = NaN;
+  let by = NaN;
+  for (const f of state.roadsides.values()) {
+    if (f.kind !== "bench") continue;
+    const rfW = Math.max(1, Math.floor(Number(f.footprintW) || 1));
+    const rfH = Math.max(1, Math.floor(Number(f.footprintH) || 1));
+    const ax = f.x + rfW / 2;
+    const ay = f.y + rfH / 2 + 0.52;
+    const d = Math.hypot(world.x - ax, world.y - ay);
+    if (d <= 1.18 && d < bestD) {
+      bestD = d;
+      bx = ax;
+      by = ay;
+    }
+  }
+  if (!Number.isFinite(bx)) {
+    return false;
+  }
+
+  /** Must reach the stall from here (matches server leash for click-target interacts). */
+  if (Math.hypot(world.x - self.x, world.y - self.y) > 6.1) {
+    return false;
+  }
+
+  sendInteract({ x: bx, y: by });
   return true;
 }
 
