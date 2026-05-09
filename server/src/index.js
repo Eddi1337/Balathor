@@ -619,8 +619,48 @@ function serializePlayer(player) {
     equipment: player.equipment,
     x: Number(player.x.toFixed(3)),
     y: Number(player.y.toFixed(3)),
-    facing: Number(player.facing.toFixed(3))
+    facing: Number(player.facing.toFixed(3)),
+    ...(typeof player.homeBuildingKey === "string" && player.homeBuildingKey
+      ? { homeBuildingKey: player.homeBuildingKey }
+      : {})
   };
+}
+
+function sanitizeHomeBuildingKey(raw) {
+  if (typeof raw !== "string") {
+    return null;
+  }
+  const m = /^(-?\d+),(-?\d+)$/.exec(raw.trim());
+  if (!m) {
+    return null;
+  }
+  return `${m[1]},${m[2]}`;
+}
+
+function resolveOwnedHouseDoorOutside(building) {
+  const doorCx = building.x + Math.floor(building.w / 2) + 0.5;
+  return { x: doorCx, y: building.y + building.h + 0.35 };
+}
+
+function resolveOwnedHouseReturnPortalAnchor(building) {
+  const doorCx = building.x + Math.floor(building.w / 2) + 0.5;
+  return { x: doorCx, y: building.y + building.h - 1.65 };
+}
+
+function resolveHomeTeleportDestination(player, accountKey) {
+  const key = typeof player.homeBuildingKey === "string" ? player.homeBuildingKey : null;
+  if (key && typeof accountKey === "string") {
+    const ownership = ownedBuildings.get(key);
+    if (ownership && ownership.ownerAccountKey === accountKey) {
+      const building = BUILDING_LIST.find((b) => `${b.x},${b.y}` === key);
+      if (building) {
+        const dest = resolveOwnedHouseDoorOutside(building);
+        return { x: dest.x, y: dest.y, name: building.name || "Home" };
+      }
+    }
+  }
+  const spawn = spawnPoint(nextSpawnIndex++);
+  return { x: spawn.x, y: spawn.y, name: "Spawn" };
 }
 
 function initialTalentPoints(savedCharacter, isMod) {
@@ -762,6 +802,7 @@ function simulate() {
     }
 
     handleDoorTravel(client);
+    handleOwnedHouseReturnPortal(client);
     handlePortalTravel(client);
   }
 
@@ -812,6 +853,51 @@ function playerNearBuildingForPurchase(player, building) {
   const signX = building.x - 0.5;
   const signY = building.y + building.h - 0.5;
   return Math.hypot(px - signX, py - signY) <= 8;
+}
+
+function handleOwnedHouseReturnPortal(client) {
+  if (!client.player || !client.account) {
+    return;
+  }
+  const key = typeof client.player.homeBuildingKey === "string" ? client.player.homeBuildingKey : null;
+  if (!key) {
+    return;
+  }
+  const ownership = ownedBuildings.get(key);
+  if (!ownership || ownership.ownerAccountKey !== client.account.key) {
+    return;
+  }
+  const building = BUILDING_LIST.find((b) => `${b.x},${b.y}` === key);
+  if (!building) {
+    return;
+  }
+
+  const anchor = resolveOwnedHouseReturnPortalAnchor(building);
+  if (Math.hypot(client.player.x - anchor.x, client.player.y - anchor.y) > 1.2) {
+    return;
+  }
+
+  const now = Date.now();
+  if (now - client.lastPortalAt < PORTAL_COOLDOWN_MS) {
+    return;
+  }
+
+  client.lastPortalAt = now;
+  const dest = spawnPoint(0);
+  client.player.x = dest.x;
+  client.player.y = dest.y;
+  client.player.moving = false;
+  client.input = normalizeInput();
+
+  send(client, {
+    type: "teleport",
+    portalId: "house_return",
+    name: "Plaza",
+    color: "#6ecf8d",
+    x: client.player.x,
+    y: client.player.y
+  });
+  streamChunks(client, nearbyChunks(client.player.x, client.player.y, 3));
 }
 
 function handlePortalTravel(client) {
@@ -1014,6 +1100,7 @@ function handleMessage(client, raw) {
       price
     });
     upsertBuildingOwnership(worldDb, key, client.account.key, client.player.name, price);
+    client.player.homeBuildingKey = key;
     saveClientCharacter(client);
     for (const c of clients.values()) {
       send(c, { type: "buildingBought", buildingX: building.x, buildingY: building.y, ownerName: client.player.name });
@@ -1184,6 +1271,15 @@ function joinWorld(client, message, savedCharacter = null) {
     isMod
   };
 
+  let homeBuildingKey = sanitizeHomeBuildingKey(savedCharacter?.homeBuildingKey);
+  if (homeBuildingKey) {
+    const own = ownedBuildings.get(homeBuildingKey);
+    if (!own || own.ownerAccountKey !== client.account?.key) {
+      homeBuildingKey = null;
+    }
+  }
+  client.player.homeBuildingKey = homeBuildingKey;
+
   applyDerivedPlayerStats(client.player);
   client.player.hp = savedCharacter
     ? Math.min(client.player.maxHp, clampInteger(savedCharacter.hp ?? client.player.maxHp, 0, client.player.maxHp))
@@ -1340,17 +1436,17 @@ function handleHomeTeleport(client) {
     return;
   }
 
-  const spawn = spawnPoint(nextSpawnIndex++);
   client.lastHomeAt = now;
-  client.player.x = spawn.x;
-  client.player.y = spawn.y;
+  const dest = resolveHomeTeleportDestination(client.player, client.account?.key);
+  client.player.x = dest.x;
+  client.player.y = dest.y;
   client.player.moving = false;
   client.input = normalizeInput();
 
   send(client, {
     type: "teleport",
     portalId: "home",
-    name: "Spawn",
+    name: dest.name,
     x: client.player.x,
     y: client.player.y
   });
@@ -2092,8 +2188,9 @@ function broadcastSnapshot() {
   const playerSnapCache = new Map();
 
   // Build a compact representation for a player entity (cached per snapshot pass)
-  function playerSnapshot(p) {
-    let snap = playerSnapCache.get(p.id);
+  function playerSnapshot(p, viewerId = null) {
+    const cacheKey = `${p.id}:${viewerId ?? "_"}`;
+    let snap = playerSnapCache.get(cacheKey);
     if (snap) {
       return snap;
     }
@@ -2129,7 +2226,15 @@ function broadcastSnapshot() {
       moving: p.moving,
       isMod: p.isMod || false
     };
-    playerSnapCache.set(p.id, snap);
+    if (
+      viewerId &&
+      p.id === viewerId &&
+      typeof p.homeBuildingKey === "string" &&
+      p.homeBuildingKey
+    ) {
+      snap.homeBuildingKey = p.homeBuildingKey;
+    }
+    playerSnapCache.set(cacheKey, snap);
     return snap;
   }
 
@@ -2177,7 +2282,7 @@ function broadcastSnapshot() {
     const seenPid = new Set();
 
     if (client.player) {
-      playersVisible.push(playerSnapshot(client.player));
+      playersVisible.push(playerSnapshot(client.player, client.player.id));
       seenPid.add(client.player.id);
       snapshotForEachCellInWorldRect(minX, maxX, minY, maxY, cellSize, (key) => {
         const arr = playerBuckets.get(key);
@@ -2191,7 +2296,7 @@ function broadcastSnapshot() {
           }
           if (isInView(view, p.x, p.y)) {
             seenPid.add(p.id);
-            playersVisible.push(playerSnapshot(p));
+            playersVisible.push(playerSnapshot(p, client.player.id));
           }
         }
       });
@@ -2208,7 +2313,7 @@ function broadcastSnapshot() {
           }
           if (isInView(view, p.x, p.y)) {
             seenPid.add(p.id);
-            playersVisible.push(playerSnapshot(p));
+            playersVisible.push(playerSnapshot(p, null));
           }
         }
       });

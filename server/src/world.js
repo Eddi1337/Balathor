@@ -144,9 +144,9 @@ const PORTALS = [
   { id: "portal_oasis", name: "Oasis Gate",  x:  46, y:  0, targetX: 600, targetY: 522, color: "#f2c45f" },
   { id: "portal_frost", name: "Frost Gate",   x: -46, y:  0, targetX: -600, targetY: -458, color: "#9ee7ff" },
   { id: "portal_ember", name: "Ember Gate",   x:   0, y: 60, targetX: 580, targetY: -503, color: "#ff7a45" },
-  { id: "portal_hub_oasis", name: "Hub Gate", x: 600, y: 522, targetX: 0, targetY: 0, color: "#8fe388" },
-  { id: "portal_hub_frost", name: "Hub Gate", x: -600, y: -458, targetX: 0, targetY: 0, color: "#8fe388" },
-  { id: "portal_hub_ember", name: "Hub Gate", x: 580, y: -503, targetX: 0, targetY: 0, color: "#8fe388" },
+  { id: "portal_hub_oasis", name: "Oasis Gate", x: 600, y: 522, targetX: 46, targetY: 0, color: "#f2c45f" },
+  { id: "portal_hub_frost", name: "Frost Gate", x: -600, y: -458, targetX: -46, targetY: 0, color: "#9ee7ff" },
+  { id: "portal_hub_ember", name: "Ember Gate", x: 580, y: -503, targetX: 0, targetY: 60, color: "#ff7a45" },
 ];
 
 function nearFixedBuilding(tx, ty, pad = 9) {
@@ -1235,6 +1235,7 @@ module.exports = {
   BUILDINGS,
   ENEMY_CAMPS,
   PORTALS,
+  START_SPAWN,
   generateChunk,
   generateTile,
   getBiome,

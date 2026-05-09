@@ -5240,7 +5240,55 @@ function drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY) {
     const sy = Math.floor(building.y * TILE_SIZE - state.camera.y + halfH);
     const roofless = !!(playerBuilding && playerBuilding.x === building.x && playerBuilding.y === building.y);
     drawBuildingSprite(building, sx, sy, roofless);
+    drawOwnedHouseReturnPortal(building, roofless, halfW, halfH);
   }
+}
+
+function drawOwnedHouseReturnPortal(building, roofless, halfW, halfH) {
+  const self = state.players.get(state.selfId);
+  if (!roofless || !self?.homeBuildingKey) {
+    return;
+  }
+  if (`${building.x},${building.y}` !== self.homeBuildingKey) {
+    return;
+  }
+  const px = building.x + Math.floor(building.w / 2) + 0.5;
+  const py = building.y + building.h - 1.65;
+  const sx = px * TILE_SIZE - state.camera.x + halfW;
+  const sy = py * TILE_SIZE - state.camera.y + halfH;
+  drawMiniTownPortal(sx, sy);
+}
+
+function drawMiniTownPortal(cx, cy) {
+  const time = performance.now() / 1000;
+  const pulse = 0.5 + Math.sin(time * 4) * 0.35;
+  const color = "#6ecf8d";
+  const r = 14 + pulse * 3;
+  ctx.save();
+  ctx.globalAlpha = 0.88;
+  const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, r);
+  g.addColorStop(0, "rgba(210, 255, 225, 0.92)");
+  g.addColorStop(0.5, hexWithAlpha(color, 0.52));
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = 0.95;
+  ctx.beginPath();
+  ctx.arc(cx, cy, Math.max(6, r - 4), 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.font = "bold 10px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(8,12,18,0.85)";
+  ctx.fillStyle = "#e8fff2";
+  ctx.strokeText("To plaza", cx, cy + r + 11);
+  ctx.fillText("To plaza", cx, cy + r + 11);
 }
 
 function drawBuildingSprite(building, sx, sy, roofless) {
