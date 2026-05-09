@@ -105,18 +105,18 @@ const CLASS_LOADOUTS = Object.freeze({
     kind: "projectile",
     projectileKind: "arrow",
     cooldownMs: 560,
-    range: 8.5,
-    arc: Math.PI * 0.36,
-    damage: 16
+    range: 15,
+    arc: Math.PI * 0.34,
+    damage: 28
   },
   mage: {
     weapon: "staff",
     kind: "projectile",
     projectileKind: "fireball",
     cooldownMs: 780,
-    range: 15,
-    arc: Math.PI * 0.48,
-    damage: 24
+    range: 29,
+    arc: Math.PI * 0.42,
+    damage: 17
   },
   knight: {
     weapon: "sword_shield",
@@ -2208,11 +2208,11 @@ function getActiveLoadout(player) {
   }
 
   if (weapon.weaponKind === "staff") {
-    return { ...CLASS_LOADOUTS.mage, damage: 14 };
+    return { ...CLASS_LOADOUTS.mage, damage: 15 };
   }
 
   if (weapon.weaponKind === "bow") {
-    return { ...CLASS_LOADOUTS.ranger, damage: 10 };
+    return { ...CLASS_LOADOUTS.ranger, damage: 21 };
   }
 
   if (weapon.weaponKind === "sword") {
@@ -3885,13 +3885,13 @@ const SPELL_COOLDOWN_MS = {
 };
 
 const SPELL_DAMAGE_PROFILES = {
-  fireball: { damage: 95, range: 9, arc: 0.36, maxTargets: 1 },
+  fireball: { damage: 95, range: 26, arc: 0.34, maxTargets: 1 },
   fire_nova: { damage: 85, radius: 4.2 },
-  inferno: { damage: 180, range: 7.5, arc: 1.1 },
-  ice_shard: { damage: 90, range: 8.5, arc: 0.34, maxTargets: 1 },
+  inferno: { damage: 180, range: 21, arc: 1.08 },
+  ice_shard: { damage: 90, range: 24, arc: 0.31, maxTargets: 1 },
   frost_barrier: { damage: 70, radius: 3.2 },
   blizzard: { damage: 150, radius: 5.4 },
-  arcane_bolt: { damage: 115, range: 9.5, arc: 0.32, maxTargets: 1 },
+  arcane_bolt: { damage: 115, range: 29, arc: 0.29, maxTargets: 1 },
   mana_shield: { damage: 70, radius: 3 },
   time_warp: { damage: 110, radius: 5.2 },
   shield_bash: { damage: 125, range: 2.8, arc: 1.0, maxTargets: 2 },
@@ -3899,19 +3899,19 @@ const SPELL_DAMAGE_PROFILES = {
   fortify: { damage: 80, radius: 2.8 },
   holy_strike: { damage: 150, range: 3.2, arc: 1.1, maxTargets: 2 },
   consecration: { damage: 145, radius: 4.6 },
-  divine_wrath: { damage: 210, range: 7, arc: 1.25 },
+  divine_wrath: { damage: 210, range: 22, arc: 1.2 },
   healing_aura: { damage: 65, radius: 3.5 },
   lay_on_hands: { damage: 120, radius: 4.2 },
   battle_cry: { damage: 80, radius: 4.4 },
-  precise_shot: { damage: 145, range: 10, arc: 0.28, maxTargets: 1 },
-  piercing_arrow: { damage: 125, range: 10, arc: 0.42 },
+  precise_shot: { damage: 145, range: 20, arc: 0.26, maxTargets: 1 },
+  piercing_arrow: { damage: 125, range: 18, arc: 0.4 },
   rain_of_arrows: { damage: 155, radius: 5.2 },
   caltrops: { damage: 90, radius: 3.6 },
   evasion: { damage: 70, radius: 2.6 },
   camouflage: { damage: 75, radius: 3.2 },
-  multishot: { damage: 100, range: 8.5, arc: 0.9, maxTargets: 3 },
+  multishot: { damage: 100, range: 17, arc: 0.85, maxTargets: 3 },
   smoke_bomb: { damage: 105, radius: 4.2 },
-  volley: { damage: 135, range: 8.5, arc: 1.0, maxTargets: 5 }
+  volley: { damage: 135, range: 19, arc: 0.98, maxTargets: 5 }
 };
 
 function handleCastSpell(client, spellId) {
