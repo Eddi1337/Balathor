@@ -431,6 +431,42 @@ button:focus-visible {
   overflow-y: auto;
 }
 
+.buy-house-window {
+  width: min(320px, calc(100vw - 32px));
+  max-height: none;
+  overflow-y: visible;
+}
+
+.buy-house-body {
+  display: grid;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+.buy-house-line {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.buy-house-line strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.buy-house-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.buy-house-actions button {
+  flex: 1;
+  min-width: 100px;
+}
+
 .trader-stock {
   display: grid;
   gap: 6px;
