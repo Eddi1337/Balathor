@@ -16,7 +16,8 @@ const {
   isBlockedCircle,
   spawnPoint,
   southDoorAnchorWorldX,
-  southDoorWorldXs
+  southDoorWorldXs,
+  findRoadsideFeatureNear
 } = require("./world");
 const {
   updateNpcs,
@@ -25,7 +26,8 @@ const {
   getTraderDefinitions,
   syncSoldCompanionIdsFromAccounts,
   registerCompanionSold,
-  getCompanionNpcTemplate
+  getCompanionNpcTemplate,
+  pickPubDreamGirlfriendNpcId
 } = require("./npcs");
 const {
   openWorldDb,
@@ -393,6 +395,39 @@ const clients = new Map();
 const chunkCache = new Map();
 const chatHistory = [];
 const itemDatabase = createItemDatabase();
+/** Fixed catalogue for pubs (sold from taproom SHELF fixtures). Dream drinks grant a homestead companion storyline. */
+const PUB_BAR_STOCK_TEMPLATES = Object.freeze([
+  {
+    templateId: "pub_inkwell_stout",
+    type: "potion",
+    name: "Inkwell Stout",
+    icon: "potion",
+    rarity: "uncommon",
+    color: "#3d281a",
+    value: 10,
+    stats: { healing: 16, dreamHangover: true }
+  },
+  {
+    templateId: "pub_twilight_smallbeer",
+    type: "potion",
+    name: "Twilight Smallbeer",
+    icon: "potion",
+    rarity: "common",
+    color: "#6a4828",
+    value: 4,
+    stats: { healing: 10, dreamHangover: true }
+  },
+  {
+    templateId: "pub_bramblewine",
+    type: "potion",
+    name: "Bramblewine Cup",
+    icon: "potion",
+    rarity: "rare",
+    color: "#722f4f",
+    value: 22,
+    stats: { healing: 22, dreamHangover: true }
+  }
+]);
 const chests = createChests();
 const groundItems = [];
 {
@@ -1921,6 +1956,21 @@ function handleInteract(client, message = {}) {
     return;
   }
 
+  const roadside = findRoadsideFeatureNear(client.player.x, client.player.y, 2.05);
+  if (roadside) {
+    pushChat({
+      kind: "system",
+      name: "Realm",
+      text:
+        roadside.kind === "bench"
+          ? "You rest awhile on the roadside bench."
+          : roadside.kind.includes("chair")
+            ? "You sit on the pub chair awhile."
+            : "You linger at the roadside table.",
+    });
+    return;
+  }
+
   const ground = nearestGroundItem(client.player);
   if (!ground) {
     send(client, { type: "serverMessage", message: "nothing_nearby" });
@@ -2022,6 +2072,65 @@ function handleUseItem(client, message) {
   const slot = clampInteger(message.slot, 0, INVENTORY_SIZE - 1);
   const item = client.player.inventory[slot];
   if (!item || item.type !== "potion") {
+    return;
+  }
+
+  if (item.stats && item.stats.dreamHangover) {
+    const p = client.player;
+    const rawKey = typeof p.homeBuildingKey === "string" ? p.homeBuildingKey : null;
+    const key = rawKey ? sanitizeHomeBuildingKey(rawKey) : null;
+    const own = key ? ownedBuildings.get(key) : null;
+    if (!key || !client.account || !own || own.ownerAccountKey !== client.account.key) {
+      send(client, { type: "serverMessage", message: "pub_need_house" });
+      return;
+    }
+
+    const dreamId = pickPubDreamGirlfriendNpcId();
+    const tpl = dreamId ? getCompanionNpcTemplate(dreamId) : null;
+    if (!tpl || typeof tpl.companionPrice !== "number") {
+      send(client, { type: "serverMessage", message: "companion_unavailable" });
+      return;
+    }
+
+    p.inventory[slot] = null;
+
+    const heal = Number(item.stats?.healing);
+    if (Number.isFinite(heal) && heal > 0) {
+      p.hp = Math.min(p.maxHp, (p.hp || 0) + heal);
+    }
+
+    registerCompanionSold(tpl.id);
+    p.houseCompanion = {
+      npcId: tpl.id,
+      name: tpl.name,
+      bondTag: tpl.bondTag === "bf" ? "bf" : "gf",
+      classId: tpl.classId,
+      primary: tpl.primary,
+      accent: tpl.accent
+    };
+
+    const building = BUILDING_LIST.find((b) => `${b.x},${b.y}` === key);
+    if (building) {
+      p.x = southDoorAnchorWorldX(building);
+      p.y = building.y + Math.max(2.2, building.h - 2.4);
+      send(client, { type: "pubPassout", durationMs: 3000 });
+      send(client, {
+        type: "teleport",
+        x: p.x,
+        y: p.y,
+        skipChat: true
+      });
+      streamChunks(client, nearbyChunks(p.x, p.y, 3));
+    }
+
+    saveClientCharacter(client);
+    broadcastSnapshot();
+    send(client, { type: "serverMessage", message: "item_used", itemName: item.name });
+    pushChat({
+      kind: "system",
+      name: "Realm",
+      text: `The room spins shut. You stir on your boards — ${tpl.name} hums softly and claims the spare pillow.`,
+    });
     return;
   }
 
@@ -3181,6 +3290,10 @@ function nearestShopFixture(player, message = {}) {
 }
 
 function getShopStock(shop) {
+  if (shop?.isPub) {
+    return [...PUB_BAR_STOCK_TEMPLATES];
+  }
+
   const stock = [];
   const seedX = Math.floor(shop.x * 10);
   const seedY = Math.floor(shop.y * 10);
@@ -3218,6 +3331,7 @@ function sendShopWindow(client, shop) {
     id: shop.id,
     name: shop.name,
     buildingName: shop.buildingName,
+    isPub: !!shop.isPub,
     x: shop.x,
     y: shop.y,
     gold: client.player?.gold || 0,

@@ -843,6 +843,20 @@ function getCompanionNpcTemplate(id) {
   return DEFINITIONS.find((d) => d.id === id && typeof d.companionPrice === "number") || null;
 }
 
+/** Random eligible girlfriend companion for bar “dream hangover”; prefers NPCs still in the world roster. */
+function pickPubDreamGirlfriendNpcId() {
+  const gfs = DEFINITIONS.filter(
+    (d) => d.courtPlayer && d.bondTag === "gf" && typeof d.companionPrice === "number"
+  );
+  if (!gfs.length) {
+    return null;
+  }
+  const unsold = gfs.filter((d) => !soldCompanionNpcIds.has(d.id));
+  const pool = unsold.length ? unsold : gfs;
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  return pick.id;
+}
+
 function getTraderDefinitions() {
   return DEFINITIONS.filter((d) => d.isTrader);
 }
@@ -854,5 +868,6 @@ module.exports = {
   getTraderDefinitions,
   syncSoldCompanionIdsFromAccounts,
   registerCompanionSold,
-  getCompanionNpcTemplate
+  getCompanionNpcTemplate,
+  pickPubDreamGirlfriendNpcId
 };

@@ -49,7 +49,7 @@ const FIXED_BUILDINGS = [
   { x: -10, y: -39, w: 11, h:  9, name: "Home",              type: "house",     forSale: false },
   { x:  26, y: -48, w:  8, h:  7, name: "Smith's Hut",       type: "hut",       forSale: false },
   { x: -45, y: -65, w: 10, h:  8, name: "Ranger's Post",     type: "treehouse", forSale: false },
-  { x: -75, y: -44, w: 12, h:  9, name: "Blue Tavern",       type: "house",     forSale: false },
+  { x: -75, y: -44, w: 12, h:  9, name: "Blue Tavern",       type: "house",     forSale: false, isPub: true },
   // East
   { x:  54, y: -35, w: 16, h: 12, name: "Red Manor",         type: "big_house", forSale: true  },
   { x:  82, y: -44, w: 10, h:  8, name: "Hunter's Lodge",    type: "treehouse", forSale: false },
@@ -83,30 +83,30 @@ const FIXED_BUILDINGS = [
 
 /** Small dwellings for villagers (paired to npcs.js patrol homes; not for sale). */
 const NPC_HOME_BUILDINGS = [
-  { x: 22, y: -78, w: 8, h: 7, name: "Mara's Cottage", type: "hut", forSale: false },
-  { x: -24, y: -76, w: 8, h: 7, name: "Thomas's Lodge", type: "hut", forSale: false },
-  { x: 12, y: -73, w: 8, h: 7, name: "Dale's Storehouse", type: "hut", forSale: false },
-  { x: -12, y: -50, w: 8, h: 7, name: "Aldric's Quarters", type: "hut", forSale: false },
-  { x: 74, y: -6, w: 8, h: 7, name: "Ren's Bunkhouse", type: "hut", forSale: false },
-  { x: 74, y: -28, w: 8, h: 7, name: "Lyssa's Shop-back", type: "hut", forSale: false },
-  { x: 50, y: 10, w: 8, h: 7, name: "Brom's Hovel", type: "hut", forSale: false },
-  { x: 64, y: -12, w: 8, h: 7, name: "Sera's Watch-hut", type: "hut", forSale: false },
-  { x: -4, y: 74, w: 8, h: 7, name: "Holt's Cottage", type: "hut", forSale: false },
-  { x: 14, y: 52, w: 8, h: 7, name: "Greta's Cellar Hut", type: "hut", forSale: false },
-  { x: -18, y: 74, w: 8, h: 7, name: "Dot's Mill Shack", type: "hut", forSale: false },
-  { x: -20, y: 86, w: 8, h: 7, name: "Wyn's Pasture Hut", type: "hut", forSale: false },
-  { x: -70, y: -4, w: 8, h: 7, name: "Voss's Lean-to", type: "hut", forSale: false },
-  { x: -78, y: -24, w: 8, h: 7, name: "Mira's Annex", type: "hut", forSale: false },
-  { x: -82, y: 16, w: 8, h: 7, name: "Cael's Hovel", type: "hut", forSale: false },
-  { x: -68, y: 8, w: 8, h: 7, name: "Zix's Camp Hut", type: "hut", forSale: false },
-  { x: 16, y: -12, w: 8, h: 7, name: "Kael's Storeroom", type: "hut", forSale: false },
-  { x: -14, y: 14, w: 8, h: 7, name: "Ebb's Lodging", type: "hut", forSale: false },
-  { x: -14, y: -12, w: 8, h: 7, name: "Ana's Script House", type: "hut", forSale: false },
-  { x: 92, y: 20, w: 8, h: 7, name: "Riley's Bungalow", type: "hut", forSale: false },
-  { x: 64, y: -2, w: 8, h: 7, name: "Jax's Flat", type: "hut", forSale: false },
-  { x: -24, y: 60, w: 8, h: 7, name: "Mae's Rowhouse", type: "hut", forSale: false },
-  { x: -68, y: -32, w: 8, h: 7, name: "Sofia's Shack", type: "hut", forSale: false },
-  { x: -88, y: -8, w: 8, h: 7, name: "Nara's Cabin", type: "hut", forSale: false },
+  { x: 22, y: -78, w: 8, h: 7, name: "Mara's Cottage", type: "hut", forSale: false, residentLabel: "Mara" },
+  { x: -24, y: -76, w: 8, h: 7, name: "Thomas's Lodge", type: "hut", forSale: false, residentLabel: "Thomas" },
+  { x: 12, y: -73, w: 8, h: 7, name: "Dale's Storehouse", type: "hut", forSale: false, residentLabel: "Dale" },
+  { x: -12, y: -50, w: 8, h: 7, name: "Aldric's Quarters", type: "hut", forSale: false, residentLabel: "Aldric" },
+  { x: 74, y: -6, w: 8, h: 7, name: "Ren's Bunkhouse", type: "hut", forSale: false, residentLabel: "Ren" },
+  { x: 74, y: -28, w: 8, h: 7, name: "Lyssa's Shop-back", type: "hut", forSale: false, residentLabel: "Lyssa" },
+  { x: 50, y: 10, w: 8, h: 7, name: "Brom's Hovel", type: "hut", forSale: false, residentLabel: "Brom" },
+  { x: 64, y: -12, w: 8, h: 7, name: "Sera's Watch-hut", type: "hut", forSale: false, residentLabel: "Sera" },
+  { x: -4, y: 74, w: 8, h: 7, name: "Holt's Cottage", type: "hut", forSale: false, residentLabel: "Holt" },
+  { x: 14, y: 52, w: 8, h: 7, name: "Greta's Cellar Hut", type: "hut", forSale: false, residentLabel: "Greta" },
+  { x: -18, y: 74, w: 8, h: 7, name: "Dot's Mill Shack", type: "hut", forSale: false, residentLabel: "Dot" },
+  { x: -20, y: 86, w: 8, h: 7, name: "Wyn's Pasture Hut", type: "hut", forSale: false, residentLabel: "Wyn" },
+  { x: -70, y: -4, w: 8, h: 7, name: "Voss's Lean-to", type: "hut", forSale: false, residentLabel: "Voss" },
+  { x: -78, y: -24, w: 8, h: 7, name: "Mira's Annex", type: "hut", forSale: false, residentLabel: "Mira" },
+  { x: -82, y: 16, w: 8, h: 7, name: "Cael's Hovel", type: "hut", forSale: false, residentLabel: "Cael" },
+  { x: -68, y: 8, w: 8, h: 7, name: "Zix's Camp Hut", type: "hut", forSale: false, residentLabel: "Zix" },
+  { x: 16, y: -12, w: 8, h: 7, name: "Kael's Storeroom", type: "hut", forSale: false, residentLabel: "Kael" },
+  { x: -14, y: 14, w: 8, h: 7, name: "Ebb's Lodging", type: "hut", forSale: false, residentLabel: "Ebb" },
+  { x: -14, y: -12, w: 8, h: 7, name: "Ana's Script House", type: "hut", forSale: false, residentLabel: "Ana" },
+  { x: 92, y: 20, w: 8, h: 7, name: "Riley's Bungalow", type: "hut", forSale: false, residentLabel: "Riley" },
+  { x: 64, y: -2, w: 8, h: 7, name: "Jax's Flat", type: "hut", forSale: false, residentLabel: "Jax" },
+  { x: -24, y: 60, w: 8, h: 7, name: "Mae's Rowhouse", type: "hut", forSale: false, residentLabel: "Mae" },
+  { x: -68, y: -32, w: 8, h: 7, name: "Sofia's Shack", type: "hut", forSale: false, residentLabel: "Sofia" },
+  { x: -88, y: -8, w: 8, h: 7, name: "Nara's Cabin", type: "hut", forSale: false, residentLabel: "Nara" },
 ];
 
 const BUILDINGS = FIXED_BUILDINGS.concat(NPC_HOME_BUILDINGS);
@@ -214,6 +214,163 @@ const STREET_SEGMENTS = [
 
   // Ember Gate uses central spine `{ x1: 0 … y: -82 }` which runs past `(0,-76)`
 ];
+
+/**
+ * Thick stone corridors between hubs (half-width ±hw tiles perpendicular to axis).
+ */
+const STONE_HIGHWAY_SEGMENTS = [
+  { x1: 92, y1: 0, x2: 92, y2: 340, hw: 3 },
+  { x1: 92, y1: 340, x2: 520, y2: 340, hw: 3 },
+  { x1: 520, y1: 340, x2: 520, y2: 470, hw: 3 },
+  { x1: -92, y1: 0, x2: -92, y2: -335, hw: 3 },
+  { x1: -92, y1: -335, x2: -530, y2: -335, hw: 3 },
+  { x1: -530, y1: -335, x2: -530, y2: -478, hw: 3 },
+  { x1: -40, y1: -92, x2: 240, y2: -92, hw: 3 },
+  { x1: 240, y1: -92, x2: 240, y2: -360, hw: 3 },
+  { x1: 240, y1: -360, x2: 560, y2: -360, hw: 3 },
+  { x1: 560, y1: -360, x2: 560, y2: -514, hw: 3 },
+  /* Village ring connectors from highway roots */
+  { x1: 92, y1: 0, x2: 120, y2: 48, hw: 2 },
+  { x1: -92, y1: 0, x2: -120, y2: -48, hw: 2 }
+];
+
+/** Single tile-wide paths from doors to arterial routes (thin = thin line exactly on axis). */
+const FOOTPATH_SEGMENTS = [
+  { x1: -31, y1: -71, x2: -31, y2: -35, thin: true },
+  { x1: -15, y1: -71, x2: -15, y2: -45, thin: true },
+  { x1: -3, y1: -71, x2: -3, y2: -40, thin: true },
+  { x1: 12, y1: -71, x2: 12, y2: -52, thin: true },
+  { x1: 25, y1: -71, x2: 25, y2: -48, thin: true },
+  { x1: -40, y1: -13, x2: -40, y2: 4, thin: true },
+  { x1: -70, y1: 7, x2: -70, y2: 22, thin: true },
+  { x1: -77, y1: -33, x2: -77, y2: -42, thin: true },
+  { x1: -78, y1: 20, x2: -78, y2: 42, thin: true },
+  { x1: -71, y1: 9, x2: -71, y2: 22, thin: true },
+  { x1: -18, y1: 63, x2: -18, y2: 44, thin: true },
+  { x1: -22, y1: 81, x2: -22, y2: 68, thin: true },
+  { x1: -10, y1: 81, x2: -10, y2: 62, thin: true },
+  { x1: -2, y1: 75, x2: -2, y2: 56, thin: true },
+  { x1: 93, y1: 21, x2: 93, y2: 6, thin: true },
+  { x1: 65, y1: 1, x2: 65, y2: 16, thin: true },
+  { x1: 50, y1: 11, x2: 50, y2: 24, thin: true },
+  { x1: -14, y1: 15, x2: -14, y2: 30, thin: true },
+  { x1: -14, y1: -11, x2: -14, y2: 2, thin: true },
+  { x1: 16, y1: -13, x2: 16, y2: 2, thin: true },
+  { x1: -88, y1: 1, x2: -88, y2: 18, thin: true },
+  { x1: -70, y1: -24, x2: -70, y2: -44, thin: true },
+  { x1: -68, y1: -33, x2: -68, y2: -44, thin: true },
+  { x1: -78, y1: 17, x2: -78, y2: 30, thin: true },
+  { x1: -66, y1: 9, x2: -66, y2: 26, thin: true },
+  { x1: -36, y1: 68, x2: -36, y2: 50, thin: true },
+  { x1: -28, y1: 68, x2: -28, y2: 48, thin: true },
+  { x1: 588, y1: 488, x2: 593, y2: 476, thin: true },
+  { x1: 596, y1: 488, x2: 601, y2: 476, thin: true },
+  { x1: -590, y1: -488, x2: -596, y2: -476, thin: true },
+  { x1: -598, y1: -488, x2: -604, y2: -476, thin: true },
+  { x1: 568, y1: -512, x2: 574, y2: -524, thin: true },
+  { x1: 576, y1: -512, x2: 582, y2: -524, thin: true }
+];
+
+/** Decorative furniture along roads (interaction id + fractional tile position). */
+const ROADSIDE_FEATURES = Object.freeze([
+  { id: "rs_hub_b1", x: -56, y: 7, kind: "bench", facing: 0 },
+  { id: "rs_hub_b2", x: 58, y: -7, kind: "bench", facing: Math.PI },
+  { id: "rs_hub_t1", x: -18, y: -12, kind: "table", facing: Math.PI / 2 },
+  { id: "rs_hub_t2", x: 22, y: 18, kind: "table", facing: 0 },
+  { id: "rs_pub_t1", x: -67, y: -34, kind: "pub_table", facing: 0 },
+  { id: "rs_pub_t2", x: -62, y: -34, kind: "pub_table", facing: 0 },
+  { id: "rs_pub_c1", x: -69, y: -36, kind: "pub_chair", facing: Math.PI / 2 },
+  { id: "rs_pub_c2", x: -64, y: -36, kind: "pub_chair", facing: Math.PI / 2 },
+  { id: "rs_pub_c3", x: -67, y: -33, kind: "pub_chair", facing: -Math.PI / 2 },
+  { id: "rs_east_b1", x: 74, y: 32, kind: "bench", facing: 0 },
+  { id: "rs_east_t1", x: 98, y: 42, kind: "table", facing: Math.PI / 2 },
+  { id: "rs_south_b1", x: -32, y: 58, kind: "bench", facing: Math.PI },
+  { id: "rs_south_t1", x: 8, y: 64, kind: "table", facing: 0 },
+  { id: "rs_oasis_b1", x: 592, y: 486, kind: "bench", facing: 0 },
+  { id: "rs_frost_b1", x: -592, y: -486, kind: "bench", facing: Math.PI },
+  { id: "rs_ember_b1", x: 572, y: -510, kind: "bench", facing: Math.PI / 2 }
+]);
+
+function distPointToSegmentSq(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq < 1e-12) {
+    const qx = px - x1;
+    const qy = py - y1;
+    return qx * qx + qy * qy;
+  }
+  let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  const nx = x1 + t * dx;
+  const ny = y1 + t * dy;
+  const ox = px - nx;
+  const oy = py - ny;
+  return ox * ox + oy * oy;
+}
+
+function isStoneHighway(tx, ty) {
+  const px = tx + 0.5;
+  const py = ty + 0.5;
+  for (const s of STONE_HIGHWAY_SEGMENTS) {
+    const hw = s.hw ?? 3;
+    const thresh = hw + 0.5;
+    if (
+      distPointToSegmentSq(px, py, s.x1 + 0.5, s.y1 + 0.5, s.x2 + 0.5, s.y2 + 0.5) <= thresh * thresh
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isThinFootpath(tx, ty) {
+  const px = tx + 0.5;
+  const py = ty + 0.5;
+  const thresh = 0.42;
+  const threshSq = thresh * thresh;
+  for (const s of FOOTPATH_SEGMENTS) {
+    if (!s.thin) continue;
+    if (
+      distPointToSegmentSq(px, py, s.x1 + 0.5, s.y1 + 0.5, s.x2 + 0.5, s.y2 + 0.5) <= threshSq
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function getRoadsideFeaturesInChunk(cx, cy) {
+  const startX = cx * CHUNK_SIZE;
+  const startY = cy * CHUNK_SIZE;
+  const endX = startX + CHUNK_SIZE;
+  const endY = startY + CHUNK_SIZE;
+  const out = [];
+  for (const f of ROADSIDE_FEATURES) {
+    const fx = f.x;
+    const fy = f.y;
+    if (fx >= startX && fx < endX && fy >= startY && fy < endY) {
+      out.push(f);
+    }
+  }
+  return out;
+}
+
+function findRoadsideFeatureNear(wx, wy, radiusTiles = 1.35) {
+  const rSq = radiusTiles * radiusTiles;
+  let best = null;
+  let bestD = rSq + 1;
+  for (const f of ROADSIDE_FEATURES) {
+    const dx = wx - (f.x + 0.5);
+    const dy = wy - (f.y + 0.55);
+    const dSq = dx * dx + dy * dy;
+    if (dSq <= rSq && dSq < bestD) {
+      bestD = dSq;
+      best = f;
+    }
+  }
+  return best;
+}
 
 const PORTALS = [
   { id: "portal_oasis", name: "Oasis Gate",  x:  46, y: -76, targetX: 600, targetY: 522, color: "#f2c45f" },
@@ -488,7 +645,7 @@ function getProceduralSettlementTile(x, y) {
       const lx = x - b.x;
       const ly = y - b.y;
       const seed = hash2(b.x, b.y, 7777);
-      return getBuildingInteriorTile(lx, ly, b.w, b.h, b.type || "hut", seed, false);
+      return getBuildingInteriorTile(lx, ly, b.w, b.h, b.type || "hut", seed, false, false);
     }
 
     // Cross roads through settlement center.
@@ -592,8 +749,13 @@ function getEnemyCampTile(x, y) {
 
 // ---------------------------------------------------------------------------
 
-function getBuildingInteriorTile(lx, ly, w, h, type, seed, buyableHome) {
+function getBuildingInteriorTile(lx, ly, w, h, type, seed, buyableHome, isPub) {
   if (buyableHome) {
+    return TILE.FLOOR;
+  }
+  if (isPub && type === "house") {
+    if (lx >= 2 && lx <= w - 3 && ly >= h - 4 && ly <= h - 2) return TILE.CARPET;
+    if (lx === w - 3 && ly === 2) return TILE.SHELF;
     return TILE.FLOOR;
   }
   if (type === "hut") {
@@ -673,7 +835,7 @@ function getBuildingTile(x, y) {
     const lx = x - b.x;
     const ly = y - b.y;
     const seed = hash2(b.x, b.y, 7777);
-    return getBuildingInteriorTile(lx, ly, b.w, b.h, b.type || "house", seed, !!b.forSale);
+    return getBuildingInteriorTile(lx, ly, b.w, b.h, b.type || "house", seed, !!b.forSale, !!b.isPub);
   }
 
   return null;
@@ -843,6 +1005,13 @@ function getInteriorTile(x, y) {
     return TILE.FLOOR;
   }
 
+  // Taproom variant (matches exterior pub footprint)
+  if (interior.building.isPub && type === "house") {
+    if (localX >= 2 && localX <= w - 3 && localY >= h - 4 && localY <= h - 2) return TILE.CARPET;
+    if (localX === w - 3 && localY === 2) return TILE.SHELF;
+    return TILE.FLOOR;
+  }
+
   // Default "house" layout
   const shelf = getInteriorShopShelf(interior);
   if (x === shelf.x && y === shelf.y) {
@@ -948,10 +1117,21 @@ function getShopFixtureAt(x, y) {
     const seed = hash2(b.x, b.y, 7777);
     for (let lx = 1; lx <= b.w - 2; lx += 1) {
       for (let ly = 1; ly <= b.h - 2; ly += 1) {
-        if (getBuildingInteriorTile(lx, ly, b.w, b.h, b.type || "house", seed, !!b.forSale) === TILE.SHELF) {
-          const sx = b.x + lx, sy = b.y + ly;
-          if (Math.hypot(x - (sx+0.5), y - (sy+0.5)) <= 1.25) {
-            return { id: `shop_${b.x}_${b.y}`, name: "Trader Shelf", buildingName: b.name, x: sx+0.5, y: sy+0.5 };
+        if (
+          getBuildingInteriorTile(lx, ly, b.w, b.h, b.type || "house", seed, !!b.forSale, !!b.isPub)
+            === TILE.SHELF
+        ) {
+          const sx = b.x + lx,
+            sy = b.y + ly;
+          if (Math.hypot(x - (sx + 0.5), y - (sy + 0.5)) <= 1.25) {
+            return {
+              id: `shop_${b.x}_${b.y}`,
+              name: b.isPub ? "Taproom" : "Trader Shelf",
+              buildingName: b.name,
+              isPub: !!b.isPub,
+              x: sx + 0.5,
+              y: sy + 0.5
+            };
           }
         }
       }
@@ -1095,6 +1275,15 @@ function generateExteriorTile(x, y) {
     return TILE.PATH;
   }
 
+  const ti = Math.floor(x);
+  const tj = Math.floor(y);
+  if (isStoneHighway(ti, tj)) {
+    return TILE.STONE;
+  }
+  if (isThinFootpath(ti, tj)) {
+    return TILE.PATH;
+  }
+
   // Stone plaza surrounding each portal (roads already handled above, so only non-road tiles reach here)
   if (isPortalPlaza(x, y)) {
     return TILE.STONE;
@@ -1217,7 +1406,8 @@ function generateChunk(cx, cy) {
     size: CHUNK_SIZE,
     tiles,
     portals: getPortalsInChunk(cx, cy),
-    buildings: getBuildingsInChunk(cx, cy)
+    buildings: getBuildingsInChunk(cx, cy),
+    roadsides: getRoadsideFeaturesInChunk(cx, cy)
   };
 }
 
@@ -1308,7 +1498,17 @@ function getBuildingsInChunk(cx, cy) {
 
   const result = BUILDINGS
     .filter((b) => b.x < endX && b.x + b.w > startX && b.y < endY && b.y + b.h > startY)
-    .map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h, name: b.name, type: b.type, forSale: !!b.forSale }));
+    .map((b) => ({
+      x: b.x,
+      y: b.y,
+      w: b.w,
+      h: b.h,
+      name: b.name,
+      type: b.type,
+      forSale: !!b.forSale,
+      isPub: !!b.isPub,
+      residentLabel: typeof b.residentLabel === "string" ? b.residentLabel.slice(0, 48) : undefined
+    }));
 
   const seen = new Set(result.map((b) => `${b.x},${b.y}`));
   const chunkMidX = startX + CHUNK_SIZE / 2;
@@ -1365,5 +1565,6 @@ module.exports = {
   southDoorWorldXs,
   southDoorAnchorWorldX,
   southDoorLocalXs,
-  southDoorLocalCenterOffset
+  southDoorLocalCenterOffset,
+  findRoadsideFeatureNear
 };
