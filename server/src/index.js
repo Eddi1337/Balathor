@@ -17,7 +17,11 @@ const {
   spawnPoint,
   southDoorAnchorWorldX,
   southDoorWorldXs,
-  findRoadsideFeatureNear
+  findRoadsideFeatureNear,
+  shouldSpawnWildMobCamp,
+  scaledCampEncounterSize,
+  PRIMARY_HUB_MOBS_CLEAR_RADIUS,
+  isTooCloseToAnyPortal
 } = require("./world");
 const {
   updateNpcs,
@@ -3464,9 +3468,12 @@ function createWildernessMobs() {
   const mobs = [];
 
   for (const camp of ENEMY_CAMPS) {
+    if (!shouldSpawnWildMobCamp(camp)) {
+      continue;
+    }
     const biome = camp.biome || getBiome(camp.x, camp.y);
     const type = MOB_TYPES[biome] || MOB_TYPES.forest;
-    const count = camp.size;
+    const count = scaledCampEncounterSize(camp.size, camp);
     const tier = camp.tier || Math.max(1, Math.floor(Math.hypot(camp.x, camp.y) / 90));
 
     for (let i = 0; i < count; i += 1) {
@@ -3558,11 +3565,12 @@ function createRoamingMobs() {
       const cx = gx * ROAM_CELL + ROAM_CELL * 0.5;
       const cy = gy * ROAM_CELL + ROAM_CELL * 0.5;
 
-      // Exclude safe zones
-      if (Math.hypot(cx, cy)            < 35) continue;  // spawn hub
-      if (Math.hypot(cx - 600, cy - 490) < 68) continue; // oasis town
-      if (Math.hypot(cx + 600, cy + 490) < 68) continue; // frost town
-      if (Math.hypot(cx - 580, cy + 530) < 68) continue; // ember town
+      // Exclude starter town + quieter margins around distant portal towns / portal courtyards
+      if (Math.hypot(cx, cy) < PRIMARY_HUB_MOBS_CLEAR_RADIUS) continue;
+      if (Math.hypot(cx - 600, cy - 490) < 106) continue;
+      if (Math.hypot(cx + 600, cy + 490) < 106) continue;
+      if (Math.hypot(cx - 580, cy + 530) < 106) continue;
+      if (isTooCloseToAnyPortal(Math.round(cx), Math.round(cy))) continue;
 
       const biome  = getBiome(Math.round(cx), Math.round(cy));
       const type   = MOB_TYPES[biome] || MOB_TYPES.forest;
@@ -3575,6 +3583,7 @@ function createRoamingMobs() {
         const oy = (hash2(gx, gy, 9600 + i) - 0.5) * (ROAM_CELL - 5);
         const hx = Math.round(cx + ox);
         const hy = Math.round(cy + oy);
+        if (isTooCloseToAnyPortal(hx, hy)) continue;
 
         const eIdx  = Math.floor(hash2(gx, gy, 9700 + i) * type.enemies.length);
         const enemy = type.enemies[eIdx];
@@ -3621,16 +3630,18 @@ function createCritterMobs() {
       const baseX = gx * CRITTER_CELL + CRITTER_CELL * 0.5;
       const baseY = gy * CRITTER_CELL + CRITTER_CELL * 0.5;
 
-      if (Math.hypot(baseX - 0, baseY - 4) < 78) continue;
-      if (Math.hypot(baseX - 600, baseY - 490) < 52) continue;
-      if (Math.hypot(baseX + 600, baseY + 490) < 52) continue;
-      if (Math.hypot(baseX - 580, baseY + 530) < 52) continue;
+      if (Math.hypot(baseX - 0, baseY - 4) < PRIMARY_HUB_MOBS_CLEAR_RADIUS) continue;
+      if (Math.hypot(baseX - 600, baseY - 490) < 82) continue;
+      if (Math.hypot(baseX + 600, baseY + 490) < 82) continue;
+      if (Math.hypot(baseX - 580, baseY + 530) < 82) continue;
+      if (isTooCloseToAnyPortal(Math.round(baseX), Math.round(baseY))) continue;
 
       for (let i = 0; i < n; i += 1) {
         const ox = (hash2(gx, gy, 8801 + i) - 0.5) * (CRITTER_CELL - 7);
         const oy = (hash2(gx, gy, 8901 + i) - 0.5) * (CRITTER_CELL - 7);
         const bx = Math.round(baseX + ox);
         const by = Math.round(baseY + oy);
+        if (isTooCloseToAnyPortal(bx, by)) continue;
         const biome = getBiome(bx, by);
         const pool = CRITTERS_BY_BIOME[biome] || CRITTERS_BY_BIOME.forest;
         const tmpl = pool[Math.floor(hash2(gx, gy + i * 97, 9001) * pool.length) % pool.length];

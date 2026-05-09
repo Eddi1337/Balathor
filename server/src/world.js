@@ -267,6 +267,57 @@ const PORTALS = [
   { id: "portal_hub_ember", name: "Ember Gate", x: 580, y: -503, targetX: 0, targetY: -76, color: "#ff7a45" },
 ];
 
+/** Stone disk under portals (tile-space, portal at integer lattice point). */
+const PORTAL_CLEAR_STONE_RADIUS = 10;
+const PORTAL_CAMP_CLEAR_RADIUS = 11;
+/** Wild mobs (camps, roamers, critters) stay outside the starter walled town apron. */
+const PRIMARY_HUB_MOBS_CLEAR_RADIUS = HUB_TOWN_GRASS_RADIUS + 48;
+
+function squaredDistTileToNearestPortal(px, py) {
+  let best = 1e18;
+  for (const portal of PORTALS) {
+    const dx = px - portal.x - 0.5;
+    const dy = py - portal.y - 0.5;
+    const s = dx * dx + dy * dy;
+    if (s < best) best = s;
+  }
+  return best;
+}
+
+function isPortalCourtyardStoneTile(ti, tj) {
+  return squaredDistTileToNearestPortal(ti + 0.5, tj + 0.5) <= PORTAL_CLEAR_STONE_RADIUS * PORTAL_CLEAR_STONE_RADIUS;
+}
+
+/** Non-portal tiles too close for enemy sites / roam cells. */
+function isTooCloseToAnyPortal(ix, iy, clearance = PORTAL_CAMP_CLEAR_RADIUS) {
+  for (const portal of PORTALS) {
+    if (Math.hypot(ix - portal.x, iy - portal.y) < clearance) return true;
+  }
+  return false;
+}
+
+function closestSecondarySettlementDist(px, py) {
+  let m = Number.POSITIVE_INFINITY;
+  for (const c of [[600, 490], [-600, -490], [580, -530]]) {
+    const d = Math.hypot(px - c[0], py - c[1]);
+    if (d < m) m = d;
+  }
+  return m;
+}
+
+function scaledCampEncounterSize(baseCount, camp) {
+  if (camp.type === "fort" || camp.boss || baseCount <= 1) return baseCount;
+  const d = closestSecondarySettlementDist(camp.x, camp.y);
+  if (d < 132 && d > 42) return Math.max(1, Math.floor(baseCount * 0.52));
+  return baseCount;
+}
+
+function shouldSpawnWildMobCamp(camp) {
+  if (Math.hypot(camp.x, camp.y) <= PRIMARY_HUB_MOBS_CLEAR_RADIUS) return false;
+  if (isTooCloseToAnyPortal(camp.x, camp.y)) return false;
+  return true;
+}
+
 function nearFixedBuilding(tx, ty, pad = 9) {
   for (const b of BUILDINGS) {
     if (tx >= b.x - pad && tx < b.x + b.w + pad && ty >= b.y - pad && ty < b.y + b.h + pad) {
@@ -290,10 +341,17 @@ function buildScatterEnemyCamps() {
       let tx = Math.round(Math.cos(angle) * ring + (hash2(i, ring, 6101) - 0.5) * 22);
       let ty = Math.round(Math.sin(angle) * ring + (hash2(ring, i, 6102) - 0.5) * 22);
 
-      if (Math.hypot(tx, ty) < HUB_TOWN_GRASS_RADIUS + 24) continue;
-      if (Math.hypot(tx - 600, ty - 490) < 56) continue;
-      if (Math.hypot(tx + 600, ty + 490) < 56) continue;
-      if (Math.hypot(tx - 580, ty + 530) < 56) continue;
+      /** Match mob-free starter disk so scatter sites are not naked clearings without foes */
+      if (Math.hypot(tx, ty) < PRIMARY_HUB_MOBS_CLEAR_RADIUS + 28) continue;
+      if (isTooCloseToAnyPortal(tx, ty)) continue;
+
+      /** Wider berth around Oasis / Frost / Ember portal towns — fewer outskirts camps */
+      const dOas = Math.hypot(tx - 600, ty - 490);
+      const dFrs = Math.hypot(tx + 600, ty + 490);
+      const dEmb = Math.hypot(tx - 580, ty + 530);
+      if (dOas < 92 || dFrs < 92 || dEmb < 92) continue;
+      if ((dOas < 150 || dFrs < 150 || dEmb < 150) && pick > 0.38) continue;
+
       if (nearFixedBuilding(tx, ty)) continue;
 
       const tierGuess = Math.min(6, Math.max(1, Math.floor(ring / 96)));
@@ -558,6 +616,10 @@ function getProceduralSettlementTile(x, y) {
 // ---------------------------------------------------------------------------
 
 function getEnemyCampTile(x, y) {
+  if (isPortalCourtyardStoneTile(Math.floor(x), Math.floor(y))) {
+    return null;
+  }
+
   for (const camp of ENEMY_CAMPS) {
     const dx  = x - camp.x;
     const dy  = y - camp.y;
@@ -1102,17 +1164,6 @@ function isStreet(x, y) {
   return false;
 }
 
-// Stone plaza tiles surrounding each portal (approach road side left open by road checks)
-function isPortalPlaza(x, y) {
-  for (const portal of PORTALS) {
-    const dx = x - portal.x;
-    const dy = y - portal.y;
-    if (dx === 0 && dy === 0) continue;
-    if (Math.abs(dx) <= 3 && Math.abs(dy) <= 2) return true;
-  }
-  return false;
-}
-
 function getPortalAtTile(x, y) {
   return PORTALS.find((portal) => portal.x === x && portal.y === y) || null;
 }
@@ -1211,8 +1262,16 @@ function generateExteriorTile(x, y) {
     return TILE.TREE;
   }
 
+  /** Keep portal courtyards on stone ahead of PATH layers (hub paths & cross avenues). */
+  if (!portal && isPortalCourtyardStoneTile(tiGrid, tjGrid)) {
+    return TILE.STONE;
+  }
+
   // Main cross-roads radiate outward from the ring.
-  if ((ax <= 1 && ay <= 260) || (ay <= 1 && ax <= 260)) {
+  if (
+    !isPortalCourtyardStoneTile(tiGrid, tjGrid) &&
+    ((ax <= 1 && ay <= 260) || (ay <= 1 && ax <= 260))
+  ) {
     return TILE.PATH;
   }
 
@@ -1226,13 +1285,22 @@ function generateExteriorTile(x, y) {
     return TILE.PATH;
   }
 
-  if (dist < HUB_TOWN_GRASS_RADIUS + 35 && HUB_PATH_TILE_KEYS.has(hk)) {
+  if (
+    !isPortalCourtyardStoneTile(tiGrid, tjGrid) &&
+    dist < HUB_TOWN_GRASS_RADIUS + 35 &&
+    HUB_PATH_TILE_KEYS.has(hk)
+  ) {
     return TILE.PATH;
   }
 
   if (isStoneHighway(tiGrid, tjGrid)) {
     return TILE.STONE;
   }
+
+  if (!portal && isPortalCourtyardStoneTile(tiGrid, tjGrid)) {
+    return TILE.STONE;
+  }
+
   if (isThinFootpath(tiGrid, tjGrid)) {
     return TILE.PATH;
   }
@@ -1240,6 +1308,8 @@ function generateExteriorTile(x, y) {
   /** Allotment gardens beside homes — applied only after arterial paths so road spines keep PATH/ST tiles */
   const distPlots = Math.hypot(tiGrid + 0.5, tjGrid + 0.5);
   if (
+    !portal &&
+    !isPortalCourtyardStoneTile(tiGrid, tjGrid) &&
     distPlots >= 21 &&
     distPlots <= HUB_TOWN_GRASS_RADIUS + 9 &&
     HUB_GARDEN_TILE_KEYS.has(hk)
@@ -1247,8 +1317,7 @@ function generateExteriorTile(x, y) {
     return hash2(tiGrid, tjGrid, 8843) > 0.61 ? TILE.FLOWERS : TILE.DARK_GRASS;
   }
 
-  // Stone plaza surrounding each portal (roads already handled above, so only non-road tiles reach here)
-  if (isPortalPlaza(x, y)) {
+  if (!portal && isPortalCourtyardStoneTile(tiGrid, tjGrid)) {
     return TILE.STONE;
   }
 
@@ -1533,5 +1602,11 @@ module.exports = {
   southDoorAnchorWorldX,
   southDoorLocalXs,
   southDoorLocalCenterOffset,
-  findRoadsideFeatureNear
+  findRoadsideFeatureNear,
+  PRIMARY_HUB_MOBS_CLEAR_RADIUS,
+  shouldSpawnWildMobCamp,
+  scaledCampEncounterSize,
+  PORTAL_CLEAR_STONE_RADIUS,
+  PORTAL_CAMP_CLEAR_RADIUS,
+  isTooCloseToAnyPortal
 };

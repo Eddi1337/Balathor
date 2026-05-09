@@ -256,6 +256,204 @@ function buildPathTiles(pathKeys, wallKeys, rects) {
   }
 }
 
+/** Hub-only portal tiles (same as world.PORTALS gates on the northern wall). */
+const HUB_GATE_PORTAL_TILES = Object.freeze([
+  [46, -76],
+  [-46, -76],
+  [0, -76]
+]);
+const PORTAL_COURTYARD_R = 10;
+const PORTAL_COURTYARD_R_SQ = PORTAL_COURTYARD_R * PORTAL_COURTYARD_R;
+
+function pruneTilesNearListedPortals(tileSet, portals) {
+  for (const k of [...tileSet]) {
+    const [tx, ty] = k.split(",").map(Number);
+    let hit = false;
+    for (const [px, py] of portals) {
+      const dx = tx - px;
+      const dy = ty - py;
+      if (dx * dx + dy * dy <= PORTAL_COURTYARD_R_SQ) {
+        hit = true;
+        break;
+      }
+    }
+    if (hit) tileSet.delete(k);
+  }
+}
+
+function tileBlocksCarving(tx, ty, wallKeys, rects) {
+  if (wallKeys.has(`${tx},${ty}`)) return true;
+  if (tx >= -1 && tx <= 1 && ty >= -1 && ty <= 1) return true;
+  if (pointInRects(tx + 0.52, ty + 0.52, rects, 0.02)) return true;
+  return false;
+}
+
+function bresCells(ax, ay, bx, by, out = []) {
+  let x0 = ax;
+  let y0 = ay;
+  const x1 = bx;
+  const y1 = by;
+  const dx = Math.abs(x1 - x0);
+  const sx = x0 < x1 ? 1 : -1;
+  const dy = -Math.abs(y1 - y0);
+  const sy = y0 < y1 ? 1 : -1;
+  let err = dx + dy;
+  while (true) {
+    out.push([x0, y0]);
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = 2 * err;
+    if (e2 >= dy) {
+      err += dy;
+      x0 += sx;
+    }
+    if (e2 <= dx) {
+      err += dx;
+      y0 += sy;
+    }
+  }
+  return out;
+}
+
+function carveCells(coords, pathKeys, wallKeys, rects) {
+  for (let i = 0; i < coords.length; i += 1) {
+    const c = coords[i];
+    const gx = c[0];
+    const gy = c[1];
+    if (tileBlocksCarving(gx, gy, wallKeys, rects)) continue;
+    pathKeys.add(`${gx},${gy}`);
+  }
+}
+
+function carveOrtho(ax, ay, bx, by, pathKeys, wallKeys, rects) {
+  const a = [];
+  bresCells(ax, ay, bx, ay, a);
+  const b = [];
+  bresCells(bx, ay, bx, by, b);
+  carveCells(a.concat(b), pathKeys, wallKeys, rects);
+}
+
+function carveOrthoAlt(ax, ay, bx, by, pathKeys, wallKeys, rects) {
+  const a = [];
+  bresCells(ax, ay, ax, by, a);
+  const bb = [];
+  bresCells(ax, by, bx, by, bb);
+  carveCells(a.concat(bb), pathKeys, wallKeys, rects);
+}
+
+function touchesPathNetwork(tx, ty, pathKeys, reach = 2) {
+  for (let dy = -reach; dy <= reach; dy += 1) {
+    for (let dx = -reach; dx <= reach; dx += 1) {
+      if (pathKeys.has(`${tx + dx},${ty + dy}`)) return true;
+    }
+  }
+  return false;
+}
+
+function nearestPathFootprint(tx, ty, pathKeys) {
+  let best = null;
+  let bd = 1e18;
+  for (const k of pathKeys) {
+    const [px, py] = k.split(",").map(Number);
+    const d = (px - tx) ** 2 + (py - ty) ** 2;
+    if (d < bd) {
+      bd = d;
+      best = [px, py];
+    }
+  }
+  return best;
+}
+
+/** Link every building south-door apron into the pavement graph. */
+function connectHouseDoorways(rects, pathKeys, wallKeys) {
+  for (const r of rects) {
+    const door = hubSouthDoorApprox(r.x, r.y, r.w, r.h);
+    const tx = Math.floor(door.sx);
+    const ty = Math.floor(door.sy);
+    if (touchesPathNetwork(tx, ty, pathKeys, 2)) continue;
+    const goal = nearestPathFootprint(tx, ty, pathKeys);
+    if (!goal) continue;
+    carveOrtho(tx, ty, goal[0], goal[1], pathKeys, wallKeys, rects);
+    if (!touchesPathNetwork(tx, ty, pathKeys, 2)) carveOrthoAlt(tx, ty, goal[0], goal[1], pathKeys, wallKeys, rects);
+    const direct = [];
+    bresCells(tx, ty, goal[0], goal[1], direct);
+    carveCells(direct, pathKeys, wallKeys, rects);
+  }
+}
+
+function pathAdjacentKeys(kStr, pathKeys) {
+  const [x0, y0] = kStr.split(",").map(Number);
+  const out = [];
+  for (const [dx, dy] of [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1]
+  ]) {
+    const nk = `${x0 + dx},${y0 + dy}`;
+    if (pathKeys.has(nk)) out.push(nk);
+  }
+  return out;
+}
+
+/** Bridge tiny disconnected pavement islands after pruning. */
+function mergePathComponents(pathKeys, wallKeys, rects) {
+  if (pathKeys.size < 100) return;
+  const visited = new Set();
+  const comps = [];
+  const keysArr = [...pathKeys];
+
+  for (let qi = 0; qi < keysArr.length; qi += 1) {
+    const start = keysArr[qi];
+    if (visited.has(start)) continue;
+    const bucket = [];
+    const stack = [start];
+    visited.add(start);
+    while (stack.length) {
+      const k = stack.pop();
+      bucket.push(k);
+      for (const nk of pathAdjacentKeys(k, pathKeys)) {
+        if (visited.has(nk)) continue;
+        visited.add(nk);
+        stack.push(nk);
+      }
+    }
+    comps.push(bucket);
+  }
+
+  comps.sort((a, b) => b.length - a.length);
+  if (comps.length < 2) return;
+
+  for (let ci = 1; ci < comps.length && ci <= 8; ci += 1) {
+    const isl = comps[ci];
+    if (isl.length > 560) continue;
+    let bestA = null;
+    let bestB = null;
+    let bd = 1e18;
+    /** Sample orphans — full bipartite scan is costly on large comps */
+    const sampleA = isl.length <= 240 ? isl : isl.filter((_, j) => j % 7 === 0);
+    const sampleB = comps[0];
+    const sampleBThin = sampleB.length <= 400 ? sampleB : sampleB.filter((_, j) => j % 11 === 0);
+    for (let ai = 0; ai < sampleA.length; ai += 1) {
+      const [ax, ay] = sampleA[ai].split(",").map(Number);
+      for (let bi = 0; bi < sampleBThin.length; bi += 1) {
+        const [bx, by] = sampleBThin[bi].split(",").map(Number);
+        const d = (ax - bx) ** 2 + (ay - by) ** 2;
+        if (d < bd) {
+          bd = d;
+          bestA = [ax, ay];
+          bestB = [bx, by];
+        }
+      }
+    }
+    if (!bestA || !bestB) continue;
+    carveOrtho(bestA[0], bestA[1], bestB[0], bestB[1], pathKeys, wallKeys, rects);
+    carveOrthoAlt(bestA[0], bestA[1], bestB[0], bestB[1], pathKeys, wallKeys, rects);
+    const cut = [];
+    bresCells(bestA[0], bestA[1], bestB[0], bestB[1], cut);
+    carveCells(cut, pathKeys, wallKeys, rects);
+  }
+}
+
 function addGardenPatches(gardenKeys, rects) {
   for (let i = 0; i < rects.length; i += 1) {
     const r = rects[i];
@@ -391,8 +589,14 @@ function computeHubDistrict() {
   for (const k of [...pathKeys]) {
     if (wallKeys.has(k)) pathKeys.delete(k);
   }
+
+  pruneTilesNearListedPortals(pathKeys, HUB_GATE_PORTAL_TILES);
+  connectHouseDoorways(rects, pathKeys, wallKeys);
+  mergePathComponents(pathKeys, wallKeys, rects);
+
   /** Gardens after paths — prune garden keys conflicting with roads */
   addGardenPatches(gardenKeys, rects);
+  pruneTilesNearListedPortals(gardenKeys, HUB_GATE_PORTAL_TILES);
   for (const kk of [...gardenKeys]) {
     const [gx, gy] = kk.split(",").map(Number);
     if (
