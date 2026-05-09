@@ -16,7 +16,15 @@ const {
   isBlockedCircle,
   spawnPoint
 } = require("./world");
-const { updateNpcs, getNpcSnapshot, getNpcById, getTraderDefinitions } = require("./npcs");
+const {
+  updateNpcs,
+  getNpcSnapshot,
+  getNpcById,
+  getTraderDefinitions,
+  syncSoldCompanionIdsFromAccounts,
+  registerCompanionSold,
+  getCompanionNpcTemplate
+} = require("./npcs");
 const {
   openWorldDb,
   loadBuildingOwnership,
@@ -377,6 +385,7 @@ const ownedBuildings = loadBuildingOwnership(worldDb); // key: "x,y" → { owner
 const FOR_SALE_BUILDINGS = BUILDING_LIST.filter(b => b.forSale);
 
 const accountStore = loadAccountStore();
+syncSoldCompanionIdsFromAccounts(accountStore.accounts);
 seedModAccounts();
 const clients = new Map();
 const chunkCache = new Map();
@@ -661,6 +670,9 @@ function serializePlayer(player) {
     facing: Number(player.facing.toFixed(3)),
     ...(typeof player.homeBuildingKey === "string" && player.homeBuildingKey
       ? { homeBuildingKey: player.homeBuildingKey }
+      : {}),
+    ...(player.houseCompanion && typeof player.houseCompanion === "object"
+      ? { houseCompanion: player.houseCompanion }
       : {})
   };
 }
@@ -674,6 +686,106 @@ function sanitizeHomeBuildingKey(raw) {
     return null;
   }
   return `${m[1]},${m[2]}`;
+}
+
+function sanitizeHouseCompanion(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const npcId = typeof raw.npcId === "string" ? raw.npcId.slice(0, 96) : null;
+  if (!npcId) {
+    return null;
+  }
+  return {
+    npcId,
+    name: sanitizeName(raw.name),
+    bondTag: raw.bondTag === "bf" ? "bf" : "gf",
+    classId: sanitizeChoice(raw.classId, CLASS_IDS, "ranger"),
+    primary: sanitizeColor(raw.primary, "#fca5a5"),
+    accent: sanitizeColor(raw.accent, "#ffd166")
+  };
+}
+
+function sendCompanionPurchaseOffer(npc, shoppingClient, nowMs) {
+  const p = shoppingClient.player;
+  if (!npc || typeof npc.companionPrice !== "number" || !p || p.houseCompanion) {
+    return;
+  }
+  const gate = `${npc.id}:${p.id}`;
+  if (shoppingClient._companionGateKey === gate && (shoppingClient._companionGateUntil || 0) > nowMs) {
+    return;
+  }
+  shoppingClient._companionGateKey = gate;
+  shoppingClient._companionGateUntil = nowMs + 90000;
+
+  send(shoppingClient, {
+    type: "companionOffer",
+    npcId: npc.id,
+    npcName: npc.name,
+    bondTag: npc.bondTag === "bf" ? "bf" : "gf",
+    price: npc.companionPrice,
+    line:
+      npc.bondTag === "bf"
+        ? "...Could I move in with you? It costs a little coin — I'd make it worth your while."
+        : "...I've been circling half the square. If you'd have me stay at your hearth, here's my pledge."
+  });
+}
+
+function handleBuyCompanion(client, message) {
+  const p = client.player;
+  if (!p || !client.account || !message || message.confirm !== true) {
+    return;
+  }
+  const npcId = typeof message.npcId === "string" ? message.npcId.slice(0, 96) : null;
+  const tpl = getCompanionNpcTemplate(npcId);
+  const npcLive = tpl ? getNpcById(npcId) : null;
+  if (!tpl || !npcLive || typeof tpl.companionPrice !== "number") {
+    send(client, { type: "serverMessage", message: "companion_unavailable" });
+    return;
+  }
+  const key = typeof p.homeBuildingKey === "string" ? sanitizeHomeBuildingKey(p.homeBuildingKey) : null;
+  if (!key) {
+    send(client, { type: "serverMessage", message: "companion_need_house" });
+    return;
+  }
+  const own = ownedBuildings.get(key);
+  if (!own || own.ownerAccountKey !== client.account.key) {
+    send(client, { type: "serverMessage", message: "companion_need_house" });
+    return;
+  }
+  if (p.houseCompanion) {
+    send(client, { type: "serverMessage", message: "companion_already" });
+    return;
+  }
+
+  const dist = Math.hypot(npcLive.x - p.x, npcLive.y - p.y);
+  if (dist > 3.2) {
+    send(client, { type: "serverMessage", message: "companion_too_far" });
+    return;
+  }
+
+  if (p.gold < tpl.companionPrice) {
+    send(client, { type: "serverMessage", message: "companion_gold", price: tpl.companionPrice });
+    return;
+  }
+
+  p.gold -= tpl.companionPrice;
+  p.houseCompanion = {
+    npcId: tpl.id,
+    name: tpl.name,
+    bondTag: tpl.bondTag === "bf" ? "bf" : "gf",
+    classId: tpl.classId,
+    primary: tpl.primary,
+    accent: tpl.accent
+  };
+  registerCompanionSold(tpl.id);
+  saveClientCharacter(client);
+  broadcastSnapshot();
+  pushChat({
+    kind: "system",
+    name: "Realm",
+    text: `${tpl.name} moves into your house and waits beside the hearth whenever you step inside.`,
+  });
 }
 
 function resolveOwnedHouseDoorOutside(building) {
@@ -858,6 +970,7 @@ function simulate() {
     const length = Math.hypot(dx, dy);
 
     if (length > 0) {
+      client.player._stillAccumulator = 0;
       dx /= length;
       dy /= length;
 
@@ -877,13 +990,34 @@ function simulate() {
       client.player.moving = true;
     } else {
       client.player.moving = false;
+      client.player._stillAccumulator = (client.player._stillAccumulator || 0) + dt;
     }
 
     handleDoorTravel(client);
     handlePortalTravel(client);
   }
 
-  updateNpcs(dt, pushChat, computeNpcActivationBounds());
+  const companionAiTargets = [];
+  for (const c of clients.values()) {
+    const p = c.player;
+    if (!p?.homeBuildingKey || p.houseCompanion) continue;
+    const own = ownedBuildings.get(String(p.homeBuildingKey));
+    if (!own || !c.account || own.ownerAccountKey !== c.account.key) continue;
+    companionAiTargets.push({
+      player: p,
+      client: c,
+      stillAccumulator: p._stillAccumulator || 0
+    });
+  }
+
+  updateNpcs(dt, pushChat, computeNpcActivationBounds(), {
+    targets: companionAiTargets,
+    tryOffer(npc, buddyRow) {
+      if (buddyRow?.client) {
+        sendCompanionPurchaseOffer(npc, buddyRow.client, Date.now());
+      }
+    }
+  });
   updateMobs(dt, computePlayerViewUnionBounds(CHAT_VIEW_MARGIN_TILES + MOB_ACTIVITY_MARGIN_TILES));
 
   processConsecrationZones(Date.now());
@@ -1259,6 +1393,11 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "buyCompanion") {
+    handleBuyCompanion(client, message);
+    return;
+  }
+
   if (message.type === "equipItem") {
     handleEquipItem(client, message);
     return;
@@ -1511,7 +1650,8 @@ function joinWorld(client, message, savedCharacter = null) {
     y: spawn.y,
     facing: 0,
     moving: false,
-    isMod
+    isMod,
+    _stillAccumulator: 0
   };
 
   let homeBuildingKey = sanitizeHomeBuildingKey(savedCharacter?.homeBuildingKey);
@@ -1522,6 +1662,7 @@ function joinWorld(client, message, savedCharacter = null) {
     }
   }
   client.player.homeBuildingKey = homeBuildingKey;
+  client.player.houseCompanion = sanitizeHouseCompanion(savedCharacter?.houseCompanion);
 
   applyDerivedPlayerStats(client.player);
   client.player.hp = savedCharacter
@@ -2484,6 +2625,9 @@ function broadcastSnapshot() {
       p.homeBuildingKey
     ) {
       snap.homeBuildingKey = p.homeBuildingKey;
+    }
+    if (viewerId && p.id === viewerId && p.houseCompanion) {
+      snap.houseCompanion = p.houseCompanion;
     }
     playerSnapCache.set(cacheKey, snap);
     return snap;

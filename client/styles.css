@@ -492,6 +492,35 @@ button:focus-visible {
   min-width: 100px;
 }
 
+.companion-offer-window {
+  width: min(360px, calc(100vw - 32px));
+  max-height: none;
+}
+
+.companion-offer-body {
+  display: grid;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.companion-offer-line {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.companion-offer-line strong {
+  color: var(--text);
+}
+
+.companion-offer-hint {
+  margin: 0;
+  font-size: 11px;
+  color: rgba(248, 250, 255, 0.55);
+  line-height: 1.35;
+}
+
 .trader-stock {
   display: grid;
   gap: 6px;

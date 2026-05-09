@@ -303,7 +303,61 @@ const DEFINITIONS = [
       "Sell me your extras — weight is money on the road.",
     ],
   },
+  {
+    id: "npc_rile",
+    name: "Riley",
+    classId: "ranger",
+    primary: "#5c4a52",
+    accent: "#fca5a5",
+    homeX: 22,
+    homeY: 10,
+    patrolRadius: 11,
+    courtPlayer: true,
+    companionPrice: 480,
+    bondTag: "gf",
+    dialogue: [
+      "You've got kind eyes.",
+      "I keep wondering what your living room looks like.",
+      "...That came out bolder than I meant.",
+      "If you hold still for half a heartbeat, I'd tell you a secret.",
+      "I like people who finish what they build — roofs, nests, friendships.",
+    ]
+  },
+  {
+    id: "npc_jax",
+    name: "Jax",
+    classId: "knight",
+    primary: "#3d4f5f",
+    accent: "#fde68a",
+    homeX: 44,
+    homeY: 4,
+    patrolRadius: 10,
+    courtPlayer: true,
+    companionPrice: 455,
+    bondTag: "bf",
+    dialogue: [
+      "Busy mind, restless feet?",
+      "I've been known to linger where someone listens.",
+      "Home isn't four walls unless someone shares it.",
+      "Stand with me — no swords, just words.",
+      "If you planted roots here, you'd make the place brighter.",
+    ]
+  },
 ];
+
+const soldCompanionNpcIds = new Set();
+const SOCIAL_PAIR_INTERVAL_MS = 11000;
+const SOCIAL_NEAR_HOME = 90;
+/** Generic lines overheard during NPC→NPC chatter */
+const SOCIAL_OVERHEARD = [
+  "Any news from the east road?",
+  "Hard to believe harvest's almost here.",
+  "Keep your cloak dry — drizzle's coming.",
+  "The smith's apprentice still burning himself?",
+  "…and then I told him, not in my orchard!",
+];
+
+let lastNpcSocialAttempt = 0;
 
 function npcPatrolIntersectsBounds(npc, bounds) {
   if (!bounds) {
@@ -333,15 +387,308 @@ const npcs = DEFINITIONS.map((def) => ({
     Math.random() * (CHAT_INTERVAL_MAX - CHAT_INTERVAL_MIN),
 }));
 
-function updateNpcs(dt, onChat, activationBounds) {
+function syncSoldCompanionIdsFromAccounts(accountsRoot) {
+  soldCompanionNpcIds.clear();
+  if (!accountsRoot || typeof accountsRoot !== "object") {
+    return;
+  }
+  for (const account of Object.values(accountsRoot)) {
+    const id = account?.character?.houseCompanion?.npcId;
+    if (typeof id === "string") {
+      soldCompanionNpcIds.add(id.slice(0, 96));
+    }
+  }
+}
+
+function registerCompanionSold(npcId) {
+  if (typeof npcId === "string") {
+    soldCompanionNpcIds.add(npcId.slice(0, 96));
+  }
+}
+
+function getNpcBuddy(npc) {
+  if (!npc?._meetPeerId) {
+    return null;
+  }
+  return npcs.find((n) => n.id === npc._meetPeerId) || null;
+}
+
+/** Try to arrange a short meet-up dialogue between two patrolling villagers. */
+function maybeStartNpcMeeting(now, activationBounds) {
+  if (!activationBounds || now - lastNpcSocialAttempt < SOCIAL_PAIR_INTERVAL_MS) {
+    return;
+  }
+  lastNpcSocialAttempt = now;
+  if (Math.random() > 0.42) {
+    return;
+  }
+
+  const cand = npcs.filter(
+    (n) =>
+      npcPatrolIntersectsBounds(n, activationBounds) &&
+      !n.isTrader &&
+      !n.courtPlayer &&
+      typeof n.companionPrice !== "number" &&
+      !soldCompanionNpcIds.has(n.id) &&
+      !n._meetPeerId &&
+      n.patrolRadius >= 5 &&
+      Math.hypot(n.homeX, n.homeY) <= SOCIAL_NEAR_HOME
+  );
+  if (cand.length < 2) {
+    return;
+  }
+
+  shuffleInPlace(cand);
+  let a = null;
+  let b = null;
+  for (let i = 0; i < cand.length && !b; i += 1) {
+    for (let j = i + 1; j < cand.length; j += 1) {
+      if (Math.hypot(cand[i].homeX - cand[j].homeX, cand[i].homeY - cand[j].homeY) < 76) {
+        a = cand[i];
+        b = cand[j];
+        break;
+      }
+    }
+  }
+  if (!a || !b) {
+    return;
+  }
+
+  const meetX = (a.x + b.x) / 2;
+  const meetY = (a.y + b.y) / 2;
+
+  let mx = meetX + (Math.random() * 1.8 - 0.9);
+  let my = meetY + (Math.random() * 1.8 - 0.9);
+  if (!isBlockedCircle(mx, my)) {
+    a._meetPeerId = b.id;
+    b._meetPeerId = a.id;
+    a._meetPhase = "walk";
+    b._meetPhase = "walk";
+    a._meetEndAt = now + 16000;
+    b._meetEndAt = now + 16000;
+    a._meetNextLineAt = now + 2200;
+    b._meetNextLineAt = now + 2200 + 550;
+    a._meetTurnSpeaker = Math.random() < 0.5 ? a.id : b.id;
+
+    mx = clampMeet(mx);
+    my = clampMeet(my);
+    a._targetX = mx + 0.35;
+    a._targetY = my;
+    b._targetX = mx - 0.35;
+    b._targetY = my;
+    a._meetMidX = mx;
+    b._meetMidX = mx;
+    a._meetMidY = my;
+    b._meetMidY = my;
+    a._nextMoveAt = now + 28000;
+    b._nextMoveAt = now + 28000;
+  }
+}
+
+function clampMeet(value) {
+  return Math.round(value * 40) / 40;
+}
+
+function shuffleInPlace(arr) {
+  for (let i = arr.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+}
+
+function clearMeeting(npc) {
+  const buddy = getNpcBuddy(npc);
+  npc._meetPeerId = undefined;
+  npc._meetPhase = undefined;
+  npc._meetEndAt = undefined;
+  npc._meetNextLineAt = undefined;
+  npc._meetTurnSpeaker = undefined;
+  npc._meetMidX = undefined;
+  npc._meetMidY = undefined;
+  if (buddy) {
+    buddy._meetPeerId = undefined;
+    buddy._meetPhase = undefined;
+    buddy._meetEndAt = undefined;
+    buddy._meetNextLineAt = undefined;
+    buddy._meetTurnSpeaker = undefined;
+    buddy._meetMidX = undefined;
+    buddy._meetMidY = undefined;
+  }
+}
+
+/** Advance scripted meet phases and timed lines. Returns true while npc is in a pairing. */
+function tickNpcMeeting(npc, now, dt, onChat) {
+  if (!npc._meetPeerId || !npc._meetPhase || !npc._meetEndAt) {
+    return false;
+  }
+
+  const buddy = getNpcBuddy(npc);
+  if (!buddy || now >= npc._meetEndAt) {
+    clearMeeting(npc);
+    return false;
+  }
+
+  if (npc.id > buddy.id) {
+    /** Only buddy with lexicographically lower id advances pair chatter to avoid duplication */
+    return npc._meetPhase === "talk";
+  }
+
+  if (npc._meetPhase === "walk") {
+    const midOk =
+      typeof npc._meetMidX === "number" &&
+      typeof npc._meetMidY === "number" &&
+      Math.hypot(npc.x - npc._meetMidX, npc.y - npc._meetMidY) < 0.55 &&
+      Math.hypot(buddy.x - npc._meetMidX, buddy.y - npc._meetMidY) < 0.55;
+    if (midOk || now > npc._meetEndAt - 4500) {
+      npc._meetPhase = "talk";
+      buddy._meetPhase = "talk";
+      npc.x = npc._meetMidX + 0.3;
+      npc.y = npc._meetMidY;
+      buddy.x = npc._meetMidX - 0.3;
+      buddy.y = npc._meetMidY;
+      npc.moving = false;
+      buddy.moving = false;
+      npc._targetX = npc.x;
+      npc._targetY = npc.y;
+      buddy._targetX = buddy.x;
+      buddy._targetY = buddy.y;
+      npc._meetTurnSpeaker =
+        npc._meetTurnSpeaker === buddy.id ? buddy.id : npc.id;
+    }
+  }
+
+  if (npc._meetPhase === "talk" && now >= npc._meetNextLineAt && now < npc._meetEndAt - 400) {
+    const speaker =
+      npc._meetTurnSpeaker === buddy.id ? buddy : npc;
+    const linePick =
+      Math.random() < 0.55
+        ? SOCIAL_OVERHEARD[Math.floor(Math.random() * SOCIAL_OVERHEARD.length)]
+        : speaker.dialogue[Math.floor(Math.random() * speaker.dialogue.length)];
+    onChat({
+      kind: "npc",
+      fromId: speaker.id,
+      name: speaker.name,
+      text: linePick,
+      x: speaker.x,
+      y: speaker.y,
+      social: true
+    });
+    npc._meetTurnSpeaker = speaker.id === buddy.id ? npc.id : buddy.id;
+    npc._meetNextLineAt = now + 3200 + Math.random() * 2200;
+    buddy._meetNextLineAt = npc._meetNextLineAt;
+  }
+
+  return npc._meetPhase === "talk";
+}
+
+/**
+ * Romantic companion NPC seeks homeowners; offer only after player stood still ≥3s in earshot.
+ * @returns {boolean} true if court AI took over npc movement targeting this tick
+ */
+function applyCompanionCourt(npc, companionCtx, onChat, now) {
+  if (!companionCtx || typeof npc.companionPrice !== "number" || soldCompanionNpcIds.has(npc.id)) {
+    return false;
+  }
+  if (npc._meetPeerId) {
+    return false;
+  }
+
+  let best = null;
+  let bestD = Infinity;
+  for (const row of companionCtx.targets) {
+    const p = row.player;
+    if (!p?.homeBuildingKey || p.houseCompanion) {
+      continue;
+    }
+    const dx = npc.x - p.x;
+    const dy = npc.y - p.y;
+    const dd = dx * dx + dy * dy;
+    if (dd < bestD) {
+      bestD = dd;
+      best = row;
+    }
+  }
+
+  const COURT_RANGE = 32;
+  if (!best || bestD > COURT_RANGE * COURT_RANGE) {
+    npc._courtOfferLatch = false;
+    npc._courtLineAt = 0;
+    return false;
+  }
+
+  const px = best.player.x;
+  const py = best.player.y;
+  const angle = Math.atan2(py - npc.y, px - npc.x);
+  npc._targetX = px - Math.cos(angle) * 1.52;
+  npc._targetY = py - Math.sin(angle) * 1.52;
+
+  const hear = Math.hypot(npc.x - px, npc.y - py) < 2.35;
+  const still = Number(best.stillAccumulator) || 0;
+
+  if (!hear || still < 0.75) {
+    npc._courtOfferLatch = false;
+  }
+
+  if (
+    hear &&
+    still >= 3 &&
+    !best.player.houseCompanion &&
+    !npc._courtOfferLatch &&
+    (npc._courtOfferCooldownUntil || 0) <= now
+  ) {
+    npc._courtOfferCooldownUntil = now + 75000;
+    npc._courtOfferLatch = true;
+    if (typeof companionCtx.tryOffer === "function") {
+      companionCtx.tryOffer(npc, best);
+    }
+  }
+
+  if (hear && now - (npc._courtLineAt || 0) > 7400) {
+    npc._courtLineAt = now;
+    const flirt = npc.dialogue[Math.floor(Math.random() * npc.dialogue.length)];
+    onChat({
+      kind: "npc",
+      fromId: npc.id,
+      name: npc.name,
+      text: flirt,
+      x: npc.x,
+      y: npc.y
+    });
+  }
+
+  return true;
+}
+
+function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
   if (!activationBounds) {
     return;
   }
 
   const now = Date.now();
+  maybeStartNpcMeeting(now, activationBounds);
 
   for (const npc of npcs) {
     if (!npcPatrolIntersectsBounds(npc, activationBounds)) {
+      continue;
+    }
+
+    /** Retired romance NPCs idle at template home (clients see them only inside your house). */
+    if (soldCompanionNpcIds.has(npc.id)) {
+      npc.moving = false;
+      npc.x = npc.homeX;
+      npc.y = npc.homeY;
+      npc._targetX = npc.x;
+      npc._targetY = npc.y;
+      continue;
+    }
+
+    const inMeetTalk = tickNpcMeeting(npc, now, dt, onChat);
+    let courtSteers = false;
+    if (companionCtx && typeof npc.companionPrice === "number") {
+      courtSteers = applyCompanionCourt(npc, companionCtx, onChat, now);
+    }
+
+    if (inMeetTalk) {
       continue;
     }
 
@@ -352,7 +699,8 @@ function updateNpcs(dt, onChat, activationBounds) {
     if (dist < 0.08) {
       npc.moving = false;
 
-      if (now >= npc._nextMoveAt) {
+      const socialWalk = npc._meetPeerId && npc._meetPhase === "walk";
+      if (!(courtSteers || socialWalk) && now >= npc._nextMoveAt && !soldCompanionNpcIds.has(npc.id)) {
         const angle = Math.random() * Math.PI * 2;
         const radius = Math.random() * npc.patrolRadius;
         const tx = npc.homeX + Math.cos(angle) * radius;
@@ -377,13 +725,13 @@ function updateNpcs(dt, onChat, activationBounds) {
 
       if (!isBlockedCircle(nextX, npc.y)) {
         npc.x = nextX;
-      } else {
+      } else if (!soldCompanionNpcIds.has(npc.id)) {
         npc._targetX = npc.homeX;
       }
 
       if (!isBlockedCircle(npc.x, nextY)) {
         npc.y = nextY;
-      } else {
+      } else if (!soldCompanionNpcIds.has(npc.id)) {
         npc._targetY = npc.homeY;
       }
 
@@ -391,7 +739,11 @@ function updateNpcs(dt, onChat, activationBounds) {
       npc.moving = true;
     }
 
-    if (now >= npc._nextChatAt) {
+    const skipSoloRamble =
+      (typeof npc.companionPrice === "number" && !soldCompanionNpcIds.has(npc.id)) ||
+      Boolean(npc._meetPeerId);
+
+    if (!skipSoloRamble && now >= npc._nextChatAt) {
       const line = npc.dialogue[Math.floor(Math.random() * npc.dialogue.length)];
       onChat({ kind: "npc", fromId: npc.id, name: npc.name, text: line, x: npc.x, y: npc.y });
       npc._nextChatAt =
@@ -403,26 +755,44 @@ function updateNpcs(dt, onChat, activationBounds) {
 }
 
 function getNpcSnapshot() {
-  return npcs.map((npc) => ({
-    id: npc.id,
-    name: npc.name,
-    classId: npc.classId,
-    primary: npc.primary,
-    accent: npc.accent,
-    x: Number(npc.x.toFixed(3)),
-    y: Number(npc.y.toFixed(3)),
-    facing: Number(npc.facing.toFixed(3)),
-    moving: npc.moving,
-    isTrader: npc.isTrader || false,
-  }));
+  return npcs
+    .filter((npc) => !soldCompanionNpcIds.has(npc.id))
+    .map((npc) => ({
+      id: npc.id,
+      name: npc.name,
+      classId: npc.classId,
+      primary: npc.primary,
+      accent: npc.accent,
+      x: Number(npc.x.toFixed(3)),
+      y: Number(npc.y.toFixed(3)),
+      facing: Number(npc.facing.toFixed(3)),
+      moving: npc.moving,
+      isTrader: npc.isTrader || false,
+    }));
 }
 
 function getNpcById(id) {
   return npcs.find((npc) => npc.id === id) || null;
 }
 
+/** Template for romance NPCs — works even after that NPC is retired from world patrol. */
+function getCompanionNpcTemplate(id) {
+  if (typeof id !== "string") {
+    return null;
+  }
+  return DEFINITIONS.find((d) => d.id === id && typeof d.companionPrice === "number") || null;
+}
+
 function getTraderDefinitions() {
   return DEFINITIONS.filter((d) => d.isTrader);
 }
 
-module.exports = { updateNpcs, getNpcSnapshot, getNpcById, getTraderDefinitions };
+module.exports = {
+  updateNpcs,
+  getNpcSnapshot,
+  getNpcById,
+  getTraderDefinitions,
+  syncSoldCompanionIdsFromAccounts,
+  registerCompanionSold,
+  getCompanionNpcTemplate
+};

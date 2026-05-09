@@ -87,6 +87,13 @@ const buyHousePriceLine = document.querySelector("#buyHousePriceLine");
 const buyHouseGoldLine = document.querySelector("#buyHouseGoldLine");
 const buyHouseConfirm = document.querySelector("#buyHouseConfirm");
 const buyHouseCancel = document.querySelector("#buyHouseCancel");
+const companionOfferPanel = document.querySelector("#companionOfferPanel");
+const companionOfferTitle = document.querySelector("#companionOfferTitle");
+const companionOfferLine = document.querySelector("#companionOfferLine");
+const companionOfferCost = document.querySelector("#companionOfferCost");
+const companionOfferAccept = document.querySelector("#companionOfferAccept");
+const companionOfferDecline = document.querySelector("#companionOfferDecline");
+const companionOfferClose = document.querySelector("#companionOfferClose");
 const safeZoneIndicator = document.querySelector("#safeZoneIndicator");
 let safeZoneTooltipPinTimer = null;
 
@@ -256,6 +263,7 @@ const state = {
   activeWindow: null,
   buildingOwnership: new Map(),
   buyHouseOffer: null,
+  pendingCompanionInvite: null,
   traderNpcId: null,
   traderItems: [],
   lastViewSentAt: 0,
@@ -707,6 +715,23 @@ function handleServerMessage(message) {
     return;
   }
 
+  if (message.type === "companionOffer") {
+    if (
+      typeof message.npcId === "string" &&
+      Number.isFinite(Number(message.price)) &&
+      typeof message.line === "string"
+    ) {
+      openCompanionInvitePanel({
+        npcId: message.npcId,
+        npcName: message.npcName || "Someone",
+        bondTag: message.bondTag === "bf" ? "bf" : "gf",
+        price: Number(message.price),
+        line: message.line
+      });
+    }
+    return;
+  }
+
   if (message.type === "traderInventory") {
     state.traderNpcId = message.npcId;
     state.traderItems = message.items || [];
@@ -756,6 +781,16 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: `Bought ${message.itemName}` });
     } else if (message.message === "item_sold") {
       appendChat({ kind: "system", name: "Realm", text: `Sold ${message.itemName} for ${message.goldGained}g` });
+    } else if (message.message === "companion_need_house") {
+      appendChat({ kind: "system", name: "Realm", text: "You need to own a house before anyone can move in." });
+    } else if (message.message === "companion_already") {
+      appendChat({ kind: "system", name: "Realm", text: "You already welcomed someone home." });
+    } else if (message.message === "companion_too_far") {
+      appendChat({ kind: "system", name: "Realm", text: "Walk closer together and try again." });
+    } else if (message.message === "companion_gold") {
+      appendChat({ kind: "system", name: "Realm", text: `Not enough gold (needs ${Number(message.price) || 0}g)` });
+    } else if (message.message === "companion_unavailable") {
+      appendChat({ kind: "system", name: "Realm", text: "That person's path has already changed." });
     } else if (message.itemName) {
       appendChat({ kind: "system", name: "Realm", text: `${message.itemName}` });
     }
@@ -1275,6 +1310,15 @@ function wireUi() {
   buyHouseCancel?.addEventListener("click", () => closeBuyHousePanel());
   buyHouseConfirm?.addEventListener("click", () => confirmBuyHouseFromPanel());
 
+  companionOfferClose?.addEventListener("click", () => closeCompanionInvitePanel());
+  companionOfferDecline?.addEventListener("click", () => closeCompanionInvitePanel());
+  companionOfferAccept?.addEventListener("click", () => {
+    const inv = state.pendingCompanionInvite;
+    if (!inv?.npcId || !state.joined) return;
+    send({ type: "buyCompanion", npcId: inv.npcId, confirm: true });
+    closeCompanionInvitePanel();
+  });
+
   traderStock.addEventListener("pointerdown", (event) => {
     const button = event.target.closest("[data-trader-buy]");
     if (!button || !state.traderNpcId) return;
@@ -1349,6 +1393,7 @@ function wireUi() {
   makeDraggable(shopPanel);
   makeDraggable(traderPanel);
   if (buyHousePanel) makeDraggable(buyHousePanel);
+  if (companionOfferPanel) makeDraggable(companionOfferPanel);
   makeDraggable(talentPanel);
 
   // Delegated dragstart for ability slots (avoids listener accumulation across renders)
@@ -1530,6 +1575,10 @@ function wireUi() {
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       event.preventDefault();
+      if (state.joined && state.pendingCompanionInvite) {
+        closeCompanionInvitePanel();
+        return;
+      }
       if (state.joined && state.buyHouseOffer) {
         closeBuyHousePanel();
         return;
@@ -1982,6 +2031,29 @@ function syncSafeZoneIndicator(self) {
 function closeBuyHousePanel() {
   state.buyHouseOffer = null;
   buyHousePanel?.classList.add("hidden");
+}
+
+function closeCompanionInvitePanel() {
+  state.pendingCompanionInvite = null;
+  companionOfferPanel?.classList.add("hidden");
+}
+
+function openCompanionInvitePanel(inv) {
+  if (!companionOfferPanel || !inv || !state.joined) {
+    return;
+  }
+  state.pendingCompanionInvite = inv;
+  const roleLabel = inv.bondTag === "bf" ? "Boyfriend" : "Girlfriend";
+  if (companionOfferTitle) {
+    companionOfferTitle.textContent = `${inv.npcName} — ${roleLabel}`;
+  }
+  if (companionOfferLine) {
+    companionOfferLine.textContent = inv.line || "…";
+  }
+  if (companionOfferCost) {
+    companionOfferCost.innerHTML = `They ask for <strong>${Number(inv.price) || 0}g</strong> to settle in.`;
+  }
+  companionOfferPanel.classList.remove("hidden");
 }
 
 function renderBuyHousePanel() {
@@ -3980,6 +4052,40 @@ function drawPlayers() {
       drawMob(entity, sx, sy);
     } else {
       drawCharacter(entity, sx, sy, isNpc);
+    }
+  }
+
+  if (buyInterior) {
+    const self = state.players.get(state.selfId);
+    const hc = self?.houseCompanion;
+    const hk = typeof self?.homeBuildingKey === "string" ? self.homeBuildingKey : "";
+    const bk = `${buyInterior.x},${buyInterior.y}`;
+    if (hc && hk === bk) {
+      const wx = buyInterior.x + buyInterior.w / 2 + 0.12;
+      const wy = buyInterior.y + buyInterior.h - 2.45;
+      const anchor = interiorFloorAnchorFromWorld(wx, wy, halfW, halfH);
+      const ent = {
+        id: `_house_companion_${hc.npcId}`,
+        name: hc.name || "Companion",
+        classId: hc.classId || "ranger",
+        primary: hc.primary,
+        accent: hc.accent,
+        torsoStyle: hc.classId === "knight" ? "armor" : hc.classId === "mage" ? "robe" : "tunic",
+        torsoColor: hc.primary,
+        weaponColor: hc.accent,
+        weaponKind:
+          hc.classId === "knight" ? "sword"
+            : hc.classId === "mage" ? "staff"
+              : "bow",
+        x: wx,
+        y: wy,
+        facing: Math.PI / 2,
+        moving: false,
+        renderX: wx,
+        renderY: wy,
+        hp: null
+      };
+      drawCharacter(ent, anchor.cx, anchor.groundY + 10, true);
     }
   }
 }

@@ -43,7 +43,7 @@ function hash2(x, y, seed = 1337) {
 }
 
 // Hand-crafted buildings: starting town + portal destinations only.
-const BUILDINGS = [
+const FIXED_BUILDINGS = [
   // Central village – spread around the circular plaza, each with its own approach path.
   // North
   { x:  -6, y: -28, w: 11, h:  9, name: "Home",             type: "house",     forSale: false },
@@ -80,6 +80,33 @@ const BUILDINGS = [
   { x: 566, y: -518, w:  8, h:  7, name: "Forge Hut",        type: "hut",       forSale: false },
   { x: 582, y: -520, w: 10, h:  8, name: "Watcher's Perch",  type: "treehouse", forSale: false },
 ];
+
+/** Small dwellings for villagers (paired to npcs.js patrol homes; not for sale). */
+const NPC_HOME_BUILDINGS = [
+  { x: 19, y: -74, w: 8, h: 7, name: "Mara's Cottage", type: "hut", forSale: false },
+  { x: -20, y: -72, w: 8, h: 7, name: "Thomas's Lodge", type: "hut", forSale: false },
+  { x: 10, y: -70, w: 8, h: 7, name: "Dale's Storehouse", type: "hut", forSale: false },
+  { x: -9, y: -45, w: 8, h: 7, name: "Aldric's Quarters", type: "hut", forSale: false },
+  { x: 69, y: -3, w: 8, h: 7, name: "Ren's Bunkhouse", type: "hut", forSale: false },
+  { x: 69, y: -24, w: 8, h: 7, name: "Lyssa's Shop-back", type: "hut", forSale: false },
+  { x: 43, y: 10, w: 8, h: 7, name: "Brom's Hovel", type: "hut", forSale: false },
+  { x: 60, y: -8, w: 8, h: 7, name: "Sera's Watch-hut", type: "hut", forSale: false },
+  { x: -5, y: 70, w: 8, h: 7, name: "Holt's Cottage", type: "hut", forSale: false },
+  { x: 11, y: 50, w: 8, h: 7, name: "Greta's Cellar Hut", type: "hut", forSale: false },
+  { x: -16, y: 70, w: 8, h: 7, name: "Dot's Mill Shack", type: "hut", forSale: false },
+  { x: -17, y: 80, w: 8, h: 7, name: "Wyn's Pasture Hut", type: "hut", forSale: false },
+  { x: -65, y: -2, w: 8, h: 7, name: "Voss's Lean-to", type: "hut", forSale: false },
+  { x: -73, y: -20, w: 8, h: 7, name: "Mira's Annex", type: "hut", forSale: false },
+  { x: -75, y: 20, w: 8, h: 7, name: "Cael's Hovel", type: "hut", forSale: false },
+  { x: -63, y: 10, w: 8, h: 7, name: "Zix's Camp Hut", type: "hut", forSale: false },
+  { x: 15, y: -10, w: 8, h: 7, name: "Kael's Storeroom", type: "hut", forSale: false },
+  { x: -12, y: 12, w: 8, h: 7, name: "Ebb's Lodging", type: "hut", forSale: false },
+  { x: -12, y: -10, w: 8, h: 7, name: "Ana's Script House", type: "hut", forSale: false },
+  { x: 38, y: 20, w: 8, h: 7, name: "Riley's Bungalow", type: "hut", forSale: false },
+  { x: 56, y: -2, w: 8, h: 7, name: "Jax's Flat", type: "hut", forSale: false }
+];
+
+const BUILDINGS = FIXED_BUILDINGS.concat(NPC_HOME_BUILDINGS);
 
 // Fixed village clearing zones — only starting town + portal destinations.
 const VILLAGES = [
