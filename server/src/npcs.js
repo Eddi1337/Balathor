@@ -250,6 +250,59 @@ const DEFINITIONS = [
       "May I note your name for the record?",
     ],
   },
+
+  {
+    id: "npc_plaza_una", name: "Stallkeep Una",
+    classId: "ranger", primary: "#5c4632", accent: "#e8c040",
+    homeX: -14, homeY: -6, patrolRadius: 0,
+    isTrader: true,
+    dialogue: [
+      "Everything on this stall is priced for neighbours.",
+      "Arrows, twine, and trail biscuits — take your pick.",
+      "Pull up a stool; I don't bite.",
+      "The plaza's quiet today. Perfect for stocking up.",
+      "Coin honest, goods honest — that's my rule.",
+    ],
+  },
+  {
+    id: "npc_plaza_bram", name: "Hawker Bram",
+    classId: "knight", primary: "#4a3a28", accent: "#c49a6c",
+    homeX: 14, homeY: -6, patrolRadius: 0,
+    isTrader: true,
+    dialogue: [
+      "Fine steel wool, oils, and wax — maintain your kit!",
+      "I've walked every road out of this village; I know what sells.",
+      "Buy now before the caravans hike their prices.",
+      "That stool's reserved for customers. Fair warning.",
+      "Everything here I've tested myself in the field.",
+    ],
+  },
+  {
+    id: "npc_plaza_lulu", name: "Vendor Lulu",
+    classId: "mage", primary: "#4a3558", accent: "#9adbc9",
+    homeX: -10, homeY: 14, patrolRadius: 0,
+    isTrader: true,
+    dialogue: [
+      "Potions, dusts, and curious little charms.",
+      "My stock shifts with the moon — always something new.",
+      "Sit a spell; browsing's free.",
+      "Scholars argue. Travellers drink my teas and sleep sound.",
+      "If it glows slightly, that's how you know it's fresh.",
+    ],
+  },
+  {
+    id: "npc_plaza_otto", name: "Caravan Otto",
+    classId: "ranger", primary: "#3d4f3a", accent: "#f0e6a8",
+    homeX: 10, homeY: 14, patrolRadius: 0,
+    isTrader: true,
+    dialogue: [
+      "Salt, spice, leather straps — straight off the wagon.",
+      "I park here between runs east and west.",
+      "No haggling before noon; I'm not awake enough.",
+      "That stool means you're serious about buying.",
+      "Sell me your extras — weight is money on the road.",
+    ],
+  },
 ];
 
 function npcPatrolIntersectsBounds(npc, bounds) {

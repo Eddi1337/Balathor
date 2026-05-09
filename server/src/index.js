@@ -47,7 +47,7 @@ const INTERACT_RADIUS = 1.8;
 const SHOP_INTERACT_RADIUS = 1.75;
 const STARTING_GOLD = 120;
 const MAX_GROUND_ITEMS = 140;
-const TRADER_INTERACT_RADIUS = 3.5;
+const TRADER_INTERACT_RADIUS = 8;
 const MOB_AGGRO_RADIUS = 7.5;
 const MOB_ATTACK_RADIUS = 1.15;
 const MOB_ATTACK_COOLDOWN_MS = 1300;
@@ -689,10 +689,10 @@ function playerNearBuildingForPurchase(player, building) {
   const py = player.y;
   const doorX = building.x + building.w / 2;
   const doorY = building.y + building.h - 1;
-  if (Math.hypot(px - doorX, py - doorY) <= 4) return true;
+  if (Math.hypot(px - doorX, py - doorY) <= 8) return true;
   const signX = building.x - 0.5;
   const signY = building.y + building.h - 0.5;
-  return Math.hypot(px - signX, py - signY) <= 4;
+  return Math.hypot(px - signX, py - signY) <= 8;
 }
 
 function handlePortalTravel(client) {
