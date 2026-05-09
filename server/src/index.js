@@ -1235,6 +1235,30 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "lootChest") {
+    if (!client.player) {
+      return;
+    }
+    const chestId = typeof message.chestId === "string" ? message.chestId.slice(0, 96) : null;
+    if (!chestId) {
+      return;
+    }
+    const chest = chests.find((ch) => ch.id === chestId && !ch.opened);
+    if (!chest) {
+      send(client, { type: "serverMessage", message: "nothing_nearby" });
+      return;
+    }
+    if (
+      Math.hypot(chest.x - client.player.x, chest.y - client.player.y)
+      > INTERACT_RADIUS + 0.38
+    ) {
+      send(client, { type: "serverMessage", message: "nothing_nearby" });
+      return;
+    }
+    lootWorldChest(client, chest);
+    return;
+  }
+
   if (message.type === "equipItem") {
     handleEquipItem(client, message);
     return;
@@ -1723,6 +1747,20 @@ function handleModTeleport(client, message) {
   broadcastSnapshot();
 }
 
+function lootWorldChest(client, chest) {
+  if (!client.player || !chest || chest.opened) {
+    return false;
+  }
+  if (!addItemToInventory(client.player, cloneItem(chest.item))) {
+    send(client, { type: "serverMessage", message: "inventory_full" });
+    return true;
+  }
+  chest.opened = true;
+  send(client, { type: "serverMessage", message: "chest_looted", itemName: chest.item.name });
+  broadcastSnapshot();
+  return true;
+}
+
 function handleInteract(client, message = {}) {
   if (!client.player) {
     return;
@@ -1736,13 +1774,7 @@ function handleInteract(client, message = {}) {
 
   const chest = nearestClosedChest(client.player);
   if (chest) {
-    if (!addItemToInventory(client.player, cloneItem(chest.item))) {
-      send(client, { type: "serverMessage", message: "inventory_full" });
-      return;
-    }
-    chest.opened = true;
-    send(client, { type: "serverMessage", message: "chest_looted", itemName: chest.item.name });
-    broadcastSnapshot();
+    lootWorldChest(client, chest);
     return;
   }
 

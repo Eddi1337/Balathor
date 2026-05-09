@@ -105,6 +105,8 @@ const INTERIOR_HOUSE_CHEST_CLICK_RADIUS_TILES = 0.72;
 /** Tooltip appears only when near the chest sprite. */
 const INTERIOR_HOUSE_CHEST_TOOLTIP_RADIUS_TILES = 0.58;
 const HOUSE_CHEST_SLOTS = 10;
+/** Must match server INTERACT_RADIUS + small margin */
+const WORLD_CHEST_LOOT_RADIUS_TILES = 2.1;
 const TRADER_CLICK_HIT_RADIUS = 3.6;
 const TRADER_CLICK_PLAYER_RADIUS = 8;
 /** Trader caravan props — positions MUST match isTrader NPC homeX/homeY in server/src/npcs.js */
@@ -273,7 +275,9 @@ const state = {
   hoverTooltipY: 0,
   hoverTooltipSmall: false,
   houseChestSlots: null,
-  houseChestBuildingKey: null
+  houseChestBuildingKey: null,
+  /** Until this time (performance.now()), self draws home-teleport hand cast */
+  pendingHomeTeleportUntil: 0
 };
 
 const SPEECH_BUBBLE_MS = 5200;
@@ -562,6 +566,9 @@ function handleServerMessage(message) {
   }
 
   if (message.type === "teleport") {
+    if (message.portalId === "home") {
+      state.pendingHomeTeleportUntil = 0;
+    }
     const portalTeleport = typeof message.portalId === "string" && message.portalId.startsWith("portal_");
     if (portalTeleport) {
       startPortalTransition(message);
@@ -1470,6 +1477,9 @@ function wireUi() {
     if (tryInteractClickedFixture(event)) {
       return;
     }
+    if (tryLootClickedWorldChest(event)) {
+      return;
+    }
     if (tryPickupClickedGroundItem(event)) {
       return;
     }
@@ -1682,6 +1692,7 @@ function cancelHomeCast() {
     clearTimeout(homeCastTimer);
     homeCastTimer = null;
   }
+  state.pendingHomeTeleportUntil = 0;
   const bar = document.getElementById("cast-bar");
   if (bar) bar.classList.remove("casting");
 }
@@ -1700,6 +1711,7 @@ function sendHome() {
   requestAnimationFrame(() => {
     if (fill) { fill.style.transition = `width ${HOME_CAST_MS}ms linear`; fill.style.width = "100%"; }
   });
+  state.pendingHomeTeleportUntil = performance.now() + HOME_CAST_MS;
   homeCastTimer = setTimeout(() => {
     homeCastTimer = null;
     if (bar) bar.classList.remove("casting");
@@ -1748,22 +1760,26 @@ function renderAbilityBar() {
     keySpan.textContent = String(i + 1);
 
     if (spellId) {
+      const fill = document.createElement("div");
+      fill.className = "ability-slot-fill";
+
       const nm = document.createElement("div");
       nm.className = "ability-slot-name";
-      nm.style.cssText = "position:absolute;top:38px;left:0;right:0;text-align:center;font-size:9px;color:#e8c86a;";
       if (spellId.startsWith("item:")) {
         const itemSlot = parseInt(spellId.slice(5), 10);
         const item = state.inventory?.[itemSlot] || null;
         const ic = document.createElement("span");
         ic.className = `item-icon ${item?.icon || item?.type || "unknown"}`;
-        ic.style.cssText = "position:absolute;top:4px;left:50%;transform:translateX(-50%);";
         if (item?.color) ic.style.setProperty("--item-color", item.color);
         nm.textContent = item?.name || "Item";
-        slot.replaceChildren(ic, nm, keySpan);
+        fill.append(ic, nm);
+        slot.replaceChildren(fill, keySpan);
       } else {
         const ic = document.createElement("canvas");
-        ic.width = 32; ic.height = 32;
-        ic.style.cssText = "position:absolute;top:4px;left:50%;transform:translateX(-50%);image-rendering:pixelated;";
+        ic.width = 32;
+        ic.height = 32;
+        ic.draggable = false;
+        ic.style.imageRendering = "pixelated";
         drawSpellIcon(ic, spellId, true);
         const spellInfo = Object.values(TALENT_TREES).flat().flatMap(t => t.spells).find(s => s.id === spellId);
         nm.textContent = spellInfo?.name || spellId;
@@ -1771,7 +1787,8 @@ function renderAbilityBar() {
         cooldown.className = "ability-cooldown";
         const cooldownText = document.createElement("span");
         cooldownText.className = "ability-cooldown-text";
-        slot.replaceChildren(ic, nm, keySpan, cooldown, cooldownText);
+        fill.append(ic, nm);
+        slot.replaceChildren(fill, cooldown, cooldownText, keySpan);
       }
     } else {
       slot.replaceChildren(keySpan);
@@ -2337,6 +2354,53 @@ function findClickedGroundItem(event) {
     }
   }
   return closest;
+}
+
+function findClickedWorldChest(event) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const screenX = (event.clientX - rect.left) * scaleX;
+  const screenY = (event.clientY - rect.top) * scaleY;
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const self = state.players.get(state.selfId);
+  if (!state.joined || !self) {
+    return null;
+  }
+
+  const buyInterior = getPlayerStandingBuyableHouseInterior();
+  let closest = null;
+  let closestDistance = Infinity;
+
+  for (const chest of state.chests) {
+    if (chest.opened) {
+      continue;
+    }
+    if (buyInterior && worldPointInsideBuildingInterior(chest.x, chest.y, buyInterior)) {
+      continue;
+    }
+    if (Math.hypot(chest.x - self.x, chest.y - self.y) > WORLD_CHEST_LOOT_RADIUS_TILES) {
+      continue;
+    }
+    const sx = chest.x * TILE_SIZE - state.camera.x + halfW;
+    const sy = chest.y * TILE_SIZE - state.camera.y + halfH;
+    const dist = Math.hypot(screenX - sx, screenY - sy);
+    if (dist <= 26 && dist < closestDistance) {
+      closest = chest;
+      closestDistance = dist;
+    }
+  }
+  return closest;
+}
+
+function tryLootClickedWorldChest(event) {
+  const clicked = findClickedWorldChest(event);
+  if (!clicked) {
+    return false;
+  }
+  send({ type: "lootChest", chestId: clicked.id });
+  return true;
 }
 
 function wireMobileControls() {
@@ -4110,6 +4174,11 @@ function drawCharacter(entity, x, y, isNpc = false) {
   const bx = x;
   const by = y + bob;
 
+  const homeCasting =
+    !isNpc &&
+    entity.id === state.selfId &&
+    state.pendingHomeTeleportUntil > performance.now();
+
   drawEllipseShadow(x - 12, y + 12, 24, 6, 0.28);
 
   if (isMod) {
@@ -4128,15 +4197,41 @@ function drawCharacter(entity, x, y, isNpc = false) {
   // Torso
   drawTorso2(bx - 4 * s, by - 3 * s, s, torsoStyle, torsoColor, weaponColor, entity.classId, fx, fy);
 
-  // Short arms
-  const armSwing = moving ? Math.round(sin1 * 2) : 0;
-  const lAX = bx - 6 * s;
-  const lAY = by - 2 * s - armSwing;
-  const rAX = bx + 4 * s;
-  const rAY = by - 2 * s + armSwing;
+  // Short arms (raised + glowing while channeling home teleport)
   ctx.fillStyle = isMod ? "#1a0a30" : skinColor;
-  ctx.fillRect(lAX, lAY, 2 * s, 4 * s);
-  ctx.fillRect(rAX, rAY, 2 * s, 4 * s);
+  let lAX;
+  let lAY;
+  let rAX;
+  let rAY;
+  const nowArm = performance.now();
+  if (homeCasting) {
+    const tw = Math.sin(nowArm / 95);
+    const tw2 = Math.sin(nowArm / 72 + 1.1);
+    const lift = 4 * s;
+    const wave = Math.round(tw * 2 * s);
+    const wave2 = Math.round(tw2 * 2 * s);
+    lAX = bx - 7 * s - wave;
+    lAY = by - 6 * s - lift - Math.round(Math.abs(tw2) * s);
+    rAX = bx + 3 * s + wave2;
+    rAY = by - 6 * s - lift - Math.round(Math.abs(tw) * s);
+    const lw = Math.max(2, Math.round(2 * s));
+    const lh = Math.round(5 * s);
+    ctx.save();
+    ctx.shadowColor = "rgba(255, 230, 160, 0.95)";
+    ctx.shadowBlur = 16;
+    ctx.fillRect(lAX, lAY, lw, lh);
+    ctx.fillRect(rAX, rAY, lw, lh);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  } else {
+    const armSwing = moving ? Math.round(sin1 * 2) : 0;
+    lAX = bx - 6 * s;
+    lAY = by - 2 * s - armSwing;
+    rAX = bx + 4 * s;
+    rAY = by - 2 * s + armSwing;
+    ctx.fillRect(lAX, lAY, 2 * s, 4 * s);
+    ctx.fillRect(rAX, rAY, 2 * s, 4 * s);
+  }
 
   // Head / hood
   const hx = bx - 2 * s + fx * s;
@@ -4163,8 +4258,8 @@ function drawCharacter(entity, x, y, isNpc = false) {
     ctx.fillRect(hx + 3 * s + eo, eyeY, s, s);
   }
 
-  // Weapon / equipment
-  if (!isNpc) {
+  // Weapon / equipment (stash weapon while channeling home)
+  if (!isNpc && !homeCasting) {
     drawClassEquipment(entity, bx, by, dirX, dirY, sideX, sideY, weaponColor,
       rAX + s, rAY + 2 * s,
       lAX + s, lAY + 2 * s, moving, sin1);
@@ -5742,6 +5837,19 @@ function drawBuildingSprite(building, sx, sy, roofless) {
   }
 }
 
+function clientOwnsBuyableHouse(building) {
+  const self = state.players.get(state.selfId);
+  if (!building?.forSale) {
+    return true;
+  }
+  if (!self) {
+    return false;
+  }
+  const key = `${building.x},${building.y}`;
+  const deedName = state.buildingOwnership.get(key);
+  return Boolean(deedName && deedName === self.name && self.homeBuildingKey === key);
+}
+
 function getBuildingVariant(building) {
   const n = building.name;
   if (n.includes("Frost") || n.includes("Snow") || n.includes("Pine") || n.includes("Ice")) return "stone";
@@ -5762,6 +5870,9 @@ const BUILDING_PALETTES = {
 
 function getFrontDoorOpenFactor(building, roofless) {
   if (roofless) return 1;
+  if (!clientOwnsBuyableHouse(building)) {
+    return 0;
+  }
   const self = state.players.get(state.selfId);
   if (!self) return 0;
   const px = Number.isFinite(self.renderX) ? self.renderX : self.x;
@@ -5777,15 +5888,20 @@ function getFrontDoorOpenFactor(building, roofless) {
   return u * u * (3 - 2 * u);
 }
 
-function drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, openT, framePad = 2) {
+function drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, openT, framePad = 2, translucentPanels = false) {
   const t = Math.max(0, Math.min(1, openT));
-  const split = t * Math.max(3, Math.round(doorW * 0.44));
-  ctx.fillStyle = p.doorFrame;
-  ctx.fillRect(doorX - framePad, doorY - 2, doorW + framePad * 2, doorH + 2);
   const mid = doorX + doorW / 2;
   const halfW = Math.max(2, Math.round(doorW / 2) - 1);
+  const maxSwing = Math.min(halfW + 8, Math.max(halfW - 1, Math.round(doorW * 0.52)));
+  const split = t * maxSwing;
+  const pa = translucentPanels ? 0.45 : 1;
+  ctx.fillStyle = p.doorFrame;
+  ctx.globalAlpha = translucentPanels ? 0.55 : 1;
+  ctx.fillRect(doorX - framePad, doorY - 2, doorW + framePad * 2, doorH + 2);
+  ctx.globalAlpha = 1;
   const leftX = Math.round(mid - halfW - split);
   const rightX = Math.round(mid + split);
+  ctx.globalAlpha = pa;
   ctx.fillStyle = p.door;
   ctx.fillRect(leftX, doorY, halfW, doorH);
   ctx.fillRect(rightX, doorY, halfW, doorH);
@@ -5795,9 +5911,10 @@ function drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, openT, framePad = 2)
   ctx.fillStyle = blend(p.door, "#ffffff", 0.08);
   ctx.fillRect(leftX + 1, doorY + Math.round(doorH / 2), Math.max(2, Math.round(halfW / 2) - 2), Math.max(2, Math.round(doorH / 2) - 4));
   ctx.fillRect(rightX + 1, doorY + Math.round(doorH / 2), Math.max(2, Math.round(halfW / 2) - 2), Math.max(2, Math.round(doorH / 2) - 4));
-  ctx.fillStyle = "#e8c040";
+  ctx.fillStyle = translucentPanels ? "rgba(232,192,64,0.55)" : "#e8c040";
   ctx.fillRect(leftX + 2, doorY + Math.round(doorH / 2) - 1, 3, 3);
   ctx.fillRect(rightX + halfW - 5, doorY + Math.round(doorH / 2) - 1, 3, 3);
+  ctx.globalAlpha = 1;
 }
 
 function drawHouse(building, sx, sy, w, h, variant, roofless) {
@@ -5912,7 +6029,7 @@ function drawHouse(building, sx, sy, w, h, variant, roofless) {
       drawHouseWindow(sx + Math.round(w * 0.30), winY, winW, winH, p);
     }
 
-    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, doorOpen, 2);
+    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, doorOpen, 2, false);
   } else {
     // Cutaway: facade outline only + door (still shows entry)
     ctx.strokeStyle = blend(p.wallDark, p.wallLine, 0.5);
@@ -5924,7 +6041,7 @@ function drawHouse(building, sx, sy, w, h, variant, roofless) {
     ctx.moveTo(sx - 3, wallY + 0.5);
     ctx.lineTo(sx + w + 3, wallY + 0.5);
     ctx.stroke();
-    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, 1, 2);
+    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, 1, 2, true);
   }
 
   ctx.restore();
@@ -6004,7 +6121,7 @@ function drawHut(building, sx, sy, w, h, variant, roofless) {
     const winW = 10; const winH = Math.max(8, wallH - 12);
     drawHouseWindow(sx + Math.round(w * 0.32), wallY + 5, winW, winH, p);
 
-    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, doorOpen, 2);
+    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, doorOpen, 2, false);
   } else {
     ctx.strokeStyle = blend(p.wallDark, p.wallLine, 0.55);
     ctx.lineWidth = 2;
@@ -6015,7 +6132,7 @@ function drawHut(building, sx, sy, w, h, variant, roofless) {
     ctx.moveTo(sx + 2, wallY + 0.5);
     ctx.lineTo(sx + w - 2, wallY + 0.5);
     ctx.stroke();
-    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, 1, 2);
+    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, 1, 2, true);
   }
 
   ctx.restore();
@@ -6128,7 +6245,7 @@ function drawBigHouse(building, sx, sy, w, h, variant, roofless) {
     ctx.fillStyle = p.wallLight;
     ctx.fillRect(doorX - 5, doorY - 4, 5, doorH + 4);
     ctx.fillRect(doorX + doorW, doorY - 4, 5, doorH + 4);
-    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, doorOpen, 2);
+    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, doorOpen, 2, false);
   } else {
     ctx.strokeStyle = blend(p.wallDark, p.wallLine, 0.5);
     ctx.lineWidth = 2;
@@ -6148,7 +6265,7 @@ function drawBigHouse(building, sx, sy, w, h, variant, roofless) {
     ctx.lineWidth = 2;
     ctx.strokeRect(doorX - 5 + 0.5, doorY - 4 + 0.5, 4, doorH + 4 - 1);
     ctx.strokeRect(doorX + doorW + 0.5, doorY - 4 + 0.5, 4, doorH + 4 - 1);
-    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, 1, 2);
+    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, 1, 2, true);
   }
 
   ctx.restore();
@@ -6271,7 +6388,7 @@ function drawTreehouse(building, sx, sy, w, h, variant, roofless) {
       ctx.beginPath(); ctx.arc(wx - 2, wy - 2, Math.round(winR * 0.45), 0, Math.PI * 2); ctx.fill();
     }
 
-    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH2, doorOpen, 2);
+    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH2, doorOpen, 2, false);
   } else {
     ctx.strokeStyle = blend(p.wallDark, p.wallLine, 0.55);
     ctx.lineWidth = 2;
@@ -6281,7 +6398,7 @@ function drawTreehouse(building, sx, sy, w, h, variant, roofless) {
     ctx.moveTo(sx + 2, wallY + 0.5);
     ctx.lineTo(sx + w - 2, wallY + 0.5);
     ctx.stroke();
-    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH2, 1, 2);
+    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH2, 1, 2, true);
   }
 
   ctx.restore();
@@ -6404,7 +6521,7 @@ function drawCastle(building, sx, sy, w, h, variant, roofless) {
 
     ctx.fillStyle = blend(p.wall, "#000", 0.5);
     ctx.fillRect(doorX - 3, doorY2 - 4, doorW + 6, doorH + 4);
-    drawSplitWoodenDoor(p, doorX, doorY2, doorW, doorH, doorOpen, 3);
+    drawSplitWoodenDoor(p, doorX, doorY2, doorW, doorH, doorOpen, 3, false);
     ctx.fillStyle = blend(p.door, "#000", 0.4);
     for (const bandY of [doorY2 + Math.round(doorH * 0.3), doorY2 + Math.round(doorH * 0.65)]) {
       ctx.fillRect(doorX, bandY, doorW, 3);
@@ -6420,15 +6537,24 @@ function drawCastle(building, sx, sy, w, h, variant, roofless) {
     ctx.moveTo(mwX, wallY + 0.5);
     ctx.lineTo(mwX + mwW, wallY + 0.5);
     ctx.stroke();
-    ctx.fillStyle = blend(p.wall, "#000", 0.5);
+    ctx.save();
+    ctx.globalAlpha = 0.42;
+    ctx.fillStyle = blend(p.wall, "#000", 0.55);
     ctx.fillRect(doorX - 3, doorY2 - 4, doorW + 6, doorH + 4);
-    drawSplitWoodenDoor(p, doorX, doorY2, doorW, doorH, 1, 3);
-    ctx.fillStyle = blend(p.door, "#000", 0.4);
+    ctx.restore();
+    drawSplitWoodenDoor(p, doorX, doorY2, doorW, doorH, 1, 3, true);
+    ctx.save();
+    ctx.globalAlpha = 0.42;
+    ctx.fillStyle = blend(p.door, "#000", 0.48);
     for (const bandY of [doorY2 + Math.round(doorH * 0.3), doorY2 + Math.round(doorH * 0.65)]) {
       ctx.fillRect(doorX, bandY, doorW, 3);
     }
+    ctx.restore();
+    ctx.save();
+    ctx.globalAlpha = 0.82;
     ctx.fillStyle = p.wallLight;
     ctx.fillRect(doorX - 3, doorY2 - 4, doorW + 6, 3);
+    ctx.restore();
   }
 
   ctx.restore();
