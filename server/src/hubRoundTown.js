@@ -462,6 +462,26 @@ function mergePathComponents(pathKeys, wallKeys, rects) {
   }
 }
 
+/** Main avenues + ring paths — full set NPCs may walk (includes orthogonal spines). */
+function buildHubNavPathKeys(pathKeys, wallKeys) {
+  const nav = new Set(pathKeys);
+  const lim = Math.ceil(HUB_WALL_R_IN_MAIN + 18);
+  function plazaCell(tx, ty) {
+    return tx >= -1 && tx <= 1 && ty >= -1 && ty <= 1;
+  }
+  for (let t = -lim; t <= lim; t += 1) {
+    for (const [tx, ty] of [
+      [t, 0],
+      [0, t]
+    ]) {
+      if (plazaCell(tx, ty)) continue;
+      const k = `${tx},${ty}`;
+      if (!wallKeys.has(k)) nav.add(k);
+    }
+  }
+  return nav;
+}
+
 function addGardenPatches(gardenKeys, rects) {
   for (let i = 0; i < rects.length; i += 1) {
     const r = rects[i];
@@ -485,8 +505,7 @@ function addGardenPatches(gardenKeys, rects) {
 }
 
 /**
- * Lawns touching paths: market stalls, benches, small trees along edges;
- * grassy pockets (often gardens) occasionally get fountains.
+ * Lawns touching paths: benches & small trees; separate pass for 2×1 upright market stalls + traders.
  */
 function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
   const list = [];
@@ -511,6 +530,13 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
   }
 
   const isPath = (tx, ty) => pathSet.has(`${tx},${ty}`);
+
+  function stampUsed(tx, ty) {
+    used.add(`${tx},${ty}`);
+  }
+  function isUsed(tx, ty) {
+    return used.has(`${tx},${ty}`);
+  }
 
   /** Road-adjacent grass cells */
   const lawnEdge = new Map();
@@ -542,14 +568,11 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
     const [nx, ny] = key.split(",").map(Number);
     if (hz(nx, ny, 7721) < 0.965) continue;
 
-    let kind;
     const pick = hz(nx, ny, 7722);
-    if (pick < 0.38) kind = "market_stand";
-    else if (pick < 0.66) kind = "bench";
-    else kind = "small_tree";
+    const kind = pick < 0.55 ? "bench" : "small_tree";
 
-    if (used.has(key)) continue;
-    used.add(key);
+    if (isUsed(nx, ny)) continue;
+    stampUsed(nx, ny);
 
     let meanDx = 0;
     let meanDy = 0;
@@ -568,6 +591,42 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
       kind,
       facing
     });
+  }
+
+  /** Upright 2×1 stalls on flat grass with path along the south edge (customer side). */
+  const limS = Math.ceil(HUB_WALL_R_IN_MAIN + 4);
+  for (let ny = -limS; ny <= limS; ny += 1) {
+    for (let nx = -limS; nx <= limS - 1; nx += 1) {
+      if (plazaTree(nx, ny) || plazaTree(nx + 1, ny) || nearListedPortal(nx, ny, 110) || nearListedPortal(nx + 1, ny, 110)) {
+        continue;
+      }
+      if (
+        isPath(nx, ny) ||
+        isPath(nx + 1, ny) ||
+        wallKeys.has(`${nx},${ny}`) ||
+        wallKeys.has(`${nx + 1},${ny}`)
+      ) {
+        continue;
+      }
+      if (buildingBlock(nx, ny) || buildingBlock(nx + 1, ny)) continue;
+      if (!isPath(nx, ny + 1) || !isPath(nx + 1, ny + 1)) continue;
+      if (isUsed(nx, ny) || isUsed(nx + 1, ny)) continue;
+      if (hz(nx, ny, 9911) < 0.987) continue;
+
+      stampUsed(nx, ny);
+      stampUsed(nx + 1, ny);
+      const vid = `hub_vendor_${nx}_${ny}`;
+      list.push({
+        id: `hub_stand_${nx}_${ny}`,
+        x: nx,
+        y: ny,
+        kind: "market_stand",
+        footprintW: 2,
+        footprintH: 1,
+        facing: 0,
+        vendorNpcId: vid
+      });
+    }
   }
 
   const bound = Math.ceil(HUB_WALL_R_IN_MAIN + 2);
@@ -730,6 +789,7 @@ function computeHubDistrict() {
     }
   }
 
+  const hubNavPathKeys = buildHubNavPathKeys(pathKeys, wallKeys);
   const hubRoadsides = buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects);
 
   return {
@@ -737,6 +797,7 @@ function computeHubDistrict() {
     pathTileKeys: pathKeys,
     wallTileKeys: wallKeys,
     gardenTileKeys: gardenKeys,
+    hubNavPathKeys,
     hubRoadsides,
     hubClearingRadius: HUB_CLEARING_RADIUS,
     hutSlotCount: rects.length - 4
@@ -745,5 +806,7 @@ function computeHubDistrict() {
 
 module.exports = {
   computeHubDistrict,
-  HUB_CLEARING_RADIUS
+  HUB_CLEARING_RADIUS,
+  /** Read-only roster used to tag hub-bound NPCs without circular imports through world.js */
+  HUB_NPC_ORDER
 };

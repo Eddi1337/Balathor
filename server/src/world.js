@@ -42,6 +42,8 @@ const HUB_PATH_TILE_KEYS = _hubDistrict.pathTileKeys;
 const HUB_WALL_TILE_KEYS = _hubDistrict.wallTileKeys;
 const HUB_GARDEN_TILE_KEYS = _hubDistrict.gardenTileKeys;
 const HUB_ROADSIDE_FEATURES = _hubDistrict.hubRoadsides || [];
+const HUB_NAV_PATH_KEYS =
+  _hubDistrict.hubNavPathKeys instanceof Set ? _hubDistrict.hubNavPathKeys : new Set();
 
 function hash2(x, y, seed = 1337) {
   let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ seed;
@@ -228,9 +230,13 @@ function isThinFootpath(tx, ty) {
 }
 
 function roadsideFeatureTouchesChunk(f, startX, startY, endX, endY) {
-  const fx = f.x;
-  const fy = f.y;
-  return fx >= startX && fx < endX && fy >= startY && fy < endY;
+  const w = Math.max(1, Math.floor(Number(f.footprintW) || 1));
+  const h = Math.max(1, Math.floor(Number(f.footprintH) || 1));
+  const fx0 = f.x;
+  const fy0 = f.y;
+  const fx1 = fx0 + w;
+  const fy1 = fy0 + h;
+  return fx0 < endX && fx1 > startX && fy0 < endY && fy1 > startY;
 }
 
 function getRoadsideFeaturesInChunk(cx, cy) {
@@ -253,8 +259,12 @@ function findRoadsideFeatureNear(wx, wy, radiusTiles = 1.35) {
   let best = null;
   let bestD = rSq + 1;
   function consider(f) {
-    const dx = wx - (f.x + 0.5);
-    const dy = wy - (f.y + 0.55);
+    const fw = Math.max(1, Math.floor(Number(f.footprintW) || 1));
+    const fh = Math.max(1, Math.floor(Number(f.footprintH) || 1));
+    const ax = f.x + fw / 2;
+    const ay = f.y + fh / 2 + 0.06;
+    const dx = wx - ax;
+    const dy = wy - ay;
     const dSq = dx * dx + dy * dy;
     if (dSq <= rSq && dSq < bestD) {
       bestD = dSq;
@@ -1616,5 +1626,8 @@ module.exports = {
   scaledCampEncounterSize,
   PORTAL_CLEAR_STONE_RADIUS,
   PORTAL_CAMP_CLEAR_RADIUS,
-  isTooCloseToAnyPortal
+  isTooCloseToAnyPortal,
+  HUB_NAV_PATH_KEYS,
+  HUB_ROADSIDE_FEATURES,
+  HUB_TOWN_GRASS_RADIUS
 };

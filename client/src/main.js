@@ -2369,7 +2369,12 @@ function refreshWorldHoverTooltip(event) {
 
   const world = screenEventToWorld(event);
   for (const f of state.roadsides.values()) {
-    if (Math.hypot(world.x - (f.x + 0.5), world.y - (f.y + 0.55)) <= 1.12) {
+    const rfW = Math.max(1, Math.floor(Number(f.footprintW) || 1));
+    const rfH = Math.max(1, Math.floor(Number(f.footprintH) || 1));
+    const ax = f.x + rfW / 2;
+    const ay = f.y + rfH / 2 + (f.kind === "market_stand" ? 0.1 : 0.55);
+    const reach = f.kind === "market_stand" ? 1.45 : 1.12;
+    if (Math.hypot(world.x - ax, world.y - ay) <= reach) {
       state.hoverTooltipText =
         f.kind === "bench"
           ? "Bench — interact to sit"
@@ -3937,21 +3942,28 @@ function drawRoadsideFeatures(minTileX, maxTileX, minTileY, maxTileY) {
     ctx.strokeRect(-28, -8, 56, 10);
   };
 
-  const drawMarketStandLocal = () => {
-    drawEllipseShadow(-18, 10, 40, 7, 0.2);
+  /** Upright market stall spanning `tilesWide` (hub uses 2). */
+  const drawMarketStandLocal = (tilesWide = 2) => {
+    const stallWpx = TILE_SIZE * Math.max(1, tilesWide);
+    const pillarW = 6;
+    const awningHalf = stallWpx / 2;
+    drawEllipseShadow(-awningHalf + 10, 10, stallWpx + 8, 8, 0.2);
     ctx.fillStyle = "#4d3624";
-    ctx.fillRect(-3, -2, 6, 10);
-    ctx.fillRect(-16, -2, 32, 4);
+    ctx.fillRect(-pillarW / 2, -2, pillarW, 10);
+    ctx.fillRect(stallWpx / 2 - pillarW, -2, pillarW, 10);
+    ctx.fillRect(-awningHalf + 2, -2, stallWpx - 4, 5);
     ctx.fillStyle = "#6a4830";
-    ctx.fillRect(-14, -18, 28, 16);
-    for (let si = 0; si < 7; si += 1) {
+    const faceW = stallWpx - 8;
+    ctx.fillRect(-faceW / 2, -20, faceW, 18);
+    const stripe = Math.floor(faceW / 4);
+    for (let si = 0; si < 4 && stripe > 3; si += 1) {
       ctx.fillStyle = si % 2 === 0 ? "#d4624a" : "#f7edd2";
-      ctx.fillRect(-14 + si * 4, -18, 4, 11);
+      ctx.fillRect(-faceW / 2 + si * stripe, -20, stripe, 12);
     }
     ctx.strokeStyle = "rgba(24,14,10,0.45)";
-    ctx.strokeRect(-14, -18, 28, 16);
+    ctx.strokeRect(-faceW / 2, -20, faceW, 18);
     ctx.fillStyle = "rgba(120,92,62,0.35)";
-    ctx.fillRect(-10, -6, 20, 3);
+    ctx.fillRect(-faceW / 2 + 4, -7, faceW - 8, 3);
   };
 
   const drawSmallTreeLocal = () => {
@@ -4003,11 +4015,15 @@ function drawRoadsideFeatures(minTileX, maxTileX, minTileY, maxTileY) {
   };
 
   for (const f of state.roadsides.values()) {
-    if (f.x < minTileX || f.x > maxTileX || f.y < minTileY || f.y > maxTileY) continue;
-    const sx = Math.floor(f.x * TILE_SIZE - state.camera.x + halfW);
-    const sy = Math.floor(f.y * TILE_SIZE - state.camera.y + halfH);
-    const cx = sx + TILE_SIZE / 2;
-    const gy = sy + TILE_SIZE - 10;
+    const fw = Math.max(1, Math.floor(Number(f.footprintW) || 1));
+    const fh = Math.max(1, Math.floor(Number(f.footprintH) || 1));
+    if (f.x > maxTileX || f.y > maxTileY || f.x + fw - 1 < minTileX || f.y + fh - 1 < minTileY) {
+      continue;
+    }
+    const gxCenterPx = (f.x + fw / 2) * TILE_SIZE - state.camera.x + halfW;
+    const cx = Math.floor(gxCenterPx);
+    const footRow = f.y + fh - 1;
+    const gy = Math.floor(footRow * TILE_SIZE - state.camera.y + halfH) + TILE_SIZE - 10;
     const facing = Number.isFinite(f.facing) ? f.facing : 0;
 
     if (f.kind === "bench") {
@@ -4017,10 +4033,11 @@ function drawRoadsideFeatures(minTileX, maxTileX, minTileY, maxTileY) {
       drawBenchLocal();
       ctx.restore();
     } else if (f.kind === "market_stand") {
+      const ftw = fw;
       ctx.save();
       ctx.translate(cx, gy - 2);
       ctx.rotate(facing);
-      drawMarketStandLocal();
+      drawMarketStandLocal(ftw);
       ctx.restore();
     } else if (f.kind === "small_tree") {
       ctx.save();
