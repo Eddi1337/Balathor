@@ -58,6 +58,8 @@ const abilitySlotsEl = document.querySelector("#abilitySlots");
 const potionSlotEl = document.querySelector("#potionSlot");
 const potionCountEl = document.querySelector("#potionCount");
 const potionSlotIconCanvas = document.querySelector("#potionSlotIcon");
+const homeTeleportSlotEl = document.querySelector("#homeTeleportSlot");
+const homeTeleportIconCanvas = document.querySelector("#homeTeleportIcon");
 const nearbyLoot = document.querySelector("#nearbyLoot");
 const interactButton = document.querySelector("#interactButton");
 const goldText = document.querySelector("#goldText");
@@ -1408,7 +1410,9 @@ function wireUi() {
   abilityBarToggle.addEventListener("click", () => {
     const minimized = abilityBar.classList.toggle("minimized");
     abilityBarToggle.textContent = minimized ? "+" : "−";
-    syncSafeZoneIndicator(state.players.get(state.selfId));
+    const selfMid = state.players.get(state.selfId);
+    syncSafeZoneIndicator(selfMid);
+    syncHomeTeleportSlot(selfMid);
   });
 
   safeZoneIndicator?.addEventListener("click", (event) => {
@@ -1438,6 +1442,18 @@ function wireUi() {
 
   // Potion slot click to use potion
   potionSlotEl?.addEventListener("click", () => { if (state.joined) useHealthPotion(); });
+
+  homeTeleportSlotEl?.addEventListener("click", () => {
+    if (!state.joined || state.menuOpen) return;
+    const self = state.players.get(state.selfId);
+    if (!self?.homeBuildingKey) return;
+    sendHome();
+  });
+  homeTeleportSlotEl?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    homeTeleportSlotEl.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
 
   makeDraggable(equipmentPanel);
   makeDraggable(bagsPanel);
@@ -1910,6 +1926,7 @@ function renderAbilityBar() {
   });
   updateAbilityCooldowns();
   syncSafeZoneIndicator(self);
+  syncHomeTeleportSlot(self);
 }
 
 function updateAbilityCooldowns() {
@@ -1996,6 +2013,56 @@ function renderPotionSlot() {
     c.fill();
     c.globalAlpha = 1;
   }
+}
+
+let homeTeleportIconDrawn = false;
+function renderHomeTeleportIconOnce() {
+  if (homeTeleportIconDrawn || !homeTeleportIconCanvas) return;
+  homeTeleportIconDrawn = true;
+  const c = homeTeleportIconCanvas.getContext("2d");
+  const w = homeTeleportIconCanvas.width;
+  const h = homeTeleportIconCanvas.height;
+  c.imageSmoothingEnabled = false;
+  // Roof
+  c.fillStyle = "#5a4838";
+  c.beginPath();
+  c.moveTo(w * 0.5, h * 0.12);
+  c.lineTo(w * 0.88, h * 0.42);
+  c.lineTo(w * 0.12, h * 0.42);
+  c.closePath();
+  c.fill();
+  c.strokeStyle = "#2a2218";
+  c.lineWidth = 1;
+  c.stroke();
+  // Body
+  c.fillStyle = "#8a7348";
+  c.fillRect(w * 0.18, h * 0.4, w * 0.64, h * 0.52);
+  c.strokeRect(w * 0.18 + 0.5, h * 0.4 + 0.5, w * 0.64 - 1, h * 0.52 - 1);
+  // Door
+  c.fillStyle = "#4a3018";
+  c.fillRect(w * 0.39, h * 0.58, w * 0.22, h * 0.34);
+  c.fillStyle = "#c9a068";
+  c.fillRect(w * 0.56, h * 0.74, 3, 3);
+  // Window glow
+  c.fillStyle = "rgba(255,236,160,0.55)";
+  c.fillRect(w * 0.26, h * 0.5, w * 0.16, h * 0.14);
+  c.fillRect(w * 0.58, h * 0.5, w * 0.16, h * 0.14);
+  // Chimney
+  c.fillStyle = "#6a5850";
+  c.fillRect(w * 0.66, h * 0.18, w * 0.14, h * 0.22);
+}
+
+/** Hotbar “home” glyph — mirrors H key teleport; hidden until the player owns a house. */
+function syncHomeTeleportSlot(self) {
+  renderHomeTeleportIconOnce();
+  if (!homeTeleportSlotEl || !abilityBar) return;
+  const hasHome =
+    state.joined &&
+    self &&
+    typeof self.homeBuildingKey === "string" &&
+    self.homeBuildingKey.length > 0;
+  const hide = !hasHome || abilityBar.classList.contains("minimized");
+  homeTeleportSlotEl.classList.toggle("hidden", hide);
 }
 
 function getBuildingPriceClient(building) {
@@ -2824,6 +2891,7 @@ function resetToConnection(message) {
   safeZoneIndicator?.classList.remove("safe-zone-tooltip-pinned");
   clearTimeout(safeZoneTooltipPinTimer);
   safeZoneTooltipPinTimer = null;
+  homeTeleportSlotEl?.classList.add("hidden");
   setChatMinimized(false);
   setProgressionMinimized(false);
   setActiveGameWindow(null);
@@ -3114,6 +3182,7 @@ function renderProgression(self) {
     renderBuyHousePanel();
   }
   syncSafeZoneIndicator(self);
+  syncHomeTeleportSlot(self);
 }
 
 function makeEquipSlotEl(slot, label) {
