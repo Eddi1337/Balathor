@@ -175,10 +175,10 @@ const ROADSIDE_FEATURES = Object.freeze([
   { id: "rs_pub_c_b", x: -53, y: -36, kind: "pub_chair", facing: Math.PI / 2 },
   { id: "rs_pub_c_c", x: -58, y: -31, kind: "pub_chair", facing: -Math.PI / 2 },
   { id: "rs_wall_bench_n", x: -2, y: -112, kind: "bench", facing: 0 },
-  { id: "rs_wall_bench_s", x: 12, y: 110, kind: "bench", facing: Math.PI },
+  { id: "rs_wall_bench_s", x: 12, y: 110, kind: "bench", facing: 0 },
   { id: "rs_oasis_b1", x: 592, y: 486, kind: "bench", facing: 0 },
-  { id: "rs_frost_b1", x: -592, y: -486, kind: "bench", facing: Math.PI },
-  { id: "rs_ember_b1", x: 572, y: -510, kind: "bench", facing: Math.PI / 2 }
+  { id: "rs_frost_b1", x: -592, y: -486, kind: "bench", facing: 0 },
+  { id: "rs_ember_b1", x: 572, y: -510, kind: "bench", facing: 0 }
 ]);
 
 function distPointToSegmentSq(px, py, x1, y1, x2, y2) {

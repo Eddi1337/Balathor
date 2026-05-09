@@ -582,14 +582,12 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
     }
     meanDx /= cel.adx.length;
     meanDy /= cel.ady.length;
-    const facing = Math.atan2(meanDy, meanDx);
-
     list.push({
       id: `hub_rs_${nx}_${ny}`,
       x: nx,
       y: ny,
       kind,
-      facing
+      facing: kind === "bench" ? 0 : Math.atan2(meanDy, meanDx)
     });
   }
 

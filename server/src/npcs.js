@@ -5,6 +5,8 @@ const { HUB_NPC_ORDER } = require("./hubRoundTown.js");
 const NPC_SPEED = 2.0;
 const MOVE_INTERVAL_MIN = 3000;
 const MOVE_INTERVAL_MAX = 9000;
+/** Standoff spot in front of hub market stalls (patrons mingle here). */
+const HUB_MARKET_BROWSE_WAYPOINTS = [];
 const CHAT_INTERVAL_MIN = 28000;
 const CHAT_INTERVAL_MAX = 70000;
 
@@ -22,6 +24,23 @@ function rebuildHubNavAnchors(navKeys) {
     _hubNavAnchorsCache.push({ cx: tx + 0.5, cy: ty + 0.5 });
   }
 }
+
+function refreshHubBrowseWaypointsFromRoadsides(list) {
+  HUB_MARKET_BROWSE_WAYPOINTS.length = 0;
+  if (!list || !Array.isArray(list)) {
+    return;
+  }
+  for (const f of list) {
+    if (!f || f.kind !== "market_stand") continue;
+    const fw = Math.max(1, Math.floor(Number(f.footprintW) || 1));
+    HUB_MARKET_BROWSE_WAYPOINTS.push({
+      tx: f.x + fw / 2,
+      ty: f.y + 0.62
+    });
+  }
+}
+
+refreshHubBrowseWaypointsFromRoadsides(WORLD.HUB_ROADSIDE_FEATURES);
 
 function npcIdHashSeed(idStr) {
   let h = 2166136261 >>> 0;
@@ -654,7 +673,7 @@ const BASE_NPC_DEFINITIONS = [
 const DEFINITIONS = BASE_NPC_DEFINITIONS.concat(buildHydratedHubNpcExtras());
 
 const soldCompanionNpcIds = new Set();
-const SOCIAL_PAIR_INTERVAL_MS = 11000;
+const SOCIAL_PAIR_INTERVAL_MS = 9200;
 const SOCIAL_NEAR_HOME = 168;
 /** Generic lines overheard during NPC→NPC chatter */
 const SOCIAL_OVERHEARD = [
@@ -781,7 +800,7 @@ function maybeStartNpcMeeting(now, activationBounds) {
     return;
   }
   lastNpcSocialAttempt = now;
-  if (Math.random() > 0.42) {
+  if (Math.random() > 0.35) {
     return;
   }
 
@@ -1079,11 +1098,26 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
       if (!(courtSteers || socialWalk) && now >= npc._nextMoveAt && !soldCompanionNpcIds.has(npc.id)) {
         let tx;
         let ty;
+        const crowdBrowsing =
+          HUB_MARKET_BROWSE_WAYPOINTS.length &&
+          npc._followHubPaths &&
+          (npc.id.startsWith("hub_m_") || npc.id.startsWith("hub_seek_")) &&
+          !npc.isTrader &&
+          Math.random() < 0.15;
         const hubPick =
-          npc._followHubPaths && npc.patrolRadius >= 0.98
+          !crowdBrowsing &&
+          npc._followHubPaths &&
+          npc.patrolRadius >= 0.98
             ? sampleHubPatrolWaypoint(npc, navSetStatic)
             : null;
-        if (hubPick) {
+        if (crowdBrowsing) {
+          const bi =
+            Math.abs(npcIdHashSeed(`${npc.id}|stall|${Math.floor(now / 5800)}`)) %
+            HUB_MARKET_BROWSE_WAYPOINTS.length;
+          const wp = HUB_MARKET_BROWSE_WAYPOINTS[bi];
+          tx = wp.tx;
+          ty = wp.ty;
+        } else if (hubPick) {
           ({ tx: tx, ty: ty } = hubPick);
         } else {
           const angle = Math.random() * Math.PI * 2;
