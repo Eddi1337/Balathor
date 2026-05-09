@@ -20,9 +20,10 @@ const TILE = {
   TABLE: 16,
   SHELF: 17,
   FIREPLACE: 18,
+  CHAIR: 19,
 };
 
-const BLOCKED_TILES = new Set([TILE.WATER, TILE.WALL, TILE.LAVA, TILE.BED, TILE.TABLE, TILE.SHELF, TILE.FIREPLACE]);
+const BLOCKED_TILES = new Set([TILE.WATER, TILE.WALL, TILE.LAVA, TILE.BED, TILE.TABLE, TILE.SHELF, TILE.FIREPLACE, TILE.CHAIR]);
 const PORTAL_RADIUS = 1.6;
 const DOOR_RADIUS = 0.52;
 const INTERIOR_BASE_X = 10000;
@@ -707,6 +708,11 @@ function getEnemyCampTile(x, y) {
 // ---------------------------------------------------------------------------
 
 function getBuildingInteriorTile(lx, ly, w, h, type, seed, buyableHome, isPub) {
+  if (buyableHome && !isPub && (type === "house" || type === "big_house") && w >= 7 && h >= 6) {
+    const shelfLX = Math.max(2, w - 3);
+    const shelfLY = 2;
+    return residentialDwellingInnerTileLocalsOrFloor(lx, ly, w, h, shelfLX, shelfLY);
+  }
   if (buyableHome) {
     return TILE.FLOOR;
   }
@@ -886,6 +892,58 @@ function getInteriorShopShelf(interior) {
   };
 }
 
+/**
+ * Player-facing houses & big villas: hearth north, trader shelf fixed,
+ * 2×2 bed bottom-left, table + chair bottom-right, hearth rug stripe.
+ */
+function residentialDwellingInnerTileLocalsOrFloor(localX, localY, w, h, shelfLocalX, shelfLocalY) {
+  if (w < 7 || h < 6) {
+    return null;
+  }
+
+  if (localX === shelfLocalX && localY === shelfLocalY) {
+    return TILE.SHELF;
+  }
+
+  const mid = Math.floor(w / 2);
+  if (localX === mid && localY === 1) {
+    return TILE.FIREPLACE;
+  }
+
+  const dineLo = h - 4;
+  const dineHi = h - 3;
+
+  if (localX >= 1 && localX <= 2 && localY >= dineLo && localY <= dineHi) {
+    return TILE.BED;
+  }
+  if (localY >= dineLo && localY <= dineHi && localX >= w - 4 && localX <= w - 2) {
+    if (localX === w - 4) {
+      return TILE.CHAIR;
+    }
+    return TILE.TABLE;
+  }
+
+  const rugRow = Math.max(3, Math.min(h - 7, 4));
+  if (localY === rugRow && localX >= mid - 1 && localX <= mid + 1) {
+    return TILE.CARPET;
+  }
+
+  return TILE.FLOOR;
+}
+
+function phantomResidentialDwellingTile(localX, localY, interior) {
+  const b = interior.building;
+  const typ = b.type || "house";
+  if (b?.isPub || !(typ === "house" || typ === "big_house")) {
+    return null;
+  }
+
+  const { w, h } = interior;
+  const shelfLX = Math.max(2, w - 3);
+  const shelfLY = 2;
+  return residentialDwellingInnerTileLocalsOrFloor(localX, localY, w, h, shelfLX, shelfLY);
+}
+
 function getInteriorTile(x, y) {
   const interior = getInteriorAreaAt(x, y);
   if (!interior) {
@@ -930,20 +988,11 @@ function getInteriorTile(x, y) {
     return TILE.FLOOR;
   }
 
-  if (type === "big_house") {
-    // Fireplace on north wall interior center
-    if (localX === Math.floor(w / 2) && localY === 1) return TILE.FIREPLACE;
-    // Two beds on west side
-    if (localX >= 2 && localX <= 4 && localY >= 2 && localY <= 3) return TILE.BED;
-    if (localX >= 2 && localX <= 4 && localY >= 5 && localY <= 6) return TILE.BED;
-    // Dining table
-    if (localX >= w - 6 && localX <= w - 3 && localY >= 3 && localY <= 5) return TILE.TABLE;
-    // Shelf on east wall
-    const shelf = getInteriorShopShelf(interior);
-    if (x === shelf.x && y === shelf.y) return TILE.SHELF;
-    // Wide carpet down center
-    if (localX >= 3 && localX <= w - 4 && localY >= h - 5 && localY <= h - 2) return TILE.CARPET;
-    return TILE.FLOOR;
+  {
+    const phantomRes = phantomResidentialDwellingTile(localX, localY, interior);
+    if (phantomRes !== null) {
+      return phantomRes;
+    }
   }
 
   if (type === "castle") {
@@ -969,20 +1018,6 @@ function getInteriorTile(x, y) {
     return TILE.FLOOR;
   }
 
-  // Default "house" layout
-  const shelf = getInteriorShopShelf(interior);
-  if (x === shelf.x && y === shelf.y) {
-    return TILE.SHELF;
-  }
-  if (w >= 9 && h >= 7 && localX >= 2 && localX <= 4 && localY >= 2 && localY <= 3) {
-    return TILE.BED;
-  }
-  if (w >= 10 && h >= 7 && localX >= w - 4 && localX <= w - 3 && localY >= 4 && localY <= 5) {
-    return TILE.TABLE;
-  }
-  if (w >= 8 && h >= 7 && localX >= 3 && localX <= w - 4 && localY >= h - 4 && localY <= h - 2) {
-    return TILE.CARPET;
-  }
   return TILE.FLOOR;
 }
 

@@ -222,6 +222,7 @@ const TILE = {
   TABLE: 16,
   SHELF: 17,
   FIREPLACE: 18,
+  CHAIR: 19,
 };
 
 /** Mirrors server/src/index.js getBuildingPrice */
@@ -432,6 +433,7 @@ const tilePalette = {
   [TILE.TABLE]: ["#6c4528", "#9b6a3e", "#3f291c"],
   [TILE.SHELF]: ["#5a3824", "#b8844d", "#2b1a10"],
   [TILE.FIREPLACE]: ["#3a2820", "#e05010", "#ffa040"],
+  [TILE.CHAIR]: ["#5f3d24", "#8b5f3e", "#352010"],
 };
 
 resize();
@@ -2304,6 +2306,70 @@ function getOwnedHouseHomeTreeWorldPos(building) {
 function getOwnedHouseChestWorldPos(building) {
   const d = ownedHouseCornerInset(building);
   return { x: building.x + building.w - d, y: building.y + d };
+}
+
+/** Bottom dining tile row centres (aligned with phantom residential slabs). */
+function residentialPhantomCompanionAnchors(building) {
+  const bw = Math.max(1, building.w | 0);
+  const bh = Math.max(1, building.h | 0);
+  const dineRow = bh - 4;
+  const dineFloorY = building.y + dineRow + 0.48;
+  return {
+    bed: { wx: building.x + 1.5, wy: building.y + bh - 3.52 },
+    /** Chair sits west of table (local x = w − 4), faces east (+x toward table). */
+    dine: {
+      wx: building.x + (bw - 4) + 0.52,
+      wy: dineFloorY,
+      facing: 0,
+      restingBench: true
+    },
+    flirtStand: {
+      wx: building.x + Math.min(bw - 3.8, bw * 0.48),
+      wy: building.y + Math.min(bh - 4.9, dineRow + 0.62)
+    }
+  };
+}
+
+function clampWorldToBuildingInterior(wx, wy, building, pad = 1.42) {
+  return {
+    x: Math.min(building.x + building.w - pad, Math.max(building.x + pad, wx)),
+    y: Math.min(building.y + building.h - pad, Math.max(building.y + pad, wy))
+  };
+}
+
+function hashHomeCompanionPhrase(npcId, homeKey) {
+  let h = 2166136261 >>> 0;
+  const s = `${npcId}:${homeKey}:flirt`;
+  for (let i = 0; i < s.length; i += 1) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  const lines = Object.freeze([
+    "You smell like firewood and stubborn ideas.",
+    "Missed your boots clomping.",
+    "...Stay a minute?",
+    "I saved the kettle for you.",
+    "Talk while I thaw my hands on you?"
+  ]);
+  return lines[h % lines.length];
+}
+
+/**
+ * Idle loop while you are viewing your homestead cutaway:
+ * rest in bed · snack at table · flirt near hearth.
+ */
+function homeCompanionAmbientMode(npcId, homeKey) {
+  let h = 0;
+  const s = `${npcId}:${homeKey}:phase`;
+  for (let i = 0; i < s.length; i += 1) {
+    h = (Math.imul(31, h) + s.charCodeAt(i)) >>> 0;
+  }
+  const periodSec = 30;
+  const t = Math.floor(performance.now() / 1000) + ((h >>> 7) % 13);
+  const u = ((t % periodSec) + periodSec) % periodSec;
+  if (u < 11) return "bed";
+  if (u < 20) return "eat";
+  return "flirt";
 }
 
 /** Floor line at bottom of tile cell (wx,wy) for interior props */
@@ -4282,7 +4348,8 @@ function isInteriorDrawTile(tile) {
     tile === TILE.BED ||
     tile === TILE.TABLE ||
     tile === TILE.SHELF ||
-    tile === TILE.FIREPLACE;
+    tile === TILE.FIREPLACE ||
+    tile === TILE.CHAIR;
 }
 
 function isNpcRestingOnBench(npc) {
@@ -4322,40 +4389,6 @@ function drawPlayers() {
     } else {
       const restingBench = isNpc ? isNpcRestingOnBench(entity) : false;
       drawCharacter(entity, sx, sy, isNpc, { restingBench });
-    }
-  }
-
-  if (buyInterior) {
-    const self = state.players.get(state.selfId);
-    const hc = self?.houseCompanion;
-    const hk = typeof self?.homeBuildingKey === "string" ? self.homeBuildingKey : "";
-    const bk = `${buyInterior.x},${buyInterior.y}`;
-    if (hc && hk === bk) {
-      const wx = buyInterior.x + buyInterior.w / 2 + 0.12;
-      const wy = buyInterior.y + buyInterior.h - 2.45;
-      const anchor = interiorFloorAnchorFromWorld(wx, wy, halfW, halfH);
-      const ent = {
-        id: `_house_companion_${hc.npcId}`,
-        name: hc.name || "Companion",
-        classId: hc.classId || "ranger",
-        primary: hc.primary,
-        accent: hc.accent,
-        torsoStyle: hc.classId === "knight" ? "armor" : hc.classId === "mage" ? "robe" : "tunic",
-        torsoColor: hc.primary,
-        weaponColor: hc.accent,
-        weaponKind:
-          hc.classId === "knight" ? "sword"
-            : hc.classId === "mage" ? "staff"
-              : "bow",
-        x: wx,
-        y: wy,
-        facing: Math.PI / 2,
-        moving: false,
-        renderX: wx,
-        renderY: wy,
-        hp: null
-      };
-      drawCharacter(ent, anchor.cx, anchor.groundY + 10, true);
     }
   }
 }
@@ -4558,14 +4591,16 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const pantColor   = isMod ? "#0e0620" : "#2a3044";
   const bootColor   = isMod ? "#0a0418" : "#1a1e2c";
 
+  const lyingBedPose = !!(poseOpts && poseOpts.lyingBed);
   const restingBenchPose = !!(poseOpts && poseOpts.restingBench);
   const selfBenchSit =
     !isNpc &&
     entity.id === state.selfId &&
     (state.benchSitUntil || 0) > performance.now();
-  const sitPose = restingBenchPose || selfBenchSit;
-  const sitBumpPx = sitPose ? 7 : 0;
-  const headSitNudge = sitPose ? Math.round(s * 0.85) : 0;
+  const benchSeatPose = restingBenchPose || selfBenchSit;
+  const compressLowerBody = benchSeatPose || lyingBedPose;
+  const sitBumpPx = lyingBedPose ? 11 : benchSeatPose ? 7 : 0;
+  const headSitNudge = benchSeatPose ? Math.round(s * 0.85) : lyingBedPose ? Math.round(s * 0.42) : 0;
 
   const bx = x;
   const by = y + bob + sitBumpPx;
@@ -4575,7 +4610,18 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
     entity.id === state.selfId &&
     state.pendingHomeTeleportUntil > performance.now();
 
-  drawEllipseShadow(x - 12, y + 12, 24, 6, 0.28);
+  if (!lyingBedPose) {
+    drawEllipseShadow(x - 12, y + 12, 24, 6, 0.28);
+  } else {
+    drawEllipseShadow(x + 2, y + 14, 30, 5, 0.22);
+  }
+
+  if (lyingBedPose) {
+    ctx.save();
+    ctx.translate(x + 10, by + s * 2);
+    ctx.rotate(-Math.PI / 2 + 0.06);
+    ctx.translate(-(x + 10), -(by + s * 2));
+  }
 
   if (isMod) {
     drawModCape(bx - 5 * s, by - 4 * s, s, bob, dirX, dirY);
@@ -4584,7 +4630,7 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   // Tiny stump legs (RotMG style) — compressed when seated on benches
   const legWalk = moving ? Math.round(sin1 * 2) : 0;
   ctx.fillStyle = pantColor;
-  if (sitPose) {
+  if (compressLowerBody) {
     ctx.fillRect(bx - 4 * s, by + 3 * s, 8 * s, 2 * s);
     ctx.fillStyle = bootColor;
     ctx.fillRect(bx - 4 * s - 1, by + 4 * s, 5 * s, 2 * s);
@@ -4607,7 +4653,7 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   let rAX;
   let rAY;
   const nowArm = performance.now();
-  if (homeCasting) {
+  if (homeCasting && !lyingBedPose) {
     const tw = Math.sin(nowArm / 95);
     const tw2 = Math.sin(nowArm / 72 + 1.1);
     const lift = 4 * s;
@@ -4626,6 +4672,14 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
     ctx.fillRect(rAX, rAY, lw, lh);
     ctx.shadowBlur = 0;
     ctx.restore();
+  } else if (poseOpts && poseOpts.companionReachOut && isNpc) {
+    const wig = Math.round(Math.sin(nowArm / 118) * (1.6 * s));
+    lAX = bx - 9 * s + wig;
+    lAY = by - 7 * s + Math.abs(wig) * 0.35;
+    rAX = bx + 3 * s + wig;
+    rAY = by - 9 * s;
+    ctx.fillRect(lAX, lAY, 2 * s, 5 * s);
+    ctx.fillRect(rAX, rAY, 2 * s, 5 * s);
   } else {
     const armSwing = moving ? Math.round(sin1 * 2) : 0;
     lAX = bx - 6 * s;
@@ -4662,11 +4716,18 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   }
 
   // Weapon / equipment (stash weapon while channeling home / sitting)
-  if (!isNpc && !homeCasting && !sitPose) {
+  if (!isNpc && !homeCasting && !benchSeatPose && !lyingBedPose) {
     drawClassEquipment(entity, bx, by, dirX, dirY, sideX, sideY, weaponColor,
       rAX + s, rAY + 2 * s,
       lAX + s, lAY + 2 * s, moving, sin1);
   }
+
+  if (lyingBedPose) {
+    ctx.restore();
+  }
+
+  const flirtLine =
+    poseOpts && typeof poseOpts.ambientLine === "string" ? poseOpts.ambientLine.trim() : "";
 
   // Name tag
   ctx.font = "11px ui-sans-serif, system-ui";
@@ -4675,7 +4736,17 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   ctx.strokeStyle = "rgba(8,12,18,0.82)";
   ctx.fillStyle = isNpc ? "#ffd27a" : entity.isMod ? "#c79cff" : "#f7f3df";
   ctx.strokeText(entity.name, x, y - 28);
-  ctx.fillText(entity.name,   x, y - 28);
+  ctx.fillText(entity.name, x, y - 28);
+
+  if (flirtLine) {
+    const ly = lyingBedPose ? y - 12 : y - 40;
+    ctx.font = "10px ui-sans-serif, system-ui";
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(12,14,26,0.88)";
+    ctx.fillStyle = "rgba(255,225,238,0.92)";
+    ctx.strokeText(flirtLine, x, ly);
+    ctx.fillText(flirtLine, x, ly);
+  }
 
   if (!isNpc && Number.isFinite(entity.hp) && Number.isFinite(entity.maxHp)) {
     drawHealthBar(x - 16, y - 22, 32, 3, entity.hp, entity.maxHp);
@@ -5703,6 +5774,18 @@ function drawInteriorTile(tile, sx, sy, tx, ty) {
     return;
   }
 
+  if (tile === TILE.CHAIR) {
+    drawEllipseShadow(sx + 6, sy + 24, 20, 5, 0.2);
+    ctx.fillStyle = colors[2];
+    ctx.fillRect(sx + 8, sy + 20, 4, 8);
+    ctx.fillRect(sx + 18, sy + 20, 4, 8);
+    ctx.fillStyle = colors[1];
+    ctx.fillRect(sx + 9, sy + 8, 12, 16);
+    ctx.fillStyle = colors[0];
+    ctx.fillRect(sx + 14, sy + 4, 2, 6);
+    return;
+  }
+
   if (tile === TILE.SHELF) {
     drawEllipseShadow(sx + 5, sy + 24, 22, 6, 0.24);
     ctx.fillStyle = colors[2];
@@ -6185,7 +6268,85 @@ function drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY) {
     drawBuildingSprite(building, sx, sy, roofless);
     drawOwnedHouseInteriorHomeTree(building, roofless, halfW, halfH);
     drawOwnedHouseInteriorChest(building, roofless, halfW, halfH);
+    drawOwnedHouseInteriorCompanion(building, roofless, halfW, halfH);
   }
+}
+
+function drawOwnedHouseInteriorCompanion(building, roofless, halfW, halfH) {
+  const self = state.players.get(state.selfId);
+  const hc = self?.houseCompanion;
+  if (!roofless || !hc || building?.isPub) {
+    return;
+  }
+  if (!self.homeBuildingKey || `${building.x},${building.y}` !== self.homeBuildingKey) {
+    return;
+  }
+
+  const typ = building.type || "house";
+  if (!(typ === "house" || typ === "big_house")) {
+    return;
+  }
+
+  const npcId = typeof hc.npcId === "string" ? hc.npcId : "companion";
+  const mode = homeCompanionAmbientMode(npcId, self.homeBuildingKey);
+  const anchors = residentialPhantomCompanionAnchors(building);
+
+  let wx;
+  let wy;
+  let facing = Math.PI / 2;
+  /** @type {Record<string, unknown>} */
+  let poseExtras = {};
+
+  if (mode === "bed") {
+    wx = anchors.bed.wx;
+    wy = anchors.bed.wy;
+    poseExtras = { lyingBed: true };
+  } else if (mode === "eat") {
+    wx = anchors.dine.wx;
+    wy = anchors.dine.wy;
+    facing = anchors.dine.facing;
+    poseExtras = { restingBench: true };
+  } else {
+    const px = Number.isFinite(self.renderX) ? self.renderX : self.x;
+    const py = Number.isFinite(self.renderY) ? self.renderY : self.y;
+    const hx = anchors.flirtStand.wx;
+    const hy = anchors.flirtStand.wy;
+    const ang = Math.atan2(py - hy, px - hx);
+    const pull = Math.min(2.05, Math.hypot(px - hx, py - hy) * 0.32 + 0.92);
+    const rawX = px - Math.cos(ang) * pull;
+    const rawY = py - Math.sin(ang) * pull;
+    const cl = clampWorldToBuildingInterior(rawX, rawY, building);
+    wx = cl.x;
+    wy = cl.y;
+    facing = Math.atan2(py - wy, px - wx);
+    poseExtras = {
+      ambientLine: hashHomeCompanionPhrase(npcId, self.homeBuildingKey),
+      companionReachOut: true
+    };
+  }
+
+  const anchor = interiorFloorAnchorFromWorld(wx, wy, halfW, halfH);
+  const groundBump = mode === "bed" ? 4 : mode === "eat" ? 6 : 9;
+  const ent = {
+    id: `_house_companion_${npcId}`,
+    name: hc.name || "Companion",
+    classId: hc.classId || "ranger",
+    primary: hc.primary,
+    accent: hc.accent,
+    torsoStyle: hc.classId === "knight" ? "armor" : hc.classId === "mage" ? "robe" : "tunic",
+    torsoColor: hc.primary,
+    weaponColor: hc.accent,
+    weaponKind:
+      hc.classId === "knight" ? "sword" : hc.classId === "mage" ? "staff" : "bow",
+    x: wx,
+    y: wy,
+    facing,
+    moving: false,
+    renderX: wx,
+    renderY: wy,
+    hp: null
+  };
+  drawCharacter(ent, anchor.cx, anchor.groundY + groundBump, true, poseExtras);
 }
 
 function drawOwnedHouseInteriorHomeTree(building, roofless, halfW, halfH) {
