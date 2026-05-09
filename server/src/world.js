@@ -35,6 +35,13 @@ const PROCEDURAL_INTERIOR_GRID_OFFSET = 512;
 const STARTING_AREA = { x: 0, y: 0, radius: 26 };
 const START_SPAWN = { x: 0, y: 0 };
 
+const { computeHubDistrict, HUB_CLEARING_RADIUS: HUB_TOWN_GRASS_RADIUS } = require("./hubRoundTown.js");
+/** Walled procedural hub + arterial sets (paths never overlap building rects). */
+const _hubDistrict = computeHubDistrict();
+const HUB_PATH_TILE_KEYS = _hubDistrict.pathTileKeys;
+const HUB_WALL_TILE_KEYS = _hubDistrict.wallTileKeys;
+const HUB_GARDEN_TILE_KEYS = _hubDistrict.gardenTileKeys;
+
 function hash2(x, y, seed = 1337) {
   let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ seed;
   h = (h ^ (h >>> 13)) >>> 0;
@@ -42,74 +49,23 @@ function hash2(x, y, seed = 1337) {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
 }
 
-// Hand-crafted buildings: starting town + portal destinations only.
-const FIXED_BUILDINGS = [
-  // Central village — lots spaced farther apart; paths approach front doors laterally instead of slicing through footprints.
-  // North
-  { x: -10, y: -39, w: 11, h:  9, name: "Home",              type: "house",     forSale: false },
-  { x:  26, y: -48, w:  8, h:  7, name: "Smith's Hut",       type: "hut",       forSale: false },
-  { x: -45, y: -65, w: 10, h:  8, name: "Ranger's Post",     type: "treehouse", forSale: false },
-  { x: -75, y: -44, w: 12, h:  9, name: "Blue Tavern",       type: "house",     forSale: false, isPub: true },
-  // East
-  { x:  54, y: -35, w: 16, h: 12, name: "Red Manor",         type: "big_house", forSale: true  },
-  { x:  82, y: -44, w: 10, h:  8, name: "Hunter's Lodge",    type: "treehouse", forSale: false },
-  { x:  82, y:  12, w:  8, h:  7, name: "East Hut",          type: "hut",       forSale: true  },
-  { x:  84, y:  28, w: 12, h:  9, name: "Garden House",      type: "house",     forSale: true  },
-  { x:  98, y:  48, w:  8, h:  7, name: "Herb Hut",          type: "hut",       forSale: true  },
-  // West
-  { x: -42, y: -20, w:  8, h:  7, name: "Weaver's Hut",      type: "hut",       forSale: false },
-  { x: -76, y:   0, w:  8, h:  7, name: "Miller's Hut",      type: "hut",       forSale: true  },
-  { x: -82, y:  24, w: 12, h:  9, name: "Market Hall",       type: "house",     forSale: false },
-  // South
-  { x: -22, y:  44, w: 20, h: 16, name: "Town Keep",         type: "castle",    forSale: false },
-  { x:  32, y:  68, w:  8, h:  7, name: "South Hut",         type: "hut",       forSale: true  },
-  { x: -54, y:  68, w:  8, h:  7, name: "West Hut",          type: "hut",       forSale: true  },
-  // Desert Oasis – no overlaps, each building separated by ≥8 tiles
-  { x: 574, y: 472, w: 20, h: 16, name: "Oasis Keep",        type: "castle",    forSale: false },
-  { x: 604, y: 470, w: 16, h: 12, name: "Oasis Palace",      type: "big_house", forSale: false },
-  { x: 588, y: 496, w: 10, h:  8, name: "Clay House",        type: "house",     forSale: false },
-  { x: 618, y: 490, w:  8, h:  7, name: "Sun Hut",           type: "hut",       forSale: false },
-  // Frost Village
-  { x: -622, y: -500, w: 20, h: 16, name: "Frost Keep",      type: "castle",    forSale: false },
-  { x: -596, y: -500, w: 10, h:  8, name: "Snow House",      type: "house",     forSale: false },
-  { x: -614, y: -478, w:  8, h:  7, name: "Pine Hut",        type: "hut",       forSale: false },
-  { x: -590, y: -480, w: 10, h:  8, name: "Ranger Post",     type: "treehouse", forSale: false },
-  // Ember Camp
-  { x: 558, y: -540, w: 20, h: 16, name: "Ember Citadel",    type: "castle",    forSale: false },
-  { x: 584, y: -540, w: 10, h:  8, name: "Ash House",        type: "house",     forSale: false },
-  { x: 566, y: -518, w:  8, h:  7, name: "Forge Hut",        type: "hut",       forSale: false },
-  { x: 582, y: -520, w: 10, h:  8, name: "Watcher's Perch",  type: "treehouse", forSale: false },
+/** Distant realms connected by portals — not part of walled hub authoring. */
+const PORTAL_REALM_BUILDINGS = [
+  { x: 574, y: 472, w: 20, h: 16, name: "Oasis Keep", type: "castle", forSale: false },
+  { x: 604, y: 470, w: 16, h: 12, name: "Oasis Palace", type: "big_house", forSale: false },
+  { x: 588, y: 496, w: 10, h: 8, name: "Clay House", type: "house", forSale: false },
+  { x: 618, y: 490, w: 8, h: 7, name: "Sun Hut", type: "hut", forSale: false },
+  { x: -622, y: -500, w: 20, h: 16, name: "Frost Keep", type: "castle", forSale: false },
+  { x: -596, y: -500, w: 10, h: 8, name: "Snow House", type: "house", forSale: false },
+  { x: -614, y: -478, w: 8, h: 7, name: "Pine Hut", type: "hut", forSale: false },
+  { x: -590, y: -480, w: 10, h: 8, name: "Ranger Post", type: "treehouse", forSale: false },
+  { x: 558, y: -540, w: 20, h: 16, name: "Ember Citadel", type: "castle", forSale: false },
+  { x: 584, y: -540, w: 10, h: 8, name: "Ash House", type: "house", forSale: false },
+  { x: 566, y: -518, w: 8, h: 7, name: "Forge Hut", type: "hut", forSale: false },
+  { x: 582, y: -520, w: 10, h: 8, name: "Watcher's Perch", type: "treehouse", forSale: false }
 ];
 
-/** Small dwellings for villagers (paired to npcs.js patrol homes; not for sale). */
-const NPC_HOME_BUILDINGS = [
-  { x: 22, y: -78, w: 8, h: 7, name: "Mara's Cottage", type: "hut", forSale: false, residentLabel: "Mara" },
-  { x: -24, y: -76, w: 8, h: 7, name: "Thomas's Lodge", type: "hut", forSale: false, residentLabel: "Thomas" },
-  { x: 12, y: -73, w: 8, h: 7, name: "Dale's Storehouse", type: "hut", forSale: false, residentLabel: "Dale" },
-  { x: -12, y: -50, w: 8, h: 7, name: "Aldric's Quarters", type: "hut", forSale: false, residentLabel: "Aldric" },
-  { x: 74, y: -6, w: 8, h: 7, name: "Ren's Bunkhouse", type: "hut", forSale: false, residentLabel: "Ren" },
-  { x: 74, y: -28, w: 8, h: 7, name: "Lyssa's Shop-back", type: "hut", forSale: false, residentLabel: "Lyssa" },
-  { x: 50, y: 10, w: 8, h: 7, name: "Brom's Hovel", type: "hut", forSale: false, residentLabel: "Brom" },
-  { x: 64, y: -12, w: 8, h: 7, name: "Sera's Watch-hut", type: "hut", forSale: false, residentLabel: "Sera" },
-  { x: -4, y: 74, w: 8, h: 7, name: "Holt's Cottage", type: "hut", forSale: false, residentLabel: "Holt" },
-  { x: 14, y: 52, w: 8, h: 7, name: "Greta's Cellar Hut", type: "hut", forSale: false, residentLabel: "Greta" },
-  { x: -18, y: 74, w: 8, h: 7, name: "Dot's Mill Shack", type: "hut", forSale: false, residentLabel: "Dot" },
-  { x: -20, y: 86, w: 8, h: 7, name: "Wyn's Pasture Hut", type: "hut", forSale: false, residentLabel: "Wyn" },
-  { x: -70, y: -4, w: 8, h: 7, name: "Voss's Lean-to", type: "hut", forSale: false, residentLabel: "Voss" },
-  { x: -78, y: -24, w: 8, h: 7, name: "Mira's Annex", type: "hut", forSale: false, residentLabel: "Mira" },
-  { x: -82, y: 16, w: 8, h: 7, name: "Cael's Hovel", type: "hut", forSale: false, residentLabel: "Cael" },
-  { x: -68, y: 8, w: 8, h: 7, name: "Zix's Camp Hut", type: "hut", forSale: false, residentLabel: "Zix" },
-  { x: 16, y: -12, w: 8, h: 7, name: "Kael's Storeroom", type: "hut", forSale: false, residentLabel: "Kael" },
-  { x: -14, y: 14, w: 8, h: 7, name: "Ebb's Lodging", type: "hut", forSale: false, residentLabel: "Ebb" },
-  { x: -14, y: -12, w: 8, h: 7, name: "Ana's Script House", type: "hut", forSale: false, residentLabel: "Ana" },
-  { x: 92, y: 20, w: 8, h: 7, name: "Riley's Bungalow", type: "hut", forSale: false, residentLabel: "Riley" },
-  { x: 64, y: -2, w: 8, h: 7, name: "Jax's Flat", type: "hut", forSale: false, residentLabel: "Jax" },
-  { x: -24, y: 60, w: 8, h: 7, name: "Mae's Rowhouse", type: "hut", forSale: false, residentLabel: "Mae" },
-  { x: -68, y: -32, w: 8, h: 7, name: "Sofia's Shack", type: "hut", forSale: false, residentLabel: "Sofia" },
-  { x: -88, y: -8, w: 8, h: 7, name: "Nara's Cabin", type: "hut", forSale: false, residentLabel: "Nara" },
-];
-
-const BUILDINGS = FIXED_BUILDINGS.concat(NPC_HOME_BUILDINGS);
+const BUILDINGS = _hubDistrict.hubBuildings.concat(PORTAL_REALM_BUILDINGS);
 
 /** World X tile coords for outward-facing doors on north & south façade rows. Odd width ⇒ 1 tile; even ⇒ 2. */
 function southDoorWorldXs(building) {
@@ -154,65 +110,28 @@ function southDoorLocalCenterOffset(w) {
 }
 
 // Fixed village clearing zones — only starting town + portal destinations.
+function isInsidePrimaryHubGrass(x, y, marginTiles = 0) {
+  return Math.hypot(x, y) <= HUB_TOWN_GRASS_RADIUS + marginTiles;
+}
+
 const VILLAGES = [
-  { cx:   0, cy:   0, r: 105 }, // Central Village — widened after outer lots migrated
+  { cx: 0, cy: 0, r: Math.max(HUB_TOWN_GRASS_RADIUS, 105) }, // walled round hub + pastures
   { cx: 600, cy: 490, r: 52 },
   { cx: -600, cy: -490, r: 52 },
-  { cx: 580, cy: -530, r: 52 },
+  { cx: 580, cy: -530, r: 52 }
 ];
 
-// Road segments for fixed villages only (w=1 => 3-tile corridor). Hub spurs dodge building boxes.
+/** Roads inside the walled hub are baked into HUB_PATH_TILE_KEYS — only distal villages kept here */
 const STREET_SEGMENTS = [
-  { x1: -94, y1:   0, x2:  94, y2:   0, w: 1 },   // east–west arterial
-  { x1:   0, y1: -92, x2:   0, y2:  82, w: 1 },   // spine to farms + realm gates
-
-  // Northwest cluster — lanes meet door fronts; no long cuts behind lots
-  { x1:  -5, y1: -29, x2:  -5, y2:   0 },
-  { x1:  29, y1: -41, x2:  29, y2:   0 },
-  { x1: -41, y1: -57, x2: -41, y2:   0 },
-  { x1: -70, y1: -35, x2: -70, y2:   0 },
-
-  // West row
-  { x1: -39, y1: -20, x2: -39, y2:   0 },
-  { x1: -73, y1:   7, x2: -73, y2:   0 },
-  { x1: -77, y1: -31, x2: -77, y2:   0 },
-
-  // East quarter — elbow around manor / lodge, then alley for lower row
-  { x1:  62, y1: -23, x2:  62, y2: -12 },
-  { x1:  62, y1: -12, x2:  93, y2: -12 },
-  { x1:  93, y1: -47, x2:  93, y2: -12 },
-  { x1:  71, y1:  19, x2:  93, y2:  19 },
-  { x1:  93, y1:  19, x2:  93, y2:   0 },
-  { x1:  91, y1:  38, x2: 104, y2:  38 },
-  { x1: 104, y1:  38, x2: 104, y2:   0 },
-  { x1: 101, y1:  56, x2: 112, y2:  56 },
-  { x1: 112, y1:  56, x2: 112, y2:   0 },
-
-  // Town Keep — apron along south side, stair to north approach (never through courtyard)
-  { x1:   0, y1:  62, x2: -13, y2:  62 },
-  { x1: -13, y1:  62, x2: -13, y2:  60 },
-  { x1: -13, y1:  43, x2: -13, y2:   0 },
-
-  // South cottages
-  { x1:  35, y1:  75, x2:  35, y2:   0 },
-  { x1: -51, y1:  75, x2: -51, y2:   0 },
-
-  // Portal destination villages
-  // Oasis
-  { x1: 574, y1: 482, x2: 628, y2: 482 },         // horizontal cross-road
-  { x1: 600, y1: 470, x2: 600, y2: 519 },         // vertical: buildings to portal approach
-  // Frost
-  { x1: -622, y1: -484, x2: -578, y2: -484 },     // horizontal cross-road
-  { x1: -600, y1: -497, x2: -600, y2: -458 },     // vertical: buildings to portal approach
-  // Ember
-  { x1: 558, y1: -524, x2: 596, y2: -524 },       // horizontal cross-road
-  { x1: 580, y1: -537, x2: 580, y2: -503 },       // vertical: buildings to portal approach
-
-  // Realm gates — vertical roads north from the village (portals sit at north dead-ends).
-  { x1: -46, y1: 0, x2: -46, y2: -78 },         // Frost Gate road
-  { x1: 46, y1: -12, x2: 46, y2: -78 },         // Oasis Gate road (+ East district merge)
-
-  // Ember Gate uses central spine `{ x1: 0 … y: -82 }` which runs past `(0,-76)`
+  { x1: -46, y1: 0, x2: -46, y2: -125, w: 2 },
+  { x1: 46, y1: -12, x2: 46, y2: -125, w: 2 },
+  { x1: 0, y1: -12, x2: 0, y2: -125, w: 1 },
+  { x1: 574, y1: 482, x2: 628, y2: 482 },
+  { x1: 600, y1: 470, x2: 600, y2: 519 },
+  { x1: -622, y1: -484, x2: -578, y2: -484 },
+  { x1: -600, y1: -497, x2: -600, y2: -458 },
+  { x1: 558, y1: -524, x2: 596, y2: -524 },
+  { x1: 580, y1: -537, x2: 580, y2: -503 }
 ];
 
 /**
@@ -234,35 +153,8 @@ const STONE_HIGHWAY_SEGMENTS = [
   { x1: -92, y1: 0, x2: -120, y2: -48, hw: 2 }
 ];
 
-/** Single tile-wide paths from doors to arterial routes (thin = thin line exactly on axis). */
+/** Oasis / Frost / Ember diagonals only — walled hub routing is authoritative via HUB_PATH_TILE_KEYS */
 const FOOTPATH_SEGMENTS = [
-  { x1: -31, y1: -71, x2: -31, y2: -35, thin: true },
-  { x1: -15, y1: -71, x2: -15, y2: -45, thin: true },
-  { x1: -3, y1: -71, x2: -3, y2: -40, thin: true },
-  { x1: 12, y1: -71, x2: 12, y2: -52, thin: true },
-  { x1: 25, y1: -71, x2: 25, y2: -48, thin: true },
-  { x1: -40, y1: -13, x2: -40, y2: 4, thin: true },
-  { x1: -70, y1: 7, x2: -70, y2: 22, thin: true },
-  { x1: -77, y1: -33, x2: -77, y2: -42, thin: true },
-  { x1: -78, y1: 20, x2: -78, y2: 42, thin: true },
-  { x1: -71, y1: 9, x2: -71, y2: 22, thin: true },
-  { x1: -18, y1: 63, x2: -18, y2: 44, thin: true },
-  { x1: -22, y1: 81, x2: -22, y2: 68, thin: true },
-  { x1: -10, y1: 81, x2: -10, y2: 62, thin: true },
-  { x1: -2, y1: 75, x2: -2, y2: 56, thin: true },
-  { x1: 93, y1: 21, x2: 93, y2: 6, thin: true },
-  { x1: 65, y1: 1, x2: 65, y2: 16, thin: true },
-  { x1: 50, y1: 11, x2: 50, y2: 24, thin: true },
-  { x1: -14, y1: 15, x2: -14, y2: 30, thin: true },
-  { x1: -14, y1: -11, x2: -14, y2: 2, thin: true },
-  { x1: 16, y1: -13, x2: 16, y2: 2, thin: true },
-  { x1: -88, y1: 1, x2: -88, y2: 18, thin: true },
-  { x1: -70, y1: -24, x2: -70, y2: -44, thin: true },
-  { x1: -68, y1: -33, x2: -68, y2: -44, thin: true },
-  { x1: -78, y1: 17, x2: -78, y2: 30, thin: true },
-  { x1: -66, y1: 9, x2: -66, y2: 26, thin: true },
-  { x1: -36, y1: 68, x2: -36, y2: 50, thin: true },
-  { x1: -28, y1: 68, x2: -28, y2: 48, thin: true },
   { x1: 588, y1: 488, x2: 593, y2: 476, thin: true },
   { x1: 596, y1: 488, x2: 601, y2: 476, thin: true },
   { x1: -590, y1: -488, x2: -596, y2: -476, thin: true },
@@ -271,21 +163,15 @@ const FOOTPATH_SEGMENTS = [
   { x1: 576, y1: -512, x2: 582, y2: -524, thin: true }
 ];
 
-/** Decorative furniture along roads (interaction id + fractional tile position). */
+/** Hub paths & walls are regenerated — roadside props confined to outskirts + portal realms. */
 const ROADSIDE_FEATURES = Object.freeze([
-  { id: "rs_hub_b1", x: -56, y: 7, kind: "bench", facing: 0 },
-  { id: "rs_hub_b2", x: 58, y: -7, kind: "bench", facing: Math.PI },
-  { id: "rs_hub_t1", x: -18, y: -12, kind: "table", facing: Math.PI / 2 },
-  { id: "rs_hub_t2", x: 22, y: 18, kind: "table", facing: 0 },
-  { id: "rs_pub_t1", x: -67, y: -34, kind: "pub_table", facing: 0 },
-  { id: "rs_pub_t2", x: -62, y: -34, kind: "pub_table", facing: 0 },
-  { id: "rs_pub_c1", x: -69, y: -36, kind: "pub_chair", facing: Math.PI / 2 },
-  { id: "rs_pub_c2", x: -64, y: -36, kind: "pub_chair", facing: Math.PI / 2 },
-  { id: "rs_pub_c3", x: -67, y: -33, kind: "pub_chair", facing: -Math.PI / 2 },
-  { id: "rs_east_b1", x: 74, y: 32, kind: "bench", facing: 0 },
-  { id: "rs_east_t1", x: 98, y: 42, kind: "table", facing: Math.PI / 2 },
-  { id: "rs_south_b1", x: -32, y: 58, kind: "bench", facing: Math.PI },
-  { id: "rs_south_t1", x: 8, y: 64, kind: "table", facing: 0 },
+  { id: "rs_pub_t_a", x: -58, y: -34, kind: "pub_table", facing: 0 },
+  { id: "rs_pub_t_b", x: -51, y: -34, kind: "pub_table", facing: 0 },
+  { id: "rs_pub_c_a", x: -61, y: -36, kind: "pub_chair", facing: Math.PI / 2 },
+  { id: "rs_pub_c_b", x: -53, y: -36, kind: "pub_chair", facing: Math.PI / 2 },
+  { id: "rs_pub_c_c", x: -58, y: -31, kind: "pub_chair", facing: -Math.PI / 2 },
+  { id: "rs_wall_bench_n", x: -2, y: -112, kind: "bench", facing: 0 },
+  { id: "rs_wall_bench_s", x: 12, y: 110, kind: "bench", facing: Math.PI },
   { id: "rs_oasis_b1", x: 592, y: 486, kind: "bench", facing: 0 },
   { id: "rs_frost_b1", x: -592, y: -486, kind: "bench", facing: Math.PI },
   { id: "rs_ember_b1", x: 572, y: -510, kind: "bench", facing: Math.PI / 2 }
@@ -404,7 +290,7 @@ function buildScatterEnemyCamps() {
       let tx = Math.round(Math.cos(angle) * ring + (hash2(i, ring, 6101) - 0.5) * 22);
       let ty = Math.round(Math.sin(angle) * ring + (hash2(ring, i, 6102) - 0.5) * 22);
 
-      if (Math.hypot(tx, ty) < 104) continue;
+      if (Math.hypot(tx, ty) < HUB_TOWN_GRASS_RADIUS + 24) continue;
       if (Math.hypot(tx - 600, ty - 490) < 56) continue;
       if (Math.hypot(tx + 600, ty + 490) < 56) continue;
       if (Math.hypot(tx - 580, ty + 530) < 56) continue;
@@ -450,19 +336,20 @@ function buildScatterEnemyCamps() {
 }
 
 const BASE_ENEMY_CAMPS = [
-  // ── First encounters — just outside safe zone (90–130 tiles) ──────────────
+  // ── First encounters — just outside the walled hub pasture (hypot ≥ ~138) ─
   { id: "bracken_post",  x:    0, y:  -96, size: 3, tier: 1 },
   { id: "muddy_bank",    x:   96, y:    0, size: 3, tier: 1 },
   { id: "stone_stump",   x:    0, y:   96, size: 3, tier: 1 },
   { id: "briars_edge",   x:  -96, y:    0, size: 3, tier: 1 },
-  { id: "crooked_pine",  x:   68, y:  -68, size: 3, tier: 1 },
-  { id: "dark_burrow",   x:  -68, y:  -68, size: 3, tier: 1 },
-  { id: "wolf_den",      x:   68, y:   68, size: 3, tier: 1 },
-  { id: "thorny_glade",  x:  -68, y:   68, size: 3, tier: 1 },
-  { id: "north_post",    x:   12, y: -115, size: 3, tier: 1, type: "watch" },
-  { id: "east_post",     x:  115, y:   12, size: 3, tier: 1, type: "watch" },
-  { id: "south_post",    x:  -12, y:  115, size: 3, tier: 1, type: "watch" },
-  { id: "west_post",     x: -115, y:  -12, size: 3, tier: 1, type: "watch" },
+  // Diagonal camps sit past VILLAGES[0] so they do not clash with meadow clearing.
+  { id: "crooked_pine",  x:  105, y: -105, size: 3, tier: 1 },
+  { id: "dark_burrow",   x: -105, y: -105, size: 3, tier: 1 },
+  { id: "wolf_den",      x:  105, y:  105, size: 3, tier: 1 },
+  { id: "thorny_glade",  x: -105, y:  105, size: 3, tier: 1 },
+  { id: "north_post",    x:   12, y: -148, size: 3, tier: 1, type: "watch" },
+  { id: "east_post",     x:  148, y:   12, size: 3, tier: 1, type: "watch" },
+  { id: "south_post",    x:  -12, y:  148, size: 3, tier: 1, type: "watch" },
+  { id: "west_post",     x: -148, y:  -12, size: 3, tier: 1, type: "watch" },
   // ── Tier 1 — near hub (90–160 tiles) ─────────────────────────────────────
   { id: "north_woods",    x:  -80, y: -130, size: 4, tier: 1 },
   { id: "east_copse",     x:  130, y:  -60, size: 5, tier: 1 },
@@ -547,7 +434,7 @@ const BASE_ENEMY_CAMPS = [
   // ── Tier 6 — portal gates (720+ tiles, near destinations) ─────────────────
   { id: "void_crossing",   x:  545, y:  440, size:10, tier: 6, boss: true, type: "fort" },
   { id: "null_pinnacle",   x: -545, y: -455, size:10, tier: 6, boss: true, type: "fort" },
-  { id: "ash_crown",       x:  540, y: -500, size:10, tier: 6, boss: true, type: "fort" },
+  { id: "ash_crown",       x:  440, y: -610, size:10, tier: 6, boss: true, type: "fort" },
 ];
 
 const ENEMY_CAMPS = [...BASE_ENEMY_CAMPS, ...buildScatterEnemyCamps()];
@@ -583,7 +470,7 @@ function getSettlementAt(gx, gy) {
   const cy = gy * SETTLE_GRID + 10 + Math.floor(hash2(gx, gy, 202) * (SETTLE_GRID - 20));
 
   // Stay clear of starting town and portal destinations.
-  if (Math.hypot(cx, cy) < 86) return null;
+  if (Math.hypot(cx, cy) < Math.max(86, HUB_TOWN_GRASS_RADIUS + 18)) return null;
   if (Math.hypot(cx - 600, cy - 490) < 56) return null;
   if (Math.hypot(cx + 600, cy + 490) < 56) return null;
   if (Math.hypot(cx - 580, cy + 530) < 56) return null;
@@ -1108,10 +995,56 @@ function getBuildingsNearDoor(x, y) {
 }
 
 function getDoorTransitionAt(x, y) {
+  const tx = Math.round(Number(x));
+  const ty = Math.round(Number(y));
+  for (let i = 0; i < BUILDINGS.length; i += 1) {
+    const b = BUILDINGS[i];
+    const doorCols = southDoorWorldXs(b);
+    const southRow = Math.floor(b.y) + Math.floor(b.h) - 1;
+    if (
+      doorCols.includes(tx) &&
+      (ty === southRow || ty === southRow + 1 || ty === southRow - 1)
+    ) {
+      const interior = BUILDING_INTERIORS[i];
+      if (!interior) {
+        return null;
+      }
+      return {
+        ...interior,
+        name: typeof b.name === "string" ? b.name : "Building"
+      };
+    }
+  }
   return null;
 }
 
 function getShopFixtureAt(x, y) {
+  for (const interior of getCandidateInteriorsNear(x)) {
+    const b = interior.building;
+    if (Math.abs(x - (interior.x + interior.w / 2)) > interior.w + 2 || Math.abs(y - (interior.y + interior.h / 2)) > interior.h + 2) {
+      continue;
+    }
+    for (let lx = 1; lx <= interior.w - 2; lx += 1) {
+      for (let ly = 1; ly <= interior.h - 2; ly += 1) {
+        const wx = interior.x + lx;
+        const wy = interior.y + ly;
+        if (getInteriorTile(wx, wy) !== TILE.SHELF) {
+          continue;
+        }
+        if (Math.hypot(x - (wx + 0.5), y - (wy + 0.5)) <= 1.25) {
+          return {
+            id: `shop_int_${interior.index}`,
+            name: b.isPub ? "Taproom" : "Trader Shelf",
+            buildingName: b.name,
+            isPub: !!b.isPub,
+            x: wx + 0.5,
+            y: wy + 0.5
+          };
+        }
+      }
+    }
+  }
+
   for (const b of BUILDINGS) {
     if (Math.abs(x - (b.x + b.w/2)) > b.w + 2 || Math.abs(y - (b.y + b.h/2)) > b.h + 2) continue;
     const seed = hash2(b.x, b.y, 7777);
@@ -1228,7 +1161,7 @@ function getBiome(x, y) {
   }
 
   const meadow = smoothNoise(x + 220, y - 140, 42, 234);
-  if (meadow > 0.67 && Math.hypot(x, y) > 34) {
+  if (meadow > 0.64 && Math.hypot(x, y) > Math.max(42, HUB_TOWN_GRASS_RADIUS + 18)) {
     return "meadow";
   }
 
@@ -1245,10 +1178,28 @@ function generateExteriorTile(x, y) {
     return TILE.PORTAL;
   }
 
+  const apronTile = getInteriorExteriorTile(x, y);
+  if (apronTile !== null) {
+    return apronTile;
+  }
+
+  const interiorTile = getInteriorTile(x, y);
+  if (interiorTile !== null) {
+    return interiorTile;
+  }
+
   // Fixed buildings override everything.
   const buildingTile = getBuildingTile(x, y);
   if (buildingTile !== null) {
     return buildingTile;
+  }
+
+  const tiGrid = Math.floor(x);
+  const tjGrid = Math.floor(y);
+  const hk = `${tiGrid},${tjGrid}`;
+  /** Stone curtain wall around the walled round hub — never overlays the plaza tree lump */
+  if (Math.hypot(x, y) > 12 && HUB_WALL_TILE_KEYS.has(hk)) {
+    return TILE.WALL;
   }
 
   const ax = Math.abs(x);
@@ -1275,13 +1226,25 @@ function generateExteriorTile(x, y) {
     return TILE.PATH;
   }
 
-  const ti = Math.floor(x);
-  const tj = Math.floor(y);
-  if (isStoneHighway(ti, tj)) {
+  if (dist < HUB_TOWN_GRASS_RADIUS + 35 && HUB_PATH_TILE_KEYS.has(hk)) {
+    return TILE.PATH;
+  }
+
+  if (isStoneHighway(tiGrid, tjGrid)) {
     return TILE.STONE;
   }
-  if (isThinFootpath(ti, tj)) {
+  if (isThinFootpath(tiGrid, tjGrid)) {
     return TILE.PATH;
+  }
+
+  /** Allotment gardens beside homes — applied only after arterial paths so road spines keep PATH/ST tiles */
+  const distPlots = Math.hypot(tiGrid + 0.5, tjGrid + 0.5);
+  if (
+    distPlots >= 21 &&
+    distPlots <= HUB_TOWN_GRASS_RADIUS + 9 &&
+    HUB_GARDEN_TILE_KEYS.has(hk)
+  ) {
+    return hash2(tiGrid, tjGrid, 8843) > 0.61 ? TILE.FLOWERS : TILE.DARK_GRASS;
   }
 
   // Stone plaza surrounding each portal (roads already handled above, so only non-road tiles reach here)
@@ -1295,6 +1258,11 @@ function generateExteriorTile(x, y) {
     if (r > 0.78) return TILE.FLOWERS;
     if (r > 0.52) return TILE.DARK_GRASS;
     return TILE.GRASS;
+  }
+
+  const campTile = getEnemyCampTile(x, y);
+  if (campTile !== null) {
+    return campTile;
   }
 
   // Village clearings: suppress forest and water.
@@ -1313,11 +1281,6 @@ function generateExteriorTile(x, y) {
     if (r > 0.84) return TILE.FLOWERS;
     if (r > 0.66) return TILE.DARK_GRASS;
     return TILE.GRASS;
-  }
-
-  const campTile = getEnemyCampTile(x, y);
-  if (campTile !== null) {
-    return campTile;
   }
 
   // Procedural settlements scattered across the world.
@@ -1507,7 +1470,11 @@ function getBuildingsInChunk(cx, cy) {
       type: b.type,
       forSale: !!b.forSale,
       isPub: !!b.isPub,
-      residentLabel: typeof b.residentLabel === "string" ? b.residentLabel.slice(0, 48) : undefined
+      residentLabel: typeof b.residentLabel === "string" ? b.residentLabel.slice(0, 48) : undefined,
+      residentSign:
+        b.residentSign && typeof b.residentSign.sx === "number" && typeof b.residentSign.sy === "number"
+          ? { sx: b.residentSign.sx, sy: b.residentSign.sy }
+          : undefined
     }));
 
   const seen = new Set(result.map((b) => `${b.x},${b.y}`));

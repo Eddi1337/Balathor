@@ -27,7 +27,8 @@ const {
   syncSoldCompanionIdsFromAccounts,
   registerCompanionSold,
   getCompanionNpcTemplate,
-  pickPubDreamGirlfriendNpcId
+  pickPubDreamGirlfriendNpcId,
+  syncNpcHubHomesFromBuildings
 } = require("./npcs");
 const {
   openWorldDb,
@@ -387,6 +388,8 @@ const ownedBuildings = loadBuildingOwnership(worldDb); // key: "x,y" → { owner
   console.log(`Balathor persisted house deeds: ${ownedBuildings.size}`);
 }
 const FOR_SALE_BUILDINGS = BUILDING_LIST.filter(b => b.forSale);
+
+syncNpcHubHomesFromBuildings(BUILDING_LIST, southDoorAnchorWorldX);
 
 const accountStore = loadAccountStore();
 syncSoldCompanionIdsFromAccounts(accountStore.accounts);

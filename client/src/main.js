@@ -6013,6 +6013,36 @@ function drawCuratedSign(sx, sy) {
   ctx.fillRect(sx + 11, sy + 13, 10, 2);
 }
 
+/** Freestanding homestead sign beside the façade (world fractions). */
+function drawStandingResidentSign(worldX, worldY, shortName) {
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const cx = Math.floor(worldX * TILE_SIZE - state.camera.x + halfW);
+  const baseY = Math.floor(worldY * TILE_SIZE - state.camera.y + halfH);
+
+  ctx.save();
+  ctx.fillStyle = "#4a3428";
+  ctx.fillRect(cx - 2, baseY - 38, 4, 40);
+  const boardW = Math.min(120, Math.max(74, Math.round(12 + shortName.length * 6.3)));
+  const bx = cx - Math.round(boardW / 2);
+  const by = baseY - 56;
+  ctx.fillStyle = "#c9a66a";
+  ctx.strokeStyle = "#2c1c10";
+  ctx.lineWidth = 2;
+  ctx.fillRect(bx, by, boardW, 22);
+  ctx.strokeRect(bx, by, boardW, 22);
+  ctx.font = "600 11px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const text = shortName.slice(0, 16);
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(0,0,0,0.55)";
+  ctx.strokeText(text, bx + boardW / 2, by + 11);
+  ctx.fillStyle = "#173018";
+  ctx.fillText(text, bx + boardW / 2, by + 11);
+  ctx.restore();
+}
+
 function isNearTile(tx, ty, tile) {
   return getTile(tx - 1, ty) === tile || getTile(tx + 1, ty) === tile || getTile(tx, ty - 1) === tile || getTile(tx, ty + 1) === tile;
 }
@@ -6129,19 +6159,23 @@ function drawBuildingSprite(building, sx, sy, roofless) {
   } else if (building.forSale) {
     drawForSaleSignpost(building, sx, sy, w, h);
   } else if (building.residentLabel) {
-    const lx = sx + w / 2;
-    const ly = sy + h - TILE_SIZE * 0.92;
-    ctx.save();
-    ctx.font = "600 10px ui-sans-serif, system-ui";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    const text = `Home of ${building.residentLabel}`;
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "rgba(0,0,0,0.55)";
-    ctx.strokeText(text, lx, ly);
-    ctx.fillStyle = "#f0f4ff";
-    ctx.fillText(text, lx, ly);
-    ctx.restore();
+    if (building.residentSign && typeof building.residentSign.sx === "number" && typeof building.residentSign.sy === "number") {
+      drawStandingResidentSign(building.residentSign.sx, building.residentSign.sy, building.residentLabel);
+    } else {
+      const lx = sx + w / 2;
+      const ly = sy + h - TILE_SIZE * 0.92;
+      ctx.save();
+      ctx.font = "600 10px ui-sans-serif, system-ui";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const text = `Home of ${building.residentLabel}`;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(0,0,0,0.55)";
+      ctx.strokeText(text, lx, ly);
+      ctx.fillStyle = "#f0f4ff";
+      ctx.fillText(text, lx, ly);
+      ctx.restore();
+    }
   }
 
   if (building.isPub && !roofless) {

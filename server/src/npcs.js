@@ -407,7 +407,7 @@ const DEFINITIONS = [
 
 const soldCompanionNpcIds = new Set();
 const SOCIAL_PAIR_INTERVAL_MS = 11000;
-const SOCIAL_NEAR_HOME = 118;
+const SOCIAL_NEAR_HOME = 168;
 /** Generic lines overheard during NPC→NPC chatter */
 const SOCIAL_OVERHEARD = [
   "Any news from the east road?",
@@ -446,6 +446,38 @@ const npcs = DEFINITIONS.map((def) => ({
     CHAT_INTERVAL_MIN +
     Math.random() * (CHAT_INTERVAL_MAX - CHAT_INTERVAL_MIN),
 }));
+
+/** Repoint villagers + romance NPCs toward their shack door after hub regeneration. */
+function syncNpcHubHomesFromBuildings(buildings, southDoorAnchorWorldXFn) {
+  if (typeof southDoorAnchorWorldXFn !== "function" || !buildings?.length) {
+    return;
+  }
+
+  for (const b of buildings) {
+    const nid = b?.npcAttachId;
+    if (typeof nid !== "string") {
+      continue;
+    }
+    const n = npcs.find((z) => z.id === nid);
+    if (!n) {
+      continue;
+    }
+    const hx = southDoorAnchorWorldXFn(b);
+    const hy = b.y + b.h + 0.35;
+
+    const defObj = DEFINITIONS.find((d) => d.id === nid);
+    if (defObj) {
+      defObj.homeX = hx;
+      defObj.homeY = hy;
+    }
+    n.homeX = hx;
+    n.homeY = hy;
+    n._targetX = hx;
+    n._targetY = hy;
+    n.x = hx + Math.random() * 0.7 - 0.35;
+    n.y = hy + Math.random() * 0.45 + 0.04;
+  }
+}
 
 function syncSoldCompanionIdsFromAccounts(accountsRoot) {
   soldCompanionNpcIds.clear();
@@ -866,6 +898,7 @@ module.exports = {
   getNpcSnapshot,
   getNpcById,
   getTraderDefinitions,
+  syncNpcHubHomesFromBuildings,
   syncSoldCompanionIdsFromAccounts,
   registerCompanionSold,
   getCompanionNpcTemplate,

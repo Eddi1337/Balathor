@@ -23,15 +23,15 @@ const homeDoorX = home.x + Math.floor(home.w / 2);
 const homeSouthDoorY = home.y + home.h - 1;
 const homeInterior = world.getDoorTransitionAt(homeDoorX, homeSouthDoorY);
 assert.equal(homeInterior.name, "Home");
-const homeInteriorDoorY = Math.round(homeInterior.y + 1.15);
-const homeInteriorX = homeInterior.x - Math.floor(home.w / 2);
-const homeInteriorY = homeInteriorDoorY - home.h + 1;
-assert.equal(world.generateTile(homeInteriorX, homeInteriorY), world.TILE.WALL);
-assert.equal(world.generateTile(homeInteriorX + home.w - 1, homeInteriorY + home.h - 1), world.TILE.WALL);
-assert.equal(world.generateTile(homeInteriorX + Math.floor(home.w / 2), homeInteriorY + home.h - 1), world.TILE.DOOR);
-assert.equal(world.generateTile(homeInteriorX + home.w - 3, homeInteriorY + 2), world.TILE.SHELF);
-assert.equal(world.generateTile(homeInteriorX - 1, homeInteriorY + home.h), world.generateTile(home.x - 1, home.y + home.h));
-assert.equal(Boolean(world.getShopFixtureAt(homeInteriorX + home.w - 2.5, homeInteriorY + 2.5)), true);
+/** Phantom interior slab top-left equals createInteriorForBuilding coords (aligned with exporter). */
+const ix = homeInterior.x;
+const iy = homeInterior.y;
+assert.equal(world.generateTile(ix, iy), world.TILE.WALL);
+assert.equal(world.generateTile(ix + home.w - 1, iy + home.h - 1), world.TILE.WALL);
+assert.equal(world.generateTile(ix + Math.floor(home.w / 2), iy + home.h - 1), world.TILE.DOOR);
+assert.equal(world.generateTile(ix + home.w - 3, iy + 2), world.TILE.SHELF);
+assert.equal(world.generateTile(ix - 1, iy + home.h), world.generateTile(home.x - 1, home.y + home.h));
+assert.equal(Boolean(world.getShopFixtureAt(ix + home.w - 2.5, iy + 2.5)), true);
 
 const basePort = 18000 + (process.pid % 1000);
 const serverPort = basePort;
