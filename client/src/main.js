@@ -4750,8 +4750,8 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
     const s = 3;
     const groundY = y + 7 * s + 6;
     const gait = moving ? walkSin : 0;
-    const fx = Math.round(dirX);
-    const cx = x + fx * (s * 0.65) + (moving ? gait * s * 0.45 : 0);
+    /** Staff held in right hand — same silhouette as before; horizontal anchor follows hand, not torso center. */
+    const cx = rHandX + (moving ? gait * s * 0.45 : 0);
     const shaftTipY = y - 13 * s - 14;
     const shaftW = style === "heavy" ? Math.max(6, Math.round(s + 2)) : Math.round(s + 1.8);
     const orn = ornateWeapon ? (isAscendant ? "#67e8f9" : "#c79cff") : "#ff7a45";
