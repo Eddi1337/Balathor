@@ -93,7 +93,7 @@ const VILLAGES = [
 const STREET_SEGMENTS = [
   // Main roads radiate outward from the circular plaza (wide, w=1 = 3 tiles wide)
   { x1: -70, y1:  0, x2:  70, y2:  0, w: 1 },  // East-west main road
-  { x1:   0, y1: -70, x2:   0, y2: 70, w: 1 },  // North-south main road
+  { x1:   0, y1: -82, x2:   0, y2: 70, w: 1 },  // North-south spine (north extended to realm gates)
 
   // North buildings — branch off N-S road
   { x1:   0, y1: -28, x2:   1, y2: -28 },        // Home: N-S road already passes door
@@ -134,19 +134,20 @@ const STREET_SEGMENTS = [
   { x1: 558, y1: -524, x2: 596, y2: -524 },       // horizontal cross-road
   { x1: 580, y1: -537, x2: 580, y2: -503 },       // vertical: buildings to portal approach
 
-  // Central portal approach spurs (dead-end roads leading to each portal)
-  { x1: 46, y1: 3, x2: 46, y2: 8 },              // Oasis Gate south approach
-  { x1: -46, y1: 3, x2: -46, y2: 8 },            // Frost Gate south approach
-  { x1: 3, y1: 60, x2: 8, y2: 60 },              // Ember Gate east approach
+  // Realm gates — vertical roads north from the village (portals sit at north dead-ends).
+  { x1: -46, y1: 0, x2: -46, y2: -78 },         // Frost Gate road
+  { x1: 46, y1: -12, x2: 46, y2: -78 },         // Oasis Gate road (+ East district merge)
+
+  // Ember Gate uses central spine `{ x1: 0 … y: -82 }` which runs past `(0,-76)`
 ];
 
 const PORTALS = [
-  { id: "portal_oasis", name: "Oasis Gate",  x:  46, y:  0, targetX: 600, targetY: 522, color: "#f2c45f" },
-  { id: "portal_frost", name: "Frost Gate",   x: -46, y:  0, targetX: -600, targetY: -458, color: "#9ee7ff" },
-  { id: "portal_ember", name: "Ember Gate",   x:   0, y: 60, targetX: 580, targetY: -503, color: "#ff7a45" },
-  { id: "portal_hub_oasis", name: "Oasis Gate", x: 600, y: 522, targetX: 46, targetY: 0, color: "#f2c45f" },
-  { id: "portal_hub_frost", name: "Frost Gate", x: -600, y: -458, targetX: -46, targetY: 0, color: "#9ee7ff" },
-  { id: "portal_hub_ember", name: "Ember Gate", x: 580, y: -503, targetX: 0, targetY: 60, color: "#ff7a45" },
+  { id: "portal_oasis", name: "Oasis Gate",  x:  46, y: -76, targetX: 600, targetY: 522, color: "#f2c45f" },
+  { id: "portal_frost", name: "Frost Gate",   x: -46, y: -76, targetX: -600, targetY: -458, color: "#9ee7ff" },
+  { id: "portal_ember", name: "Ember Gate",   x:   0, y: -76, targetX: 580, targetY: -503, color: "#ff7a45" },
+  { id: "portal_hub_oasis", name: "Oasis Gate", x: 600, y: 522, targetX: 46, targetY: -76, color: "#f2c45f" },
+  { id: "portal_hub_frost", name: "Frost Gate", x: -600, y: -458, targetX: -46, targetY: -76, color: "#9ee7ff" },
+  { id: "portal_hub_ember", name: "Ember Gate", x: 580, y: -503, targetX: 0, targetY: -76, color: "#ff7a45" },
 ];
 
 function nearFixedBuilding(tx, ty, pad = 9) {
@@ -413,7 +414,7 @@ function getProceduralSettlementTile(x, y) {
       const lx = x - b.x;
       const ly = y - b.y;
       const seed = hash2(b.x, b.y, 7777);
-      return getBuildingInteriorTile(lx, ly, b.w, b.h, b.type || "hut", seed);
+      return getBuildingInteriorTile(lx, ly, b.w, b.h, b.type || "hut", seed, false);
     }
 
     // Cross roads through settlement center.
@@ -517,7 +518,10 @@ function getEnemyCampTile(x, y) {
 
 // ---------------------------------------------------------------------------
 
-function getBuildingInteriorTile(lx, ly, w, h, type, seed) {
+function getBuildingInteriorTile(lx, ly, w, h, type, seed, buyableHome) {
+  if (buyableHome) {
+    return TILE.FLOOR;
+  }
   if (type === "hut") {
     const fpX = Math.floor((w - 2) / 2) + 1;
     if (lx === fpX && ly === 1) return TILE.FIREPLACE;
@@ -595,7 +599,7 @@ function getBuildingTile(x, y) {
     const lx = x - b.x;
     const ly = y - b.y;
     const seed = hash2(b.x, b.y, 7777);
-    return getBuildingInteriorTile(lx, ly, b.w, b.h, b.type || "house", seed);
+    return getBuildingInteriorTile(lx, ly, b.w, b.h, b.type || "house", seed, !!b.forSale);
   }
 
   return null;
@@ -870,7 +874,7 @@ function getShopFixtureAt(x, y) {
         const doorX = b.x + Math.floor(b.w/2);
         const isDoor = (lx === doorX - b.x) && (ly === 0 || ly === b.h-1);
         if (isDoor) continue;
-        if (getBuildingInteriorTile(lx, ly, b.w, b.h, b.type || "house", seed) === TILE.SHELF) {
+        if (getBuildingInteriorTile(lx, ly, b.w, b.h, b.type || "house", seed, !!b.forSale) === TILE.SHELF) {
           const sx = b.x + lx, sy = b.y + ly;
           if (Math.hypot(x - (sx+0.5), y - (sy+0.5)) <= 1.25) {
             return { id: `shop_${b.x}_${b.y}`, name: "Trader Shelf", buildingName: b.name, x: sx+0.5, y: sy+0.5 };

@@ -918,7 +918,7 @@ function playerNearBuildingForPurchase(player, building) {
   return Math.hypot(px - signX, py - signY) <= 8;
 }
 
-function handleHouseHomeTreeTeleport(client) {
+function handleHouseHomeTreeTeleport(client, message = {}) {
   if (!client.player || !client.account) {
     return;
   }
@@ -947,7 +947,12 @@ function handleHouseHomeTreeTeleport(client) {
   }
 
   const treePos = getOwnedHouseHomeTreeWorldPos(building);
-  if (Math.hypot(client.player.x - treePos.x, client.player.y - treePos.y) > 0.52) {
+  const cx = Number(message.x);
+  const cy = Number(message.y);
+  const ax = Number.isFinite(cx) ? cx : px;
+  const ay = Number.isFinite(cy) ? cy : py;
+  /** Clicks are validated against tree anchor; walking onto the tile is not required. */
+  if (Math.hypot(ax - treePos.x, ay - treePos.y) > 1.45) {
     return;
   }
 
@@ -1182,7 +1187,7 @@ function handleMessage(client, raw) {
   }
 
   if (message.type === "houseHomeTree") {
-    handleHouseHomeTreeTeleport(client);
+    handleHouseHomeTreeTeleport(client, message);
     return;
   }
 

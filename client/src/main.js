@@ -96,8 +96,10 @@ const STARTING_SAFE_ZONE = { x: 0, y: 0, radius: 26 };
 /** Matches server SPELL_DAMAGE_PROFILES.consecration.radius */
 const CONSECRATION_RADIUS_TILES = 4.6;
 const BUY_HOUSE_INTERACT_RADIUS = 8;
-/** World-tile radius: tree teleport tooltip + click only when pointer is near the sprite. */
-const INTERIOR_HOME_TREE_HIT_RADIUS_TILES = 0.52;
+/** World-tile radius: small hover tooltip only when pointer is near the tree sprite. */
+const INTERIOR_HOME_TREE_HIT_RADIUS_TILES = 0.55;
+/** World-tile radius for click-to-teleport (generous; server validates click position). */
+const INTERIOR_HOME_TREE_CLICK_RADIUS_TILES = 1.45;
 /** World-tile radius for clicking the interior chest to open storage. */
 const INTERIOR_HOUSE_CHEST_CLICK_RADIUS_TILES = 0.72;
 /** Tooltip appears only when near the chest sprite. */
@@ -2155,6 +2157,49 @@ function getOwnedHouseChestWorldPos(building) {
   return { x: building.x + building.w - d, y: building.y + d };
 }
 
+/** Floor line at bottom of tile cell (wx,wy) for interior props */
+function interiorFloorAnchorFromWorld(wx, wy, halfW, halfH) {
+  const ix = Math.floor(wx);
+  const iy = Math.floor(wy);
+  const tileTopX = ix * TILE_SIZE - state.camera.x + halfW;
+  const tileTopY = iy * TILE_SIZE - state.camera.y + halfH;
+  return {
+    cx: tileTopX + TILE_SIZE / 2,
+    groundY: tileTopY + TILE_SIZE - 6
+  };
+}
+
+/** Player standing inside a purchasable plot (forSale) — used to hide clutter. */
+function getPlayerStandingBuyableHouseInterior() {
+  const self = state.players.get(state.selfId);
+  if (!self) {
+    return null;
+  }
+  for (const b of state.buildings.values()) {
+    if (!b.forSale) {
+      continue;
+    }
+    if (
+      self.x > b.x + 0.55 &&
+      self.x < b.x + b.w - 0.55 &&
+      self.y > b.y + 0.55 &&
+      self.y < b.y + b.h - 0.55
+    ) {
+      return b;
+    }
+  }
+  return null;
+}
+
+function worldPointInsideBuildingInterior(wx, wy, b, inset = 0.35) {
+  return (
+    wx >= b.x + inset &&
+    wx <= b.x + b.w - inset &&
+    wy >= b.y + inset &&
+    wy <= b.y + b.h - inset
+  );
+}
+
 function findBuildingByKey(key) {
   for (const b of state.buildings.values()) {
     if (`${b.x},${b.y}` === key) {
@@ -2210,14 +2255,14 @@ function tryClickHouseHomeTree(wx, wy) {
     return false;
   }
   const tp = getOwnedHouseHomeTreeWorldPos(building);
-  if (Math.hypot(wx - tp.x, wy - tp.y) > INTERIOR_HOME_TREE_HIT_RADIUS_TILES) {
+  if (Math.hypot(wx - tp.x, wy - tp.y) > INTERIOR_HOME_TREE_CLICK_RADIUS_TILES) {
     return false;
   }
   const pb = getPlayerBuilding();
   if (!pb || pb.x !== building.x || pb.y !== building.y) {
     return false;
   }
-  send({ type: "houseHomeTree" });
+  send({ type: "houseHomeTree", x: wx, y: wy });
   return true;
 }
 
@@ -3838,6 +3883,7 @@ function isInteriorDrawTile(tile) {
 function drawPlayers() {
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
+  const buyInterior = getPlayerStandingBuyableHouseInterior();
 
   const entities = [
     ...[...state.players.values()].map((p) => ({ entity: p, isNpc: false })),
@@ -3846,6 +3892,13 @@ function drawPlayers() {
   ].sort((a, b) => a.entity.renderY - b.entity.renderY);
 
   for (const { entity, isNpc, isMob } of entities) {
+    if (buyInterior) {
+      const wx = Number.isFinite(entity.renderX) ? entity.renderX : entity.x;
+      const wy = Number.isFinite(entity.renderY) ? entity.renderY : entity.y;
+      if (isNpc || (isMob && worldPointInsideBuildingInterior(wx, wy, buyInterior))) {
+        continue;
+      }
+    }
     const sx = Math.floor(entity.renderX * TILE_SIZE - state.camera.x + halfW);
     const sy = Math.floor(entity.renderY * TILE_SIZE - state.camera.y + halfH);
     if (isMob) {
@@ -3859,9 +3912,13 @@ function drawPlayers() {
 function drawWorldLoot() {
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
+  const buyInterior = getPlayerStandingBuyableHouseInterior();
 
   for (const chest of state.chests) {
     if (chest.opened) {
+      continue;
+    }
+    if (buyInterior && worldPointInsideBuildingInterior(chest.x, chest.y, buyInterior)) {
       continue;
     }
     const sx = Math.floor(chest.x * TILE_SIZE - state.camera.x + halfW);
@@ -3873,6 +3930,9 @@ function drawWorldLoot() {
   }
 
   for (const ground of state.groundItems) {
+    if (buyInterior && worldPointInsideBuildingInterior(ground.x, ground.y, buyInterior)) {
+      continue;
+    }
     const sx = Math.floor(ground.x * TILE_SIZE - state.camera.x + halfW);
     const sy = Math.floor(ground.y * TILE_SIZE - state.camera.y + halfH);
     if (sx < -40 || sy < -40 || sx > canvas.width + 40 || sy > canvas.height + 40) {
@@ -5581,9 +5641,8 @@ function drawOwnedHouseInteriorHomeTree(building, roofless, halfW, halfH) {
     return;
   }
   const tp = getOwnedHouseHomeTreeWorldPos(building);
-  const sx = tp.x * TILE_SIZE - state.camera.x + halfW;
-  const sy = tp.y * TILE_SIZE - state.camera.y + halfH;
-  drawInteriorHomeTree(sx, sy);
+  const { cx, groundY } = interiorFloorAnchorFromWorld(tp.x, tp.y, halfW, halfH);
+  drawInteriorHomeTree(cx, groundY);
 }
 
 function drawOwnedHouseInteriorChest(building, roofless, halfW, halfH) {
@@ -5595,44 +5654,43 @@ function drawOwnedHouseInteriorChest(building, roofless, halfW, halfH) {
     return;
   }
   const cp = getOwnedHouseChestWorldPos(building);
-  const sx = cp.x * TILE_SIZE - state.camera.x + halfW;
-  const sy = cp.y * TILE_SIZE - state.camera.y + halfH;
-  drawInteriorHouseChest(sx, sy);
+  const { cx, groundY } = interiorFloorAnchorFromWorld(cp.x, cp.y, halfW, halfH);
+  drawInteriorHouseChest(cx, groundY);
 }
 
-/** Interior chest — opens bags via houseChestAction */
-function drawInteriorHouseChest(cx, cy) {
+/** Interior chest — opens bags via houseChestAction; `groundY` = soles on floor tiles */
+function drawInteriorHouseChest(cx, groundY) {
   ctx.save();
-  drawCastShadow(cx - 6, cy + 12, 22, 8, 0.22);
+  drawCastShadow(cx - 6, groundY + 4, 22, 6, 0.2);
   ctx.fillStyle = "#5c3d22";
-  ctx.fillRect(cx - 14, cy - 10, 28, 18);
+  ctx.fillRect(cx - 14, groundY - 18, 28, 18);
   ctx.fillStyle = "#7a5230";
-  ctx.fillRect(cx - 12, cy - 14, 24, 8);
+  ctx.fillRect(cx - 12, groundY - 22, 24, 8);
   ctx.strokeStyle = "rgba(40,24,10,0.55)";
   ctx.lineWidth = 1;
-  ctx.strokeRect(cx - 14, cy - 10, 28, 18);
-  ctx.strokeRect(cx - 12, cy - 14, 24, 8);
+  ctx.strokeRect(cx - 14, groundY - 18, 28, 18);
+  ctx.strokeRect(cx - 12, groundY - 22, 24, 8);
   ctx.fillStyle = "#d4af37";
-  ctx.fillRect(cx - 3, cy - 6, 6, 5);
+  ctx.fillRect(cx - 3, groundY - 14, 6, 5);
   ctx.restore();
 }
 
 /** Compact decorative tree — click handled via houseHomeTree message */
-function drawInteriorHomeTree(cx, cy) {
+function drawInteriorHomeTree(cx, groundY) {
   const trunk = "#5b3b26";
   const leaf = "#2f7a48";
   const leafHi = "#58a068";
   ctx.save();
-  drawCastShadow(cx - 8, cy + 10, 22, 8, 0.22);
+  drawCastShadow(cx - 8, groundY + 2, 22, 6, 0.2);
   ctx.fillStyle = trunk;
-  ctx.fillRect(cx - 3, cy - 6, 6, 14);
+  ctx.fillRect(cx - 3, groundY - 14, 6, 14);
   ctx.fillStyle = leaf;
   ctx.beginPath();
-  ctx.arc(cx, cy - 18, 14, 0, Math.PI * 2);
+  ctx.arc(cx, groundY - 24, 14, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = leafHi;
   ctx.beginPath();
-  ctx.arc(cx - 5, cy - 22, 7, 0, Math.PI * 2);
+  ctx.arc(cx - 5, groundY - 28, 7, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = "rgba(20,40,24,0.45)";
   ctx.lineWidth = 1;
