@@ -17,6 +17,15 @@ const {
   spawnPoint
 } = require("./world");
 const { updateNpcs, getNpcSnapshot, getNpcById, getTraderDefinitions } = require("./npcs");
+const {
+  openWorldDb,
+  loadBuildingOwnership,
+  upsertBuildingOwnership,
+  insertGroundItem,
+  deleteGroundItem,
+  loadGroundItems,
+  closeWorldDb
+} = require("./worldStore");
 
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 8080);
@@ -349,7 +358,8 @@ let lastSimulateWallMs = Date.now();
 const simulateWallIntervals = [];
 const SIM_WALL_SAMPLES_MAX = 60;
 
-const ownedBuildings = new Map(); // key: "x,y" → { ownerId, ownerName, price }
+const worldDb = openWorldDb();
+const ownedBuildings = loadBuildingOwnership(worldDb); // key: "x,y" → { ownerAccountKey, ownerName, price }
 const FOR_SALE_BUILDINGS = BUILDING_LIST.filter(b => b.forSale);
 
 const accountStore = loadAccountStore();
@@ -360,6 +370,13 @@ const chatHistory = [];
 const itemDatabase = createItemDatabase();
 const chests = createChests();
 const groundItems = [];
+{
+  const { items: persistedGround, nextNumericId } = loadGroundItems(worldDb, parseGroundItemFromDbJson);
+  for (const row of persistedGround) {
+    groundItems.push(row);
+  }
+  nextGroundItemId = Math.max(nextGroundItemId, nextNumericId);
+}
 const mobs = createMobs();
 const traderStocks = new Map();
 for (const def of getTraderDefinitions()) {
@@ -471,12 +488,14 @@ function clearSimulateTimer() {
 process.on("SIGTERM", () => {
   clearSimulateTimer();
   saveAllActiveCharacters();
+  closeWorldDb(worldDb);
   process.exit(0);
 });
 
 process.on("SIGINT", () => {
   clearSimulateTimer();
   saveAllActiveCharacters();
+  closeWorldDb(worldDb);
   process.exit(0);
 });
 
@@ -728,10 +747,11 @@ function simulate() {
       const nextX = client.player.x + dx * speed * dt;
       const nextY = client.player.y + dy * speed * dt;
 
-      if (!isBlockedCircle(nextX, client.player.y) && !isDoorLockedForPlayer(nextX, client.player.y, client.player.id)) {
+      const doorAccountKey = client.account?.key || "";
+      if (!isBlockedCircle(nextX, client.player.y) && !isDoorLockedForPlayer(nextX, client.player.y, doorAccountKey)) {
         client.player.x = nextX;
       }
-      if (!isBlockedCircle(client.player.x, nextY) && !isDoorLockedForPlayer(client.player.x, nextY, client.player.id)) {
+      if (!isBlockedCircle(client.player.x, nextY) && !isDoorLockedForPlayer(client.player.x, nextY, doorAccountKey)) {
         client.player.y = nextY;
       }
 
@@ -759,7 +779,8 @@ function handleDoorTravel(client) {
   // Walk-in architecture: players walk through doors naturally, no teleportation
 }
 
-function isDoorLockedForPlayer(x, y, playerId) {
+function isDoorLockedForPlayer(x, y, ownerAccountKey) {
+  const accountKey = typeof ownerAccountKey === "string" ? ownerAccountKey : "";
   const r = 0.28;
   for (let tx = Math.floor(x - r); tx <= Math.ceil(x + r); tx++) {
     for (let ty = Math.floor(y - r); ty <= Math.ceil(y + r); ty++) {
@@ -769,7 +790,7 @@ function isDoorLockedForPlayer(x, y, playerId) {
           const key = `${b.x},${b.y}`;
           const ownership = ownedBuildings.get(key);
           if (!ownership) return true; // unowned for-sale building = locked
-          return ownership.ownerId !== playerId;
+          return ownership.ownerAccountKey !== accountKey;
         }
       }
     }
@@ -980,16 +1001,23 @@ function handleMessage(client, raw) {
   if (message.type === "buyBuilding") {
     const { buildingX, buildingY } = message;
     const building = FOR_SALE_BUILDINGS.find(b => b.x === buildingX && b.y === buildingY);
-    if (!building) return;
+    if (!building || !client.account || !client.player) return;
     const key = `${building.x},${building.y}`;
     if (ownedBuildings.has(key)) return; // already owned
     const price = getBuildingPrice(building);
-    if (!client.player || client.player.gold < price) return;
     if (!playerNearBuildingForPurchase(client.player, building)) return;
+    if (client.player.gold < price) return;
     client.player.gold -= price;
-    ownedBuildings.set(key, { ownerId: client.player.id, ownerName: client.player.name, price });
-    // Broadcast ownership update to all clients
-    for (const c of clients.values()) send(c, { type: "buildingBought", buildingX: building.x, buildingY: building.y, ownerName: client.player.name });
+    ownedBuildings.set(key, {
+      ownerAccountKey: client.account.key,
+      ownerName: client.player.name,
+      price
+    });
+    upsertBuildingOwnership(worldDb, key, client.account.key, client.player.name, price);
+    saveClientCharacter(client);
+    for (const c of clients.values()) {
+      send(c, { type: "buildingBought", buildingX: building.x, buildingY: building.y, ownerName: client.player.name });
+    }
   }
 
   if (message.type === "spendTalent") {
@@ -1436,6 +1464,7 @@ function pickupGroundItem(client, ground) {
   if (index !== -1) {
     groundItems.splice(index, 1);
   }
+  deleteGroundItem(worldDb, ground.id);
   send(client, { type: "serverMessage", message: "item_picked_up", itemName: ground.item.name });
   broadcastSnapshot();
 }
@@ -2571,15 +2600,51 @@ function dropLootForMob(mob) {
   addGroundItem(item, mob.x, mob.y);
 }
 
+/** Restore floor items from SQLite — keeps ids stable across reboots. */
+function parseGroundItemFromDbJson(raw) {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const t = raw.type;
+  if (t !== "weapon" && t !== "armor" && t !== "ring" && t !== "potion") {
+    return null;
+  }
+  return {
+    ...raw,
+    type: t,
+    name: String(raw.name || "Item").slice(0, 48),
+    id: typeof raw.id === "string" ? raw.id.slice(0, 48) : `item_${Date.now()}`,
+    rarity: typeof raw.rarity === "string" ? raw.rarity.slice(0, 16) : "common",
+    color: typeof raw.color === "string" ? raw.color.slice(0, 22) : "#d7e4ef",
+    icon: typeof raw.icon === "string" ? raw.icon.slice(0, 24) : undefined,
+    weaponKind: typeof raw.weaponKind === "string" ? raw.weaponKind.slice(0, 16) : undefined,
+    stats: typeof raw.stats === "object" && raw.stats ? { ...raw.stats } : {},
+    visual: typeof raw.visual === "object" && raw.visual ? { ...raw.visual } : {},
+    specialEffects:
+      typeof raw.specialEffects === "object" && raw.specialEffects ? { ...raw.specialEffects } : {},
+    templateId: typeof raw.templateId === "string" ? raw.templateId.slice(0, 64) : undefined
+  };
+}
+
 function addGroundItem(item, x, y) {
-  groundItems.push({
+  const row = {
     id: `ground_${nextGroundItemId++}`,
     item,
     x: Number(x.toFixed(3)),
     y: Number(y.toFixed(3))
+  };
+  groundItems.push(row);
+  insertGroundItem(worldDb, {
+    id: row.id,
+    x: row.x,
+    y: row.y,
+    itemJson: JSON.stringify(row.item)
   });
   while (groundItems.length > MAX_GROUND_ITEMS) {
-    groundItems.shift();
+    const removed = groundItems.shift();
+    if (removed) {
+      deleteGroundItem(worldDb, removed.id);
+    }
   }
 }
 

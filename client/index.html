@@ -167,7 +167,10 @@
         <div class="ability-slot" data-slot="4"><span class="ability-key">5</span></div>
       </div>
       <div class="ability-bar-divider"></div>
-      <div id="safeZoneIndicator" class="safe-zone-indicator hidden" role="status" aria-label="Safe zone" title="Central village — no combat, click to interact">🛡</div>
+      <div id="safeZoneIndicator" class="safe-zone-indicator hidden" role="group" aria-label="Safe zone" title="Safe zone" tabindex="0">
+        <span class="safe-zone-icon" aria-hidden="true">🛡</span>
+        <span class="safe-zone-tooltip">Safe zone</span>
+      </div>
       <div id="potionSlot" class="ability-slot potion-slot" title="Health Potion (Q)">
         <canvas id="potionSlotIcon" width="32" height="32" style="position:absolute;top:4px;left:50%;transform:translateX(-50%);image-rendering:pixelated;"></canvas>
         <span class="ability-key potion-key">Q</span>

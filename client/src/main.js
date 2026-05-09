@@ -86,6 +86,7 @@ const buyHouseGoldLine = document.querySelector("#buyHouseGoldLine");
 const buyHouseConfirm = document.querySelector("#buyHouseConfirm");
 const buyHouseCancel = document.querySelector("#buyHouseCancel");
 const safeZoneIndicator = document.querySelector("#safeZoneIndicator");
+let safeZoneTooltipPinTimer = null;
 
 const TILE_SIZE = 32;
 /** Mirrors server/src/world.js STARTING_AREA — combat-disabled plaza only */
@@ -1270,6 +1271,23 @@ function wireUi() {
     syncSafeZoneIndicator(state.players.get(state.selfId));
   });
 
+  safeZoneIndicator?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (safeZoneIndicator.classList.contains("hidden")) return;
+    safeZoneIndicator.classList.add("safe-zone-tooltip-pinned");
+    clearTimeout(safeZoneTooltipPinTimer);
+    safeZoneTooltipPinTimer = setTimeout(() => {
+      safeZoneIndicator?.classList.remove("safe-zone-tooltip-pinned");
+      safeZoneTooltipPinTimer = null;
+    }, 2600);
+  });
+
+  safeZoneIndicator?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    safeZoneIndicator?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+
   // Ability slot right-click to clear
   abilitySlotsEl.addEventListener("contextmenu", (event) => {
     const slot = event.target.closest("[data-slot]");
@@ -1851,11 +1869,19 @@ function syncSafeZoneIndicator(self) {
   if (!safeZoneIndicator || !abilityBar) return;
   if (!state.joined || !self || abilityBar.classList.contains("minimized")) {
     safeZoneIndicator.classList.add("hidden");
+    safeZoneIndicator.classList.remove("safe-zone-tooltip-pinned");
+    clearTimeout(safeZoneTooltipPinTimer);
+    safeZoneTooltipPinTimer = null;
     return;
   }
   const px = Number.isFinite(self.renderX) ? self.renderX : self.x;
   const py = Number.isFinite(self.renderY) ? self.renderY : self.y;
   const show = Number.isFinite(px) && Number.isFinite(py) && isPlayerInStartingSafeZone(px, py);
+  if (!show) {
+    safeZoneIndicator.classList.remove("safe-zone-tooltip-pinned");
+    clearTimeout(safeZoneTooltipPinTimer);
+    safeZoneTooltipPinTimer = null;
+  }
   safeZoneIndicator.classList.toggle("hidden", !show);
 }
 
@@ -2255,6 +2281,9 @@ function resetToConnection(message) {
   chat.classList.add("hidden");
   mobileControls.classList.add("hidden");
   safeZoneIndicator?.classList.add("hidden");
+  safeZoneIndicator?.classList.remove("safe-zone-tooltip-pinned");
+  clearTimeout(safeZoneTooltipPinTimer);
+  safeZoneTooltipPinTimer = null;
   setChatMinimized(false);
   setProgressionMinimized(false);
   setActiveGameWindow(null);

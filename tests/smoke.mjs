@@ -45,7 +45,8 @@ const server = spawn(process.execPath, ["server/src/index.js"], {
     ...process.env,
     HOST: "127.0.0.1",
     PORT: String(serverPort),
-    ACCOUNT_STORE_PATH: accountPath
+    ACCOUNT_STORE_PATH: accountPath,
+    WORLD_DB_PATH: `/tmp/balathor-smoke-world-${process.pid}.sqlite`
   },
   stdio: "ignore"
 });

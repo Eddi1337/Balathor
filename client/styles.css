@@ -1692,6 +1692,7 @@ button:focus-visible {
 }
 
 .safe-zone-indicator {
+  position: relative;
   width: 40px;
   height: 48px;
   border: 1px solid #2a4a3a;
@@ -1705,6 +1706,37 @@ button:focus-visible {
   flex-shrink: 0;
   user-select: none;
   filter: grayscale(0.15);
+  cursor: default;
+}
+
+.safe-zone-icon {
+  pointer-events: none;
+}
+
+.safe-zone-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  border-radius: 3px;
+  border: 1px solid #3d6a52;
+  background: rgba(8, 14, 11, 0.96);
+  color: #c8f0dc;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease-out;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+  z-index: 5;
+}
+
+.safe-zone-indicator:hover .safe-zone-tooltip,
+.safe-zone-indicator.safe-zone-tooltip-pinned .safe-zone-tooltip {
+  opacity: 1;
 }
 
 .potion-slot {
