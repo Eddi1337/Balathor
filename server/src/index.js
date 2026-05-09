@@ -1006,16 +1006,18 @@ function computePlayerViewUnionBounds(tileMargin) {
 }
 
 function computeNpcActivationBounds() {
+  const half = Math.ceil(Number(HUB_TOWN_GRASS_RADIUS) || 132) + NPC_HUB_AI_PAD_TILES;
+  const hubAlways = { minX: -half, maxX: half, minY: -half, maxY: half };
   const pb = computePlayerViewUnionBounds(CHAT_VIEW_MARGIN_TILES);
   if (!pb) {
-    return null;
+    /** No players online — still simulate hub crowd so NPCs do not freeze. */
+    return hubAlways;
   }
-  const half = Math.ceil(Number(HUB_TOWN_GRASS_RADIUS) || 132) + NPC_HUB_AI_PAD_TILES;
   return {
-    minX: Math.min(pb.minX, -half),
-    maxX: Math.max(pb.maxX, half),
-    minY: Math.min(pb.minY, -half),
-    maxY: Math.max(pb.maxY, half)
+    minX: Math.min(pb.minX, hubAlways.minX),
+    maxX: Math.max(pb.maxX, hubAlways.maxX),
+    minY: Math.min(pb.minY, hubAlways.minY),
+    maxY: Math.max(pb.maxY, hubAlways.maxY)
   };
 }
 

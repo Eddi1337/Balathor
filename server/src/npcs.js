@@ -55,6 +55,67 @@ function hubTileKey(xf, yf) {
   return `${Math.floor(xf)},${Math.floor(yf)}`;
 }
 
+/** Expand rings from (floor x, floor y) until a hub road tile is found. */
+function nearestHubNavTile(wx, wy, navSet, maxR = 24) {
+  if (!(navSet instanceof Set) || navSet.size < 48) {
+    return null;
+  }
+  const tx0 = Math.floor(wx);
+  const ty0 = Math.floor(wy);
+  if (navSet.has(`${tx0},${ty0}`)) {
+    return { tx: tx0, ty: ty0 };
+  }
+  for (let r = 1; r <= maxR; r += 1) {
+    for (let dx = -r; dx <= r; dx += 1) {
+      for (const dy of [-r, r]) {
+        const tx = tx0 + dx;
+        const ty = ty0 + dy;
+        const kk = `${tx},${ty}`;
+        if (navSet.has(kk)) {
+          return { tx, ty };
+        }
+      }
+    }
+    for (let dy = -r + 1; dy <= r - 1; dy += 1) {
+      for (const dx of [-r, r]) {
+        const tx = tx0 + dx;
+        const ty = ty0 + dy;
+        const kk = `${tx},${ty}`;
+        if (navSet.has(kk)) {
+          return { tx, ty };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Road-following NPCs must stand on the nav mesh; tiny door offsets or failed
+ * steering can leave the floored tile off-path, and small steps then never
+ * change tile — snap once onto the nearest road cell.
+ */
+function snapNpcOntoHubNavIfNeeded(npc, navSet) {
+  if (!(navSet instanceof Set) || navSet.size < 48 || !npc._followHubPaths) {
+    return;
+  }
+  if (soldCompanionNpcIds.has(npc.id)) {
+    return;
+  }
+  if (navSet.has(hubTileKey(npc.x, npc.y))) {
+    return;
+  }
+  const hit = nearestHubNavTile(npc.x, npc.y, navSet);
+  if (!hit) {
+    return;
+  }
+  npc.x = hit.tx + 0.5;
+  npc.y = hit.ty + 0.5;
+  npc._targetX = npc.x;
+  npc._targetY = npc.y;
+  npc.moving = false;
+}
+
 /** Grid-aligned hops that stay inside the procedural road mask. */
 function steerNpcGridAlongPaths(npc, navSet, step) {
   const dx = npc._targetX - npc.x;
@@ -834,6 +895,12 @@ function syncNpcHubHomesFromBuildings(buildings, southDoorAnchorWorldXFn) {
     n.y = hy + Math.random() * 0.45 + 0.04;
   }
   refreshHubPathFollowingFlags();
+  const navSnap = WORLD.HUB_NAV_PATH_KEYS instanceof Set ? WORLD.HUB_NAV_PATH_KEYS : null;
+  if (navSnap) {
+    for (const n of npcs) {
+      snapNpcOntoHubNavIfNeeded(n, navSnap);
+    }
+  }
 }
 
 function syncSoldCompanionIdsFromAccounts(accountsRoot) {
@@ -1151,6 +1218,13 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
       typeof npc.companionPrice === "number" &&
       !soldCompanionNpcIds.has(npc.id);
     const socialWalkTowardPeer = npc._meetPeerId && npc._meetPhase === "walk";
+    /** Do not yank meet-up approachers / aggressive suitors off their scripted pathing. */
+    const skipNavSnap =
+      (npc._meetPeerId && npc._meetPhase === "walk") || courtSteers;
+    if (!skipNavSnap) {
+      snapNpcOntoHubNavIfNeeded(npc, navSetStatic);
+    }
+
     const gridPathsOk =
       npc._followHubPaths &&
       navSetStatic &&
@@ -1195,6 +1269,19 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
           const radius = Math.random() * npc.patrolRadius;
           tx = npc.homeX + Math.cos(angle) * radius;
           ty = npc.homeY + Math.sin(angle) * radius;
+        }
+
+        if (
+          npc._followHubPaths &&
+          navSetStatic instanceof Set &&
+          navSetStatic.size > 96 &&
+          !navSetStatic.has(hubTileKey(tx, ty))
+        ) {
+          const nt = nearestHubNavTile(tx, ty, navSetStatic);
+          if (nt) {
+            tx = nt.tx + 0.5;
+            ty = nt.ty + 0.5;
+          }
         }
 
         if (!isBlockedCircle(tx, ty)) {
