@@ -96,9 +96,12 @@ const CONSECRATION_RADIUS_TILES = 4.6;
 const BUY_HOUSE_INTERACT_RADIUS = 8;
 const TRADER_CLICK_HIT_RADIUS = 3.6;
 const TRADER_CLICK_PLAYER_RADIUS = 8;
-/** World tiles — matches plaza stall NPC homes (server/src/npcs.js) */
-const STARTING_PLAZA_STOOLS = [
-  { x: -14, y: -6 }, { x: 14, y: -6 }, { x: -10, y: 14 }, { x: 10, y: 14 },
+/** Trader caravan props — positions MUST match isTrader NPC homeX/homeY in server/src/npcs.js */
+const TRADER_CARAVAN_SPOTS = [
+  { x: -40, y: -10 },
+  { x: 40, y: -10 },
+  { x: -26, y: 44 },
+  { x: 28, y: 50 }
 ];
 
 const CHUNK_SIZE = 16;
@@ -253,7 +256,10 @@ const state = {
   debugServerTick: null,
   _debugFpsFrames: 0,
   _debugFpsWindowStart: performance.now(),
-  _debugLastPingAt: 0
+  _debugLastPingAt: 0,
+  hoverTooltipText: "",
+  hoverTooltipX: 0,
+  hoverTooltipY: 0
 };
 
 const SPEECH_BUBBLE_MS = 5200;
@@ -1428,6 +1434,9 @@ function wireUi() {
     if (tryOpenTraderAtClick(world.x, world.y)) {
       return;
     }
+    if (tryClickHouseHomeTree(world.x, world.y)) {
+      return;
+    }
     if (!playerAttackBlockedBySafeZone()) {
       sendAttack(world.x, world.y);
     }
@@ -1438,6 +1447,11 @@ function wireUi() {
     const world = screenEventToWorld(event);
     state.lastPointerWorldX = world.x;
     state.lastPointerWorldY = world.y;
+    refreshWorldHoverTooltip(event);
+  });
+
+  canvas.addEventListener("pointerleave", () => {
+    state.hoverTooltipText = "";
   });
 
   window.addEventListener("keydown", (event) => {
@@ -1975,6 +1989,43 @@ function confirmBuyHouseFromPanel() {
   send({ type: "buyBuilding", buildingX: building.x, buildingY: building.y });
 }
 
+function drawOwnerSignpost(building, sx, sy, w, h, ownerName) {
+  const poleX = sx - TILE_SIZE * 0.55;
+  const baseY = sy + h - TILE_SIZE * 0.35;
+  const poleW = 7;
+  const poleH = Math.min(56, Math.round(TILE_SIZE * 1.45));
+
+  ctx.save();
+  ctx.fillStyle = "#4a3424";
+  ctx.fillRect(poleX - poleW / 2, baseY - poleH, poleW, poleH);
+  ctx.strokeStyle = "#2c1e14";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(poleX - poleW / 2, baseY - poleH, poleW, poleH);
+
+  const boardW = Math.min(TILE_SIZE + 28, Math.round(w * 0.42 + TILE_SIZE));
+  const boardH = 30;
+  const boardX = poleX - boardW / 2;
+  const boardY = baseY - poleH - boardH + 8;
+  ctx.fillStyle = "#b8894a";
+  ctx.fillRect(boardX, boardY, boardW, boardH);
+  ctx.strokeStyle = "#3d2814";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(boardX, boardY, boardW, boardH);
+
+  ctx.font = "bold 10px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = "rgba(0,0,0,0.78)";
+  ctx.fillStyle = "#fff7dd";
+  const label = String(ownerName || "").slice(0, 22);
+  const tcx = boardX + boardW / 2;
+  const tcy = boardY + boardH / 2;
+  ctx.strokeText(label, tcx, tcy);
+  ctx.fillText(label, tcx, tcy);
+  ctx.restore();
+}
+
 function drawForSaleSignpost(building, sx, sy, w, h) {
   const poleX = sx - TILE_SIZE * 0.72;
   const baseY = sy + h - 6;
@@ -2034,6 +2085,70 @@ function screenEventToWorld(event) {
     x: (cx - halfW) / (TILE_SIZE * state.zoom) + state.camera.x / TILE_SIZE,
     y: (cy - halfH) / (TILE_SIZE * state.zoom) + state.camera.y / TILE_SIZE
   };
+}
+
+/** Matches server getOwnedHouseHomeTreeWorldPos */
+function getOwnedHouseHomeTreeWorldPos(building) {
+  const insetX = Math.max(2, Math.min(building.w - 2.5, building.w * 0.32));
+  const insetY = Math.max(2.5, Math.min(building.h - 3.5, building.h * 0.38));
+  return { x: building.x + insetX, y: building.y + insetY };
+}
+
+function findBuildingByKey(key) {
+  for (const b of state.buildings.values()) {
+    if (`${b.x},${b.y}` === key) {
+      return b;
+    }
+  }
+  return null;
+}
+
+function refreshWorldHoverTooltip(event) {
+  state.hoverTooltipText = "";
+  state.hoverTooltipX = event.offsetX;
+  state.hoverTooltipY = event.offsetY;
+  if (!state.joined || state.menuOpen || event.target !== canvas) {
+    return;
+  }
+  const self = state.players.get(state.selfId);
+  if (!self?.homeBuildingKey) {
+    return;
+  }
+  const building = findBuildingByKey(self.homeBuildingKey);
+  if (!building) {
+    return;
+  }
+  const world = screenEventToWorld(event);
+  const tp = getOwnedHouseHomeTreeWorldPos(building);
+  if (Math.hypot(world.x - tp.x, world.y - tp.y) > 2.85) {
+    return;
+  }
+  const pb = getPlayerBuilding();
+  if (!pb || pb.x !== building.x || pb.y !== building.y) {
+    return;
+  }
+  state.hoverTooltipText = "Teleport to home tree";
+}
+
+function tryClickHouseHomeTree(wx, wy) {
+  const self = state.players.get(state.selfId);
+  if (!self?.homeBuildingKey) {
+    return false;
+  }
+  const building = findBuildingByKey(self.homeBuildingKey);
+  if (!building) {
+    return false;
+  }
+  const tp = getOwnedHouseHomeTreeWorldPos(building);
+  if (Math.hypot(wx - tp.x, wy - tp.y) > 2.65) {
+    return false;
+  }
+  const pb = getPlayerBuilding();
+  if (!pb || pb.x !== building.x || pb.y !== building.y) {
+    return false;
+  }
+  send({ type: "houseHomeTree" });
+  return true;
 }
 
 function tryInteractClickedFixture(event) {
@@ -2315,6 +2430,7 @@ function clearWorldState() {
   state.buildings.clear();
   state.requestedChunks.clear();
   state.population = 0;
+  state.hoverTooltipText = "";
 }
 
 function sendAttack() {
@@ -3257,6 +3373,36 @@ function requestVisibleChunks() {
   }
 }
 
+function drawWorldHoverTooltip() {
+  const t = state.hoverTooltipText;
+  if (!t) return;
+  const px = state.hoverTooltipX;
+  const py = state.hoverTooltipY;
+  ctx.save();
+  ctx.font = "12px ui-sans-serif, system-ui";
+  const padX = 8;
+  const padY = 5;
+  const w = ctx.measureText(t).width + padX * 2;
+  const h = 22;
+  let bx = px + 14;
+  let by = py + 18;
+  if (bx + w > canvas.width - 4) bx = canvas.width - w - 4;
+  if (by + h > canvas.height - 4) by = py - h - 10;
+  bx = Math.max(4, bx);
+  by = Math.max(4, by);
+  ctx.fillStyle = "rgba(12, 18, 14, 0.92)";
+  ctx.strokeStyle = "rgba(110, 207, 141, 0.65)";
+  ctx.lineWidth = 1;
+  roundedRect(bx, by, w, h, 4);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = "#dff7e8";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(t, bx + padX, by + h / 2);
+  ctx.restore();
+}
+
 function draw() {
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -3286,6 +3432,7 @@ function draw() {
 
   ctx.restore();
   drawPortalTransitionOverlay();
+  drawWorldHoverTooltip();
   if (state.menuOpen) {
     syncMenuSessionInfo();
   }
@@ -3326,32 +3473,60 @@ function getChunkCanvas(cx, cy) {
   return oc;
 }
 
-function drawPlazaStools(minTileX, maxTileX, minTileY, maxTileY) {
+function drawTraderCaravans(minTileX, maxTileX, minTileY, maxTileY) {
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
-  for (const pos of STARTING_PLAZA_STOOLS) {
-    if (pos.x < minTileX || pos.x > maxTileX || pos.y < minTileY || pos.y > maxTileY) continue;
+  let i = 0;
+  for (const pos of TRADER_CARAVAN_SPOTS) {
+    if (pos.x < minTileX || pos.x > maxTileX || pos.y < minTileY || pos.y > maxTileY) {
+      i += 1;
+      continue;
+    }
     const sx = Math.floor(pos.x * TILE_SIZE - state.camera.x + halfW);
     const sy = Math.floor(pos.y * TILE_SIZE - state.camera.y + halfH);
-    drawStoolSprite(sx, sy);
+    drawCaravanSprite(sx, sy, i % 2 === 0);
+    i += 1;
   }
 }
 
-function drawStoolSprite(sx, sy) {
-  const cx = sx + TILE_SIZE / 2;
-  const groundY = sy + TILE_SIZE - 4;
+function drawCaravanSprite(sx, sy, facingRight) {
+  const ox = facingRight ? 2 : -2;
+  const baseX = sx + TILE_SIZE / 2 + ox;
+  const groundY = sy + TILE_SIZE - 3;
   ctx.save();
-  ctx.fillStyle = "#3d2814";
-  ctx.fillRect(cx - 2, groundY - 10, 4, 12);
-  ctx.fillRect(cx - 11, groundY - 10, 4, 12);
-  ctx.fillRect(cx + 7, groundY - 10, 4, 12);
-  ctx.fillStyle = "#6e4c30";
-  ctx.beginPath();
-  ctx.ellipse(cx, groundY - 16, 13, 5, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = "#2a1810";
+  drawEllipseShadow(baseX - 22, groundY + 2, 48, 10, 0.28);
+
+  ctx.fillStyle = "#2a2420";
+  ctx.fillRect(baseX - 18, groundY - 6, 12, 12);
+  ctx.fillRect(baseX + 8, groundY - 6, 12, 12);
+  ctx.strokeStyle = "#0f0c0a";
   ctx.lineWidth = 1;
-  ctx.stroke();
+  ctx.strokeRect(baseX - 18, groundY - 6, 12, 12);
+  ctx.strokeRect(baseX + 8, groundY - 6, 12, 12);
+
+  ctx.fillStyle = "#6b4428";
+  ctx.fillRect(baseX - 26, groundY - 22, 54, 18);
+  ctx.strokeStyle = "#2e2018";
+  ctx.strokeRect(baseX - 26, groundY - 22, 54, 18);
+
+  ctx.fillStyle = facingRight ? "#8b5a3a" : "#7a5034";
+  ctx.fillRect(baseX - 24, groundY - 36, 50, 15);
+  ctx.strokeStyle = "#3d2818";
+  ctx.strokeRect(baseX - 24, groundY - 36, 50, 15);
+
+  ctx.fillStyle = "#c49a4f";
+  ctx.fillRect(baseX - 28, groundY - 38, 56, 6);
+  ctx.fillRect(baseX - 30, groundY - 42, 60, 5);
+  ctx.strokeStyle = "#4a3020";
+  ctx.strokeRect(baseX - 28, groundY - 38, 56, 6);
+
+  ctx.fillStyle = "#4a2024";
+  ctx.fillRect(baseX + (facingRight ? 14 : -22), groundY - 30, 10, 12);
+
+  ctx.fillStyle = "#ddd8c8";
+  ctx.fillRect(baseX - 10, groundY - 32, 8, 6);
+  ctx.fillRect(baseX + 2, groundY - 32, 8, 6);
+
   ctx.restore();
 }
 
@@ -3383,7 +3558,7 @@ function drawWorld() {
   drawWorldAssets(minTileX, maxTileX, minTileY, maxTileY);
   drawWorldLoot();
   drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY);
-  drawPlazaStools(minTileX, maxTileX, minTileY, maxTileY);
+  drawTraderCaravans(minTileX, maxTileX, minTileY, maxTileY);
 }
 
 function getPlayerBuilding() {
@@ -5240,11 +5415,11 @@ function drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY) {
     const sy = Math.floor(building.y * TILE_SIZE - state.camera.y + halfH);
     const roofless = !!(playerBuilding && playerBuilding.x === building.x && playerBuilding.y === building.y);
     drawBuildingSprite(building, sx, sy, roofless);
-    drawOwnedHouseReturnPortal(building, roofless, halfW, halfH);
+    drawOwnedHouseInteriorHomeTree(building, roofless, halfW, halfH);
   }
 }
 
-function drawOwnedHouseReturnPortal(building, roofless, halfW, halfH) {
+function drawOwnedHouseInteriorHomeTree(building, roofless, halfW, halfH) {
   const self = state.players.get(state.selfId);
   if (!roofless || !self?.homeBuildingKey) {
     return;
@@ -5252,43 +5427,33 @@ function drawOwnedHouseReturnPortal(building, roofless, halfW, halfH) {
   if (`${building.x},${building.y}` !== self.homeBuildingKey) {
     return;
   }
-  const px = building.x + Math.floor(building.w / 2) + 0.5;
-  const py = building.y + building.h - 1.65;
-  const sx = px * TILE_SIZE - state.camera.x + halfW;
-  const sy = py * TILE_SIZE - state.camera.y + halfH;
-  drawMiniTownPortal(sx, sy);
+  const tp = getOwnedHouseHomeTreeWorldPos(building);
+  const sx = tp.x * TILE_SIZE - state.camera.x + halfW;
+  const sy = tp.y * TILE_SIZE - state.camera.y + halfH;
+  drawInteriorHomeTree(sx, sy);
 }
 
-function drawMiniTownPortal(cx, cy) {
-  const time = performance.now() / 1000;
-  const pulse = 0.5 + Math.sin(time * 4) * 0.35;
-  const color = "#6ecf8d";
-  const r = 14 + pulse * 3;
+/** Compact decorative tree — click handled via houseHomeTree message */
+function drawInteriorHomeTree(cx, cy) {
+  const trunk = "#5b3b26";
+  const leaf = "#2f7a48";
+  const leafHi = "#58a068";
   ctx.save();
-  ctx.globalAlpha = 0.88;
-  const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, r);
-  g.addColorStop(0, "rgba(210, 255, 225, 0.92)");
-  g.addColorStop(0.5, hexWithAlpha(color, 0.52));
-  g.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = g;
+  drawCastShadow(cx - 8, cy + 10, 22, 8, 0.22);
+  ctx.fillStyle = trunk;
+  ctx.fillRect(cx - 3, cy - 6, 6, 14);
+  ctx.fillStyle = leaf;
   ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.arc(cx, cy - 18, 14, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
-  ctx.globalAlpha = 0.95;
+  ctx.fillStyle = leafHi;
   ctx.beginPath();
-  ctx.arc(cx, cy, Math.max(6, r - 4), 0, Math.PI * 2);
+  ctx.arc(cx - 5, cy - 22, 7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(20,40,24,0.45)";
+  ctx.lineWidth = 1;
   ctx.stroke();
   ctx.restore();
-
-  ctx.font = "bold 10px ui-sans-serif, system-ui";
-  ctx.textAlign = "center";
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = "rgba(8,12,18,0.85)";
-  ctx.fillStyle = "#e8fff2";
-  ctx.strokeText("To plaza", cx, cy + r + 11);
-  ctx.fillText("To plaza", cx, cy + r + 11);
 }
 
 function drawBuildingSprite(building, sx, sy, roofless) {
@@ -5309,13 +5474,8 @@ function drawBuildingSprite(building, sx, sy, roofless) {
   ctx.font = "bold 11px ui-sans-serif, system-ui";
   ctx.textAlign = "center";
   ctx.lineWidth = 2.5;
-  const labelX = sx + w / 2;
-  const labelY = sy + h + 18;
   if (ownerName) {
-    ctx.strokeStyle = "rgba(0,0,0,0.85)";
-    ctx.fillStyle = "#e8c040";
-    ctx.strokeText(`⌂ ${ownerName}`, labelX, labelY);
-    ctx.fillText(`⌂ ${ownerName}`, labelX, labelY);
+    drawOwnerSignpost(building, sx, sy, w, h, ownerName);
   } else if (building.forSale) {
     drawForSaleSignpost(building, sx, sy, w, h);
   }

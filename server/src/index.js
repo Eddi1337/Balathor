@@ -642,9 +642,10 @@ function resolveOwnedHouseDoorOutside(building) {
   return { x: doorCx, y: building.y + building.h + 0.35 };
 }
 
-function resolveOwnedHouseReturnPortalAnchor(building) {
-  const doorCx = building.x + Math.floor(building.w / 2) + 0.5;
-  return { x: doorCx, y: building.y + building.h - 1.65 };
+function getOwnedHouseHomeTreeWorldPos(building) {
+  const insetX = Math.max(2, Math.min(building.w - 2.5, building.w * 0.32));
+  const insetY = Math.max(2.5, Math.min(building.h - 3.5, building.h * 0.38));
+  return { x: building.x + insetX, y: building.y + insetY };
 }
 
 function resolveHomeTeleportDestination(player, accountKey) {
@@ -802,7 +803,6 @@ function simulate() {
     }
 
     handleDoorTravel(client);
-    handleOwnedHouseReturnPortal(client);
     handlePortalTravel(client);
   }
 
@@ -855,7 +855,7 @@ function playerNearBuildingForPurchase(player, building) {
   return Math.hypot(px - signX, py - signY) <= 8;
 }
 
-function handleOwnedHouseReturnPortal(client) {
+function handleHouseHomeTreeTeleport(client) {
   if (!client.player || !client.account) {
     return;
   }
@@ -872,8 +872,19 @@ function handleOwnedHouseReturnPortal(client) {
     return;
   }
 
-  const anchor = resolveOwnedHouseReturnPortalAnchor(building);
-  if (Math.hypot(client.player.x - anchor.x, client.player.y - anchor.y) > 1.2) {
+  const px = client.player.x;
+  const py = client.player.y;
+  if (
+    !(px > building.x + 0.55 &&
+      px < building.x + building.w - 0.55 &&
+      py > building.y + 0.55 &&
+      py < building.y + building.h - 0.55)
+  ) {
+    return;
+  }
+
+  const treePos = getOwnedHouseHomeTreeWorldPos(building);
+  if (Math.hypot(client.player.x - treePos.x, client.player.y - treePos.y) > 2.35) {
     return;
   }
 
@@ -1011,6 +1022,11 @@ function handleMessage(client, raw) {
 
   if (message.type === "home") {
     handleHomeTeleport(client);
+    return;
+  }
+
+  if (message.type === "houseHomeTree") {
+    handleHouseHomeTreeTeleport(client);
     return;
   }
 
