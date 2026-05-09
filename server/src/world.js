@@ -1151,7 +1151,41 @@ function isBlocked(x, y) {
   return BLOCKED_TILES.has(generateTile(Math.floor(x), Math.floor(y)));
 }
 
+/**
+ * Circle-vs-axis-aligned rectangle (world tile units).
+ * Used for slender hit volumes that corner-sampling misses.
+ */
+function circleIntersectsAxisRect(cx, cy, cr, minX, minY, maxX, maxY) {
+  const qx = Math.max(minX, Math.min(cx, maxX));
+  const qy = Math.max(minY, Math.min(cy, maxY));
+  const dx = cx - qx;
+  const dy = cy - qy;
+  return dx * dx + dy * dy < cr * cr;
+}
+
+/**
+ * Central plaza landmark tree (spawn hub): pillar + root soles only, not canopy.
+ * Tile coords anchored to START_SPAWN; tuned to drawCenterTreehouse trunk base (32px tiles).
+ */
+const LANDMARK_SPAWN_TREE_TRUNK_BOUNDS = Object.freeze({
+  minX: -0.14,
+  maxX: 1.1,
+  minY: 2.48,
+  maxY: 3.62
+});
+
+function landmarkSpawnTreeTrunkBlocked(worldX, worldY, radius = 0.28) {
+  const lx = worldX - START_SPAWN.x;
+  const ly = worldY - START_SPAWN.y;
+  const { minX, maxX, minY, maxY } = LANDMARK_SPAWN_TREE_TRUNK_BOUNDS;
+  return circleIntersectsAxisRect(lx, ly, radius, minX, minY, maxX, maxY);
+}
+
 function isBlockedCircle(x, y, radius = 0.28) {
+  if (landmarkSpawnTreeTrunkBlocked(x, y, radius)) {
+    return true;
+  }
+
   const points = [
     [x - radius, y - radius],
     [x + radius, y - radius],
