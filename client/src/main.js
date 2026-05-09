@@ -3092,7 +3092,12 @@ function appendChat(message) {
   } else {
     const name = document.createElement("span");
     name.className = "chat-name";
-    name.textContent = `${message.name}: `;
+    const modTag =
+      message.kind === "mod" && typeof message.modChatTag === "string" && message.modChatTag.trim()
+        ? message.modChatTag.trim()
+        : null;
+    const prefix = message.kind === "mod" ? (modTag ? `👑 ${modTag}` : `👑 ${message.name}`) : String(message.name);
+    name.textContent = `${prefix}: `;
     line.append(name, document.createTextNode(message.text));
   }
 
@@ -4057,7 +4062,11 @@ function drawWorldHoverTooltip() {
 
 function draw() {
   ctx.imageSmoothingEnabled = false;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  /** Solid fill so zoomed-out letterboxing matches the game frame (no “inner screen” seam). */
+  ctx.fillStyle = "#132118";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   if (!state.joined) {
     drawTitleWorld();
@@ -4687,47 +4696,45 @@ function drawItemIcon(item, x, y) {
   ctx.stroke();
 }
 
-/** Green cloak with motion tied to gait + idle sway */
+/** Green cloak — anchored tight to the back; subtle motion only at the hem */
 function drawModCape(px, py, scale, bob, dirX, dirY, moving, sinWalk) {
-  const capeX = px + 4 * scale;
-  const capeY = py + 2 * scale + bob;
+  const capeX = px + 1.25 * scale;
+  const capeY = py + 1.6 * scale + bob;
   const t = performance.now() * 0.0038;
-  const idleSway = Math.sin(t) * 1.2 * scale + Math.sin(t * 1.7 + dirX * 2) * 0.35 * scale;
+  const idleSway = Math.sin(t) * 0.28 * scale + Math.sin(t * 1.7 + dirX * 2) * 0.1 * scale;
   const walkBurst = moving
-    ? sinWalk * 7 * Math.max(scale / 3, 1)
-      + Math.sin(t * 2.8) * 2.8 * Math.max(scale / 3, 1)
-      + dirX * 3.2 * scale
+    ? sinWalk * 1.9 * Math.max(scale / 3, 1)
+      + Math.sin(t * 2.8) * 0.65 * Math.max(scale / 3, 1)
+      + dirX * 0.55 * scale
     : 0;
   const skew = idleSway + walkBurst;
 
   ctx.fillStyle = "#0f4d32";
   ctx.fillRect(
-    Math.round(capeX - scale + skew * 0.35),
+    Math.round(capeX - scale + skew * 0.08),
     capeY,
-    10 * scale,
+    9 * scale,
     8 * scale
   );
   ctx.fillStyle = "#198f55";
   ctx.fillRect(
-    Math.round(capeX - 0.5 * scale + skew * 0.55),
+    Math.round(capeX - 0.45 * scale + skew * 0.12),
     capeY + 2.5 * scale,
-    9 * scale,
+    8.2 * scale,
     11 * scale
   );
   ctx.fillStyle = "#20965d";
   ctx.fillRect(
-    Math.round(capeX - scale + skew),
+    Math.round(capeX - 0.9 * scale + skew * 0.22),
     capeY + 5.5 * scale,
-    10 * scale + Math.min(8, Math.abs(skew)),
+    9 * scale + Math.min(4, Math.abs(skew) * 0.35),
     6 * scale
   );
-  // Fold edge catching light while moving
   ctx.fillStyle = "#4dd68c";
-  const fold = moving ? Math.abs(sinWalk) * scale * 1.8 : Math.abs(skew) * 0.12;
-  ctx.fillRect(Math.round(capeX + 5 * scale + skew * 0.4), capeY + 4 * scale, Math.max(scale * 1.8, fold), 8 * scale);
-  // Cloak clasp / shoulder trim
+  const fold = moving ? Math.abs(sinWalk) * scale * 0.55 : Math.abs(skew) * 0.06;
+  ctx.fillRect(Math.round(capeX + 4 * scale + skew * 0.12), capeY + 4 * scale, Math.max(scale * 1.4, fold), 8 * scale);
   ctx.fillStyle = "#9fecc0";
-  ctx.fillRect(capeX - scale, capeY, 10 * scale, Math.max(1.2 * scale, 2));
+  ctx.fillRect(capeX - 0.9 * scale, capeY, 9 * scale, Math.max(1.1 * scale, 2));
 }
 
 function drawModHood(hx, hy, scale, dirX) {
@@ -4809,7 +4816,7 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   }
 
   if (isMod) {
-    drawModCape(bx - 5 * s, by - 4 * s, s, bob, dirX, dirY, moving, sin1);
+    drawModCape(bx - 5.2 * s, by - 3.6 * s, s, bob, dirX, dirY, moving, sin1);
   }
 
   // Tiny stump legs (RotMG style) — compressed when seated on benches

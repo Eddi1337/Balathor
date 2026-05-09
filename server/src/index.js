@@ -2627,17 +2627,21 @@ function handleChat(client, message) {
   }
 
   client.lastChatAt = now;
-  pushChat({
+  const chatRow = {
     kind: client.player.isMod ? "mod" : "player",
     fromId: client.player.id,
     name: client.player.name,
     text,
     x: client.player.x,
     y: client.player.y
-  });
+  };
+  if (client.player.isMod && typeof client.account?.username === "string" && client.account.username.trim()) {
+    chatRow.modChatTag = client.account.username.trim();
+  }
+  pushChat(chatRow);
 }
 
-function pushChat({ kind, fromId = null, name, text, x = null, y = null }) {
+function pushChat({ kind, fromId = null, name, text, x = null, y = null, modChatTag = null }) {
   const message = {
     type: "chat",
     id: crypto.randomUUID(),
@@ -2649,6 +2653,9 @@ function pushChat({ kind, fromId = null, name, text, x = null, y = null }) {
     y: Number.isFinite(y) ? Number(y.toFixed(3)) : null,
     serverTime: Date.now()
   };
+  if (typeof modChatTag === "string" && modChatTag.trim()) {
+    message.modChatTag = modChatTag.trim();
+  }
 
   chatHistory.push(message);
   if (chatHistory.length > CHAT_HISTORY_LIMIT) {
