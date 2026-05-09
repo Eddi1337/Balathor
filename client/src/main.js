@@ -4387,16 +4387,42 @@ function drawWorld() {
   drawTraderCaravans(minTileX, maxTileX, minTileY, maxTileY);
 }
 
-function getPlayerBuilding() {
-  const self = state.players.get(state.selfId);
-  if (!self) return null;
+/** Building whose inner floor contains this world point (matches cutaway / interior rules). */
+function findBuildingFootprintContaining(wx, wy) {
   for (const building of state.buildings.values()) {
-    if (self.renderX > building.x + 1 && self.renderX < building.x + building.w - 1 &&
-        self.renderY > building.y + 1 && self.renderY < building.y + building.h - 1) {
+    if (
+      wx > building.x + 1 &&
+      wx < building.x + building.w - 1 &&
+      wy > building.y + 1 &&
+      wy < building.y + building.h - 1
+    ) {
       return building;
     }
   }
   return null;
+}
+
+function getPlayerBuilding() {
+  const self = state.players.get(state.selfId);
+  if (!self) return null;
+  return findBuildingFootprintContaining(self.renderX, self.renderY);
+}
+
+/** Hide everyone except yourself when they are inside a house you are not in (roof occlusion). */
+function entityHiddenByBuildingRoof(entity, viewerBuilding) {
+  if (entity.id === state.selfId) {
+    return false;
+  }
+  const wx = Number.isFinite(entity.renderX) ? entity.renderX : entity.x;
+  const wy = Number.isFinite(entity.renderY) ? entity.renderY : entity.y;
+  const entityBuilding = findBuildingFootprintContaining(wx, wy);
+  if (!entityBuilding) {
+    return false;
+  }
+  if (!viewerBuilding) {
+    return true;
+  }
+  return entityBuilding.x !== viewerBuilding.x || entityBuilding.y !== viewerBuilding.y;
 }
 
 function drawPortals() {
@@ -4527,6 +4553,8 @@ function drawPlayers() {
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
   const buyInterior = getPlayerStandingBuyableHouseInterior();
+  const self = state.players.get(state.selfId);
+  const viewerBuilding = self ? findBuildingFootprintContaining(self.renderX, self.renderY) : null;
 
   const entities = [
     ...[...state.players.values()].map((p) => ({ entity: p, isNpc: false })),
@@ -4535,6 +4563,9 @@ function drawPlayers() {
   ].sort((a, b) => a.entity.renderY - b.entity.renderY);
 
   for (const { entity, isNpc, isMob } of entities) {
+    if (entityHiddenByBuildingRoof(entity, viewerBuilding)) {
+      continue;
+    }
     if (buyInterior) {
       const wx = Number.isFinite(entity.renderX) ? entity.renderX : entity.x;
       const wy = Number.isFinite(entity.renderY) ? entity.renderY : entity.y;
