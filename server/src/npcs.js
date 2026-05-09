@@ -111,8 +111,12 @@ function snapNpcOntoHubNavIfNeeded(npc, navSet) {
   }
   npc.x = hit.tx + 0.5;
   npc.y = hit.ty + 0.5;
-  npc._targetX = npc.x;
-  npc._targetY = npc.y;
+  /**
+   * Never overwrite the locomotion goal here. A one-frame float / tile-boundary
+   * read can look “off mesh” while the NPC is legitimately walking; resetting
+   * _target to the current tile cancels patrol and they stand still until
+   * _nextMoveAt (seconds of apparent freeze).
+   */
   npc.moving = false;
 }
 
