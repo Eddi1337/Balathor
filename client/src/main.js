@@ -1452,6 +1452,17 @@ function wireUi() {
     chatInput.value = "";
   });
 
+  chatInput?.addEventListener("keydown", (event) => {
+    if (!state.joined || event.key !== "Enter" || event.isComposing) {
+      return;
+    }
+    if (chatInput.value.trim().length > 0) {
+      return;
+    }
+    event.preventDefault();
+    chatInput.blur();
+  });
+
   chatToggle.addEventListener("click", () => {
     setChatMinimized(!state.chatMinimized);
   });
