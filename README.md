@@ -23,6 +23,29 @@ http://localhost:3000
 
 Local development binds to `127.0.0.1` by default. If `3000` or `8080` is busy, the launcher uses the next free port and prints the actual URL. Set `HOST=0.0.0.0 CLIENT_HOST=0.0.0.0` when you want LAN access.
 
+### Discord login / signup notifications (optional)
+
+The game server can post to a Discord channel whenever an account is **created** or **someone logs in** successfully (failed logins are not reported).
+
+**In Discord**
+
+1. Open your server → pick the channel → **Edit channel** (gear) → **Integrations** → **Webhooks** → **New webhook**.
+2. Name it (e.g. `Balathor auth`), choose the channel, optionally set an avatar, then **Copy webhook URL**.  
+   The URL must look like `https://discord.com/api/webhooks/<id>/<token>`.
+
+**Keep the URL secret** — anyone with it can post to that channel. Do not commit it to git.
+
+**On the server**
+
+Set the environment variable when you start the process (or in Docker / your host panel):
+
+```bash
+export DISCORD_AUTH_WEBHOOK_URL='https://discord.com/api/webhooks/…'
+npm run server
+```
+
+If the URL is missing, notifications are skipped. If it is set but invalid, the server logs a warning on startup and ignores it.
+
 You can also run each application separately:
 
 ```bash

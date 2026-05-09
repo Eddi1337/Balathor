@@ -29,10 +29,15 @@ const {
   loadHouseChestSlots,
   saveHouseChestSlots
 } = require("./worldStore");
+const { postAuthEventToDiscord, isAllowedDiscordWebhookUrl } = require("./discordWebhook");
 
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 8080);
 const ACCOUNT_STORE_PATH = process.env.ACCOUNT_STORE_PATH || path.join(__dirname, "..", "data", "accounts.json");
+/** Incoming webhook URL — see README “Discord login notifications”. */
+const DISCORD_AUTH_WEBHOOK_URL = typeof process.env.DISCORD_AUTH_WEBHOOK_URL === "string"
+  ? process.env.DISCORD_AUTH_WEBHOOK_URL.trim()
+  : "";
 const TICK_RATE = 30;
 const SNAPSHOT_RATE = 20;
 // Base player movement speed (tiles per second).
@@ -482,6 +487,11 @@ server.on("upgrade", (req, socket) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`Balathor server listening on ${HOST}:${PORT}`);
+  if (DISCORD_AUTH_WEBHOOK_URL && !isAllowedDiscordWebhookUrl(DISCORD_AUTH_WEBHOOK_URL)) {
+    console.warn("Balathor: DISCORD_AUTH_WEBHOOK_URL ignored (must be https://discord.com/api/webhooks/... )");
+  } else if (DISCORD_AUTH_WEBHOOK_URL) {
+    console.log("Balathor: Discord auth webhook enabled");
+  }
 });
 
 /** Single-threaded clock: never overlap simulate(); avoids setInterval piling callbacks when ticks overrun. */
@@ -1390,6 +1400,8 @@ function handleAuth(client, message) {
     username: account.username,
     hasCharacter: Boolean(account.character)
   });
+
+  postAuthEventToDiscord(DISCORD_AUTH_WEBHOOK_URL, { event: action, username: account.username });
 
   if (account.character) {
     joinWorld(client, account.character, account.character);
