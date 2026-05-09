@@ -83,8 +83,19 @@ const buyHousePriceLine = document.querySelector("#buyHousePriceLine");
 const buyHouseGoldLine = document.querySelector("#buyHouseGoldLine");
 const buyHouseConfirm = document.querySelector("#buyHouseConfirm");
 const buyHouseCancel = document.querySelector("#buyHouseCancel");
+const safeZoneIndicator = document.querySelector("#safeZoneIndicator");
 
 const TILE_SIZE = 32;
+/** Mirrors server/src/world.js STARTING_AREA — combat-disabled hub circle */
+const STARTING_SAFE_ZONE = { x: 0, y: 0, radius: 80 };
+const BUY_HOUSE_INTERACT_RADIUS = 8;
+const TRADER_CLICK_HIT_RADIUS = 3.6;
+const TRADER_CLICK_PLAYER_RADIUS = 8;
+/** World tiles — matches plaza stall NPC homes (server/src/npcs.js) */
+const STARTING_PLAZA_STOOLS = [
+  { x: -14, y: -6 }, { x: 14, y: -6 }, { x: -10, y: 14 }, { x: 10, y: 14 },
+];
+
 const CHUNK_SIZE = 16;
 const chunkCanvasCache = new Map();
 const CLIENT_PLAYER_SPEED = 5.2;
@@ -1241,6 +1252,7 @@ function wireUi() {
   abilityBarToggle.addEventListener("click", () => {
     const minimized = abilityBar.classList.toggle("minimized");
     abilityBarToggle.textContent = minimized ? "+" : "−";
+    syncSafeZoneIndicator(state.players.get(state.selfId));
   });
 
   // Ability slot right-click to clear
@@ -1383,7 +1395,9 @@ function wireUi() {
     if (tryOpenTraderAtClick(world.x, world.y)) {
       return;
     }
-    sendAttack(world.x, world.y);
+    if (!playerAttackBlockedBySafeZone()) {
+      sendAttack(world.x, world.y);
+    }
   });
 
   // track latest pointer world position for keyboard/mobile attacks
@@ -1412,8 +1426,9 @@ function wireUi() {
 
     if ((event.code === "Space" || event.key.toLowerCase() === "f") && state.joined && !isTextEntryTarget(event.target)) {
       event.preventDefault();
-    // include last known pointer world coordinates if we have them
-    sendAttack(state.lastPointerWorldX, state.lastPointerWorldY);
+      if (!playerAttackBlockedBySafeZone()) {
+        sendAttack(state.lastPointerWorldX, state.lastPointerWorldY);
+      }
       return;
     }
 
@@ -1667,6 +1682,7 @@ function renderAbilityBar() {
     slot.dataset.currentSpell = spellId || "";
   });
   updateAbilityCooldowns();
+  syncSafeZoneIndicator(self);
 }
 
 function updateAbilityCooldowns() {
@@ -1770,14 +1786,14 @@ function findBuildingLot(buildingX, buildingY) {
 function playerNearBuildingDoor(px, py, building) {
   const doorX = building.x + building.w / 2;
   const doorY = building.y + building.h - 1;
-  return Math.hypot(px - doorX, py - doorY) <= 4;
+  return Math.hypot(px - doorX, py - doorY) <= BUY_HOUSE_INTERACT_RADIUS;
 }
 
 /** Matches roadside sign anchor used for drawing / hit-testing (left front of lot). */
 function playerNearForSaleSign(px, py, building) {
   const signX = building.x - 0.5;
   const signY = building.y + building.h - 0.5;
-  return Math.hypot(px - signX, py - signY) <= 4;
+  return Math.hypot(px - signX, py - signY) <= BUY_HOUSE_INTERACT_RADIUS;
 }
 
 function playerCanInteractBuyHouse(px, py, building) {
@@ -1790,6 +1806,30 @@ function worldPointHitsForSaleSign(building, worldX, worldY) {
   const minY = building.y + building.h - 1.45;
   const maxY = building.y + building.h + 0.45;
   return worldX >= minX && worldX <= maxX && worldY >= minY && worldY <= maxY;
+}
+
+function isPlayerInStartingSafeZone(px, py) {
+  return Math.hypot(px - STARTING_SAFE_ZONE.x, py - STARTING_SAFE_ZONE.y) <= STARTING_SAFE_ZONE.radius;
+}
+
+function playerAttackBlockedBySafeZone() {
+  const self = state.players.get(state.selfId);
+  if (!self) return true;
+  const px = Number.isFinite(self.renderX) ? self.renderX : self.x;
+  const py = Number.isFinite(self.renderY) ? self.renderY : self.y;
+  return isPlayerInStartingSafeZone(px, py);
+}
+
+function syncSafeZoneIndicator(self) {
+  if (!safeZoneIndicator || !abilityBar) return;
+  if (!state.joined || !self || abilityBar.classList.contains("minimized")) {
+    safeZoneIndicator.classList.add("hidden");
+    return;
+  }
+  const px = Number.isFinite(self.renderX) ? self.renderX : self.x;
+  const py = Number.isFinite(self.renderY) ? self.renderY : self.y;
+  const show = Number.isFinite(px) && Number.isFinite(py) && isPlayerInStartingSafeZone(px, py);
+  safeZoneIndicator.classList.toggle("hidden", !show);
 }
 
 function closeBuyHousePanel() {
@@ -2094,7 +2134,9 @@ function wireMobileControls() {
       return;
     }
     event.preventDefault();
-    sendAttack();
+    if (!playerAttackBlockedBySafeZone()) {
+      sendAttack();
+    }
   });
 
   document.querySelector("[data-mobile-action='home']")?.addEventListener("pointerdown", (event) => {
@@ -2185,6 +2227,7 @@ function resetToConnection(message) {
   abilityBar.classList.add("hidden");
   chat.classList.add("hidden");
   mobileControls.classList.add("hidden");
+  safeZoneIndicator?.classList.add("hidden");
   setChatMinimized(false);
   setProgressionMinimized(false);
   setActiveGameWindow(null);
@@ -2450,6 +2493,7 @@ function renderProgression(self) {
   if (state.buyHouseOffer) {
     renderBuyHousePanel();
   }
+  syncSafeZoneIndicator(self);
 }
 
 function makeEquipSlotEl(slot, label) {
@@ -2988,10 +3032,10 @@ function tryOpenTraderAtClick(worldX, worldY) {
     if (!npc.isTrader) continue;
     const nx = Number.isFinite(npc.renderX) ? npc.renderX : npc.x;
     const ny = Number.isFinite(npc.renderY) ? npc.renderY : npc.y;
-    if (Math.hypot(nx - worldX, ny - worldY) > 2.0) continue;
+    if (Math.hypot(nx - worldX, ny - worldY) > TRADER_CLICK_HIT_RADIUS) continue;
     const sx = Number.isFinite(self.renderX) ? self.renderX : self.x;
     const sy = Number.isFinite(self.renderY) ? self.renderY : self.y;
-    if (Math.hypot(nx - sx, ny - sy) > 4.0) continue;
+    if (Math.hypot(nx - sx, ny - sy) > TRADER_CLICK_PLAYER_RADIUS) continue;
     send({ type: "traderOpen", npcId: npc.id });
     return true;
   }
@@ -3181,6 +3225,35 @@ function getChunkCanvas(cx, cy) {
   return oc;
 }
 
+function drawPlazaStools(minTileX, maxTileX, minTileY, maxTileY) {
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  for (const pos of STARTING_PLAZA_STOOLS) {
+    if (pos.x < minTileX || pos.x > maxTileX || pos.y < minTileY || pos.y > maxTileY) continue;
+    const sx = Math.floor(pos.x * TILE_SIZE - state.camera.x + halfW);
+    const sy = Math.floor(pos.y * TILE_SIZE - state.camera.y + halfH);
+    drawStoolSprite(sx, sy);
+  }
+}
+
+function drawStoolSprite(sx, sy) {
+  const cx = sx + TILE_SIZE / 2;
+  const groundY = sy + TILE_SIZE - 4;
+  ctx.save();
+  ctx.fillStyle = "#3d2814";
+  ctx.fillRect(cx - 2, groundY - 10, 4, 12);
+  ctx.fillRect(cx - 11, groundY - 10, 4, 12);
+  ctx.fillRect(cx + 7, groundY - 10, 4, 12);
+  ctx.fillStyle = "#6e4c30";
+  ctx.beginPath();
+  ctx.ellipse(cx, groundY - 16, 13, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#2a1810";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawWorld() {
   const zoom = state.zoom || 1;
   const halfW = canvas.width / 2;
@@ -3209,6 +3282,7 @@ function drawWorld() {
   drawWorldAssets(minTileX, maxTileX, minTileY, maxTileY);
   drawWorldLoot();
   drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY);
+  drawPlazaStools(minTileX, maxTileX, minTileY, maxTileY);
 }
 
 function getPlayerBuilding() {
