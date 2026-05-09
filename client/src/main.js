@@ -4472,61 +4472,47 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
   }
 
   if (weaponKind === "staff") {
-    // Walking stick held at hand: tip barely shifts; orb/crook swings more (lever at grip).
+    // Straight vertical shaft with body; orb centered on shaft top — whole column sways subtly with gait.
     const s = 3;
     const groundY = y + 7 * s + 6;
     const gait = moving ? walkSin : 0;
-    const tipBob = moving ? gait * 1.35 : 0;
-    const tipDrift = moving ? Math.abs(gait) * 0.85 : 0;
-    const tipFwd = 13.5 + tipDrift;
-    const tipSide = 7 + tipBob;
-    const tipX = x + dirX * tipFwd + sideX * tipSide;
-    const face = Number.isFinite(entity.facing) ? entity.facing : Math.atan2(dirY, dirX);
-    let gripX = lHandX + sideX * 2 + dirX * 1.5;
-    let gripY = lHandY - 8 + dirY * 0.5;
-    const minGripY = groundY - 27 * s;
-    if (gripY > minGripY) gripY = minGripY;
-
-    const vx = gripX - tipX;
-    const vy = gripY - groundY;
-    const vlen = Math.hypot(vx, vy) || 1;
-    const ix = vx / vlen;
-    const iy = vy / vlen;
-    const px = -iy;
-    const py = ix;
-    const topWobble = moving ? gait * 11 : 0;
-    const hookX = gripX + px * (10 + topWobble * 0.72) + ix * (-6 + topWobble * 0.38);
-    const hookY = gripY + py * (10 + topWobble * 0.72) + iy * (-6 + topWobble * 0.38);
+    const fx = Math.round(dirX);
+    const cx = x + fx * (s * 0.65) + (moving ? gait * s * 0.45 : 0);
+    const shaftTipY = y - 13 * s - 14;
     const shaftW = style === "heavy" ? Math.max(6, Math.round(s + 2)) : Math.round(s + 1.8);
+    const orn = ornateWeapon ? (isAscendant ? "#67e8f9" : "#c79cff") : "#ff7a45";
+    const orbR = style === "heavy" ? 8 : 7;
+    const orbCy = shaftTipY - orbR;
+    const shaftTopJoin = orbCy + orbR - 1;
+
+    const face = Number.isFinite(entity.facing) ? entity.facing : Math.atan2(dirY, dirX);
 
     ctx.strokeStyle = ornateWeapon ? accent : "#6b4428";
     ctx.lineWidth = shaftW;
     ctx.beginPath();
-    ctx.moveTo(tipX, groundY);
-    ctx.lineTo(gripX, gripY);
+    ctx.moveTo(cx, groundY);
+    ctx.lineTo(cx, shaftTopJoin);
     ctx.stroke();
 
-    const orn = ornateWeapon ? (isAscendant ? "#67e8f9" : "#c79cff") : "#ff7a45";
-    const orbR = style === "heavy" ? 8 : 7;
     ctx.fillStyle = orn;
     ctx.beginPath();
-    ctx.arc(hookX, hookY - 1, orbR, 0, Math.PI * 2);
+    ctx.arc(cx, orbCy, orbR, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.fillStyle = isAscendant ? "#fde68a" : "#ffd166";
-    ctx.fillRect(hookX - 3, hookY - 5, 6, 6);
+    ctx.fillRect(Math.round(cx) - 3, Math.round(orbCy) - 4, 6, 6);
 
     const gripBlend = ornateWeapon ? blend(accent, "#2a1810", 0.52) : "#4a3424";
     ctx.strokeStyle = gripBlend;
     ctx.lineWidth = Math.max(3, shaftW - 3);
     ctx.beginPath();
-    ctx.moveTo(tipX + vx * 0.48 + px * 1.2, groundY + vy * 0.48 + py * 1.2);
-    ctx.lineTo(gripX - ix * 7 + px * -1, gripY - iy * 7 + py * -1);
+    ctx.moveTo(cx, groundY + (shaftTipY - groundY) * 0.43);
+    ctx.lineTo(cx, groundY + (shaftTipY - groundY) * 0.62);
     ctx.stroke();
 
     ctx.fillStyle = "rgba(34,24,16,0.32)";
     ctx.beginPath();
-    ctx.ellipse(tipX + dirX * 0.6 + sideX * tipBob * 0.25, groundY + 3, 6, 2.4, face, 0, Math.PI * 2);
+    ctx.ellipse(cx + dirX * 0.4, groundY + 3, 6, 2.4, face, 0, Math.PI * 2);
     ctx.fill();
   } else if (weaponKind === "sword") {
     const swordTipX = rHandX + dirX * 28 + sideX * 6;
