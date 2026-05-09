@@ -122,7 +122,7 @@ const BLOCK_CHANCE_BY_RARITY = Object.freeze({
   legendary: 0.62,
   mythic: 0.72
 });
-const consecrationZones = [];
+let consecrationZones = [];
 const CONSECRATION_DURATION_MS = 5000;
 const CONSECRATION_TICK_MS = 500;
 const MOB_TYPES = Object.freeze({
