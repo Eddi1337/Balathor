@@ -31,7 +31,8 @@ const INTERIOR_SPACING = 40;
 const INTERIOR_EXTERIOR_MARGIN = 12;
 const PROCEDURAL_INTERIOR_GRID_SIZE = 1024;
 const PROCEDURAL_INTERIOR_GRID_OFFSET = 512;
-const STARTING_AREA = { x: 0, y: 0, radius: 80 };
+/** Hub plaza only (tree / fountain circle). Combat allowed beyond this in the village ring. */
+const STARTING_AREA = { x: 0, y: 0, radius: 26 };
 const START_SPAWN = { x: 0, y: 0 };
 
 function hash2(x, y, seed = 1337) {
