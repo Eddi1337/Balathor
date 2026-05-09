@@ -68,7 +68,8 @@ function postAuthEventToDiscord(webhookUrl, payload) {
 
   const username = escapeDiscordInline(String(payload.username || "unknown")).slice(0, 72);
   const isCreate = payload.event === "create";
-  const title = isCreate ? "New account" : "Login";
+  /** Embed title drives Discord notification previews — lead with account name */
+  const title = isCreate ? `${username} registered` : `${username} logged in`;
   const now = new Date();
   const timeIso = now.toISOString();
   const timeUtcReadable = now.toUTCString();
@@ -80,7 +81,7 @@ function postAuthEventToDiscord(webhookUrl, payload) {
     embeds: [
       {
         title,
-        description: isCreate ? "Someone registered." : "Someone signed in.",
+        description: isCreate ? "Balathor: new account" : "Balathor: login",
         color,
         timestamp: timeIso,
         fields: [
