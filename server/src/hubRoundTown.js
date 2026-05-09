@@ -10,6 +10,14 @@ const HUB_WALL_R_OUT_PARAPET = 121;
 const HUB_WALL_R_IN_MAIN = 117;
 const GATE_AXIS_HALF_WIDTH_TILES = 3;
 
+/** Deterministic 0–1 mixer (standalone — world.js already loaded this module first). */
+function hz(tx, ty, salt = 8891) {
+  let h = Math.imul(tx | 0, 374761393) ^ Math.imul(ty | 0, 668265263) ^ (salt | 0);
+  h = (h ^ (h >>> 13)) >>> 0;
+  h = Math.imul(h, 1274126177) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+}
+
 const HUB_NPC_ORDER = [
   { id: "npc_mara", label: "Mara", cottage: "Mara's Cottage" },
   { id: "npc_thomas", label: "Thomas", cottage: "Thomas's Lodge" },
@@ -476,6 +484,120 @@ function addGardenPatches(gardenKeys, rects) {
   }
 }
 
+/**
+ * Lawns touching paths: market stalls, benches, small trees along edges;
+ * grassy pockets (often gardens) occasionally get fountains.
+ */
+function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
+  const list = [];
+  const used = new Set();
+  const pathSet = pathKeys;
+
+  function nearListedPortal(tx, ty, rSq) {
+    for (const [px, py] of HUB_GATE_PORTAL_TILES) {
+      const dx = tx - px;
+      const dy = ty - py;
+      if (dx * dx + dy * dy <= rSq) return true;
+    }
+    return false;
+  }
+
+  function plazaTree(tx, ty) {
+    return tx >= -1 && tx <= 1 && ty >= -1 && ty <= 1;
+  }
+
+  function buildingBlock(tx, ty) {
+    return pointInRects(tx + 0.52, ty + 0.52, rects, 0.42);
+  }
+
+  const isPath = (tx, ty) => pathSet.has(`${tx},${ty}`);
+
+  /** Road-adjacent grass cells */
+  const lawnEdge = new Map();
+  for (const k of pathSet) {
+    const [px, py] = k.split(",").map(Number);
+    for (const [dx, dy] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1]
+    ]) {
+      const nx = px + dx;
+      const ny = py + dy;
+      if (plazaTree(nx, ny) || nearListedPortal(nx, ny, 105)) continue;
+      if (wallKeys.has(`${nx},${ny}`)) continue;
+      if (buildingBlock(nx, ny)) continue;
+      if (isPath(nx, ny)) continue;
+      const key = `${nx},${ny}`;
+      if (!lawnEdge.has(key)) {
+        lawnEdge.set(key, { adx: [], ady: [] });
+      }
+      const cel = lawnEdge.get(key);
+      cel.adx.push(-dx);
+      cel.ady.push(-dy);
+    }
+  }
+
+  for (const [key, cel] of lawnEdge) {
+    const [nx, ny] = key.split(",").map(Number);
+    if (hz(nx, ny, 7721) < 0.965) continue;
+
+    let kind;
+    const pick = hz(nx, ny, 7722);
+    if (pick < 0.38) kind = "market_stand";
+    else if (pick < 0.66) kind = "bench";
+    else kind = "small_tree";
+
+    if (used.has(key)) continue;
+    used.add(key);
+
+    let meanDx = 0;
+    let meanDy = 0;
+    for (let ii = 0; ii < cel.adx.length; ii += 1) {
+      meanDx += cel.adx[ii];
+      meanDy += cel.ady[ii];
+    }
+    meanDx /= cel.adx.length;
+    meanDy /= cel.ady.length;
+    const facing = Math.atan2(meanDy, meanDx);
+
+    list.push({
+      id: `hub_rs_${nx}_${ny}`,
+      x: nx,
+      y: ny,
+      kind,
+      facing
+    });
+  }
+
+  const bound = Math.ceil(HUB_WALL_R_IN_MAIN + 2);
+  for (let ty = -bound; ty <= bound; ty += 1) {
+    for (let tx = -bound; tx <= bound; tx += 1) {
+      if (plazaTree(tx, ty) || nearListedPortal(tx, ty, 105)) continue;
+      if (isPath(tx, ty) || wallKeys.has(`${tx},${ty}`)) continue;
+      if (buildingBlock(tx, ty)) continue;
+      let adjPath = 0;
+      for (const [dx, dy] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1]
+      ]) {
+        if (isPath(tx + dx, ty + dy)) adjPath += 1;
+      }
+      const onGarden = gardenKeys.has(`${tx},${ty}`);
+      if (!(onGarden || adjPath >= 2)) continue;
+      if (hz(tx, ty, 8819) < 0.986) continue;
+      const ukey = `${tx},${ty}`;
+      if (used.has(ukey)) continue;
+      used.add(ukey);
+      list.push({ id: `hub_fn_${tx}_${ty}`, x: tx, y: ty, kind: "fountain", facing: 0 });
+    }
+  }
+
+  return Object.freeze(list);
+}
+
 function computeHubDistrict() {
   /** @type {{x:number,y:number,w:number,h:number}[]} */
   const rects = HUB_BLUEPRINT_RECT.map(([x, y, w, h]) => ({ x, y, w, h }));
@@ -608,11 +730,14 @@ function computeHubDistrict() {
     }
   }
 
+  const hubRoadsides = buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects);
+
   return {
     hubBuildings,
     pathTileKeys: pathKeys,
     wallTileKeys: wallKeys,
     gardenTileKeys: gardenKeys,
+    hubRoadsides,
     hubClearingRadius: HUB_CLEARING_RADIUS,
     hutSlotCount: rects.length - 4
   };

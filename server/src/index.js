@@ -1965,15 +1965,29 @@ function handleInteract(client, message = {}) {
 
   const roadside = findRoadsideFeatureNear(client.player.x, client.player.y, 2.05);
   if (roadside) {
+    if (roadside.kind === "bench") {
+      send(client, { type: "roadsideRest", durationMs: 2800 });
+    }
+    let vibe = "You linger at the roadside.";
+    if (roadside.kind === "bench") {
+      vibe = "You rest awhile on the bench.";
+    } else if (roadside.kind === "market_stand") {
+      vibe = "You browse crates and linens at the market stand.";
+    } else if (roadside.kind === "small_tree") {
+      vibe = "You pause in the shade of a small tree.";
+    } else if (roadside.kind === "fountain") {
+      vibe = "Cool water coils in the fountain basin.";
+    } else if (roadside.kind.includes("chair")) {
+      vibe = "You sit on the pub chair awhile.";
+    } else if (roadside.kind.includes("pub")) {
+      vibe = "You linger at the pub seating.";
+    } else if (roadside.kind.includes("table")) {
+      vibe = "You linger at the roadside table.";
+    }
     pushChat({
       kind: "system",
       name: "Realm",
-      text:
-        roadside.kind === "bench"
-          ? "You rest awhile on the roadside bench."
-          : roadside.kind.includes("chair")
-            ? "You sit on the pub chair awhile."
-            : "You linger at the roadside table.",
+      text: vibe
     });
     return;
   }

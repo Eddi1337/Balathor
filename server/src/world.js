@@ -41,6 +41,7 @@ const _hubDistrict = computeHubDistrict();
 const HUB_PATH_TILE_KEYS = _hubDistrict.pathTileKeys;
 const HUB_WALL_TILE_KEYS = _hubDistrict.wallTileKeys;
 const HUB_GARDEN_TILE_KEYS = _hubDistrict.gardenTileKeys;
+const HUB_ROADSIDE_FEATURES = _hubDistrict.hubRoadsides || [];
 
 function hash2(x, y, seed = 1337) {
   let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ seed;
@@ -226,6 +227,12 @@ function isThinFootpath(tx, ty) {
   return false;
 }
 
+function roadsideFeatureTouchesChunk(f, startX, startY, endX, endY) {
+  const fx = f.x;
+  const fy = f.y;
+  return fx >= startX && fx < endX && fy >= startY && fy < endY;
+}
+
 function getRoadsideFeaturesInChunk(cx, cy) {
   const startX = cx * CHUNK_SIZE;
   const startY = cy * CHUNK_SIZE;
@@ -233,11 +240,10 @@ function getRoadsideFeaturesInChunk(cx, cy) {
   const endY = startY + CHUNK_SIZE;
   const out = [];
   for (const f of ROADSIDE_FEATURES) {
-    const fx = f.x;
-    const fy = f.y;
-    if (fx >= startX && fx < endX && fy >= startY && fy < endY) {
-      out.push(f);
-    }
+    if (roadsideFeatureTouchesChunk(f, startX, startY, endX, endY)) out.push(f);
+  }
+  for (const f of HUB_ROADSIDE_FEATURES) {
+    if (roadsideFeatureTouchesChunk(f, startX, startY, endX, endY)) out.push(f);
   }
   return out;
 }
@@ -246,7 +252,7 @@ function findRoadsideFeatureNear(wx, wy, radiusTiles = 1.35) {
   const rSq = radiusTiles * radiusTiles;
   let best = null;
   let bestD = rSq + 1;
-  for (const f of ROADSIDE_FEATURES) {
+  function consider(f) {
     const dx = wx - (f.x + 0.5);
     const dy = wy - (f.y + 0.55);
     const dSq = dx * dx + dy * dy;
@@ -255,6 +261,8 @@ function findRoadsideFeatureNear(wx, wy, radiusTiles = 1.35) {
       best = f;
     }
   }
+  for (const f of ROADSIDE_FEATURES) consider(f);
+  for (const f of HUB_ROADSIDE_FEATURES) consider(f);
   return best;
 }
 

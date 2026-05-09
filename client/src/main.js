@@ -268,6 +268,7 @@ const state = {
   portals: new Map(),
   buildings: new Map(),
   roadsides: new Map(),
+  benchSitUntil: 0,
   requestedChunks: new Set(),
   population: 0,
   input: { up: false, down: false, left: false, right: false },
@@ -610,6 +611,7 @@ function handleServerMessage(message) {
       self.renderX = message.x;
       self.renderY = message.y;
       self.renderMoving = false;
+      state.benchSitUntil = 0;
     }
     state.camera.x = message.x * TILE_SIZE;
     state.camera.y = message.y * TILE_SIZE;
@@ -631,6 +633,13 @@ function handleServerMessage(message) {
     const d = Number(message.durationMs);
     const ms = Number.isFinite(d) ? Math.max(600, Math.min(8000, d)) : 3000;
     state.pubPassoutUntil = performance.now() + ms;
+    return;
+  }
+
+  if (message.type === "roadsideRest") {
+    const d = Number(message.durationMs);
+    const ms = Number.isFinite(d) ? Math.max(400, Math.min(9000, d)) : 2800;
+    state.benchSitUntil = performance.now() + ms;
     return;
   }
 
@@ -1096,6 +1105,9 @@ function updateSmoothPlayers(dt) {
     player.renderMoving = isMoving || Math.hypot(player.targetX - player.renderX, player.targetY - player.renderY) > 0.01;
     if (player.renderMoving) {
       player.walkPhase = (player.walkPhase || 0) + dt * 9;
+      if (player.id === state.selfId) {
+        state.benchSitUntil = 0;
+      }
     }
   }
 
@@ -2360,12 +2372,18 @@ function refreshWorldHoverTooltip(event) {
     if (Math.hypot(world.x - (f.x + 0.5), world.y - (f.y + 0.55)) <= 1.12) {
       state.hoverTooltipText =
         f.kind === "bench"
-          ? "Roadside bench"
-          : f.kind.includes("chair")
-            ? "Outdoor chair"
-            : f.kind.includes("pub")
-              ? "Pub seating"
-              : "Roadside table";
+          ? "Bench — interact to sit"
+          : f.kind === "market_stand"
+            ? "Market stand"
+            : f.kind === "small_tree"
+              ? "Small tree"
+              : f.kind === "fountain"
+                ? "Fountain — interact"
+                : f.kind.includes("chair")
+                  ? "Outdoor chair"
+                  : f.kind.includes("pub")
+                    ? "Pub seating"
+                    : "Roadside table";
       state.hoverTooltipSmall = true;
       return;
     }
@@ -3903,20 +3921,73 @@ function drawRoadsideFeatures(minTileX, maxTileX, minTileY, maxTileY) {
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
 
-  const drawBench = (cx, gy) => {
-    ctx.save();
-    drawEllipseShadow(cx - 26, gy + 4, 54, 9, 0.22);
+  /** Local-space bench after translate(cx, gy) + optional rotate(facing). */
+  const drawBenchLocal = () => {
+    drawEllipseShadow(-26, 4, 54, 9, 0.22);
     ctx.fillStyle = "#4a3828";
-    ctx.fillRect(cx - 28, gy - 8, 56, 10);
+    ctx.fillRect(-28, -8, 56, 10);
     ctx.fillStyle = "#6a5040";
     for (let i = 0; i < 5; i += 1) {
-      const px = cx - 24 + i * 10;
-      ctx.fillRect(px, gy - 18, 6, 12);
+      const px = -24 + i * 10;
+      ctx.fillRect(px, -18, 6, 12);
       ctx.strokeStyle = "rgba(30,22,14,0.45)";
-      ctx.strokeRect(px, gy - 18, 6, 12);
+      ctx.strokeRect(px, -18, 6, 12);
     }
     ctx.strokeStyle = "rgba(20,14,10,0.5)";
-    ctx.strokeRect(cx - 28, gy - 8, 56, 10);
+    ctx.strokeRect(-28, -8, 56, 10);
+  };
+
+  const drawMarketStandLocal = () => {
+    drawEllipseShadow(-18, 10, 40, 7, 0.2);
+    ctx.fillStyle = "#4d3624";
+    ctx.fillRect(-3, -2, 6, 10);
+    ctx.fillRect(-16, -2, 32, 4);
+    ctx.fillStyle = "#6a4830";
+    ctx.fillRect(-14, -18, 28, 16);
+    for (let si = 0; si < 7; si += 1) {
+      ctx.fillStyle = si % 2 === 0 ? "#d4624a" : "#f7edd2";
+      ctx.fillRect(-14 + si * 4, -18, 4, 11);
+    }
+    ctx.strokeStyle = "rgba(24,14,10,0.45)";
+    ctx.strokeRect(-14, -18, 28, 16);
+    ctx.fillStyle = "rgba(120,92,62,0.35)";
+    ctx.fillRect(-10, -6, 20, 3);
+  };
+
+  const drawSmallTreeLocal = () => {
+    drawEllipseShadow(-7, 8, 17, 5, 0.18);
+    ctx.fillStyle = "#5a4028";
+    ctx.fillRect(-2, -2, 4, 10);
+    ctx.fillStyle = "#3d8348";
+    ctx.beginPath();
+    ctx.arc(0, -9, 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(55,115,62,0.55)";
+    ctx.beginPath();
+    ctx.arc(-3, -12, 4, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
+  const drawFountainSprite = (cx, gy) => {
+    ctx.save();
+    drawEllipseShadow(cx - 14, gy + 2, 30, 8, 0.22);
+    ctx.fillStyle = "#697288";
+    ctx.beginPath();
+    ctx.ellipse(cx, gy - 6, 16, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(26,34,52,0.45)";
+    ctx.stroke();
+    ctx.fillStyle = "rgba(74,138,226,0.45)";
+    ctx.beginPath();
+    ctx.ellipse(cx, gy - 6, 11, 4.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(235,248,255,0.5)";
+    ctx.fillRect(cx - 4, gy - 20, 2, 11);
+    ctx.fillRect(cx + 2, gy - 19, 2, 9);
+    ctx.fillStyle = "rgba(220,238,255,0.7)";
+    ctx.beginPath();
+    ctx.arc(cx, gy - 8, 2.2, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
   };
 
@@ -3937,9 +4008,28 @@ function drawRoadsideFeatures(minTileX, maxTileX, minTileY, maxTileY) {
     const sy = Math.floor(f.y * TILE_SIZE - state.camera.y + halfH);
     const cx = sx + TILE_SIZE / 2;
     const gy = sy + TILE_SIZE - 10;
+    const facing = Number.isFinite(f.facing) ? f.facing : 0;
 
     if (f.kind === "bench") {
-      drawBench(cx, gy);
+      ctx.save();
+      ctx.translate(cx, gy);
+      ctx.rotate(facing);
+      drawBenchLocal();
+      ctx.restore();
+    } else if (f.kind === "market_stand") {
+      ctx.save();
+      ctx.translate(cx, gy - 2);
+      ctx.rotate(facing);
+      drawMarketStandLocal();
+      ctx.restore();
+    } else if (f.kind === "small_tree") {
+      ctx.save();
+      ctx.translate(cx, gy);
+      ctx.rotate(facing + Math.PI / 2);
+      drawSmallTreeLocal();
+      ctx.restore();
+    } else if (f.kind === "fountain") {
+      drawFountainSprite(cx, gy - 6);
     } else if (f.kind === "table") {
       drawTableOutline(cx, gy, 38, "#7a5436");
     } else if (f.kind === "pub_table") {
@@ -4195,6 +4285,17 @@ function isInteriorDrawTile(tile) {
     tile === TILE.FIREPLACE;
 }
 
+function isNpcRestingOnBench(npc) {
+  if (!npc || npc.renderMoving) return false;
+  const px = Number.isFinite(npc.renderX) ? npc.renderX : npc.x;
+  const py = Number.isFinite(npc.renderY) ? npc.renderY : npc.y;
+  for (const f of state.roadsides.values()) {
+    if (f.kind !== "bench") continue;
+    if (Math.hypot(px - (f.x + 0.5), py - (f.y + 0.52)) < 1.08) return true;
+  }
+  return false;
+}
+
 function drawPlayers() {
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
@@ -4219,7 +4320,8 @@ function drawPlayers() {
     if (isMob) {
       drawMob(entity, sx, sy);
     } else {
-      drawCharacter(entity, sx, sy, isNpc);
+      const restingBench = isNpc ? isNpcRestingOnBench(entity) : false;
+      drawCharacter(entity, sx, sy, isNpc, { restingBench });
     }
   }
 
@@ -4430,7 +4532,7 @@ function drawModHood(hx, hy, scale, dirX, torsoColor) {
   ctx.fillRect(hx - scale, hy - scale, 7 * scale, scale);
 }
 
-function drawCharacter(entity, x, y, isNpc = false) {
+function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const s = 3;
   const phase  = entity.walkPhase || 0;
   const moving = Boolean(entity.renderMoving);
@@ -4456,8 +4558,17 @@ function drawCharacter(entity, x, y, isNpc = false) {
   const pantColor   = isMod ? "#0e0620" : "#2a3044";
   const bootColor   = isMod ? "#0a0418" : "#1a1e2c";
 
+  const restingBenchPose = !!(poseOpts && poseOpts.restingBench);
+  const selfBenchSit =
+    !isNpc &&
+    entity.id === state.selfId &&
+    (state.benchSitUntil || 0) > performance.now();
+  const sitPose = restingBenchPose || selfBenchSit;
+  const sitBumpPx = sitPose ? 7 : 0;
+  const headSitNudge = sitPose ? Math.round(s * 0.85) : 0;
+
   const bx = x;
-  const by = y + bob;
+  const by = y + bob + sitBumpPx;
 
   const homeCasting =
     !isNpc &&
@@ -4470,14 +4581,21 @@ function drawCharacter(entity, x, y, isNpc = false) {
     drawModCape(bx - 5 * s, by - 4 * s, s, bob, dirX, dirY);
   }
 
-  // Tiny stump legs (RotMG style)
+  // Tiny stump legs (RotMG style) — compressed when seated on benches
   const legWalk = moving ? Math.round(sin1 * 2) : 0;
   ctx.fillStyle = pantColor;
-  ctx.fillRect(bx - 4 * s,     by + 3 * s - legWalk, 3 * s, 2 * s);
-  ctx.fillRect(bx +     s,     by + 3 * s + legWalk, 3 * s, 2 * s);
-  ctx.fillStyle = bootColor;
-  ctx.fillRect(bx - 4 * s - 1, by + 5 * s,           4 * s, 2 * s);
-  ctx.fillRect(bx +     s,     by + 5 * s + legWalk,  4 * s, 2 * s);
+  if (sitPose) {
+    ctx.fillRect(bx - 4 * s, by + 3 * s, 8 * s, 2 * s);
+    ctx.fillStyle = bootColor;
+    ctx.fillRect(bx - 4 * s - 1, by + 4 * s, 5 * s, 2 * s);
+    ctx.fillRect(bx + 0 * s, by + 4 * s, 5 * s, 2 * s);
+  } else {
+    ctx.fillRect(bx - 4 * s,     by + 3 * s - legWalk, 3 * s, 2 * s);
+    ctx.fillRect(bx +     s,     by + 3 * s + legWalk, 3 * s, 2 * s);
+    ctx.fillStyle = bootColor;
+    ctx.fillRect(bx - 4 * s - 1, by + 5 * s,           4 * s, 2 * s);
+    ctx.fillRect(bx +     s,     by + 5 * s + legWalk,  4 * s, 2 * s);
+  }
 
   // Torso
   drawTorso2(bx - 4 * s, by - 3 * s, s, torsoStyle, torsoColor, weaponColor, entity.classId, fx, fy);
@@ -4520,7 +4638,7 @@ function drawCharacter(entity, x, y, isNpc = false) {
 
   // Head / hood
   const hx = bx - 2 * s + fx * s;
-  const hy = by - 7 * s + fy;
+  const hy = by - 7 * s + fy + headSitNudge;
   if (isMod) {
     drawModHood(hx, hy, s, dirX, torsoColor);
   } else {
@@ -4543,8 +4661,8 @@ function drawCharacter(entity, x, y, isNpc = false) {
     ctx.fillRect(hx + 3 * s + eo, eyeY, s, s);
   }
 
-  // Weapon / equipment (stash weapon while channeling home)
-  if (!isNpc && !homeCasting) {
+  // Weapon / equipment (stash weapon while channeling home / sitting)
+  if (!isNpc && !homeCasting && !sitPose) {
     drawClassEquipment(entity, bx, by, dirX, dirY, sideX, sideY, weaponColor,
       rAX + s, rAY + 2 * s,
       lAX + s, lAY + 2 * s, moving, sin1);
