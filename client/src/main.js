@@ -1773,6 +1773,17 @@ function playerNearBuildingDoor(px, py, building) {
   return Math.hypot(px - doorX, py - doorY) <= 4;
 }
 
+/** Matches roadside sign anchor used for drawing / hit-testing (left front of lot). */
+function playerNearForSaleSign(px, py, building) {
+  const signX = building.x - 0.5;
+  const signY = building.y + building.h - 0.5;
+  return Math.hypot(px - signX, py - signY) <= 4;
+}
+
+function playerCanInteractBuyHouse(px, py, building) {
+  return playerNearBuildingDoor(px, py, building) || playerNearForSaleSign(px, py, building);
+}
+
 function worldPointHitsForSaleSign(building, worldX, worldY) {
   const minX = building.x - 1.15;
   const maxX = building.x + 0.35;
@@ -1838,7 +1849,7 @@ function tryOpenBuyHouseAtClick(worldX, worldY) {
     const key = `${building.x},${building.y}`;
     if (state.buildingOwnership.has(key)) continue;
     if (!worldPointHitsForSaleSign(building, worldX, worldY)) continue;
-    if (!playerNearBuildingDoor(px, py, building)) continue;
+    if (!playerCanInteractBuyHouse(px, py, building)) continue;
     openBuyHousePanel(building);
     return true;
   }
@@ -1854,7 +1865,7 @@ function tryOpenBuyHouseNearPlayer() {
     if (!building.forSale) continue;
     const key = `${building.x},${building.y}`;
     if (state.buildingOwnership.has(key)) continue;
-    if (!playerNearBuildingDoor(px, py, building)) continue;
+    if (!playerCanInteractBuyHouse(px, py, building)) continue;
     openBuyHousePanel(building);
     return true;
   }

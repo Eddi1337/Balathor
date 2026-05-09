@@ -684,6 +684,17 @@ function getBuildingPrice(building) {
   return prices[building.type] || 500;
 }
 
+function playerNearBuildingForPurchase(player, building) {
+  const px = player.x;
+  const py = player.y;
+  const doorX = building.x + building.w / 2;
+  const doorY = building.y + building.h - 1;
+  if (Math.hypot(px - doorX, py - doorY) <= 4) return true;
+  const signX = building.x - 0.5;
+  const signY = building.y + building.h - 0.5;
+  return Math.hypot(px - signX, py - signY) <= 4;
+}
+
 function handlePortalTravel(client) {
   const now = Date.now();
   if (now - client.lastPortalAt < PORTAL_COOLDOWN_MS) {
@@ -876,8 +887,7 @@ function handleMessage(client, raw) {
     if (ownedBuildings.has(key)) return; // already owned
     const price = getBuildingPrice(building);
     if (!client.player || client.player.gold < price) return;
-    // Check proximity
-    if (Math.hypot(client.player.x - (building.x + building.w/2), client.player.y - (building.y + building.h - 1)) > 4) return;
+    if (!playerNearBuildingForPurchase(client.player, building)) return;
     client.player.gold -= price;
     ownedBuildings.set(key, { ownerId: client.player.id, ownerName: client.player.name, price });
     // Broadcast ownership update to all clients
