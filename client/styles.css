@@ -1844,6 +1844,35 @@ button:focus-visible {
   opacity: 1;
 }
 
+.home-teleport-slot {
+  position: relative;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  min-height: 48px;
+  height: 48px;
+  padding: 0;
+  flex-shrink: 0;
+  cursor: pointer;
+  border-color: #4a5a72;
+}
+
+.home-teleport-slot:hover {
+  border-color: #6e8abf;
+  background: linear-gradient(180deg, #121923 0%, #0b101a 100%);
+}
+
+.home-teleport-slot:active {
+  border-color: #8aa8d9;
+}
+
+.home-teleport-key {
+  right: 3px;
+  bottom: 2px;
+  color: #92b8e8;
+}
+
 .potion-slot:hover {
   border-color: #3a9944;
   background: #0e1a0e;
