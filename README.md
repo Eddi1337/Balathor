@@ -93,6 +93,16 @@ npm run stress -- --url ws://127.0.0.1:8080/ws --clients 100 --duration 60
 
 ## Docker Server
 
+House deeds, chests, and floor loot persist in **`world.sqlite`** (path from **`WORLD_DB_PATH`**, default `server/data/world.sqlite` when running locally, or **`/app/data/world.sqlite`** in the bundled image).
+
+**Important:** Containers are ephemeral unless you attach a volume, e.g.:
+
+```bash
+docker run --rm -p 8080:8080 -v balathor-world-data:/app/data balathor-server
+```
+
+Without a mounted `/app/data`, ownership resets when the container is removed.
+
 ```bash
 npm run server:docker:build
 npm run server:docker:run

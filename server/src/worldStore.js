@@ -6,13 +6,34 @@ const { DatabaseSync } = require("node:sqlite");
 
 const DEFAULT_DB_PATH = path.join(__dirname, "..", "data", "world.sqlite");
 
+/** Absolute path of the last DB opened (for logging). */
+let lastResolvedWorldDbPath = "";
+
+function getWorldDatabasePath() {
+  return lastResolvedWorldDbPath || null;
+}
+
+/** Flush WAL so ownership survives abrupt process exit (best-effort). */
+function checkpointWorldDb(db) {
+  if (!db) {
+    return;
+  }
+  try {
+    db.exec("PRAGMA wal_checkpoint(PASSIVE);");
+  } catch {
+    // ignore — some builds may not support WAL
+  }
+}
+
 /**
  * Persistent shared world state (houses, floor loot, future tables).
  * Uses Node.js built-in SQLite (see https://nodejs.org/api/sqlite.html).
  */
 function openWorldDb(dbPath = process.env.WORLD_DB_PATH || DEFAULT_DB_PATH) {
-  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-  const db = new DatabaseSync(dbPath);
+  const resolved = path.resolve(dbPath);
+  lastResolvedWorldDbPath = resolved;
+  fs.mkdirSync(path.dirname(resolved), { recursive: true });
+  const db = new DatabaseSync(resolved);
   db.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA synchronous = NORMAL;
@@ -59,6 +80,7 @@ function upsertBuildingOwnership(db, buildingKey, ownerAccountKey, ownerName, pr
       owner_name = excluded.owner_name,
       price = excluded.price
   `).run(buildingKey, ownerAccountKey, ownerName, clampInt(price, 0, 1e9));
+  checkpointWorldDb(db);
 }
 
 function insertGroundItem(db, row) {
@@ -68,10 +90,12 @@ function insertGroundItem(db, row) {
     row.y,
     row.itemJson
   );
+  checkpointWorldDb(db);
 }
 
 function deleteGroundItem(db, id) {
   db.prepare("DELETE FROM ground_items WHERE id = ?").run(id);
+  checkpointWorldDb(db);
 }
 
 /**
@@ -103,6 +127,11 @@ function loadGroundItems(db, parseItem) {
 }
 
 function closeWorldDb(db) {
+  try {
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+  } catch {
+    /* ignore */
+  }
   try {
     db.close();
   } catch {
@@ -151,10 +180,13 @@ function saveHouseChestSlots(db, buildingKey, slots) {
     VALUES (?, ?)
     ON CONFLICT(building_key) DO UPDATE SET slots_json = excluded.slots_json
   `).run(buildingKey, json);
+  checkpointWorldDb(db);
 }
 
 module.exports = {
   openWorldDb,
+  getWorldDatabasePath,
+  checkpointWorldDb,
   loadBuildingOwnership,
   upsertBuildingOwnership,
   insertGroundItem,

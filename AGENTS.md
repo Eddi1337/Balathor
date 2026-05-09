@@ -30,5 +30,6 @@ You can also run them individually with `npm run server` and `npm run client`.
 
 - The project requires **Node.js >= 22** (uses `node:crypto.subtle`, native `fetch`, etc.).
 - Discord: successful **account creation** and **logins** post to a webhook (default URL in `server/src/discordWebhook.js`). Override with **`DISCORD_AUTH_WEBHOOK_URL`** (see root `README.md`).
+- **`WORLD_DB_PATH`**: SQLite file for **house ownership**, house chests, and ground loot. Docker: mount **`/app/data`** or deeds do not survive container removal (see root `README.md`).
 - Account data is stored in `server/data/accounts.json` (flat JSON file, no external database).
 - The Electron desktop client (`client/desktop/`) is optional and targets Windows packaging — skip it in Cloud Agent environments.

@@ -4,8 +4,14 @@ WORKDIR /app
 
 COPY src ./src
 
+RUN mkdir -p /app/data
+
 ENV HOST=0.0.0.0
 ENV PORT=8080
+ENV WORLD_DB_PATH=/app/data/world.sqlite
+
+VOLUME ["/app/data"]
+
 
 EXPOSE 8080
 

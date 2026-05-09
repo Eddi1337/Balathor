@@ -27,7 +27,8 @@ const {
   closeWorldDb,
   HOUSE_CHEST_SLOTS,
   loadHouseChestSlots,
-  saveHouseChestSlots
+  saveHouseChestSlots,
+  getWorldDatabasePath
 } = require("./worldStore");
 const { postAuthEventToDiscord, isAllowedDiscordWebhookUrl, resolveDiscordAuthWebhookUrl } = require("./discordWebhook");
 
@@ -366,6 +367,13 @@ const SIM_WALL_SAMPLES_MAX = 60;
 
 const worldDb = openWorldDb();
 const ownedBuildings = loadBuildingOwnership(worldDb); // key: "x,y" → { ownerAccountKey, ownerName, price }
+{
+  const p = getWorldDatabasePath();
+  if (p) {
+    console.log(`Balathor world database: ${p}`);
+  }
+  console.log(`Balathor persisted house deeds: ${ownedBuildings.size}`);
+}
 const FOR_SALE_BUILDINGS = BUILDING_LIST.filter(b => b.forSale);
 
 const accountStore = loadAccountStore();
@@ -1273,27 +1281,47 @@ function handleMessage(client, raw) {
   }
 
   if (message.type === "buyBuilding") {
-    const { buildingX, buildingY } = message;
-    const building = FOR_SALE_BUILDINGS.find(b => b.x === buildingX && b.y === buildingY);
-    if (!building || !client.account || !client.player) return;
+    const bx = Number(message.buildingX);
+    const by = Number(message.buildingY);
+    if (!Number.isFinite(bx) || !Number.isFinite(by)) {
+      return;
+    }
+    const building = FOR_SALE_BUILDINGS.find((b) => b.x === bx && b.y === by);
+    if (!building || !client.account || !client.player) {
+      return;
+    }
     const key = `${building.x},${building.y}`;
-    if (ownedBuildings.has(key)) return; // already owned
+    if (ownedBuildings.has(key)) {
+      return;
+    }
     const price = getBuildingPrice(building);
-    if (!playerNearBuildingForPurchase(client.player, building)) return;
-    if (client.player.gold < price) return;
+    if (!playerNearBuildingForPurchase(client.player, building)) {
+      return;
+    }
+    if (client.player.gold < price) {
+      return;
+    }
     client.player.gold -= price;
+    try {
+      upsertBuildingOwnership(worldDb, key, client.account.key, client.player.name, price);
+    } catch (err) {
+      client.player.gold += price;
+      console.error("[world] building purchase not written to SQLite:", err && err.message ? err.message : err);
+      return;
+    }
     ownedBuildings.set(key, {
       ownerAccountKey: client.account.key,
       ownerName: client.player.name,
       price
     });
-    upsertBuildingOwnership(worldDb, key, client.account.key, client.player.name, price);
     client.player.homeBuildingKey = key;
     touchOwnedHouseChestCache(key);
     saveClientCharacter(client);
     for (const c of clients.values()) {
       send(c, { type: "buildingBought", buildingX: building.x, buildingY: building.y, ownerName: client.player.name });
     }
+    broadcastSnapshot();
+    return;
   }
 
   if (message.type === "spendTalent") {
