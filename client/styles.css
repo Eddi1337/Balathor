@@ -417,6 +417,30 @@ button:focus-visible {
   overflow-y: auto;
 }
 
+.house-chest-section {
+  margin: 10px 12px 14px;
+  padding: 10px 12px 12px;
+  border: 1px solid rgba(110, 207, 141, 0.35);
+  border-radius: 10px;
+  background: rgba(12, 22, 18, 0.55);
+}
+
+.house-chest-head {
+  margin-bottom: 6px;
+}
+
+.house-chest-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--muted);
+}
+
+.house-chest-hint strong {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .shop-window {
   left: 16px;
   right: auto;

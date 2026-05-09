@@ -28,6 +28,10 @@ function openWorldDb(dbPath = process.env.WORLD_DB_PATH || DEFAULT_DB_PATH) {
       y REAL NOT NULL,
       item_json TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS house_chests (
+      building_key TEXT PRIMARY KEY NOT NULL,
+      slots_json TEXT NOT NULL
+    );
   `);
   return db;
 }
@@ -112,6 +116,43 @@ function clampInt(n, lo, hi) {
   return Math.min(hi, Math.max(lo, v));
 }
 
+const HOUSE_CHEST_SLOTS = 10;
+
+function normalizeChestSlotArray(rawArr, parseItem) {
+  const slots = Array(HOUSE_CHEST_SLOTS).fill(null);
+  if (!Array.isArray(rawArr)) {
+    return slots;
+  }
+  for (let i = 0; i < HOUSE_CHEST_SLOTS && i < rawArr.length; i += 1) {
+    const cell = rawArr[i];
+    slots[i] = cell && typeof cell === "object" ? parseItem(cell) : null;
+  }
+  return slots;
+}
+
+function loadHouseChestSlots(db, buildingKey, parseItem) {
+  const row = db.prepare("SELECT slots_json FROM house_chests WHERE building_key = ?").get(buildingKey);
+  if (!row?.slots_json) {
+    return Array(HOUSE_CHEST_SLOTS).fill(null);
+  }
+  let rawArr;
+  try {
+    rawArr = JSON.parse(row.slots_json);
+  } catch {
+    return Array(HOUSE_CHEST_SLOTS).fill(null);
+  }
+  return normalizeChestSlotArray(rawArr, parseItem);
+}
+
+function saveHouseChestSlots(db, buildingKey, slots) {
+  const json = JSON.stringify(Array.from({ length: HOUSE_CHEST_SLOTS }, (_, i) => slots[i] || null));
+  db.prepare(`
+    INSERT INTO house_chests (building_key, slots_json)
+    VALUES (?, ?)
+    ON CONFLICT(building_key) DO UPDATE SET slots_json = excluded.slots_json
+  `).run(buildingKey, json);
+}
+
 module.exports = {
   openWorldDb,
   loadBuildingOwnership,
@@ -119,5 +160,8 @@ module.exports = {
   insertGroundItem,
   deleteGroundItem,
   loadGroundItems,
-  closeWorldDb
+  closeWorldDb,
+  HOUSE_CHEST_SLOTS,
+  loadHouseChestSlots,
+  saveHouseChestSlots
 };

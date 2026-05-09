@@ -50,6 +50,8 @@ const talentClose = document.querySelector("#talentClose");
 const talentPointsText = document.querySelector("#talentPointsText");
 const talentTreeEl = document.querySelector("#talentTree");
 const inventorySlots = document.querySelector("#inventorySlots");
+const houseChestSection = document.querySelector("#houseChestSection");
+const houseChestSlotsEl = document.querySelector("#houseChestSlots");
 const abilityBar = document.querySelector("#abilityBar");
 const abilityBarToggle = document.querySelector("#abilityBarToggle");
 const abilitySlotsEl = document.querySelector("#abilitySlots");
@@ -94,6 +96,13 @@ const STARTING_SAFE_ZONE = { x: 0, y: 0, radius: 26 };
 /** Matches server SPELL_DAMAGE_PROFILES.consecration.radius */
 const CONSECRATION_RADIUS_TILES = 4.6;
 const BUY_HOUSE_INTERACT_RADIUS = 8;
+/** World-tile radius: tree teleport tooltip + click only when pointer is near the sprite. */
+const INTERIOR_HOME_TREE_HIT_RADIUS_TILES = 0.52;
+/** World-tile radius for clicking the interior chest to open storage. */
+const INTERIOR_HOUSE_CHEST_CLICK_RADIUS_TILES = 0.72;
+/** Tooltip appears only when near the chest sprite. */
+const INTERIOR_HOUSE_CHEST_TOOLTIP_RADIUS_TILES = 0.58;
+const HOUSE_CHEST_SLOTS = 10;
 const TRADER_CLICK_HIT_RADIUS = 3.6;
 const TRADER_CLICK_PLAYER_RADIUS = 8;
 /** Trader caravan props — positions MUST match isTrader NPC homeX/homeY in server/src/npcs.js */
@@ -259,7 +268,10 @@ const state = {
   _debugLastPingAt: 0,
   hoverTooltipText: "",
   hoverTooltipX: 0,
-  hoverTooltipY: 0
+  hoverTooltipY: 0,
+  hoverTooltipSmall: false,
+  houseChestSlots: null,
+  houseChestBuildingKey: null
 };
 
 const SPEECH_BUBBLE_MS = 5200;
@@ -612,6 +624,7 @@ function handleServerMessage(message) {
     if (state.activeWindow === "equipment") renderEquipment();
     if (state.activeWindow === "talent") renderTalentPanel();
     renderBags();
+    renderHouseChestPanelIfOpen();
     renderAbilityBar();
     renderPotionSlot();
     renderShop();
@@ -670,6 +683,21 @@ function handleServerMessage(message) {
     return;
   }
 
+  if (message.type === "houseChestState") {
+    const bk = typeof message.buildingKey === "string" ? message.buildingKey : null;
+    const slots = Array.isArray(message.slots) ? message.slots : [];
+    state.houseChestBuildingKey = bk;
+    state.houseChestSlots = slots.slice(0, HOUSE_CHEST_SLOTS);
+    while (state.houseChestSlots.length < HOUSE_CHEST_SLOTS) {
+      state.houseChestSlots.push(null);
+    }
+    houseChestSection?.classList.remove("hidden");
+    setActiveGameWindow("bags");
+    renderHouseChestPanel();
+    renderBags();
+    return;
+  }
+
   if (message.type === "traderInventory") {
     state.traderNpcId = message.npcId;
     state.traderItems = message.items || [];
@@ -701,6 +729,8 @@ function handleServerMessage(message) {
       });
     } else if (message.message === "inventory_full") {
       appendChat({ kind: "system", name: "Realm", text: "Inventory is full" });
+    } else if (message.message === "house_chest_full") {
+      appendChat({ kind: "system", name: "Realm", text: "House chest is full" });
     } else if (message.message === "not_enough_gold") {
       appendChat({ kind: "system", name: "Realm", text: "Not enough gold" });
     } else if (message.message === "shop_not_nearby") {
@@ -1358,7 +1388,23 @@ function wireUi() {
       send({ type: "useItem", slot });
     } else if (action === "drop") {
       send({ type: "dropItem", slot });
+    } else if (action === "storeChest") {
+      send({ type: "houseChestAction", action: "deposit", invSlot: slot });
     }
+  });
+
+  houseChestSlotsEl?.addEventListener("pointerdown", (event) => {
+    const button = event.target.closest("[data-house-chest-withdraw]");
+    if (!button || !state.houseChestBuildingKey) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const chestSlot = Number(button.dataset.houseChestWithdraw);
+    if (!Number.isInteger(chestSlot) || chestSlot < 0 || chestSlot >= HOUSE_CHEST_SLOTS) {
+      return;
+    }
+    send({ type: "houseChestAction", action: "withdraw", chestSlot });
   });
 
   shopPanel?.addEventListener("pointerdown", (event) => {
@@ -1434,6 +1480,9 @@ function wireUi() {
     if (tryOpenTraderAtClick(world.x, world.y)) {
       return;
     }
+    if (tryClickHouseChest(world.x, world.y)) {
+      return;
+    }
     if (tryClickHouseHomeTree(world.x, world.y)) {
       return;
     }
@@ -1452,6 +1501,7 @@ function wireUi() {
 
   canvas.addEventListener("pointerleave", () => {
     state.hoverTooltipText = "";
+    state.hoverTooltipSmall = false;
   });
 
   window.addEventListener("keydown", (event) => {
@@ -1993,7 +2043,7 @@ function drawOwnerSignpost(building, sx, sy, w, h, ownerName) {
   const poleX = sx - TILE_SIZE * 0.55;
   const baseY = sy + h - TILE_SIZE * 0.35;
   const poleW = 7;
-  const poleH = Math.min(56, Math.round(TILE_SIZE * 1.45));
+  const poleH = Math.min(62, Math.round(TILE_SIZE * 1.55));
 
   ctx.save();
   ctx.fillStyle = "#4a3424";
@@ -2002,8 +2052,8 @@ function drawOwnerSignpost(building, sx, sy, w, h, ownerName) {
   ctx.lineWidth = 1;
   ctx.strokeRect(poleX - poleW / 2, baseY - poleH, poleW, poleH);
 
-  const boardW = Math.min(TILE_SIZE + 28, Math.round(w * 0.42 + TILE_SIZE));
-  const boardH = 30;
+  const boardW = Math.min(TILE_SIZE + 34, Math.round(w * 0.46 + TILE_SIZE));
+  const boardH = 42;
   const boardX = poleX - boardW / 2;
   const boardY = baseY - poleH - boardH + 8;
   ctx.fillStyle = "#b8894a";
@@ -2012,17 +2062,19 @@ function drawOwnerSignpost(building, sx, sy, w, h, ownerName) {
   ctx.lineWidth = 2;
   ctx.strokeRect(boardX, boardY, boardW, boardH);
 
-  ctx.font = "bold 10px ui-sans-serif, system-ui";
+  ctx.font = "bold 9px ui-sans-serif, system-ui";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.lineWidth = 2.5;
   ctx.strokeStyle = "rgba(0,0,0,0.78)";
   ctx.fillStyle = "#fff7dd";
-  const label = String(ownerName || "").slice(0, 22);
+  const ownerShort = String(ownerName || "").trim().slice(0, 18);
+  const line1 = "The home of";
   const tcx = boardX + boardW / 2;
-  const tcy = boardY + boardH / 2;
-  ctx.strokeText(label, tcx, tcy);
-  ctx.fillText(label, tcx, tcy);
+  ctx.strokeText(line1, tcx, boardY + 13);
+  ctx.fillText(line1, tcx, boardY + 13);
+  ctx.strokeText(ownerShort, tcx, boardY + 28);
+  ctx.fillText(ownerShort, tcx, boardY + 28);
   ctx.restore();
 }
 
@@ -2087,11 +2139,20 @@ function screenEventToWorld(event) {
   };
 }
 
-/** Matches server getOwnedHouseHomeTreeWorldPos */
+/** Matches server ownedHouseCornerInset / interior anchors */
+function ownedHouseCornerInset(building) {
+  const span = Math.min(building.w, building.h);
+  return Math.min(2.55, Math.max(2.05, span * 0.26));
+}
+
 function getOwnedHouseHomeTreeWorldPos(building) {
-  const insetX = Math.max(2, Math.min(building.w - 2.5, building.w * 0.32));
-  const insetY = Math.max(2.5, Math.min(building.h - 3.5, building.h * 0.38));
-  return { x: building.x + insetX, y: building.y + insetY };
+  const d = ownedHouseCornerInset(building);
+  return { x: building.x + d, y: building.y + d };
+}
+
+function getOwnedHouseChestWorldPos(building) {
+  const d = ownedHouseCornerInset(building);
+  return { x: building.x + building.w - d, y: building.y + d };
 }
 
 function findBuildingByKey(key) {
@@ -2105,6 +2166,7 @@ function findBuildingByKey(key) {
 
 function refreshWorldHoverTooltip(event) {
   state.hoverTooltipText = "";
+  state.hoverTooltipSmall = false;
   state.hoverTooltipX = event.offsetX;
   state.hoverTooltipY = event.offsetY;
   if (!state.joined || state.menuOpen || event.target !== canvas) {
@@ -2118,16 +2180,24 @@ function refreshWorldHoverTooltip(event) {
   if (!building) {
     return;
   }
-  const world = screenEventToWorld(event);
-  const tp = getOwnedHouseHomeTreeWorldPos(building);
-  if (Math.hypot(world.x - tp.x, world.y - tp.y) > 2.85) {
-    return;
-  }
   const pb = getPlayerBuilding();
   if (!pb || pb.x !== building.x || pb.y !== building.y) {
     return;
   }
-  state.hoverTooltipText = "Teleport to home tree";
+
+  const world = screenEventToWorld(event);
+  const tp = getOwnedHouseHomeTreeWorldPos(building);
+  if (Math.hypot(world.x - tp.x, world.y - tp.y) <= INTERIOR_HOME_TREE_HIT_RADIUS_TILES) {
+    state.hoverTooltipText = "Teleport to home tree";
+    state.hoverTooltipSmall = true;
+    return;
+  }
+
+  const cp = getOwnedHouseChestWorldPos(building);
+  if (Math.hypot(world.x - cp.x, world.y - cp.y) <= INTERIOR_HOUSE_CHEST_TOOLTIP_RADIUS_TILES) {
+    state.hoverTooltipText = "House chest";
+    state.hoverTooltipSmall = false;
+  }
 }
 
 function tryClickHouseHomeTree(wx, wy) {
@@ -2140,7 +2210,7 @@ function tryClickHouseHomeTree(wx, wy) {
     return false;
   }
   const tp = getOwnedHouseHomeTreeWorldPos(building);
-  if (Math.hypot(wx - tp.x, wy - tp.y) > 2.65) {
+  if (Math.hypot(wx - tp.x, wy - tp.y) > INTERIOR_HOME_TREE_HIT_RADIUS_TILES) {
     return false;
   }
   const pb = getPlayerBuilding();
@@ -2148,6 +2218,27 @@ function tryClickHouseHomeTree(wx, wy) {
     return false;
   }
   send({ type: "houseHomeTree" });
+  return true;
+}
+
+function tryClickHouseChest(wx, wy) {
+  const self = state.players.get(state.selfId);
+  if (!self?.homeBuildingKey) {
+    return false;
+  }
+  const building = findBuildingByKey(self.homeBuildingKey);
+  if (!building) {
+    return false;
+  }
+  const cp = getOwnedHouseChestWorldPos(building);
+  if (Math.hypot(wx - cp.x, wy - cp.y) > INTERIOR_HOUSE_CHEST_CLICK_RADIUS_TILES) {
+    return false;
+  }
+  const pb = getPlayerBuilding();
+  if (!pb || pb.x !== building.x || pb.y !== building.y) {
+    return false;
+  }
+  send({ type: "houseChestAction", action: "open" });
   return true;
 }
 
@@ -3063,6 +3154,9 @@ function renderBags() {
       actions.append(itemActionButton("use", slot, "Use"));
     }
     actions.append(itemActionButton("drop", slot, "Drop"));
+    if (state.houseChestBuildingKey) {
+      actions.append(itemActionButton("storeChest", slot, "Store"));
+    }
     const info = document.createElement("div");
     info.className = "item-info";
     info.append(name, stats, actions);
@@ -3072,6 +3166,54 @@ function renderBags() {
     cell.append(body);
     inventorySlots.append(cell);
   });
+}
+
+function renderHouseChestPanel() {
+  if (!houseChestSlotsEl) {
+    return;
+  }
+  houseChestSlotsEl.replaceChildren();
+  const slots = Array.isArray(state.houseChestSlots)
+    ? state.houseChestSlots.slice(0, HOUSE_CHEST_SLOTS)
+    : [];
+  while (slots.length < HOUSE_CHEST_SLOTS) {
+    slots.push(null);
+  }
+  slots.forEach((item, slot) => {
+    const cell = document.createElement("div");
+    cell.className = `inventory-slot ${item ? item.rarity || "common" : "empty"}`;
+    if (!item) {
+      cell.textContent = slot + 1;
+      houseChestSlotsEl.append(cell);
+      return;
+    }
+    const name = document.createElement("strong");
+    name.textContent = item.name;
+    const stats = document.createElement("span");
+    stats.className = "item-stats";
+    stats.textContent = formatItemStats(item);
+    const actions = document.createElement("div");
+    actions.className = "item-actions";
+    const takeBtn = document.createElement("button");
+    takeBtn.type = "button";
+    takeBtn.dataset.houseChestWithdraw = String(slot);
+    takeBtn.textContent = "Take";
+    actions.append(takeBtn);
+    const info = document.createElement("div");
+    info.className = "item-info";
+    info.append(name, stats, actions);
+    const body = document.createElement("div");
+    body.className = "item-body";
+    body.append(createItemIcon(item), info);
+    cell.append(body);
+    houseChestSlotsEl.append(cell);
+  });
+}
+
+function renderHouseChestPanelIfOpen() {
+  if (state.houseChestBuildingKey) {
+    renderHouseChestPanel();
+  }
 }
 
 function renderShop() {
@@ -3220,12 +3362,21 @@ function formatItemStats(item) {
     .join(" ");
 }
 
+function closeHouseChestSection() {
+  state.houseChestSlots = null;
+  state.houseChestBuildingKey = null;
+  houseChestSection?.classList.add("hidden");
+}
+
 function toggleGameWindow(windowName) {
   setActiveGameWindow(state.activeWindow === windowName ? null : windowName);
 }
 
 function setActiveGameWindow(windowName) {
   closeBuyHousePanel();
+  if (windowName !== "bags") {
+    closeHouseChestSection();
+  }
   state.activeWindow = windowName;
   equipmentPanel.classList.toggle("hidden", windowName !== "equipment");
   bagsPanel.classList.toggle("hidden", windowName !== "bags");
@@ -3378,12 +3529,13 @@ function drawWorldHoverTooltip() {
   if (!t) return;
   const px = state.hoverTooltipX;
   const py = state.hoverTooltipY;
+  const small = state.hoverTooltipSmall;
   ctx.save();
-  ctx.font = "12px ui-sans-serif, system-ui";
-  const padX = 8;
-  const padY = 5;
+  ctx.font = small ? "10px ui-sans-serif, system-ui" : "12px ui-sans-serif, system-ui";
+  const padX = small ? 6 : 8;
+  const padY = small ? 4 : 5;
+  const h = small ? 18 : 22;
   const w = ctx.measureText(t).width + padX * 2;
-  const h = 22;
   let bx = px + 14;
   let by = py + 18;
   if (bx + w > canvas.width - 4) bx = canvas.width - w - 4;
@@ -3393,7 +3545,7 @@ function drawWorldHoverTooltip() {
   ctx.fillStyle = "rgba(12, 18, 14, 0.92)";
   ctx.strokeStyle = "rgba(110, 207, 141, 0.65)";
   ctx.lineWidth = 1;
-  roundedRect(bx, by, w, h, 4);
+  roundedRect(bx, by, w, h, small ? 3 : 4);
   ctx.fill();
   ctx.stroke();
   ctx.fillStyle = "#dff7e8";
@@ -5416,6 +5568,7 @@ function drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY) {
     const roofless = !!(playerBuilding && playerBuilding.x === building.x && playerBuilding.y === building.y);
     drawBuildingSprite(building, sx, sy, roofless);
     drawOwnedHouseInteriorHomeTree(building, roofless, halfW, halfH);
+    drawOwnedHouseInteriorChest(building, roofless, halfW, halfH);
   }
 }
 
@@ -5431,6 +5584,37 @@ function drawOwnedHouseInteriorHomeTree(building, roofless, halfW, halfH) {
   const sx = tp.x * TILE_SIZE - state.camera.x + halfW;
   const sy = tp.y * TILE_SIZE - state.camera.y + halfH;
   drawInteriorHomeTree(sx, sy);
+}
+
+function drawOwnedHouseInteriorChest(building, roofless, halfW, halfH) {
+  const self = state.players.get(state.selfId);
+  if (!roofless || !self?.homeBuildingKey) {
+    return;
+  }
+  if (`${building.x},${building.y}` !== self.homeBuildingKey) {
+    return;
+  }
+  const cp = getOwnedHouseChestWorldPos(building);
+  const sx = cp.x * TILE_SIZE - state.camera.x + halfW;
+  const sy = cp.y * TILE_SIZE - state.camera.y + halfH;
+  drawInteriorHouseChest(sx, sy);
+}
+
+/** Interior chest — opens bags via houseChestAction */
+function drawInteriorHouseChest(cx, cy) {
+  ctx.save();
+  drawCastShadow(cx - 6, cy + 12, 22, 8, 0.22);
+  ctx.fillStyle = "#5c3d22";
+  ctx.fillRect(cx - 14, cy - 10, 28, 18);
+  ctx.fillStyle = "#7a5230";
+  ctx.fillRect(cx - 12, cy - 14, 24, 8);
+  ctx.strokeStyle = "rgba(40,24,10,0.55)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(cx - 14, cy - 10, 28, 18);
+  ctx.strokeRect(cx - 12, cy - 14, 24, 8);
+  ctx.fillStyle = "#d4af37";
+  ctx.fillRect(cx - 3, cy - 6, 6, 5);
+  ctx.restore();
 }
 
 /** Compact decorative tree — click handled via houseHomeTree message */

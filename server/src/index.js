@@ -24,7 +24,10 @@ const {
   insertGroundItem,
   deleteGroundItem,
   loadGroundItems,
-  closeWorldDb
+  closeWorldDb,
+  HOUSE_CHEST_SLOTS,
+  loadHouseChestSlots,
+  saveHouseChestSlots
 } = require("./worldStore");
 
 const HOST = process.env.HOST || "127.0.0.1";
@@ -377,6 +380,27 @@ const groundItems = [];
   }
   nextGroundItemId = Math.max(nextGroundItemId, nextNumericId);
 }
+/** Cached persistent chest slots per owned building key ("x,y"). */
+const ownedHouseChestSlotsByKey = new Map();
+
+function touchOwnedHouseChestCache(buildingKey) {
+  if (!ownedHouseChestSlotsByKey.has(buildingKey)) {
+    ownedHouseChestSlotsByKey.set(
+      buildingKey,
+      loadHouseChestSlots(worldDb, buildingKey, parseGroundItemFromDbJson)
+    );
+  }
+  return ownedHouseChestSlotsByKey.get(buildingKey);
+}
+
+function persistOwnedHouseChest(buildingKey) {
+  const slots = ownedHouseChestSlotsByKey.get(buildingKey);
+  if (!slots) {
+    return;
+  }
+  saveHouseChestSlots(worldDb, buildingKey, slots);
+}
+
 const mobs = createMobs();
 const traderStocks = new Map();
 for (const def of getTraderDefinitions()) {
@@ -384,6 +408,7 @@ for (const def of getTraderDefinitions()) {
 }
 
 syncNextItemIdFromAccounts();
+syncNextItemIdFromHouseChestsDb();
 
 const server = http.createServer((req, res) => {
   if (req.url === "/health") {
@@ -642,10 +667,21 @@ function resolveOwnedHouseDoorOutside(building) {
   return { x: doorCx, y: building.y + building.h + 0.35 };
 }
 
+/** NW interior corner — matches client cutaway view for tree anchor. */
+function ownedHouseCornerInset(building) {
+  const span = Math.min(building.w, building.h);
+  return Math.min(2.55, Math.max(2.05, span * 0.26));
+}
+
 function getOwnedHouseHomeTreeWorldPos(building) {
-  const insetX = Math.max(2, Math.min(building.w - 2.5, building.w * 0.32));
-  const insetY = Math.max(2.5, Math.min(building.h - 3.5, building.h * 0.38));
-  return { x: building.x + insetX, y: building.y + insetY };
+  const d = ownedHouseCornerInset(building);
+  return { x: building.x + d, y: building.y + d };
+}
+
+/** NE interior corner — chest anchor opposite the tree. */
+function getOwnedHouseChestWorldPos(building) {
+  const d = ownedHouseCornerInset(building);
+  return { x: building.x + building.w - d, y: building.y + d };
 }
 
 function resolveHomeTeleportDestination(player, accountKey) {
@@ -692,6 +728,33 @@ function syncNextItemIdFromAccounts() {
         maxId = Math.max(maxId, Number(match[1]));
       }
     }
+  }
+  nextItemId = Math.max(nextItemId, maxId + 1);
+}
+
+function syncNextItemIdFromHouseChestsDb() {
+  let maxId = 0;
+  try {
+    const stmt = worldDb.prepare("SELECT slots_json FROM house_chests");
+    for (const row of stmt.iterate()) {
+      let arr;
+      try {
+        arr = JSON.parse(row.slots_json);
+      } catch {
+        continue;
+      }
+      if (!Array.isArray(arr)) {
+        continue;
+      }
+      for (const cell of arr) {
+        const match = /^item_(\d+)$/.exec(cell?.id || "");
+        if (match) {
+          maxId = Math.max(maxId, Number(match[1]));
+        }
+      }
+    }
+  } catch {
+    // ignore DB issues during migration
   }
   nextItemId = Math.max(nextItemId, maxId + 1);
 }
@@ -884,7 +947,7 @@ function handleHouseHomeTreeTeleport(client) {
   }
 
   const treePos = getOwnedHouseHomeTreeWorldPos(building);
-  if (Math.hypot(client.player.x - treePos.x, client.player.y - treePos.y) > 2.35) {
+  if (Math.hypot(client.player.x - treePos.x, client.player.y - treePos.y) > 0.52) {
     return;
   }
 
@@ -909,6 +972,99 @@ function handleHouseHomeTreeTeleport(client) {
     y: client.player.y
   });
   streamChunks(client, nearbyChunks(client.player.x, client.player.y, 3));
+}
+
+function snapshotHouseChestSlots(slots) {
+  return Array.from({ length: HOUSE_CHEST_SLOTS }, (_, i) => slots[i] || null);
+}
+
+function playerInsideOwnedHouseInterior(player, building) {
+  const px = player.x;
+  const py = player.y;
+  return (
+    px > building.x + 0.55 &&
+    px < building.x + building.w - 0.55 &&
+    py > building.y + 0.55 &&
+    py < building.y + building.h - 0.55
+  );
+}
+
+function validateOwnedHouseChestSession(client) {
+  if (!client.player || !client.account) {
+    return null;
+  }
+  const key = typeof client.player.homeBuildingKey === "string" ? client.player.homeBuildingKey : null;
+  if (!key) {
+    return null;
+  }
+  const ownership = ownedBuildings.get(key);
+  if (!ownership || ownership.ownerAccountKey !== client.account.key) {
+    return null;
+  }
+  const building = BUILDING_LIST.find((b) => `${b.x},${b.y}` === key);
+  if (!building) {
+    return null;
+  }
+  if (!playerInsideOwnedHouseInterior(client.player, building)) {
+    return null;
+  }
+  const chestPos = getOwnedHouseChestWorldPos(building);
+  if (Math.hypot(client.player.x - chestPos.x, client.player.y - chestPos.y) > 2.55) {
+    return null;
+  }
+  const chest = touchOwnedHouseChestCache(key);
+  return { key, building, chest };
+}
+
+function handleHouseChestAction(client, message) {
+  const action = typeof message.action === "string" ? message.action : "";
+  const ctx = validateOwnedHouseChestSession(client);
+  if (!ctx) {
+    return;
+  }
+  const { key, chest } = ctx;
+
+  if (action === "open") {
+    send(client, { type: "houseChestState", buildingKey: key, slots: snapshotHouseChestSlots(chest) });
+    return;
+  }
+
+  if (action === "deposit") {
+    const invSlot = clampInteger(message.invSlot, 0, INVENTORY_SIZE - 1);
+    const item = client.player.inventory[invSlot];
+    if (!item) {
+      return;
+    }
+    const emptyChest = chest.findIndex((s) => !s);
+    if (emptyChest === -1) {
+      send(client, { type: "serverMessage", message: "house_chest_full" });
+      return;
+    }
+    chest[emptyChest] = item;
+    client.player.inventory[invSlot] = null;
+    persistOwnedHouseChest(key);
+    saveClientCharacter(client);
+    send(client, { type: "houseChestState", buildingKey: key, slots: snapshotHouseChestSlots(chest) });
+    broadcastSnapshot();
+    return;
+  }
+
+  if (action === "withdraw") {
+    const chestSlot = clampInteger(message.chestSlot, 0, HOUSE_CHEST_SLOTS - 1);
+    const item = chest[chestSlot];
+    if (!item) {
+      return;
+    }
+    if (!addItemToInventory(client.player, item)) {
+      send(client, { type: "serverMessage", message: "inventory_full" });
+      return;
+    }
+    chest[chestSlot] = null;
+    persistOwnedHouseChest(key);
+    saveClientCharacter(client);
+    send(client, { type: "houseChestState", buildingKey: key, slots: snapshotHouseChestSlots(chest) });
+    broadcastSnapshot();
+  }
 }
 
 function handlePortalTravel(client) {
@@ -1030,6 +1186,11 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "houseChestAction") {
+    handleHouseChestAction(client, message);
+    return;
+  }
+
   if (message.type === "spendStat") {
     handleSpendStat(client, message);
     return;
@@ -1117,6 +1278,7 @@ function handleMessage(client, raw) {
     });
     upsertBuildingOwnership(worldDb, key, client.account.key, client.player.name, price);
     client.player.homeBuildingKey = key;
+    touchOwnedHouseChestCache(key);
     saveClientCharacter(client);
     for (const c of clients.values()) {
       send(c, { type: "buildingBought", buildingX: building.x, buildingY: building.y, ownerName: client.player.name });
