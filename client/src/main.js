@@ -76,6 +76,13 @@ const traderTitle = document.querySelector("#traderTitle");
 const traderStock = document.querySelector("#traderStock");
 const traderSellSlots = document.querySelector("#traderSellSlots");
 const traderClose = document.querySelector("#traderClose");
+const buyHousePanel = document.querySelector("#buyHousePanel");
+const buyHouseTitle = document.querySelector("#buyHouseTitle");
+const buyHouseClose = document.querySelector("#buyHouseClose");
+const buyHousePriceLine = document.querySelector("#buyHousePriceLine");
+const buyHouseGoldLine = document.querySelector("#buyHouseGoldLine");
+const buyHouseConfirm = document.querySelector("#buyHouseConfirm");
+const buyHouseCancel = document.querySelector("#buyHouseCancel");
 
 const TILE_SIZE = 32;
 const CHUNK_SIZE = 16;
@@ -160,6 +167,9 @@ const TILE = {
   FIREPLACE: 18,
 };
 
+/** Mirrors server/src/index.js getBuildingPrice */
+const BUILDING_TYPE_PRICES = { hut: 200, treehouse: 350, house: 500, big_house: 900, castle: 2000 };
+
 const kenneyRpgBase = new Image();
 kenneyRpgBase.src = "./assets/kenney-rpg-base.png";
 const KENNEY_TILE_SIZE = 64;
@@ -213,6 +223,7 @@ const state = {
   progressionMinimized: false,
   activeWindow: null,
   buildingOwnership: new Map(),
+  buyHouseOffer: null,
   traderNpcId: null,
   traderItems: [],
   lastViewSentAt: 0,
@@ -698,6 +709,13 @@ function handleServerMessage(message) {
 
   if (message.type === "buildingBought") {
     state.buildingOwnership.set(`${message.buildingX},${message.buildingY}`, message.ownerName);
+    if (
+      state.buyHouseOffer &&
+      state.buyHouseOffer.buildingX === message.buildingX &&
+      state.buyHouseOffer.buildingY === message.buildingY
+    ) {
+      closeBuyHousePanel();
+    }
     return;
   }
 
@@ -1181,6 +1199,10 @@ function wireUi() {
     setActiveGameWindow(null);
   });
 
+  buyHouseClose?.addEventListener("click", () => closeBuyHousePanel());
+  buyHouseCancel?.addEventListener("click", () => closeBuyHousePanel());
+  buyHouseConfirm?.addEventListener("click", () => confirmBuyHouseFromPanel());
+
   traderStock.addEventListener("pointerdown", (event) => {
     const button = event.target.closest("[data-trader-buy]");
     if (!button || !state.traderNpcId) return;
@@ -1197,7 +1219,7 @@ function wireUi() {
 
   interactButton.addEventListener("click", () => {
     const self = state.players.get(state.selfId);
-    if (!self || !tryBuyBuilding(self.renderX, self.renderY)) {
+    if (!self || !tryOpenBuyHouseNearPlayer()) {
       sendInteract();
     }
   });
@@ -1236,6 +1258,7 @@ function wireUi() {
   makeDraggable(bagsPanel);
   makeDraggable(shopPanel);
   makeDraggable(traderPanel);
+  if (buyHousePanel) makeDraggable(buyHousePanel);
   makeDraggable(talentPanel);
 
   // Delegated dragstart for ability slots (avoids listener accumulation across renders)
@@ -1354,7 +1377,7 @@ function wireUi() {
     const world = screenEventToWorld(event);
     state.lastPointerWorldX = world.x;
     state.lastPointerWorldY = world.y;
-    if (tryBuyBuilding(world.x, world.y)) {
+    if (tryOpenBuyHouseAtClick(world.x, world.y)) {
       return;
     }
     if (tryOpenTraderAtClick(world.x, world.y)) {
@@ -1373,6 +1396,10 @@ function wireUi() {
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       event.preventDefault();
+      if (state.joined && state.buyHouseOffer) {
+        closeBuyHousePanel();
+        return;
+      }
       if (state.joined) {
         toggleMenu();
       }
@@ -1399,7 +1426,7 @@ function wireUi() {
     if (event.key.toLowerCase() === "e" && state.joined && !isTextEntryTarget(event.target)) {
       event.preventDefault();
       const self = state.players.get(state.selfId);
-      if (!self || !tryBuyBuilding(self.renderX, self.renderY)) {
+      if (!self || !tryOpenBuyHouseNearPlayer()) {
         sendInteract();
       }
       return;
@@ -1728,26 +1755,167 @@ function renderPotionSlot() {
   }
 }
 
+function getBuildingPriceClient(building) {
+  const t = building?.type || "house";
+  return BUILDING_TYPE_PRICES[t] ?? 500;
+}
+
+function findBuildingLot(buildingX, buildingY) {
+  for (const b of state.buildings.values()) {
+    if (b.x === buildingX && b.y === buildingY) return b;
+  }
+  return null;
+}
+
+function playerNearBuildingDoor(px, py, building) {
+  const doorX = building.x + building.w / 2;
+  const doorY = building.y + building.h - 1;
+  return Math.hypot(px - doorX, py - doorY) <= 4;
+}
+
+function worldPointHitsForSaleSign(building, worldX, worldY) {
+  const minX = building.x - 1.15;
+  const maxX = building.x + 0.35;
+  const minY = building.y + building.h - 1.45;
+  const maxY = building.y + building.h + 0.45;
+  return worldX >= minX && worldX <= maxX && worldY >= minY && worldY <= maxY;
+}
+
+function closeBuyHousePanel() {
+  state.buyHouseOffer = null;
+  buyHousePanel?.classList.add("hidden");
+}
+
+function renderBuyHousePanel() {
+  if (!buyHousePanel || !state.buyHouseOffer || !buyHouseTitle || !buyHousePriceLine || !buyHouseGoldLine || !buyHouseConfirm) {
+    return;
+  }
+  const offer = state.buyHouseOffer;
+  const building = findBuildingLot(offer.buildingX, offer.buildingY);
+  const self = state.players.get(state.selfId);
+  const gold = Number.isFinite(self?.gold) ? self.gold : 0;
+  const price = building ? getBuildingPriceClient(building) : 0;
+
+  buyHouseTitle.textContent = building?.name ? `Buy ${building.name}` : "Buy property";
+  buyHousePriceLine.innerHTML = `Price: <strong>${price}g</strong>`;
+  buyHouseGoldLine.innerHTML = `Your gold: <strong>${gold}g</strong>`;
+
+  const key = `${offer.buildingX},${offer.buildingY}`;
+  const owned = state.buildingOwnership.has(key);
+  const canBuy = Boolean(building && building.forSale && !owned && gold >= price && price > 0);
+  buyHouseConfirm.disabled = !canBuy;
+}
+
+function openBuyHousePanel(building) {
+  closeShop();
+  state.activeWindow = null;
+  equipmentPanel.classList.add("hidden");
+  bagsPanel.classList.add("hidden");
+  traderPanel.classList.add("hidden");
+  talentPanel.classList.add("hidden");
+  equipmentButton.classList.remove("selected");
+  bagsButton.classList.remove("selected");
+  state.traderNpcId = null;
+  state.traderItems = [];
+  clearMovementInput();
+
+  state.buyHouseOffer = {
+    buildingX: building.x,
+    buildingY: building.y,
+    name: building.name
+  };
+  buyHousePanel?.classList.remove("hidden");
+  renderBuyHousePanel();
+}
+
+function tryOpenBuyHouseAtClick(worldX, worldY) {
+  const self = state.players.get(state.selfId);
+  if (!self) return false;
+  const px = Number.isFinite(self.renderX) ? self.renderX : self.x;
+  const py = Number.isFinite(self.renderY) ? self.renderY : self.y;
+  for (const building of state.buildings.values()) {
+    if (!building.forSale) continue;
+    const key = `${building.x},${building.y}`;
+    if (state.buildingOwnership.has(key)) continue;
+    if (!worldPointHitsForSaleSign(building, worldX, worldY)) continue;
+    if (!playerNearBuildingDoor(px, py, building)) continue;
+    openBuyHousePanel(building);
+    return true;
+  }
+  return false;
+}
+
+function tryOpenBuyHouseNearPlayer() {
+  const self = state.players.get(state.selfId);
+  if (!self) return false;
+  const px = Number.isFinite(self.renderX) ? self.renderX : self.x;
+  const py = Number.isFinite(self.renderY) ? self.renderY : self.y;
+  for (const building of state.buildings.values()) {
+    if (!building.forSale) continue;
+    const key = `${building.x},${building.y}`;
+    if (state.buildingOwnership.has(key)) continue;
+    if (!playerNearBuildingDoor(px, py, building)) continue;
+    openBuyHousePanel(building);
+    return true;
+  }
+  return false;
+}
+
+function confirmBuyHouseFromPanel() {
+  const offer = state.buyHouseOffer;
+  if (!offer) return;
+  const building = findBuildingLot(offer.buildingX, offer.buildingY);
+  if (!building || !building.forSale) return;
+  const key = `${building.x},${building.y}`;
+  if (state.buildingOwnership.has(key)) return;
+  send({ type: "buyBuilding", buildingX: building.x, buildingY: building.y });
+}
+
+function drawForSaleSignpost(building, sx, sy, w, h) {
+  const poleX = sx - TILE_SIZE * 0.72;
+  const baseY = sy + h - 6;
+  const poleW = 7;
+  const poleH = Math.min(54, Math.round(TILE_SIZE * 1.42));
+
+  ctx.save();
+  ctx.fillStyle = "#4a3424";
+  ctx.fillRect(poleX - poleW / 2, baseY - poleH, poleW, poleH);
+  ctx.strokeStyle = "#2c1e14";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(poleX - poleW / 2, baseY - poleH, poleW, poleH);
+
+  const boardW = TILE_SIZE + 16;
+  const boardH = 28;
+  const boardX = poleX - boardW / 2;
+  const boardY = baseY - poleH - boardH + 10;
+  ctx.fillStyle = "#c9a66a";
+  ctx.fillRect(boardX, boardY, boardW, boardH);
+  ctx.strokeStyle = "#3d2814";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(boardX, boardY, boardW, boardH);
+
+  ctx.fillStyle = "#5c4a38";
+  ctx.fillRect(boardX + 5, boardY + 5, 3, 3);
+  ctx.fillRect(boardX + boardW - 8, boardY + 5, 3, 3);
+
+  ctx.font = "bold 9px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = "rgba(0,0,0,0.78)";
+  ctx.fillStyle = "#1e6b32";
+  const tx = boardX + boardW / 2;
+  const ty = boardY + boardH / 2;
+  ctx.strokeText("FOR SALE", tx, ty);
+  ctx.fillText("FOR SALE", tx, ty);
+  ctx.restore();
+}
+
 function sendInteract(target = null) {
   if (!state.joined) {
     return;
   }
   send(target ? { type: "interact", ...target } : { type: "interact" });
-}
-
-function tryBuyBuilding(worldX, worldY) {
-  for (const building of state.buildings.values()) {
-    if (!building.forSale) continue;
-    const key = `${building.x},${building.y}`;
-    if (state.buildingOwnership.has(key)) continue;
-    const doorX = building.x + Math.floor(building.w / 2) + 0.5;
-    const doorY = building.y + building.h - 0.5;
-    if (Math.hypot(worldX - doorX, worldY - doorY) <= 2.5) {
-      send({ type: "buyBuilding", buildingX: building.x, buildingY: building.y });
-      return true;
-    }
-  }
-  return false;
 }
 
 function screenEventToWorld(event) {
@@ -2027,6 +2195,7 @@ function clearWorldState() {
   state.equipment = { weapon: null, body: null, ring1: null, ring2: null };
   state.gold = 0;
   closeShop();
+  closeBuyHousePanel();
   state.speechBubbles.clear();
   state.combatFx = [];
   state.levelUpFx = [];
@@ -2267,6 +2436,9 @@ function renderProgression(self) {
   statPointsEl.textContent = `${statPoints} point${statPoints === 1 ? "" : "s"}`;
   xpFill.style.width = `${xpPct}%`;
   xpText.textContent = `${xp} / ${xpToNext} XP`;
+  if (state.buyHouseOffer) {
+    renderBuyHousePanel();
+  }
 }
 
 function makeEquipSlotEl(slot, label) {
@@ -2781,6 +2953,7 @@ function toggleGameWindow(windowName) {
 }
 
 function setActiveGameWindow(windowName) {
+  closeBuyHousePanel();
   state.activeWindow = windowName;
   equipmentPanel.classList.toggle("hidden", windowName !== "equipment");
   bagsPanel.classList.toggle("hidden", windowName !== "bags");
@@ -4816,10 +4989,7 @@ function drawBuildingSprite(building, sx, sy, roofless) {
     ctx.strokeText(`⌂ ${ownerName}`, labelX, labelY);
     ctx.fillText(`⌂ ${ownerName}`, labelX, labelY);
   } else if (building.forSale) {
-    ctx.strokeStyle = "rgba(0,0,0,0.85)";
-    ctx.fillStyle = "#4fc06a";
-    ctx.strokeText("For Sale", labelX, labelY);
-    ctx.fillText("For Sale", labelX, labelY);
+    drawForSaleSignpost(building, sx, sy, w, h);
   }
 }
 
