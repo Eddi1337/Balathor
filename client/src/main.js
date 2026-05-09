@@ -86,8 +86,8 @@ const buyHouseCancel = document.querySelector("#buyHouseCancel");
 const safeZoneIndicator = document.querySelector("#safeZoneIndicator");
 
 const TILE_SIZE = 32;
-/** Mirrors server/src/world.js STARTING_AREA — combat-disabled hub circle */
-const STARTING_SAFE_ZONE = { x: 0, y: 0, radius: 80 };
+/** Mirrors server/src/world.js STARTING_AREA — combat-disabled plaza only */
+const STARTING_SAFE_ZONE = { x: 0, y: 0, radius: 26 };
 const BUY_HOUSE_INTERACT_RADIUS = 8;
 const TRADER_CLICK_HIT_RADIUS = 3.6;
 const TRADER_CLICK_PLAYER_RADIUS = 8;
@@ -679,7 +679,7 @@ function handleServerMessage(message) {
       appendChat({
         kind: "system",
         name: "Realm",
-        text: "Combat is disabled inside houses and the starting area"
+        text: "Combat is disabled inside houses and the central plaza"
       });
     } else if (message.message === "stat_spent") {
       appendChat({
@@ -1808,6 +1808,18 @@ function worldPointHitsForSaleSign(building, worldX, worldY) {
   return worldX >= minX && worldX <= maxX && worldY >= minY && worldY <= maxY;
 }
 
+/** Door row + south façade strip + roof footprint — avoids narrow sign-only misses. */
+function worldPointHitsForSaleBuildingPick(building, worldX, worldY) {
+  if (worldPointHitsForSaleSign(building, worldX, worldY)) return true;
+  const padX = 1.1;
+  const southBand = 3.2;
+  const minX = building.x - padX;
+  const maxX = building.x + building.w + padX;
+  const minY = building.y + building.h - southBand;
+  const maxY = building.y + building.h + 1.25;
+  return worldX >= minX && worldX <= maxX && worldY >= minY && worldY <= maxY;
+}
+
 function isPlayerInStartingSafeZone(px, py) {
   return Math.hypot(px - STARTING_SAFE_ZONE.x, py - STARTING_SAFE_ZONE.y) <= STARTING_SAFE_ZONE.radius;
 }
@@ -1888,7 +1900,7 @@ function tryOpenBuyHouseAtClick(worldX, worldY) {
     if (!building.forSale) continue;
     const key = `${building.x},${building.y}`;
     if (state.buildingOwnership.has(key)) continue;
-    if (!worldPointHitsForSaleSign(building, worldX, worldY)) continue;
+    if (!worldPointHitsForSaleBuildingPick(building, worldX, worldY)) continue;
     if (!playerCanInteractBuyHouse(px, py, building)) continue;
     openBuyHousePanel(building);
     return true;
