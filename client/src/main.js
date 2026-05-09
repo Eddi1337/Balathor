@@ -272,6 +272,8 @@ const state = {
   buildings: new Map(),
   roadsides: new Map(),
   benchSitUntil: 0,
+  /** Server sends seatBench until local movement clears the pose */
+  benchSeatIndefinite: false,
   requestedChunks: new Set(),
   population: 0,
   input: { up: false, down: false, left: false, right: false },
@@ -616,6 +618,7 @@ function handleServerMessage(message) {
       self.renderY = message.y;
       self.renderMoving = false;
       state.benchSitUntil = 0;
+      state.benchSeatIndefinite = false;
     }
     state.camera.x = message.x * TILE_SIZE;
     state.camera.y = message.y * TILE_SIZE;
@@ -641,9 +644,15 @@ function handleServerMessage(message) {
   }
 
   if (message.type === "roadsideRest") {
-    const d = Number(message.durationMs);
-    const ms = Number.isFinite(d) ? Math.max(400, Math.min(9000, d)) : 2800;
-    state.benchSitUntil = performance.now() + ms;
+    if (message.seatBench) {
+      state.benchSeatIndefinite = true;
+      state.benchSitUntil = 0;
+    } else {
+      state.benchSeatIndefinite = false;
+      const d = Number(message.durationMs);
+      const ms = Number.isFinite(d) ? Math.max(400, Math.min(9000, d)) : 2800;
+      state.benchSitUntil = performance.now() + ms;
+    }
     return;
   }
 
@@ -1111,6 +1120,7 @@ function updateSmoothPlayers(dt) {
       player.walkPhase = (player.walkPhase || 0) + dt * 9;
       if (player.id === state.selfId) {
         state.benchSitUntil = 0;
+        state.benchSeatIndefinite = false;
       }
     }
   }
@@ -1606,6 +1616,9 @@ function wireUi() {
     if (tryPickupClickedGroundItem(event)) {
       return;
     }
+    if (tryRoadsideBenchClickInteract(event)) {
+      return;
+    }
     const world = screenEventToWorld(event);
     state.lastPointerWorldX = world.x;
     state.lastPointerWorldY = world.y;
@@ -1775,11 +1788,18 @@ function updateInput(event, pressed) {
     return;
   }
   event.preventDefault();
+  if (
+    pressed &&
+    (key === "up" || key === "down" || key === "left" || key === "right")
+  ) {
+    cancelBenchSitClient();
+  }
   state.input[key] = pressed;
   if (pressed && homeCastTimer) cancelHomeCast(); // movement cancels cast
 }
 
 function clearMovementInput() {
+  cancelBenchSitClient();
   state.input.up = false;
   state.input.down = false;
   state.input.left = false;
@@ -1787,9 +1807,17 @@ function clearMovementInput() {
   sendInput();
 }
 
+function cancelBenchSitClient() {
+  state.benchSeatIndefinite = false;
+  state.benchSitUntil = 0;
+}
+
 function setMovementInput(direction, pressed) {
   if (!Object.prototype.hasOwnProperty.call(state.input, direction)) {
     return;
+  }
+  if (pressed && (direction === "up" || direction === "down" || direction === "left" || direction === "right")) {
+    cancelBenchSitClient();
   }
   state.input[direction] = pressed;
   sendInput();
@@ -2614,6 +2642,41 @@ function tryInteractClickedFixture(event) {
   return true;
 }
 
+/** Prefer sitting when the pointer clearly hits an upright roadside bench */
+function tryRoadsideBenchClickInteract(event) {
+  const world = screenEventToWorld(event);
+  const self = state.players.get(state.selfId);
+  if (!self) return false;
+
+  let bestD = Infinity;
+  let bx = NaN;
+  let by = NaN;
+  for (const f of state.roadsides.values()) {
+    if (f.kind !== "bench") continue;
+    const rfW = Math.max(1, Math.floor(Number(f.footprintW) || 1));
+    const rfH = Math.max(1, Math.floor(Number(f.footprintH) || 1));
+    const ax = f.x + rfW / 2;
+    const ay = f.y + rfH / 2 + 0.52;
+    const d = Math.hypot(world.x - ax, world.y - ay);
+    if (d <= 1.18 && d < bestD) {
+      bestD = d;
+      bx = ax;
+      by = ay;
+    }
+  }
+  if (!Number.isFinite(bx)) {
+    return false;
+  }
+
+  /** Must reach the stall from here (matches server leash for click-target interacts). */
+  if (Math.hypot(world.x - self.x, world.y - self.y) > 6.1) {
+    return false;
+  }
+
+  sendInteract({ x: bx, y: by });
+  return true;
+}
+
 function tryPickupClickedGroundItem(event) {
   const clicked = findClickedGroundItem(event);
   if (!clicked) {
@@ -2744,6 +2807,9 @@ function wireMobileControls() {
     state.input.right = normX > DEAD_ZONE;
     state.input.up = normY < -DEAD_ZONE;
     state.input.down = normY > DEAD_ZONE;
+    if (state.input.left || state.input.right || state.input.up || state.input.down) {
+      cancelBenchSitClient();
+    }
     sendInput();
     drawJoystick();
   }
@@ -2926,9 +2992,12 @@ function clearWorldState() {
   state.population = 0;
   state.hoverTooltipText = "";
   state.pubPassoutUntil = 0;
+  state.benchSitUntil = 0;
+  state.benchSeatIndefinite = false;
 }
 
 function sendAttack() {
+  cancelBenchSitClient();
   // Allow optional target world coords (x,y) and compute facing client-side.
   const args = Array.from(arguments);
   let payload = { type: "attack" };
@@ -4164,7 +4233,7 @@ function drawRoadsideFeatures(minTileX, maxTileX, minTileY, maxTileY) {
     if (f.kind === "bench") {
       ctx.save();
       ctx.translate(cx, gy);
-      ctx.rotate(facing);
+      /** Benches are always upright (single orientation). */
       drawBenchLocal();
       ctx.restore();
     } else if (f.kind === "market_stand") {
@@ -4708,7 +4777,7 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const selfBenchSit =
     !isNpc &&
     entity.id === state.selfId &&
-    (state.benchSitUntil || 0) > performance.now();
+    ((state.benchSeatIndefinite || false) || (state.benchSitUntil || 0) > performance.now());
   const benchSeatPose = restingBenchPose || selfBenchSit;
   const compressLowerBody = benchSeatPose || lyingBedPose;
   const sitBumpPx = lyingBedPose ? 11 : benchSeatPose ? 7 : 0;

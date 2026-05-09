@@ -21,7 +21,8 @@ const {
   shouldSpawnWildMobCamp,
   scaledCampEncounterSize,
   PRIMARY_HUB_MOBS_CLEAR_RADIUS,
-  isTooCloseToAnyPortal
+  isTooCloseToAnyPortal,
+  HUB_TOWN_GRASS_RADIUS
 } = require("./world");
 const {
   updateNpcs,
@@ -70,6 +71,8 @@ const CHAT_COOLDOWN_MS = 800;
 const CHAT_VIEW_MARGIN_TILES = 4;
 /** Extra tiles beyond snapshot view union — mob AI + roam so critters/off-screen camps still simulate near players */
 const MOB_ACTIVITY_MARGIN_TILES = 52;
+/** Always tick NPC AI across the walled hub so crowd NPCs roam even far from players. */
+const NPC_HUB_AI_PAD_TILES = 125;
 const PORTAL_COOLDOWN_MS = 1400;
 const DOOR_COOLDOWN_MS = 600;
 const HOME_COOLDOWN_MS = 2000;
@@ -973,7 +976,17 @@ function computePlayerViewUnionBounds(tileMargin) {
 }
 
 function computeNpcActivationBounds() {
-  return computePlayerViewUnionBounds(CHAT_VIEW_MARGIN_TILES);
+  const pb = computePlayerViewUnionBounds(CHAT_VIEW_MARGIN_TILES);
+  if (!pb) {
+    return null;
+  }
+  const half = Math.ceil(Number(HUB_TOWN_GRASS_RADIUS) || 132) + NPC_HUB_AI_PAD_TILES;
+  return {
+    minX: Math.min(pb.minX, -half),
+    maxX: Math.max(pb.maxX, half),
+    minY: Math.min(pb.minY, -half),
+    maxY: Math.max(pb.maxY, half)
+  };
 }
 
 function mobShouldSimulate(mob, activityBounds) {
@@ -1946,6 +1959,46 @@ function lootWorldChest(client, chest) {
   return true;
 }
 
+function approximateRoadsideCentroidWX(feat) {
+  const fw = Math.max(1, Math.floor(Number(feat.footprintW) || 1));
+  const fh = Math.max(1, Math.floor(Number(feat.footprintH) || 1));
+  return { cx: feat.x + fw / 2, cy: feat.y + fh / 2 };
+}
+
+/** Sit just in front (south+) of bench; face toward its back (~north / −Math.PI/2). */
+function resolveBenchSeatForPlayer(player, roadsideBench) {
+  const { cx, cy } = approximateRoadsideCentroidWX(roadsideBench);
+  const candidates = [
+    { x: cx, y: cy + 0.42 },
+    { x: cx, y: cy + 0.55 },
+    { x: cx + 0.14, y: cy + 0.48 },
+    { x: cx - 0.14, y: cy + 0.48 },
+    { x: cx, y: cy + 0.3 }
+  ];
+  let pick = candidates[1];
+  for (const c of candidates) {
+    if (!isBlockedCircle(c.x, c.y)) {
+      pick = c;
+      break;
+    }
+  }
+  /** North-facing slump toward the bench */
+  const facing = -Math.PI / 2;
+  return { dx: Number(pick.x.toFixed(5)), dy: Number(pick.y.toFixed(5)), facing };
+}
+
+function resolveInteractRoadside(player, message = {}) {
+  const tx = Number(message.x);
+  const ty = Number(message.y);
+  if (Number.isFinite(tx) && Number.isFinite(ty)) {
+    const clickHit = findRoadsideFeatureNear(tx, ty, 1.42);
+    if (clickHit && Math.hypot(player.x - tx, player.y - ty) <= 5.85) {
+      return clickHit;
+    }
+  }
+  return findRoadsideFeatureNear(player.x, player.y, 2.05);
+}
+
 function handleInteract(client, message = {}) {
   if (!client.player) {
     return;
@@ -1963,10 +2016,18 @@ function handleInteract(client, message = {}) {
     return;
   }
 
-  const roadside = findRoadsideFeatureNear(client.player.x, client.player.y, 2.05);
+  const roadside = resolveInteractRoadside(client.player, message);
   if (roadside) {
     if (roadside.kind === "bench") {
-      send(client, { type: "roadsideRest", durationMs: 2800 });
+      const seat = resolveBenchSeatForPlayer(client.player, roadside);
+      client.player.x = seat.dx;
+      client.player.y = seat.dy;
+      client.player.facing = seat.facing;
+      client.player.moving = false;
+      client.player._stillAccumulator = 0;
+      /** Sit until voluntary movement clears it on client; server echoes position each snapshot. */
+      send(client, { type: "roadsideRest", seatBench: true });
+      broadcastSnapshot();
     }
     let vibe = "You linger at the roadside.";
     if (roadside.kind === "bench") {
