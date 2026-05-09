@@ -113,7 +113,7 @@ const CLASS_LOADOUTS = Object.freeze({
     kind: "projectile",
     projectileKind: "fireball",
     cooldownMs: 780,
-    range: 7.2,
+    range: 15,
     arc: Math.PI * 0.48,
     damage: 24
   },

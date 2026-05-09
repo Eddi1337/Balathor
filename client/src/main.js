@@ -4167,7 +4167,7 @@ function drawCharacter(entity, x, y, isNpc = false) {
   if (!isNpc) {
     drawClassEquipment(entity, bx, by, dirX, dirY, sideX, sideY, weaponColor,
       rAX + s, rAY + 2 * s,
-      lAX + s, lAY + 2 * s);
+      lAX + s, lAY + 2 * s, moving, sin1);
   }
 
   // Name tag
@@ -4346,10 +4346,10 @@ function roundedRect(x, y, width, height, radius) {
   ctx.quadraticCurveTo(x, y, x + r, y);
 }
 
-function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHandX, rHandY, lHandX, lHandY) {
+function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHandX, rHandY, lHandX, lHandY, moving = false, walkSin = 0) {
   const style = entity.weaponStyle || "classic";
   const weaponKind = entity.weaponKind || (entity.classId === "mage" ? "staff" : entity.classId === "knight" ? "sword" : "bow");
-  if (!entity.weaponKind) {
+  if (!weaponKind) {
     return;
   }
   const ornateWeapon = style === "ornate" || style === "legendary" || style === "ascendant";
@@ -4366,20 +4366,39 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
   }
 
   if (weaponKind === "staff") {
-    const tipX = lHandX + dirX * 8 - sideX * 4;
-    const tipY = lHandY - 40 + dirY * 8 - sideY * 4;
+    // Centered upright staff: tip on ground, taller than hero, sway matches leg rhythm.
+    const s = 3;
+    const legCouple = moving ? walkSin * s * 0.55 : 0;
+    const groundY = y + 7 * s + 6;
+    const cx = x + dirX * 1 + legCouple * 0.45 + sideX * (moving ? walkSin * 0.85 : 0);
+    const topX = cx - dirX * 2 + sideX * (moving ? walkSin * 0.65 : 0);
+    const topY = y - 13 * s - 14;
+    const shaftW = style === "heavy" ? Math.max(6, Math.round(s + 2)) : Math.round(s + 1.8);
+
     ctx.strokeStyle = ornateWeapon ? accent : "#6b4428";
-    ctx.lineWidth = style === "heavy" ? 7 : 5;
+    ctx.lineWidth = shaftW;
     ctx.beginPath();
-    ctx.moveTo(lHandX, lHandY);
-    ctx.lineTo(tipX, tipY);
+    ctx.moveTo(cx + sideX * 0.4 + dirY * legCouple * 0.12, groundY);
+    ctx.lineTo(topX, topY);
     ctx.stroke();
-    ctx.fillStyle = ornateWeapon ? (isAscendant ? "#67e8f9" : "#c79cff") : "#ff7a45";
+
+    const orn = ornateWeapon ? (isAscendant ? "#67e8f9" : "#c79cff") : "#ff7a45";
+    const orbR = style === "heavy" ? 8 : 7;
+    ctx.fillStyle = orn;
     ctx.beginPath();
-    ctx.arc(tipX, tipY, style === "heavy" ? 8 : 6, 0, Math.PI * 2);
+    ctx.arc(topX, topY, orbR, 0, Math.PI * 2);
     ctx.fill();
+
     ctx.fillStyle = isAscendant ? "#fde68a" : "#ffd166";
-    ctx.fillRect(tipX - 3, tipY - 3, 6, 6);
+    ctx.fillRect(topX - 3, topY - 4, 6, 6);
+
+    const gripBlend = ornateWeapon ? blend(accent, "#2a1810", 0.52) : "#4a3424";
+    ctx.strokeStyle = gripBlend;
+    ctx.lineWidth = Math.max(3, shaftW - 3);
+    ctx.beginPath();
+    ctx.moveTo(cx + sideX * 0.4, groundY + (topY - groundY) * 0.46);
+    ctx.lineTo(topX - (topX - cx) * 0.41, topY - (topY - groundY) * 0.54);
+    ctx.stroke();
   } else if (weaponKind === "sword") {
     const swordTipX = rHandX + dirX * 28 + sideX * 6;
     const swordTipY = rHandY - 10 + dirY * 28 + sideY * 6;
