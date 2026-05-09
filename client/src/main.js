@@ -97,6 +97,25 @@ const companionOfferAccept = document.querySelector("#companionOfferAccept");
 const companionOfferDecline = document.querySelector("#companionOfferDecline");
 const companionOfferClose = document.querySelector("#companionOfferClose");
 const safeZoneIndicator = document.querySelector("#safeZoneIndicator");
+const partyPanel = document.querySelector("#partyPanel");
+const partyMembersEl = document.querySelector("#partyMembers");
+const partyPanelMin = document.querySelector("#partyPanelMin");
+const playerContextMenu = document.querySelector("#playerContextMenu");
+const friendsWindow = document.querySelector("#friendsWindow");
+const friendsWindowList = document.querySelector("#friendsWindowList");
+const friendsWindowClose = document.querySelector("#friendsWindowClose");
+const tradePanel = document.querySelector("#tradePanel");
+const tradeTitle = document.querySelector("#tradeTitle");
+const tradeClose = document.querySelector("#tradeClose");
+const tradeYourSlots = document.querySelector("#tradeYourSlots");
+const tradeTheirSlots = document.querySelector("#tradeTheirSlots");
+const tradeYourGold = document.querySelector("#tradeYourGold");
+const tradeTheirGold = document.querySelector("#tradeTheirGold");
+const tradeYourLock = document.querySelector("#tradeYourLock");
+const tradeTheirReady = document.querySelector("#tradeTheirReady");
+const tradeConfirmBtn = document.querySelector("#tradeConfirmBtn");
+const tradeCancelBtn = document.querySelector("#tradeCancelBtn");
+const chatFriendsPane = document.querySelector("#chatFriendsPane");
 let safeZoneTooltipPinTimer = null;
 
 const TILE_SIZE = 32;
@@ -276,6 +295,14 @@ const state = {
   benchSitUntil: 0,
   /** Server sends seatBench until local movement clears the pose */
   benchSeatIndefinite: false,
+  friends: [],
+  party: null,
+  chatSubTab: "messages",
+  playerContextMenu: null,
+  tradePartnerId: null,
+  tradeDragInvSlot: null,
+  friendsWindowOpen: false,
+  partyPanelMinimized: false,
   requestedChunks: new Set(),
   population: 0,
   input: { up: false, down: false, left: false, right: false },
@@ -691,6 +718,7 @@ function handleServerMessage(message) {
     applySnapshot(message.players);
     applyNpcSnapshot(message.npcs || []);
     applyMobSnapshot(message.mobs || []);
+    applyPartySnapshot(message.party ?? null);
     state.chests = message.chests || [];
     state.groundItems = message.groundItems || [];
     updateSelfInventory();
@@ -754,6 +782,29 @@ function handleServerMessage(message) {
 
   if (message.type === "chat") {
     appendChat(message);
+    return;
+  }
+
+  if (message.type === "socialFriendsUpdated") {
+    state.friends = Array.isArray(message.friends) ? message.friends : [];
+    if (state.chatSubTab === "friends") renderFriendsInto(chatFriendsPane);
+    if (state.friendsWindowOpen) renderFriendsInto(friendsWindowList);
+    return;
+  }
+
+  if (message.type === "socialPartyUpdated") {
+    applyPartySnapshot(message.party ?? null);
+    return;
+  }
+
+  if (message.type === "tradeState") {
+    openTradeUi(message.partnerId, message);
+    syncTradeUi(message);
+    return;
+  }
+
+  if (message.type === "tradeClosed") {
+    closeTradeUi();
     return;
   }
 
@@ -848,6 +899,32 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: `Not enough gold (needs ${Number(message.price) || 0}g)` });
     } else if (message.message === "companion_unavailable") {
       appendChat({ kind: "system", name: "Realm", text: "That person's path has already changed." });
+    } else if (message.message === "friend_added") {
+      appendChat({
+        kind: "system",
+        name: "Realm",
+        text: `Added ${message.name || "player"} to your friends list.`
+      });
+    } else if (message.message === "friend_exists") {
+      appendChat({ kind: "system", name: "Realm", text: "Already on your friends list." });
+    } else if (message.message === "friend_list_full") {
+      appendChat({ kind: "system", name: "Realm", text: "Friends list is full." });
+    } else if (message.message === "social_too_far") {
+      appendChat({ kind: "system", name: "Realm", text: "Move closer to that player." });
+    } else if (message.message === "trade_too_far") {
+      appendChat({ kind: "system", name: "Realm", text: "Too far to trade." });
+    } else if (message.message === "trade_busy") {
+      appendChat({ kind: "system", name: "Realm", text: "A trade is already open with that player." });
+    } else if (message.message === "trade_done") {
+      appendChat({ kind: "system", name: "Realm", text: "Trade completed." });
+    } else if (message.message === "trade_failed") {
+      appendChat({ kind: "system", name: "Realm", text: "Trade failed — items changed or no space." });
+    } else if (message.message === "trade_incoming") {
+      appendChat({
+        kind: "system",
+        name: "Realm",
+        text: `${message.name || "Someone"} wants to trade with you.`
+      });
     } else if (message.message === "pub_need_house") {
       appendChat({
         kind: "system",
@@ -1201,7 +1278,176 @@ function predictLocalPlayer(player, dt) {
   return true;
 }
 
+function initTradeSlotGrids() {
+  if (!tradeYourSlots || tradeYourSlots.childElementCount > 0) return;
+  for (let i = 0; i < 6; i += 1) {
+    const y = document.createElement("div");
+    y.className = "trade-slot";
+    y.dataset.tradeSlot = String(i);
+    y.textContent = "Drop";
+    tradeYourSlots.appendChild(y);
+    const t = document.createElement("div");
+    t.className = "trade-slot";
+    t.dataset.theirSlot = String(i);
+    tradeTheirSlots.appendChild(t);
+  }
+}
+
+function findNearbyOtherPlayer(worldX, worldY, maxDist = 1.05) {
+  let best = null;
+  let bestD = maxDist;
+  for (const p of state.players.values()) {
+    if (p.id === state.selfId) continue;
+    const d = Math.hypot(p.renderX - worldX, p.renderY - worldY);
+    if (d < bestD) {
+      bestD = d;
+      best = p;
+    }
+  }
+  return best;
+}
+
+function hidePlayerContextMenu() {
+  state.playerContextMenu = null;
+  playerContextMenu?.classList.add("hidden");
+}
+
+function showPlayerContextMenu(clientX, clientY, targetId) {
+  state.playerContextMenu = { targetId, clientX, clientY };
+  if (!playerContextMenu) return;
+  playerContextMenu.classList.remove("hidden");
+  playerContextMenu.style.left = `${Math.min(clientX, window.innerWidth - 140)}px`;
+  playerContextMenu.style.top = `${Math.min(clientY, window.innerHeight - 120)}px`;
+}
+
+function tryOpenPlayerContextMenuFromCanvas(event, worldX, worldY) {
+  const target = findNearbyOtherPlayer(worldX, worldY, 1.05);
+  if (!target) return false;
+  event.preventDefault();
+  event.stopPropagation();
+  showPlayerContextMenu(event.clientX, event.clientY, target.id);
+  return true;
+}
+
+function renderFriendsInto(el) {
+  if (!el) return;
+  el.replaceChildren();
+  const list = Array.isArray(state.friends) ? state.friends : [];
+  if (!list.length) {
+    el.appendChild(document.createTextNode("No friends yet — click another player and choose Add friend."));
+    return;
+  }
+  for (const row of list) {
+    const div = document.createElement("div");
+    div.className = "friend-row";
+    const left = document.createElement("span");
+    left.style.display = "flex";
+    left.style.alignItems = "center";
+    const dot = document.createElement("span");
+    dot.className = `dot ${row.online ? "on" : "off"}`;
+    left.appendChild(dot);
+    left.appendChild(document.createTextNode(row.name || row.accountKey || "?"));
+    div.appendChild(left);
+    el.appendChild(div);
+  }
+}
+
+function setChatSubTab(tab) {
+  state.chatSubTab = tab;
+  document.querySelectorAll(".chat-tab").forEach((btn) => {
+    btn.classList.toggle("selected", btn.dataset.chatTab === tab);
+  });
+  const isFriends = tab === "friends";
+  chatMessages?.classList.toggle("hidden", isFriends);
+  chatFriendsPane?.classList.toggle("hidden", !isFriends);
+  chatForm?.classList.toggle("hidden", isFriends);
+  if (isFriends) renderFriendsInto(chatFriendsPane);
+}
+
+function applyPartySnapshot(party) {
+  state.party = party && party.members?.length ? party : null;
+  renderPartyPanel();
+}
+
+function renderPartyPanel() {
+  if (!partyPanel || !partyMembersEl) return;
+  const p = state.party;
+  if (!p || !p.members?.length) {
+    partyPanel.classList.add("hidden");
+    return;
+  }
+  partyPanel.classList.remove("hidden");
+  if (state.partyPanelMinimized) {
+    partyPanel.classList.add("minimized");
+  } else {
+    partyPanel.classList.remove("minimized");
+  }
+  partyMembersEl.replaceChildren();
+  for (const m of p.members) {
+    const row = document.createElement("div");
+    row.className = "party-member-row";
+    const nm = document.createElement("span");
+    nm.textContent = m.offline ? `${m.name} (off)` : m.name;
+    const bar = document.createElement("div");
+    bar.className = "hpbar";
+    const inner = document.createElement("span");
+    const pct = m.maxHp > 0 ? Math.max(0, Math.min(1, m.hp / m.maxHp)) : 0;
+    inner.style.width = `${Math.round(pct * 100)}%`;
+    bar.appendChild(inner);
+    row.appendChild(nm);
+    row.appendChild(bar);
+    partyMembersEl.appendChild(row);
+  }
+}
+
+function toggleFriendsWindow() {
+  state.friendsWindowOpen = !state.friendsWindowOpen;
+  if (friendsWindow) {
+    friendsWindow.classList.toggle("hidden", !state.friendsWindowOpen);
+  }
+  if (state.friendsWindowOpen) {
+    renderFriendsInto(friendsWindowList);
+  }
+}
+
+function openTradeUi(partnerId, msg) {
+  state.tradePartnerId = partnerId;
+  tradePanel?.classList.remove("hidden");
+  if (tradeTitle && msg?.partnerName) tradeTitle.textContent = `Trade — ${msg.partnerName}`;
+  syncTradeUi(msg || {});
+}
+
+function closeTradeUi() {
+  state.tradePartnerId = null;
+  tradePanel?.classList.add("hidden");
+  if (tradeYourLock) tradeYourLock.checked = false;
+}
+
+function syncTradeUi(msg) {
+  if (!tradeYourSlots || !tradeTheirSlots) return;
+  const ys = msg.selfSlots || [];
+  const ts = msg.otherSlots || [];
+  tradeYourSlots.querySelectorAll(".trade-slot").forEach((el, i) => {
+    const ix = ys[i];
+    const inv = typeof ix === "number" && state.inventory ? state.inventory[ix] : null;
+    el.textContent = inv ? inv.name.slice(0, 18) : "Drop";
+    el.classList.toggle("filled", Boolean(inv));
+    el.dataset.invIndex = ix != null ? String(ix) : "";
+  });
+  const onames = msg.otherSlotNames || [];
+  tradeTheirSlots.querySelectorAll(".trade-slot").forEach((el, i) => {
+    const nm = onames[i];
+    el.textContent = nm ? String(nm).slice(0, 22) : ts[i] != null ? "Item" : "—";
+    el.classList.toggle("filled", Boolean(ts[i] != null));
+  });
+  if (tradeYourGold) tradeYourGold.value = String(msg.selfGold ?? 0);
+  if (tradeTheirGold) tradeTheirGold.textContent = String(msg.otherGold ?? 0);
+  if (tradeTheirReady) tradeTheirReady.textContent = msg.otherReady ? "Ready" : "Not ready";
+  if (tradeYourLock) tradeYourLock.checked = Boolean(msg.selfReady);
+}
+
 function wireUi() {
+  initTradeSlotGrids();
   document.querySelectorAll("[data-class]").forEach((button) => {
     button.addEventListener("click", () => {
       state.selectedClass = button.dataset.class;
@@ -1510,21 +1756,30 @@ function wireUi() {
 
   inventorySlots.addEventListener("pointerdown", (event) => {
     const button = event.target.closest("[data-inventory-action]");
-    if (!button) {
+    if (button) {
+      event.preventDefault();
+      event.stopPropagation();
+      const slot = Number(button.dataset.slot);
+      const action = button.dataset.inventoryAction;
+      if (action === "equip") {
+        send({ type: "equipItem", slot, equipmentSlot: button.dataset.equipmentSlot || null });
+      } else if (action === "use") {
+        send({ type: "useItem", slot });
+      } else if (action === "drop") {
+        send({ type: "dropItem", slot });
+      } else if (action === "storeChest") {
+        send({ type: "houseChestAction", action: "deposit", invSlot: slot });
+      }
       return;
     }
-    event.preventDefault();
-    event.stopPropagation();
-    const slot = Number(button.dataset.slot);
-    const action = button.dataset.inventoryAction;
-    if (action === "equip") {
-      send({ type: "equipItem", slot, equipmentSlot: button.dataset.equipmentSlot || null });
-    } else if (action === "use") {
-      send({ type: "useItem", slot });
-    } else if (action === "drop") {
-      send({ type: "dropItem", slot });
-    } else if (action === "storeChest") {
-      send({ type: "houseChestAction", action: "deposit", invSlot: slot });
+    if (tradePanel && !tradePanel.classList.contains("hidden")) {
+      const cell = event.target.closest("[data-inv-slot]");
+      if (cell) {
+        const ix = Number(cell.dataset.invSlot);
+        if (Number.isInteger(ix)) {
+          state.tradeDragInvSlot = ix;
+        }
+      }
     }
   });
 
@@ -1638,9 +1893,18 @@ function wireUi() {
     if (tryClickHouseHomeTree(world.x, world.y)) {
       return;
     }
+    if (tryOpenPlayerContextMenuFromCanvas(event, world.x, world.y)) {
+      return;
+    }
     if (!playerAttackBlockedBySafeZone()) {
       sendAttack(world.x, world.y);
     }
+  });
+
+  document.addEventListener("pointerdown", (e) => {
+    if (!state.playerContextMenu) return;
+    if (e.target.closest("#playerContextMenu")) return;
+    hidePlayerContextMenu();
   });
 
   // track latest pointer world position for keyboard/mobile attacks
@@ -1659,12 +1923,23 @@ function wireUi() {
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       event.preventDefault();
+      hidePlayerContextMenu();
       if (state.joined && state.pendingCompanionInvite) {
         closeCompanionInvitePanel();
         return;
       }
       if (state.joined && state.buyHouseOffer) {
         closeBuyHousePanel();
+        return;
+      }
+      if (state.joined && state.friendsWindowOpen) {
+        state.friendsWindowOpen = false;
+        friendsWindow?.classList.add("hidden");
+        return;
+      }
+      if (state.joined && state.tradePartnerId) {
+        send({ type: "tradeCancel", partnerId: state.tradePartnerId });
+        closeTradeUi();
         return;
       }
       if (state.joined) {
@@ -1738,6 +2013,11 @@ function wireUi() {
       toggleGameWindow("talent");
       return;
     }
+    if (event.key.toLowerCase() === "o" && state.joined && !isTextEntryTarget(event.target)) {
+      event.preventDefault();
+      toggleFriendsWindow();
+      return;
+    }
 
     updateInput(event, true);
   });
@@ -1778,6 +2058,63 @@ function wireUi() {
     }
   });
   syncDebugToggleButton();
+
+  document.querySelectorAll(".chat-tab").forEach((btn) => {
+    btn.addEventListener("click", () => setChatSubTab(btn.dataset.chatTab || "messages"));
+  });
+
+  partyPanelMin?.addEventListener("click", () => {
+    state.partyPanelMinimized = !state.partyPanelMinimized;
+    renderPartyPanel();
+  });
+
+  playerContextMenu?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-pctx]");
+    if (!btn || !state.playerContextMenu) return;
+    const tid = state.playerContextMenu.targetId;
+    const act = btn.dataset.pctx;
+    hidePlayerContextMenu();
+    if (act === "party") send({ type: "partyJoin", targetPlayerId: tid });
+    if (act === "trade") send({ type: "tradeInvite", targetPlayerId: tid });
+    if (act === "friend") send({ type: "friendAdd", targetPlayerId: tid });
+  });
+
+  friendsWindowClose?.addEventListener("click", () => {
+    state.friendsWindowOpen = false;
+    friendsWindow?.classList.add("hidden");
+  });
+
+  tradeClose?.addEventListener("click", () => {
+    send({ type: "tradeCancel", partnerId: state.tradePartnerId });
+    closeTradeUi();
+  });
+  tradeCancelBtn?.addEventListener("click", () => {
+    send({ type: "tradeCancel", partnerId: state.tradePartnerId });
+    closeTradeUi();
+  });
+  tradeConfirmBtn?.addEventListener("click", () => {
+    if (state.tradePartnerId) send({ type: "tradeConfirm", partnerId: state.tradePartnerId });
+  });
+  tradeYourGold?.addEventListener("change", () => {
+    if (!state.tradePartnerId) return;
+    const g = Number(tradeYourGold.value);
+    send({ type: "tradeSetGold", partnerId: state.tradePartnerId, gold: Number.isFinite(g) ? g : 0 });
+  });
+  tradeYourLock?.addEventListener("change", () => {
+    if (!state.tradePartnerId) return;
+    send({ type: "tradeLock", partnerId: state.tradePartnerId, locked: tradeYourLock.checked });
+  });
+
+  tradeYourSlots?.addEventListener("pointerdown", (e) => {
+    const slotEl = e.target.closest(".trade-slot");
+    if (!slotEl || !state.tradePartnerId) return;
+    const si = Number(slotEl.dataset.tradeSlot);
+    if (!Number.isInteger(si)) return;
+    const invSlot = state.tradeDragInvSlot;
+    if (invSlot == null) return;
+    send({ type: "tradeSetSlot", partnerId: state.tradePartnerId, slot: si, invSlot });
+    state.tradeDragInvSlot = null;
+  });
 
   wireMobileControls();
 }
@@ -2988,6 +3325,15 @@ function clearWorldState() {
   state.pubPassoutUntil = 0;
   state.benchSitUntil = 0;
   state.benchSeatIndefinite = false;
+  state.friends = [];
+  state.party = null;
+  state.playerContextMenu = null;
+  state.tradePartnerId = null;
+  state.friendsWindowOpen = false;
+  partyPanel?.classList.add("hidden");
+  friendsWindow?.classList.add("hidden");
+  tradePanel?.classList.add("hidden");
+  playerContextMenu?.classList.add("hidden");
 }
 
 function sendAttack() {
@@ -3613,6 +3959,7 @@ function renderBags() {
   state.inventory.forEach((item, slot) => {
     const cell = document.createElement("div");
     cell.className = `inventory-slot ${item ? item.rarity || "common" : "empty"}`;
+    cell.dataset.invSlot = String(slot);
 
     if (!item) {
       cell.textContent = slot + 1;

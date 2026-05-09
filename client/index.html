@@ -258,13 +258,65 @@
       </div>
     </aside>
 
+    <aside id="partyPanel" class="party-panel hidden" aria-label="Party">
+      <div class="party-panel-head">
+        <strong>Party</strong>
+        <button id="partyPanelMin" type="button" class="party-min" aria-label="Minimize party">−</button>
+      </div>
+      <div id="partyMembers" class="party-members"></div>
+    </aside>
+
+    <div id="playerContextMenu" class="player-context-menu hidden" role="menu">
+      <button type="button" data-pctx="party">Join party</button>
+      <button type="button" data-pctx="trade">Trade</button>
+      <button type="button" data-pctx="friend">Add friend</button>
+    </div>
+
+    <aside id="friendsWindow" class="game-window friends-window hidden" aria-label="Friends">
+      <div class="window-head">
+        <strong>Friends</strong>
+        <button id="friendsWindowClose" type="button" class="window-close" aria-label="Close">Close</button>
+      </div>
+      <div id="friendsWindowList" class="friends-window-list"></div>
+    </aside>
+
+    <aside id="tradePanel" class="game-window trade-window hidden" aria-label="Trade">
+      <div class="window-head">
+        <strong id="tradeTitle">Trade</strong>
+        <button id="tradeClose" type="button" class="window-close" aria-label="Close">Close</button>
+      </div>
+      <div class="trade-body">
+        <div class="trade-col">
+          <div class="trade-sub">You offer</div>
+          <div id="tradeYourSlots" class="trade-slots"></div>
+          <label class="trade-gold-row">Gold <input id="tradeYourGold" type="number" min="0" step="1" value="0"></label>
+          <label class="trade-lock"><input id="tradeYourLock" type="checkbox"> Ready</label>
+        </div>
+        <div class="trade-col">
+          <div class="trade-sub">They offer</div>
+          <div id="tradeTheirSlots" class="trade-slots trade-slots-readonly"></div>
+          <div class="trade-gold-readonly">Gold: <span id="tradeTheirGold">0</span></div>
+          <div id="tradeTheirReady" class="trade-ready-flag">Not ready</div>
+        </div>
+      </div>
+      <div class="trade-actions">
+        <button id="tradeConfirmBtn" type="button">Confirm trade</button>
+        <button id="tradeCancelBtn" type="button" class="segment">Cancel</button>
+      </div>
+    </aside>
+
     <section id="chat" class="chat hidden" aria-label="Realm chat">
       <button id="chatIconBtn" class="chat-icon-btn" type="button" aria-label="Open chat"></button>
       <div class="chat-head">
         <strong>Chat</strong>
         <button id="chatToggle" class="chat-toggle" type="button" aria-expanded="true">Minimize</button>
       </div>
+      <div class="chat-tabs" role="tablist">
+        <button type="button" class="chat-tab selected" data-chat-tab="messages">Messages</button>
+        <button type="button" class="chat-tab" data-chat-tab="friends">Friends</button>
+      </div>
       <div id="chatMessages" class="chat-messages"></div>
+      <div id="chatFriendsPane" class="chat-friends-pane hidden"></div>
       <form id="chatForm" class="chat-form">
         <input id="chatInput" maxlength="180" placeholder="Message" autocomplete="off">
         <button class="chat-send" type="submit">Send</button>

@@ -48,6 +48,7 @@ const {
   saveHouseChestSlots,
   getWorldDatabasePath
 } = require("./worldStore");
+const { createSocialSystem } = require("./social.js");
 const { postAuthEventToDiscord, isAllowedDiscordWebhookUrl, resolveDiscordAuthWebhookUrl } = require("./discordWebhook");
 
 const HOST = process.env.HOST || "127.0.0.1";
@@ -402,6 +403,8 @@ const accountStore = loadAccountStore();
 syncSoldCompanionIdsFromAccounts(accountStore.accounts);
 seedModAccounts();
 const clients = new Map();
+/** @type {ReturnType<typeof createSocialSystem> | null} */
+let social = null;
 const chunkCache = new Map();
 const chatHistory = [];
 const itemDatabase = createItemDatabase();
@@ -571,6 +574,20 @@ function simulateCore() {
   return Date.now() - t0;
 }
 
+function initSocialModule() {
+  social = createSocialSystem({
+    clients,
+    accountStore,
+    saveAccountStore,
+    broadcastSnapshot,
+    send,
+    addItemToInventory,
+    cloneItem,
+    INVENTORY_SIZE,
+    saveClientCharacter
+  });
+}
+initSocialModule();
 queueSimulate();
 
 function clearSimulateTimer() {
@@ -1394,6 +1411,10 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (social && social.handleMessage(client, message)) {
+    return;
+  }
+
   if (message.type === "attack") {
     handleAttack(client, message);
     return;
@@ -1767,6 +1788,12 @@ function joinWorld(client, message, savedCharacter = null) {
   });
 
   streamChunks(client, nearbyChunks(spawn.x, spawn.y, 3));
+  const accForSocial = accountStore.accounts[client.account.key];
+  if (accForSocial && social) {
+    social.ensureFriendsArray(accForSocial);
+    send(client, { type: "socialFriendsUpdated", friends: social.getFriendsList(client) });
+    send(client, { type: "socialPartyUpdated", party: social.getPartyView(client) });
+  }
   pushChat({
     kind: "system",
     name: "Realm",
@@ -3001,7 +3028,8 @@ function broadcastSnapshot() {
       npcs,
       mobs,
       chests: visibleChests,
-      groundItems: visibleGround
+      groundItems: visibleGround,
+      party: social ? social.getPartyView(client) : null
     });
   }
 }
@@ -3994,6 +4022,9 @@ function disconnect(client) {
   }
 
   const playerName = client.player?.name;
+  if (social) {
+    social.onDisconnect(client);
+  }
   saveClientCharacter(client);
   client.alive = false;
   clients.delete(client.id);
