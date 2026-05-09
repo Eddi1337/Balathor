@@ -267,6 +267,7 @@ const state = {
   chunks: new Map(),
   portals: new Map(),
   buildings: new Map(),
+  roadsides: new Map(),
   requestedChunks: new Set(),
   population: 0,
   input: { up: false, down: false, left: false, right: false },
@@ -300,6 +301,7 @@ const state = {
   hoverTooltipX: 0,
   hoverTooltipY: 0,
   hoverTooltipSmall: false,
+  pubPassoutUntil: 0,
   houseChestSlots: null,
   houseChestBuildingKey: null,
   /** Until this time (performance.now()), self draws home-teleport hand cast */
@@ -615,11 +617,20 @@ function handleServerMessage(message) {
     chunkCanvasCache.clear();
     clearMovementInput();
     requestVisibleChunks();
-    appendChat({
-      kind: "system",
-      name: "Realm",
-      text: `Entered ${message.name}`
-    });
+    if (!message.skipChat && message.name != null && String(message.name).trim()) {
+      appendChat({
+        kind: "system",
+        name: "Realm",
+        text: `Entered ${message.name}`
+      });
+    }
+    return;
+  }
+
+  if (message.type === "pubPassout") {
+    const d = Number(message.durationMs);
+    const ms = Number.isFinite(d) ? Math.max(600, Math.min(8000, d)) : 3000;
+    state.pubPassoutUntil = performance.now() + ms;
     return;
   }
 
@@ -628,6 +639,7 @@ function handleServerMessage(message) {
     state.chunks.set(key, message);
     indexChunkPortals(message);
     indexChunkBuildings(message);
+    indexChunkRoadsides(message);
     state.requestedChunks.delete(key);
     return;
   }
@@ -676,6 +688,7 @@ function handleServerMessage(message) {
       id: message.id,
       name: message.name || "Trader Shelf",
       buildingName: message.buildingName || "",
+      isPub: !!message.isPub,
       x: message.x,
       y: message.y,
       gold: Number.isFinite(message.gold) ? message.gold : state.gold,
@@ -809,6 +822,12 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: `Not enough gold (needs ${Number(message.price) || 0}g)` });
     } else if (message.message === "companion_unavailable") {
       appendChat({ kind: "system", name: "Realm", text: "That person's path has already changed." });
+    } else if (message.message === "pub_need_house") {
+      appendChat({
+        kind: "system",
+        name: "Realm",
+        text: "That brew only lets you stagger home — you still need your own doorway first."
+      });
     } else if (message.itemName) {
       appendChat({ kind: "system", name: "Realm", text: `${message.itemName}` });
     }
@@ -2335,6 +2354,23 @@ function refreshWorldHoverTooltip(event) {
   if (!state.joined || state.menuOpen || event.target !== canvas) {
     return;
   }
+
+  const world = screenEventToWorld(event);
+  for (const f of state.roadsides.values()) {
+    if (Math.hypot(world.x - (f.x + 0.5), world.y - (f.y + 0.55)) <= 1.12) {
+      state.hoverTooltipText =
+        f.kind === "bench"
+          ? "Roadside bench"
+          : f.kind.includes("chair")
+            ? "Outdoor chair"
+            : f.kind.includes("pub")
+              ? "Pub seating"
+              : "Roadside table";
+      state.hoverTooltipSmall = true;
+      return;
+    }
+  }
+
   const self = state.players.get(state.selfId);
   if (!self?.homeBuildingKey) {
     return;
@@ -2348,7 +2384,6 @@ function refreshWorldHoverTooltip(event) {
     return;
   }
 
-  const world = screenEventToWorld(event);
   const tp = getOwnedHouseHomeTreeWorldPos(building);
   if (Math.hypot(world.x - tp.x, world.y - tp.y) <= INTERIOR_HOME_TREE_HIT_RADIUS_TILES) {
     state.hoverTooltipText = "Teleport to home tree";
@@ -2729,9 +2764,11 @@ function clearWorldState() {
   state.chunks.clear();
   state.portals.clear();
   state.buildings.clear();
+  state.roadsides.clear();
   state.requestedChunks.clear();
   state.population = 0;
   state.hoverTooltipText = "";
+  state.pubPassoutUntil = 0;
 }
 
 function sendAttack() {
@@ -2794,6 +2831,27 @@ function indexChunkBuildings(chunk) {
 
   for (const building of chunk.buildings || []) {
     state.buildings.set(`${building.x},${building.y},${building.w},${building.h}`, building);
+  }
+}
+
+function indexChunkRoadsides(chunk) {
+  const minX = chunk.cx * CHUNK_SIZE;
+  const minY = chunk.cy * CHUNK_SIZE;
+  const maxX = minX + CHUNK_SIZE;
+  const maxY = minY + CHUNK_SIZE;
+
+  for (const [id, f] of [...state.roadsides.entries()]) {
+    const fx = f.x;
+    const fy = f.y;
+    if (fx >= minX && fx < maxX && fy >= minY && fy < maxY) {
+      state.roadsides.delete(id);
+    }
+  }
+
+  for (const feat of chunk.roadsides || []) {
+    if (feat && feat.id) {
+      state.roadsides.set(String(feat.id), feat);
+    }
   }
 }
 
@@ -3437,7 +3495,12 @@ function renderShop() {
   }
 
   const gold = Number.isFinite(state.shop.gold) ? state.shop.gold : state.gold;
-  shopTitle.textContent = state.shop.buildingName ? `${state.shop.buildingName} Shelf` : state.shop.name;
+  shopTitle.textContent =
+    state.shop.isPub && state.shop.buildingName
+      ? `${state.shop.buildingName} Taproom`
+      : state.shop.buildingName
+        ? `${state.shop.buildingName} Shelf`
+        : state.shop.name;
   shopGold.textContent = `${gold || 0} gold`;
   shopBuyList.replaceChildren();
   shopSellList.replaceChildren();
@@ -3794,6 +3857,7 @@ function draw() {
 
   ctx.restore();
   drawPortalTransitionOverlay();
+  drawPubPassoutOverlay();
   drawWorldHoverTooltip();
   if (state.menuOpen) {
     syncMenuSessionInfo();
@@ -3833,6 +3897,91 @@ function getChunkCanvas(cx, cy) {
   ctx = mainCtx;
   chunkCanvasCache.set(key, oc);
   return oc;
+}
+
+function drawRoadsideFeatures(minTileX, maxTileX, minTileY, maxTileY) {
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+
+  const drawBench = (cx, gy) => {
+    ctx.save();
+    drawEllipseShadow(cx - 26, gy + 4, 54, 9, 0.22);
+    ctx.fillStyle = "#4a3828";
+    ctx.fillRect(cx - 28, gy - 8, 56, 10);
+    ctx.fillStyle = "#6a5040";
+    for (let i = 0; i < 5; i += 1) {
+      const px = cx - 24 + i * 10;
+      ctx.fillRect(px, gy - 18, 6, 12);
+      ctx.strokeStyle = "rgba(30,22,14,0.45)";
+      ctx.strokeRect(px, gy - 18, 6, 12);
+    }
+    ctx.strokeStyle = "rgba(20,14,10,0.5)";
+    ctx.strokeRect(cx - 28, gy - 8, 56, 10);
+    ctx.restore();
+  };
+
+  const drawTableOutline = (cx, gy, w, shade) => {
+    ctx.save();
+    drawEllipseShadow(cx - w / 2, gy + 2, w + 8, 10, 0.24);
+    ctx.fillStyle = shade;
+    ctx.fillRect(cx - w / 2, gy - 10, w, 8);
+    ctx.fillStyle = "#5c4030";
+    ctx.fillRect(cx - w / 2 - 10, gy - 2, 6, 5);
+    ctx.fillRect(cx + w / 2 + 6, gy - 2, 6, 5);
+    ctx.restore();
+  };
+
+  for (const f of state.roadsides.values()) {
+    if (f.x < minTileX || f.x > maxTileX || f.y < minTileY || f.y > maxTileY) continue;
+    const sx = Math.floor(f.x * TILE_SIZE - state.camera.x + halfW);
+    const sy = Math.floor(f.y * TILE_SIZE - state.camera.y + halfH);
+    const cx = sx + TILE_SIZE / 2;
+    const gy = sy + TILE_SIZE - 10;
+
+    if (f.kind === "bench") {
+      drawBench(cx, gy);
+    } else if (f.kind === "table") {
+      drawTableOutline(cx, gy, 38, "#7a5436");
+    } else if (f.kind === "pub_table") {
+      drawTableOutline(cx, gy, 44, "#6a4028");
+      ctx.save();
+      ctx.fillStyle = "rgba(255,220,160,0.35)";
+      ctx.fillRect(cx - 8, gy - 16, 16, 5);
+      ctx.restore();
+    } else if (f.kind === "pub_chair") {
+      ctx.save();
+      drawEllipseShadow(cx - 8, gy + 2, 18, 6, 0.2);
+      ctx.fillStyle = "#5a3820";
+      ctx.fillRect(cx - 8, gy - 12, 16, 14);
+      ctx.fillStyle = "#8a6040";
+      ctx.fillRect(cx - 6, gy - 10, 12, 6);
+      ctx.restore();
+    }
+  }
+}
+
+function drawPubPassoutOverlay() {
+  const until = state.pubPassoutUntil || 0;
+  const now = performance.now();
+  if (until <= now) {
+    return;
+  }
+  const span = until - now;
+  const pulse = 0.72 + Math.sin(now / 120) * 0.06;
+  const alpha = Math.min(0.9, 0.55 + (span > 2200 ? 0.28 : (3000 - span) / 3000 * 0.25));
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = `rgba(12, 10, 22, ${alpha * pulse})`;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "rgba(240, 232, 255, 0.72)";
+  ctx.font = "600 15px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("The floor tilts…", canvas.width / 2, canvas.height * 0.42);
+  ctx.font = "12px ui-sans-serif, system-ui";
+  ctx.fillStyle = "rgba(240, 232, 255, 0.5)";
+  ctx.fillText("…heavy boots and distant laughter …", canvas.width / 2, canvas.height * 0.48);
+  ctx.restore();
 }
 
 function drawTraderCaravans(minTileX, maxTileX, minTileY, maxTileY) {
@@ -3920,6 +4069,7 @@ function drawWorld() {
   drawWorldAssets(minTileX, maxTileX, minTileY, maxTileY);
   drawWorldLoot();
   drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY);
+  drawRoadsideFeatures(minTileX, maxTileX, minTileY, maxTileY);
   drawTraderCaravans(minTileX, maxTileX, minTileY, maxTileY);
 }
 
@@ -5978,6 +6128,38 @@ function drawBuildingSprite(building, sx, sy, roofless) {
     drawOwnerSignpost(building, sx, sy, w, h, ownerName);
   } else if (building.forSale) {
     drawForSaleSignpost(building, sx, sy, w, h);
+  } else if (building.residentLabel) {
+    const lx = sx + w / 2;
+    const ly = sy + h - TILE_SIZE * 0.92;
+    ctx.save();
+    ctx.font = "600 10px ui-sans-serif, system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const text = `Home of ${building.residentLabel}`;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(0,0,0,0.55)";
+    ctx.strokeText(text, lx, ly);
+    ctx.fillStyle = "#f0f4ff";
+    ctx.fillText(text, lx, ly);
+    ctx.restore();
+  }
+
+  if (building.isPub && !roofless) {
+    ctx.save();
+    const px = sx + w * 0.72;
+    const py = sy + TILE_SIZE * 0.35;
+    ctx.fillStyle = "rgba(92,52,38,0.94)";
+    ctx.strokeStyle = "rgba(255,220,170,0.45)";
+    ctx.lineWidth = 2;
+    roundedRect(px - 36, py - 14, 72, 22, 4);
+    ctx.fill();
+    ctx.stroke();
+    ctx.font = "bold 10px ui-sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ffe8c8";
+    ctx.fillText("PUB", px, py - 3);
+    ctx.restore();
   }
 }
 
