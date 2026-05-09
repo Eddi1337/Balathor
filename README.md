@@ -23,28 +23,28 @@ http://localhost:3000
 
 Local development binds to `127.0.0.1` by default. If `3000` or `8080` is busy, the launcher uses the next free port and prints the actual URL. Set `HOST=0.0.0.0 CLIENT_HOST=0.0.0.0` when you want LAN access.
 
-### Discord login / signup notifications (optional)
+### Discord login / signup notifications
 
-The game server can post to a Discord channel whenever an account is **created** or **someone logs in** successfully (failed logins are not reported).
+The game server posts to Discord whenever an account is **created** or someone **logs in** successfully (failed logins are not reported). Each message includes **username**, **event**, and **UTC time** (Discord embed timestamp plus text fields).
 
-**In Discord**
+**Default**
 
-1. Open your server → pick the channel → **Edit channel** (gear) → **Integrations** → **Webhooks** → **New webhook**.
-2. Name it (e.g. `Balathor auth`), choose the channel, optionally set an avatar, then **Copy webhook URL**.  
-   The URL must look like `https://discord.com/api/webhooks/<id>/<token>`.
+A built-in Incoming Webhook URL lives in `server/src/discordWebhook.js` so the server works without extra config.
 
-**Keep the URL secret** — anyone with it can post to that channel. Do not commit it to git.
+**Override**
 
-**On the server**
-
-Set the environment variable when you start the process (or in Docker / your host panel):
+Set **`DISCORD_AUTH_WEBHOOK_URL`** if you want a different channel or if the repo/build is shared (webhook URLs are effectively secrets):
 
 ```bash
 export DISCORD_AUTH_WEBHOOK_URL='https://discord.com/api/webhooks/…'
 npm run server
 ```
 
-If the URL is missing, notifications are skipped. If it is set but invalid, the server logs a warning on startup and ignores it.
+If the env value is invalid, the server warns and falls back to the built-in URL.
+
+**Create or rotate a webhook (Discord)**
+
+Channel **Edit** → **Integrations** → **Webhooks** → **New webhook** (or regenerate URL on an existing webhook), then paste the URL into env or replace the constant in code.
 
 You can also run each application separately:
 

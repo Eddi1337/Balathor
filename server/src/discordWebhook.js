@@ -1,5 +1,12 @@
 "use strict";
 
+/**
+ * Built-in Incoming Webhook (account login / signup). Override with DISCORD_AUTH_WEBHOOK_URL — never revoke
+ * lightly; if this repo is public, rotate this webhook in Discord and update this constant.
+ */
+const DEFAULT_DISCORD_AUTH_WEBHOOK_URL =
+  "https://discord.com/api/webhooks/1502756721146204291/V55qli-TkWmy3TiWm8WqPnfKDdyLPNUdGqHN_D7tSI-TcVgpnQLXczSt_tYxhfjDlL9F";
+
 const WEBHOOK_HOSTS = new Set(["discord.com", "discordapp.com"]);
 const FETCH_TIMEOUT_MS = 8000;
 
@@ -29,6 +36,19 @@ function isAllowedDiscordWebhookUrl(raw) {
   return true;
 }
 
+function resolveDiscordAuthWebhookUrl() {
+  const fromEnv = typeof process.env.DISCORD_AUTH_WEBHOOK_URL === "string"
+    ? process.env.DISCORD_AUTH_WEBHOOK_URL.trim()
+    : "";
+  if (fromEnv) {
+    if (isAllowedDiscordWebhookUrl(fromEnv)) {
+      return fromEnv;
+    }
+    console.warn("Balathor: DISCORD_AUTH_WEBHOOK_URL invalid; using built-in Discord webhook");
+  }
+  return DEFAULT_DISCORD_AUTH_WEBHOOK_URL;
+}
+
 /** Discord code span — strip characters that break formatting. */
 function escapeDiscordInline(s) {
   return String(s).replace(/`/g, "'");
@@ -49,7 +69,9 @@ function postAuthEventToDiscord(webhookUrl, payload) {
   const username = escapeDiscordInline(String(payload.username || "unknown")).slice(0, 72);
   const isCreate = payload.event === "create";
   const title = isCreate ? "New account" : "Login";
-  const description = isCreate ? `\`${username}\` created an account.` : `\`${username}\` logged in.`;
+  const now = new Date();
+  const timeIso = now.toISOString();
+  const timeUtcReadable = now.toUTCString();
   const color = isCreate ? 0x5865f2 : 0x57f287;
 
   const body = {
@@ -58,9 +80,14 @@ function postAuthEventToDiscord(webhookUrl, payload) {
     embeds: [
       {
         title,
-        description,
+        description: isCreate ? "Someone registered." : "Someone signed in.",
         color,
-        timestamp: new Date().toISOString()
+        timestamp: timeIso,
+        fields: [
+          { name: "Username", value: `\`${username}\``, inline: true },
+          { name: "Event", value: isCreate ? "Account created" : "Login", inline: true },
+          { name: "Time (UTC)", value: `\`${escapeDiscordInline(timeIso)}\`\n_${escapeDiscordInline(timeUtcReadable)}_`, inline: false }
+        ]
       }
     ]
   };
@@ -89,5 +116,6 @@ function postAuthEventToDiscord(webhookUrl, payload) {
 
 module.exports = {
   postAuthEventToDiscord,
-  isAllowedDiscordWebhookUrl
+  isAllowedDiscordWebhookUrl,
+  resolveDiscordAuthWebhookUrl
 };

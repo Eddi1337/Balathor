@@ -29,6 +29,6 @@ You can also run them individually with `npm run server` and `npm run client`.
 ### Gotchas
 
 - The project requires **Node.js >= 22** (uses `node:crypto.subtle`, native `fetch`, etc.).
-- Optional: set **`DISCORD_AUTH_WEBHOOK_URL`** to a Discord **Incoming Webhook** URL to log successful **account creation** and **logins** to a channel (see root `README.md`).
+- Discord: successful **account creation** and **logins** post to a webhook (default URL in `server/src/discordWebhook.js`). Override with **`DISCORD_AUTH_WEBHOOK_URL`** (see root `README.md`).
 - Account data is stored in `server/data/accounts.json` (flat JSON file, no external database).
 - The Electron desktop client (`client/desktop/`) is optional and targets Windows packaging — skip it in Cloud Agent environments.
