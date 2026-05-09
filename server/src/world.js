@@ -44,26 +44,26 @@ function hash2(x, y, seed = 1337) {
 
 // Hand-crafted buildings: starting town + portal destinations only.
 const FIXED_BUILDINGS = [
-  // Central village – spread around the circular plaza, each with its own approach path.
+  // Central village — lots spaced farther apart; paths approach front doors laterally instead of slicing through footprints.
   // North
-  { x:  -6, y: -28, w: 11, h:  9, name: "Home",             type: "house",     forSale: false },
-  { x:  20, y: -36, w:  8, h:  7, name: "Smith's Hut",       type: "hut",       forSale: false },
-  { x: -30, y: -50, w: 10, h:  8, name: "Ranger's Post",     type: "treehouse", forSale: false },
-  { x: -48, y: -26, w: 12, h:  9, name: "Blue Tavern",       type: "house",     forSale: false },
+  { x: -10, y: -39, w: 11, h:  9, name: "Home",              type: "house",     forSale: false },
+  { x:  26, y: -48, w:  8, h:  7, name: "Smith's Hut",       type: "hut",       forSale: false },
+  { x: -45, y: -65, w: 10, h:  8, name: "Ranger's Post",     type: "treehouse", forSale: false },
+  { x: -75, y: -44, w: 12, h:  9, name: "Blue Tavern",       type: "house",     forSale: false },
   // East
-  { x:  38, y: -24, w: 16, h: 12, name: "Red Manor",         type: "big_house", forSale: true  },
-  { x:  64, y: -20, w: 10, h:  8, name: "Hunter's Lodge",    type: "treehouse", forSale: false },
-  { x:  34, y:   4, w:  8, h:  7, name: "East Hut",          type: "hut",       forSale: true  },
-  { x:  48, y:  20, w: 12, h:  9, name: "Garden House",      type: "house",     forSale: true  },
-  { x:  54, y:  36, w:  8, h:  7, name: "Herb Hut",          type: "hut",       forSale: true  },
+  { x:  54, y: -35, w: 16, h: 12, name: "Red Manor",         type: "big_house", forSale: true  },
+  { x:  82, y: -44, w: 10, h:  8, name: "Hunter's Lodge",    type: "treehouse", forSale: false },
+  { x:  82, y:  12, w:  8, h:  7, name: "East Hut",          type: "hut",       forSale: true  },
+  { x:  84, y:  28, w: 12, h:  9, name: "Garden House",      type: "house",     forSale: true  },
+  { x:  98, y:  48, w:  8, h:  7, name: "Herb Hut",          type: "hut",       forSale: true  },
   // West
-  { x: -28, y: -10, w:  8, h:  7, name: "Weaver's Hut",      type: "hut",       forSale: false },
-  { x: -54, y:   8, w:  8, h:  7, name: "Miller's Hut",      type: "hut",       forSale: true  },
-  { x: -52, y:  22, w: 12, h:  9, name: "Market Hall",       type: "house",     forSale: false },
+  { x: -42, y: -20, w:  8, h:  7, name: "Weaver's Hut",      type: "hut",       forSale: false },
+  { x: -76, y:   0, w:  8, h:  7, name: "Miller's Hut",      type: "hut",       forSale: true  },
+  { x: -82, y:  24, w: 12, h:  9, name: "Market Hall",       type: "house",     forSale: false },
   // South
-  { x: -14, y:  36, w: 20, h: 16, name: "Town Keep",         type: "castle",    forSale: false },
-  { x:  18, y:  56, w:  8, h:  7, name: "South Hut",         type: "hut",       forSale: true  },
-  { x: -38, y:  56, w:  8, h:  7, name: "West Hut",          type: "hut",       forSale: true  },
+  { x: -22, y:  44, w: 20, h: 16, name: "Town Keep",         type: "castle",    forSale: false },
+  { x:  32, y:  68, w:  8, h:  7, name: "South Hut",         type: "hut",       forSale: true  },
+  { x: -54, y:  68, w:  8, h:  7, name: "West Hut",          type: "hut",       forSale: true  },
   // Desert Oasis – no overlaps, each building separated by ≥8 tiles
   { x: 574, y: 472, w: 20, h: 16, name: "Oasis Keep",        type: "castle",    forSale: false },
   { x: 604, y: 470, w: 16, h: 12, name: "Oasis Palace",      type: "big_house", forSale: false },
@@ -83,72 +83,119 @@ const FIXED_BUILDINGS = [
 
 /** Small dwellings for villagers (paired to npcs.js patrol homes; not for sale). */
 const NPC_HOME_BUILDINGS = [
-  { x: 19, y: -74, w: 8, h: 7, name: "Mara's Cottage", type: "hut", forSale: false },
-  { x: -20, y: -72, w: 8, h: 7, name: "Thomas's Lodge", type: "hut", forSale: false },
-  { x: 10, y: -70, w: 8, h: 7, name: "Dale's Storehouse", type: "hut", forSale: false },
-  { x: -9, y: -45, w: 8, h: 7, name: "Aldric's Quarters", type: "hut", forSale: false },
-  { x: 69, y: -3, w: 8, h: 7, name: "Ren's Bunkhouse", type: "hut", forSale: false },
-  { x: 69, y: -24, w: 8, h: 7, name: "Lyssa's Shop-back", type: "hut", forSale: false },
-  { x: 43, y: 10, w: 8, h: 7, name: "Brom's Hovel", type: "hut", forSale: false },
-  { x: 60, y: -8, w: 8, h: 7, name: "Sera's Watch-hut", type: "hut", forSale: false },
-  { x: -5, y: 70, w: 8, h: 7, name: "Holt's Cottage", type: "hut", forSale: false },
-  { x: 11, y: 50, w: 8, h: 7, name: "Greta's Cellar Hut", type: "hut", forSale: false },
-  { x: -16, y: 70, w: 8, h: 7, name: "Dot's Mill Shack", type: "hut", forSale: false },
-  { x: -17, y: 80, w: 8, h: 7, name: "Wyn's Pasture Hut", type: "hut", forSale: false },
-  { x: -65, y: -2, w: 8, h: 7, name: "Voss's Lean-to", type: "hut", forSale: false },
-  { x: -73, y: -20, w: 8, h: 7, name: "Mira's Annex", type: "hut", forSale: false },
-  { x: -75, y: 20, w: 8, h: 7, name: "Cael's Hovel", type: "hut", forSale: false },
-  { x: -63, y: 10, w: 8, h: 7, name: "Zix's Camp Hut", type: "hut", forSale: false },
-  { x: 15, y: -10, w: 8, h: 7, name: "Kael's Storeroom", type: "hut", forSale: false },
-  { x: -12, y: 12, w: 8, h: 7, name: "Ebb's Lodging", type: "hut", forSale: false },
-  { x: -12, y: -10, w: 8, h: 7, name: "Ana's Script House", type: "hut", forSale: false },
-  { x: 38, y: 20, w: 8, h: 7, name: "Riley's Bungalow", type: "hut", forSale: false },
-  { x: 56, y: -2, w: 8, h: 7, name: "Jax's Flat", type: "hut", forSale: false }
+  { x: 22, y: -78, w: 8, h: 7, name: "Mara's Cottage", type: "hut", forSale: false },
+  { x: -24, y: -76, w: 8, h: 7, name: "Thomas's Lodge", type: "hut", forSale: false },
+  { x: 12, y: -73, w: 8, h: 7, name: "Dale's Storehouse", type: "hut", forSale: false },
+  { x: -12, y: -50, w: 8, h: 7, name: "Aldric's Quarters", type: "hut", forSale: false },
+  { x: 74, y: -6, w: 8, h: 7, name: "Ren's Bunkhouse", type: "hut", forSale: false },
+  { x: 74, y: -28, w: 8, h: 7, name: "Lyssa's Shop-back", type: "hut", forSale: false },
+  { x: 50, y: 10, w: 8, h: 7, name: "Brom's Hovel", type: "hut", forSale: false },
+  { x: 64, y: -12, w: 8, h: 7, name: "Sera's Watch-hut", type: "hut", forSale: false },
+  { x: -4, y: 74, w: 8, h: 7, name: "Holt's Cottage", type: "hut", forSale: false },
+  { x: 14, y: 52, w: 8, h: 7, name: "Greta's Cellar Hut", type: "hut", forSale: false },
+  { x: -18, y: 74, w: 8, h: 7, name: "Dot's Mill Shack", type: "hut", forSale: false },
+  { x: -20, y: 86, w: 8, h: 7, name: "Wyn's Pasture Hut", type: "hut", forSale: false },
+  { x: -70, y: -4, w: 8, h: 7, name: "Voss's Lean-to", type: "hut", forSale: false },
+  { x: -78, y: -24, w: 8, h: 7, name: "Mira's Annex", type: "hut", forSale: false },
+  { x: -82, y: 16, w: 8, h: 7, name: "Cael's Hovel", type: "hut", forSale: false },
+  { x: -68, y: 8, w: 8, h: 7, name: "Zix's Camp Hut", type: "hut", forSale: false },
+  { x: 16, y: -12, w: 8, h: 7, name: "Kael's Storeroom", type: "hut", forSale: false },
+  { x: -14, y: 14, w: 8, h: 7, name: "Ebb's Lodging", type: "hut", forSale: false },
+  { x: -14, y: -12, w: 8, h: 7, name: "Ana's Script House", type: "hut", forSale: false },
+  { x: 92, y: 20, w: 8, h: 7, name: "Riley's Bungalow", type: "hut", forSale: false },
+  { x: 64, y: -2, w: 8, h: 7, name: "Jax's Flat", type: "hut", forSale: false },
+  { x: -24, y: 60, w: 8, h: 7, name: "Mae's Rowhouse", type: "hut", forSale: false },
+  { x: -68, y: -32, w: 8, h: 7, name: "Sofia's Shack", type: "hut", forSale: false },
+  { x: -88, y: -8, w: 8, h: 7, name: "Nara's Cabin", type: "hut", forSale: false },
 ];
 
 const BUILDINGS = FIXED_BUILDINGS.concat(NPC_HOME_BUILDINGS);
 
+/** World X tile coords for outward-facing doors on north & south façade rows. Odd width ⇒ 1 tile; even ⇒ 2. */
+function southDoorWorldXs(building) {
+  const bw = Math.max(3, Math.floor(building.w));
+  const bx = Math.floor(building.x);
+  if (bw % 2 === 1) {
+    return [bx + (bw - 1) / 2];
+  }
+  const left = bx + bw / 2 - 1;
+  return [left, left + 1];
+}
+
+function southDoorAnchorWorldX(building) {
+  const xs = southDoorWorldXs(building);
+  if (!xs.length) {
+    return building.x + building.w / 2;
+  }
+  if (xs.length === 1) {
+    return xs[0] + 0.5;
+  }
+  return (xs[0] + xs[1]) / 2 + 0.5;
+}
+
+/** Local X positions (within building footprint) that are exterior door openings. */
+function southDoorLocalXs(w) {
+  const iw = Math.max(3, Math.floor(Number(w)));
+  if (iw % 2 === 1) {
+    return [(iw - 1) / 2];
+  }
+  return [iw / 2 - 1, iw / 2];
+}
+
+function southDoorLocalCenterOffset(w) {
+  const lx = southDoorLocalXs(w);
+  if (!lx.length) {
+    return w / 2;
+  }
+  if (lx.length === 1) {
+    return lx[0] + 0.5;
+  }
+  return (lx[0] + lx[1]) / 2 + 0.5;
+}
+
 // Fixed village clearing zones — only starting town + portal destinations.
 const VILLAGES = [
-  { cx:   0, cy:   0, r: 82 }, // Central Village
+  { cx:   0, cy:   0, r: 105 }, // Central Village — widened after outer lots migrated
   { cx: 600, cy: 490, r: 52 },
   { cx: -600, cy: -490, r: 52 },
   { cx: 580, cy: -530, r: 52 },
 ];
 
-// Road segments for fixed villages only.
+// Road segments for fixed villages only (w=1 => 3-tile corridor). Hub spurs dodge building boxes.
 const STREET_SEGMENTS = [
-  // Main roads radiate outward from the circular plaza (wide, w=1 = 3 tiles wide)
-  { x1: -70, y1:  0, x2:  70, y2:  0, w: 1 },  // East-west main road
-  { x1:   0, y1: -82, x2:   0, y2: 70, w: 1 },  // North-south spine (north extended to realm gates)
+  { x1: -94, y1:   0, x2:  94, y2:   0, w: 1 },   // east–west arterial
+  { x1:   0, y1: -92, x2:   0, y2:  82, w: 1 },   // spine to farms + realm gates
 
-  // North buildings — branch off N-S road
-  { x1:   0, y1: -28, x2:   1, y2: -28 },        // Home: N-S road already passes door
-  { x1:  24, y1: -36, x2:  24, y2:   0 },         // Smith's Hut spur
-  { x1: -25, y1: -42, x2:   0, y2: -42 },         // Ranger's Post: east branch
-  { x1: -25, y1: -50, x2: -25, y2: -42 },         // Ranger's Post: north spur
-  { x1: -42, y1: -17, x2: -42, y2:   0 },         // Blue Tavern spur
-  { x1: -48, y1: -17, x2: -42, y2: -17 },         // Blue Tavern: west branch
+  // Northwest cluster — lanes meet door fronts; no long cuts behind lots
+  { x1:  -5, y1: -29, x2:  -5, y2:   0 },
+  { x1:  29, y1: -41, x2:  29, y2:   0 },
+  { x1: -41, y1: -57, x2: -41, y2:   0 },
+  { x1: -70, y1: -35, x2: -70, y2:   0 },
 
-  // East buildings — branch off E-W road
-  { x1:  46, y1: -12, x2:  46, y2:   0 },         // Red Manor spur
-  { x1:  62, y1: -12, x2:  62, y2:   0 },         // Hunter's Lodge south spur
-  { x1:  62, y1: -12, x2:  69, y2: -12 },         // Hunter's Lodge east branch
-  { x1:  38, y1:   0, x2:  38, y2:  11 },         // East Hut spur
-  { x1:  54, y1:   0, x2:  54, y2:  29 },         // Garden House spur
-  { x1:  54, y1:  29, x2:  58, y2:  29 },         // Garden→Herb connector
-  { x1:  58, y1:  29, x2:  58, y2:  43 },         // Herb Hut spur
+  // West row
+  { x1: -39, y1: -20, x2: -39, y2:   0 },
+  { x1: -73, y1:   7, x2: -73, y2:   0 },
+  { x1: -77, y1: -31, x2: -77, y2:   0 },
 
-  // West buildings — branch off E-W road
-  { x1: -24, y1:   0, x2: -24, y2:  -3 },         // Weaver's Hut spur
-  { x1: -50, y1:   0, x2: -50, y2:  15 },         // Miller's Hut spur
-  { x1: -46, y1:   0, x2: -46, y2:  31 },         // Market Hall spur
-  { x1: -52, y1:  22, x2: -46, y2:  22 },         // Market Hall west branch
+  // East quarter — elbow around manor / lodge, then alley for lower row
+  { x1:  62, y1: -23, x2:  62, y2: -12 },
+  { x1:  62, y1: -12, x2:  93, y2: -12 },
+  { x1:  93, y1: -47, x2:  93, y2: -12 },
+  { x1:  71, y1:  19, x2:  93, y2:  19 },
+  { x1:  93, y1:  19, x2:  93, y2:   0 },
+  { x1:  91, y1:  38, x2: 104, y2:  38 },
+  { x1: 104, y1:  38, x2: 104, y2:   0 },
+  { x1: 101, y1:  56, x2: 112, y2:  56 },
+  { x1: 112, y1:  56, x2: 112, y2:   0 },
 
-  // South buildings — branch off N-S road
-  { x1:  -7, y1:  36, x2:   0, y2:  36 },         // Town Keep north door branch
-  { x1:  22, y1:   0, x2:  22, y2:  63 },         // South Hut spur
-  { x1: -34, y1:   0, x2: -34, y2:  63 },         // West Hut spur
+  // Town Keep — apron along south side, stair to north approach (never through courtyard)
+  { x1:   0, y1:  62, x2: -13, y2:  62 },
+  { x1: -13, y1:  62, x2: -13, y2:  60 },
+  { x1: -13, y1:  43, x2: -13, y2:   0 },
+
+  // South cottages
+  { x1:  35, y1:  75, x2:  35, y2:   0 },
+  { x1: -51, y1:  75, x2: -51, y2:   0 },
 
   // Portal destination villages
   // Oasis
@@ -200,7 +247,7 @@ function buildScatterEnemyCamps() {
       let tx = Math.round(Math.cos(angle) * ring + (hash2(i, ring, 6101) - 0.5) * 22);
       let ty = Math.round(Math.sin(angle) * ring + (hash2(ring, i, 6102) - 0.5) * 22);
 
-      if (Math.hypot(tx, ty) < 88) continue;
+      if (Math.hypot(tx, ty) < 104) continue;
       if (Math.hypot(tx - 600, ty - 490) < 56) continue;
       if (Math.hypot(tx + 600, ty + 490) < 56) continue;
       if (Math.hypot(tx - 580, ty + 530) < 56) continue;
@@ -433,10 +480,10 @@ function getProceduralSettlementTile(x, y) {
     // Buildings take priority.
     for (const b of getSettlementBuildingList(s)) {
       if (x < b.x || x >= b.x + b.w || y < b.y || y >= b.y + b.h) continue;
-      const doorX = b.x + Math.floor(b.w / 2);
+      const doorXs = southDoorWorldXs(b);
       const southWall = b.y + b.h - 1;
       const northWall = b.y;
-      if (x === doorX && (y === southWall || y === northWall)) return TILE.DOOR;
+      if ((y === southWall || y === northWall) && doorXs.includes(x)) return TILE.DOOR;
       if (x === b.x || x === b.x + b.w - 1 || y === northWall || y === southWall) return TILE.WALL;
       const lx = x - b.x;
       const ly = y - b.y;
@@ -606,11 +653,11 @@ function getBuildingTile(x, y) {
       continue;
     }
 
-    const doorX = b.x + Math.floor(b.w / 2);
+    const doorCols = southDoorWorldXs(b);
     const southWall = b.y + b.h - 1;
     const northWall = b.y;
 
-    if (x === doorX && (y === southWall || y === northWall)) {
+    if ((y === southWall || y === northWall) && doorCols.includes(x)) {
       return TILE.DOOR;
     }
 
@@ -729,9 +776,12 @@ function getInteriorTile(x, y) {
   const localX = x - interior.x;
   const localY = y - interior.y;
   const { w, h } = interior;
-  const doorX = Math.floor(w / 2);
+  const doorLocals = southDoorLocalXs(w);
 
-  if (localX === doorX && (localY === 0 || localY === h - 1)) {
+  if (
+    doorLocals.includes(localX) &&
+    (localY === 0 || localY === h - 1)
+  ) {
     return TILE.DOOR;
   }
 
@@ -849,18 +899,18 @@ function getInteriorAt(x, y) {
 }
 
 function getBuildingDoors(building) {
-  const x = building.x + Math.floor(building.w / 2);
+  const cx = southDoorAnchorWorldX(building);
   return [
-    { side: "north", x, y: building.y, outsideY: building.y - 1.15, insideOffsetY: 1.15 },
-    { side: "south", x, y: building.y + building.h - 1, outsideY: building.y + building.h + 0.15, insideOffsetY: -1.15 }
+    { side: "north", x: cx, y: building.y, outsideY: building.y - 1.15, insideOffsetY: 1.15 },
+    { side: "south", x: cx, y: building.y + building.h - 1, outsideY: building.y + building.h + 0.15, insideOffsetY: -1.15 }
   ];
 }
 
 function getInteriorDoors(interior) {
-  const x = interior.x + Math.floor(interior.w / 2);
+  const cx = interior.x + southDoorLocalCenterOffset(interior.w);
   return [
-    { side: "north", x, y: interior.y, outsideY: interior.building.y - 1.15, insideOffsetY: 1.15 },
-    { side: "south", x, y: interior.y + interior.h - 1, outsideY: interior.building.y + interior.building.h + 0.15, insideOffsetY: -1.15 }
+    { side: "north", x: cx, y: interior.y, outsideY: interior.building.y - 1.15, insideOffsetY: 1.15 },
+    { side: "south", x: cx, y: interior.y + interior.h - 1, outsideY: interior.building.y + interior.building.h + 0.15, insideOffsetY: -1.15 }
   ];
 }
 
@@ -896,11 +946,8 @@ function getShopFixtureAt(x, y) {
   for (const b of BUILDINGS) {
     if (Math.abs(x - (b.x + b.w/2)) > b.w + 2 || Math.abs(y - (b.y + b.h/2)) > b.h + 2) continue;
     const seed = hash2(b.x, b.y, 7777);
-    for (let lx = 1; lx <= b.w-2; lx++) {
-      for (let ly = 1; ly <= b.h-2; ly++) {
-        const doorX = b.x + Math.floor(b.w/2);
-        const isDoor = (lx === doorX - b.x) && (ly === 0 || ly === b.h-1);
-        if (isDoor) continue;
+    for (let lx = 1; lx <= b.w - 2; lx += 1) {
+      for (let ly = 1; ly <= b.h - 2; ly += 1) {
         if (getBuildingInteriorTile(lx, ly, b.w, b.h, b.type || "house", seed, !!b.forSale) === TILE.SHELF) {
           const sx = b.x + lx, sy = b.y + ly;
           if (Math.hypot(x - (sx+0.5), y - (sy+0.5)) <= 1.25) {
@@ -1034,7 +1081,7 @@ function generateExteriorTile(x, y) {
   }
 
   // Main cross-roads radiate outward from the ring.
-  if ((ax <= 1 && ay <= 200) || (ay <= 1 && ax <= 200)) {
+  if ((ax <= 1 && ay <= 260) || (ay <= 1 && ax <= 260)) {
     return TILE.PATH;
   }
 
@@ -1314,5 +1361,9 @@ module.exports = {
   isProtectedStartingArea,
   isBlocked,
   isBlockedCircle,
-  spawnPoint
+  spawnPoint,
+  southDoorWorldXs,
+  southDoorAnchorWorldX,
+  southDoorLocalXs,
+  southDoorLocalCenterOffset
 };

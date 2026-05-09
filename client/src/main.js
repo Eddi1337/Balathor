@@ -98,6 +98,24 @@ const safeZoneIndicator = document.querySelector("#safeZoneIndicator");
 let safeZoneTooltipPinTimer = null;
 
 const TILE_SIZE = 32;
+
+function southDoorTilesWideBuilding(building) {
+  const iw = Math.max(3, Math.floor(Number(building?.w)));
+  return iw % 2 === 0 ? 2 : 1;
+}
+
+function southDoorAnchorWorldClient(building) {
+  const bw = Math.max(3, Math.floor(Number(building?.w)));
+  const bx = Math.floor(building.x);
+  if (bw % 2 === 1) return bx + (bw - 1) / 2 + 0.5;
+  return (bx + bw / 2 - 1 + bx + bw / 2) / 2 + 0.5;
+}
+
+function façadeDoorPxFromBuilding(building, faceWidthPx) {
+  const span = southDoorTilesWideBuilding(building);
+  return Math.max(TILE_SIZE * span, Math.round(faceWidthPx * 0.1 * span));
+}
+
 /** Mirrors server/src/world.js STARTING_AREA — combat-disabled plaza only */
 const STARTING_SAFE_ZONE = { x: 0, y: 0, radius: 26 };
 /** Matches server SPELL_DAMAGE_PROFILES.consecration.radius */
@@ -1960,7 +1978,7 @@ function findBuildingLot(buildingX, buildingY) {
 }
 
 function playerNearBuildingDoor(px, py, building) {
-  const doorX = building.x + building.w / 2;
+  const doorX = southDoorAnchorWorldClient(building);
   const doorY = building.y + building.h - 1;
   return Math.hypot(px - doorX, py - doorY) <= BUY_HOUSE_INTERACT_RADIUS;
 }
@@ -6003,7 +6021,7 @@ function getFrontDoorOpenFactor(building, roofless) {
   if (!self) return 0;
   const px = Number.isFinite(self.renderX) ? self.renderX : self.x;
   const py = Number.isFinite(self.renderY) ? self.renderY : self.y;
-  const doorWx = building.x + building.w / 2;
+  const doorWx = southDoorAnchorWorldClient(building);
   const doorWy = building.y + building.h - 0.5;
   const d = Math.hypot(px - doorWx, py - doorWy);
   const far = 3.6;
@@ -6105,7 +6123,7 @@ function drawHouse(building, sx, sy, w, h, variant, roofless) {
   }
 
   const doorOpen = getFrontDoorOpenFactor(building, roofless);
-  const doorW = Math.max(13, Math.round(w * 0.102));
+  const doorW = façadeDoorPxFromBuilding(building, w);
   const doorH = wallH - 2;
   const doorX = sx + Math.round(w / 2) - Math.round(doorW / 2);
   const doorY = wallY + wallH - doorH;
@@ -6230,7 +6248,7 @@ function drawHut(building, sx, sy, w, h, variant, roofless) {
   }
 
   const doorOpen = getFrontDoorOpenFactor(building, roofless);
-  const doorW = Math.max(10, Math.round(w * 0.11));
+  const doorW = façadeDoorPxFromBuilding(building, w);
   const doorH = wallH - 4;
   const doorX = sx + Math.round(w / 2) - Math.round(doorW / 2);
   const doorY = wallY + wallH - doorH;
@@ -6327,7 +6345,7 @@ function drawBigHouse(building, sx, sy, w, h, variant, roofless) {
 
   const midFloor = Math.round(wallH * 0.45);
   const doorOpen = getFrontDoorOpenFactor(building, roofless);
-  const doorW = Math.max(12, Math.round(w * 0.088));
+  const doorW = façadeDoorPxFromBuilding(building, w);
   const doorH = wallH - midFloor - 4;
   const doorX = sx + Math.round(w / 2) - Math.round(doorW / 2);
   const doorY = wallY + wallH - doorH;
@@ -6484,7 +6502,7 @@ function drawTreehouse(building, sx, sy, w, h, variant, roofless) {
   }
 
   const doorOpen = getFrontDoorOpenFactor(building, roofless);
-  const doorW = Math.max(9, Math.round(w * 0.14));
+  const doorW = façadeDoorPxFromBuilding(building, w);
   const doorH2 = wallH - 5;
   const doorX = sx + Math.round(w / 2) - Math.round(doorW / 2);
   const doorY = wallY + wallH - doorH2;
@@ -6597,7 +6615,7 @@ function drawCastle(building, sx, sy, w, h, variant, roofless) {
   }
 
   const doorOpen = getFrontDoorOpenFactor(building, roofless);
-  const doorW = Math.max(14, Math.round(w * 0.095));
+  const doorW = façadeDoorPxFromBuilding(building, w);
   const doorH = wallH - 4;
   const doorX = sx + Math.round(w / 2) - Math.round(doorW / 2);
   const doorY2 = wallY + wallH - doorH;

@@ -309,8 +309,8 @@ const DEFINITIONS = [
     classId: "ranger",
     primary: "#5c4a52",
     accent: "#fca5a5",
-    homeX: 22,
-    homeY: 10,
+    homeX: 93,
+    homeY: 14,
     patrolRadius: 11,
     courtPlayer: true,
     companionPrice: 480,
@@ -329,8 +329,8 @@ const DEFINITIONS = [
     classId: "knight",
     primary: "#3d4f5f",
     accent: "#fde68a",
-    homeX: 44,
-    homeY: 4,
+    homeX: 58,
+    homeY: 2,
     patrolRadius: 10,
     courtPlayer: true,
     companionPrice: 455,
@@ -343,11 +343,71 @@ const DEFINITIONS = [
       "If you planted roots here, you'd make the place brighter.",
     ]
   },
+  {
+    id: "npc_mae",
+    name: "Mae",
+    classId: "mage",
+    primary: "#483c44",
+    accent: "#fbcfe8",
+    homeX: -18,
+    homeY: 58,
+    patrolRadius: 13,
+    courtPlayer: true,
+    companionPrice: 448,
+    bondTag: "gf",
+    dialogue: [
+      "...You stop long enough for a story and I melt a little.",
+      "If you lent me shelf space beside your kettle, I'd make it sing.",
+      "Three seconds standing still tells me you listen — rare magic.",
+      "Homesteaders scare easy; you don't.",
+      "Say the word and I'll haunt your hearth like it's mine.",
+    ]
+  },
+  {
+    id: "npc_sofia",
+    name: "Sofia",
+    classId: "ranger",
+    primary: "#4b3f36",
+    accent: "#f472b6",
+    homeX: -38,
+    homeY: -8,
+    patrolRadius: 12,
+    courtPlayer: true,
+    companionPrice: 466,
+    bondTag: "gf",
+    dialogue: [
+      "Your boots pause like someone planning roots.",
+      "I've got clumsy bravery and nowhere to pin it tonight.",
+      "Stand there three heartbeats longer — humour me?",
+      "...Could I braid wildflowers onto your mantle?",
+      "Owning a doorway means admitting you dare to belong.",
+    ]
+  },
+  {
+    id: "npc_nara",
+    name: "Nara",
+    classId: "knight",
+    primary: "#3d4a54",
+    accent: "#fda4af",
+    homeX: -62,
+    homeY: 8,
+    patrolRadius: 11,
+    courtPlayer: true,
+    companionPrice: 455,
+    bondTag: "gf",
+    dialogue: [
+      "Stillness suits you.",
+      "...Not many offer me a hearth without swords involved.",
+      "If you whisper where you tuck your slippers, I'll meet you halfway.",
+      "Three seconds grounded while I chatter — dare you?",
+      "Your walls look sturdy; my heart rattles anyhow.",
+    ]
+  },
 ];
 
 const soldCompanionNpcIds = new Set();
 const SOCIAL_PAIR_INTERVAL_MS = 11000;
-const SOCIAL_NEAR_HOME = 90;
+const SOCIAL_NEAR_HOME = 118;
 /** Generic lines overheard during NPC→NPC chatter */
 const SOCIAL_OVERHEARD = [
   "Any news from the east road?",

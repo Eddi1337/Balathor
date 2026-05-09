@@ -14,7 +14,9 @@ const {
   getShopFixtureAt,
   hash2,
   isBlockedCircle,
-  spawnPoint
+  spawnPoint,
+  southDoorAnchorWorldX,
+  southDoorWorldXs
 } = require("./world");
 const {
   updateNpcs,
@@ -789,8 +791,7 @@ function handleBuyCompanion(client, message) {
 }
 
 function resolveOwnedHouseDoorOutside(building) {
-  const doorCx = building.x + Math.floor(building.w / 2) + 0.5;
-  return { x: doorCx, y: building.y + building.h + 0.35 };
+  return { x: southDoorAnchorWorldX(building), y: building.y + building.h + 0.35 };
 }
 
 /** NW interior corner — matches client cutaway view for tree anchor. */
@@ -1037,8 +1038,9 @@ function isDoorLockedForPlayer(x, y, ownerAccountKey) {
   for (let tx = Math.floor(x - r); tx <= Math.ceil(x + r); tx++) {
     for (let ty = Math.floor(y - r); ty <= Math.ceil(y + r); ty++) {
       for (const b of FOR_SALE_BUILDINGS) {
-        const doorX = b.x + Math.floor(b.w / 2);
-        if (tx === doorX && (ty === b.y || ty === b.y + b.h - 1)) {
+        const doorCols = southDoorWorldXs(b);
+        const onDoorRow = ty === b.y || ty === b.y + b.h - 1;
+        if (onDoorRow && doorCols.includes(tx)) {
           const key = `${b.x},${b.y}`;
           const ownership = ownedBuildings.get(key);
           if (!ownership) return true; // unowned for-sale building = locked
@@ -1058,7 +1060,7 @@ function getBuildingPrice(building) {
 function playerNearBuildingForPurchase(player, building) {
   const px = player.x;
   const py = player.y;
-  const doorX = building.x + building.w / 2;
+  const doorX = southDoorAnchorWorldX(building);
   const doorY = building.y + building.h - 1;
   if (Math.hypot(px - doorX, py - doorY) <= 8) return true;
   const signX = building.x - 0.5;
