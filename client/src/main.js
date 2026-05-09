@@ -4834,6 +4834,17 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   // Torso
   drawTorso2(bx - 4 * s, by - 3 * s, s, torsoStyle, torsoColor, weaponColor, entity.classId, fx, fy);
 
+  if (isNpc && entity.romanceSilhouette === "soft_curves" && !lyingBedPose && !compressLowerBody) {
+    const bustTint = blend(torsoColor, "#ffd6e8", 0.42);
+    ctx.fillStyle = bustTint;
+    ctx.beginPath();
+    ctx.ellipse(bx - 1.4 * s, by - 1.15 * s, 2.35 * s, 1.5 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(bx + 1.25 * s, by - 1.1 * s, 2.15 * s, 1.42 * s, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   // Short arms (raised + glowing while channeling home teleport)
   ctx.fillStyle = isMod ? torsoColor : skinColor;
   let lAX;
@@ -4894,6 +4905,13 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
     if (entity.classId === "mage") {
       ctx.fillRect(hx + s,           hy - 2 * s, 3 * s, 2 * s);
       ctx.fillRect(hx + s + (s >> 1), hy - 3 * s, 2 * s, s);
+    }
+    if (entity.longHair) {
+      ctx.fillStyle = weaponColor;
+      ctx.fillRect(hx - 1 * s, hy - 3 * s, 2 * s, 5 * s);
+      ctx.fillRect(hx + 4 * s, hy - 2 * s, 2 * s, 4 * s);
+      ctx.fillRect(hx + s, hy - 4 * s, 3 * s, 2 * s);
+      ctx.fillRect(hx + 2 * s, hy - 5 * s, 2 * s, 2 * s);
     }
     // Eyes
     ctx.fillStyle = "#1d2430";
@@ -6585,7 +6603,13 @@ function drawOwnedHouseInteriorCompanion(building, roofless, halfW, halfH) {
     moving: false,
     renderX: wx,
     renderY: wy,
-    hp: null
+    hp: null,
+    ...(hc.bondTag === "bf"
+      ? {}
+      : {
+          longHair: true,
+          romanceSilhouette: hc.romanceSilhouette || "soft_curves"
+        })
   };
   drawCharacter(ent, anchor.cx, anchor.groundY + groundBump, true, poseExtras);
 }

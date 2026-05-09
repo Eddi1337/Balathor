@@ -735,6 +735,26 @@ function sanitizeHomeBuildingKey(raw) {
   return `${m[1]},${m[2]}`;
 }
 
+function buildHouseCompanionFromTemplate(tpl) {
+  if (!tpl || typeof tpl !== "object") {
+    return null;
+  }
+  const bondTag = tpl.bondTag === "bf" ? "bf" : "gf";
+  const row = {
+    npcId: tpl.id,
+    name: tpl.name,
+    bondTag,
+    classId: tpl.classId,
+    primary: tpl.primary,
+    accent: tpl.accent
+  };
+  if (bondTag === "gf") {
+    row.longHair = true;
+    row.romanceSilhouette = "soft_curves";
+  }
+  return row;
+}
+
 function sanitizeHouseCompanion(raw) {
   if (!raw || typeof raw !== "object") {
     return null;
@@ -743,14 +763,20 @@ function sanitizeHouseCompanion(raw) {
   if (!npcId) {
     return null;
   }
-  return {
+  const bondTag = raw.bondTag === "bf" ? "bf" : "gf";
+  const out = {
     npcId,
     name: sanitizeName(raw.name),
-    bondTag: raw.bondTag === "bf" ? "bf" : "gf",
+    bondTag,
     classId: sanitizeChoice(raw.classId, CLASS_IDS, "ranger"),
     primary: sanitizeColor(raw.primary, "#fca5a5"),
     accent: sanitizeColor(raw.accent, "#ffd166")
   };
+  if (bondTag === "gf") {
+    out.longHair = true;
+    out.romanceSilhouette = "soft_curves";
+  }
+  return out;
 }
 
 function sendCompanionPurchaseOffer(npc, shoppingClient, nowMs) {
@@ -817,14 +843,7 @@ function handleBuyCompanion(client, message) {
   }
 
   p.gold -= tpl.companionPrice;
-  p.houseCompanion = {
-    npcId: tpl.id,
-    name: tpl.name,
-    bondTag: tpl.bondTag === "bf" ? "bf" : "gf",
-    classId: tpl.classId,
-    primary: tpl.primary,
-    accent: tpl.accent
-  };
+  p.houseCompanion = buildHouseCompanionFromTemplate(tpl);
   registerCompanionSold(tpl.id);
   saveClientCharacter(client);
   broadcastSnapshot();
@@ -2176,14 +2195,7 @@ function handleUseItem(client, message) {
     }
 
     registerCompanionSold(tpl.id);
-    p.houseCompanion = {
-      npcId: tpl.id,
-      name: tpl.name,
-      bondTag: tpl.bondTag === "bf" ? "bf" : "gf",
-      classId: tpl.classId,
-      primary: tpl.primary,
-      accent: tpl.accent
-    };
+    p.houseCompanion = buildHouseCompanionFromTemplate(tpl);
 
     const building = BUILDING_LIST.find((b) => `${b.x},${b.y}` === key);
     if (building) {

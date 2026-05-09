@@ -158,6 +158,63 @@ const SEEK_BF_CHAT = Object.freeze([
   "If you whisper where you tuck your cloak, I'd meet you halfway.",
 ]);
 
+const ROMANCE_FEMALE_GIVEN = Object.freeze([
+  "Aelithra", "Seraphina", "Morwyn", "Thalindra", "Caelindra", "Elara", "Sylvetra", "Nyssara",
+  "Velithra", "Drusilla", "Isolde", "Lyralei", "Vexia", "Orianna", "Selene", "Melisandra",
+  "Azalyn", "Brisella", "Tahlira", "Eryndoril", "Faelwyn", "Gwythlen", "Ilyndra", "Jyrrith",
+  "Kaelith", "Lorewyn", "Myrrith", "Nyxara", "Orinth", "Pyrelle", "Quinara", "Ryllith",
+  "Sylvaris", "Thrynn", "Ulara", "Vaelith", "Wyritha", "Xyrella", "Ysolde", "Zephira",
+  "Astrith", "Bryssara", "Cerynth", "Dryssa", "Elyndra", "Faeryn", "Glysselle", "Hyrwen",
+  "Ithrynne", "Joryss", "Kythira", "Lysara", "Mythra", "Nivelle", "Orynth", "Pryssia"
+]);
+
+const ROMANCE_FEMALE_EPITHET = Object.freeze([
+  "Nightbloom", "Moondew", "Starsheen", "Ashvale", "Silverthorn", "Dawnveil", "Shadowmere",
+  "Goldleaf", "Frostglen", "Wildrose", "Highvale", "Mistral", "Skylace", "Runehart",
+  "Dreamspire", "Emberglow", "Riverwyn", "Stormlace", "Sunshard", "Duskwhisper",
+  "Ironlily", "Seabright", "Hollowmere", "Brightfen", "Thornmere", "Ashwyn", "Cloudspire",
+  "Deepmere", "Fairglen", "Glimmerfen", "Hollowrose", "Ivyrest", "Jadeglen", "Kestrelwyn",
+  "Larkspire", "Mournvale", "Nighthollow", "Oakensheen", "Palethorn", "Quillrest",
+  "Ravenshade", "Silversong", "Tideglen", "Underbloom", "Velvetfen", "Winterlace"
+]);
+
+const ROMANCE_MALE_GIVEN = Object.freeze([
+  "Kaelric", "Dorian", "Theron", "Varric", "Aldric", "Branoc", "Cassian", "Drystan",
+  "Erevan", "Faelor", "Garrick", "Hadrian", "Ithric", "Joren", "Korrin", "Lucan",
+  "Mareth", "Norrin", "Orvik", "Perrin", "Quinlan", "Roric", "Stellan", "Torvik",
+  "Ulric", "Valen", "Wystan", "Xander", "Yoric", "Zareth"
+]);
+
+const ROMANCE_MALE_EPITHET = Object.freeze([
+  "Thornmantle", "Stormwatch", "Ironhand", "Ashford", "Nightblade", "Highmoor", "Blackrune",
+  "Goldmantle", "Frostward", "Wildmark", "Dawnstrider", "Hollowhelm", "Runehart", "Seaborn",
+  "Skylance", "Stonefell", "Wolfmark", "Duskward", "Brightaxe", "Cloudbreaker", "Deepforge",
+  "Fairmark", "Glimmersteel", "Hollowcrest", "Ironvale", "Jadewatch", "Kestrelmark",
+  "Larkward", "Mournsteel", "Nightward", "Oakenshield", "Palemark", "Quillward",
+  "Ravenhelm", "Silvermark", "Tideborn", "Undermark", "Velvetward", "Wintermark"
+]);
+
+/** Deterministic fantasy display name for procedural romance walkers */
+function pickFantasyRomanceName(seed, gf) {
+  const s = seed >>> 0;
+  if (gf) {
+    const a = ROMANCE_FEMALE_GIVEN[s % ROMANCE_FEMALE_GIVEN.length];
+    const b = ROMANCE_FEMALE_EPITHET[(s >>> 11) % ROMANCE_FEMALE_EPITHET.length];
+    return `${a} ${b}`;
+  }
+  const a = ROMANCE_MALE_GIVEN[s % ROMANCE_MALE_GIVEN.length];
+  const b = ROMANCE_MALE_EPITHET[(s >>> 11) % ROMANCE_MALE_EPITHET.length];
+  return `${a} ${b}`;
+}
+
+/** ~20% of purchasable romance NPCs actively pursue homeowners; rest only wander. */
+function romanceCourtAggressiveFromId(idStr) {
+  if (typeof idStr !== "string") {
+    return false;
+  }
+  return (npcIdHashSeed(idStr) % 100) < 20;
+}
+
 function buildHydratedHubNpcExtras() {
   const navKeys = WORLD.HUB_NAV_PATH_KEYS instanceof Set ? WORLD.HUB_NAV_PATH_KEYS : null;
   rebuildHubNavAnchors(navKeys || new Set());
@@ -221,15 +278,15 @@ function buildHydratedHubNpcExtras() {
   /** Extra romance-seekers circulating the paths */
   for (let si = 0; si < seekersPlanned; si += 1) {
     const id = `hub_seek_${si}`;
-    /** Bias toward more girlfriend solicitations */
-    const gf = si % 3 !== 2;
     const spot = pickHome(si + 1200, homeBanned);
     if (!spot) break;
     const seed = npcIdHashSeed(`${id}_${spot.key}`);
+    /** Strong bias toward female (long-hair / curvy silhouette on client for bondTag gf). */
+    const gf = (seed % 20) >= 3;
     const primHue = ((((seed >>> 3) ^ 0x8899aa) >>> 0) % 0xababab) + 0x303040;
     out.push({
       id,
-      name: gf ? `Seeker ${si + 1}` : `Suit ${si + 1}`,
+      name: pickFantasyRomanceName(seed ^ (si * 2654435761), gf),
       classId: CLASSES_ROT[seed % CLASSES_ROT.length],
       primary: `#${(primHue & 0xffffff).toString(16).padStart(6, "0")}`,
       accent: gf ? "#fbcfe8" : "#fde68a",
@@ -570,7 +627,7 @@ const BASE_NPC_DEFINITIONS = [
   },
   {
     id: "npc_rile",
-    name: "Riley",
+    name: "Seraphina Valewyn",
     classId: "ranger",
     primary: "#5c4a52",
     accent: "#fca5a5",
@@ -590,7 +647,7 @@ const BASE_NPC_DEFINITIONS = [
   },
   {
     id: "npc_jax",
-    name: "Jax",
+    name: "Kaelric Thornmantle",
     classId: "knight",
     primary: "#3d4f5f",
     accent: "#fde68a",
@@ -610,7 +667,7 @@ const BASE_NPC_DEFINITIONS = [
   },
   {
     id: "npc_mae",
-    name: "Mae",
+    name: "Melisandra Ashryn",
     classId: "mage",
     primary: "#483c44",
     accent: "#fbcfe8",
@@ -630,7 +687,7 @@ const BASE_NPC_DEFINITIONS = [
   },
   {
     id: "npc_sofia",
-    name: "Sofia",
+    name: "Lyralei Moonsilk",
     classId: "ranger",
     primary: "#4b3f36",
     accent: "#f472b6",
@@ -650,7 +707,7 @@ const BASE_NPC_DEFINITIONS = [
   },
   {
     id: "npc_nara",
-    name: "Nara",
+    name: "Isolde Nightbloom",
     classId: "knight",
     primary: "#3d4a54",
     accent: "#fda4af",
@@ -699,20 +756,31 @@ function npcPatrolIntersectsBounds(npc, bounds) {
 }
 
 // Runtime NPC state — positions are mutated by AI each tick.
-const npcs = DEFINITIONS.map((def) => ({
-  ...def,
-  x: def.homeX + (Math.random() * 2 - 1),
-  y: def.homeY + (Math.random() * 2 - 1),
-  facing: Math.random() * Math.PI * 2,
-  moving: false,
-  _targetX: def.homeX,
-  _targetY: def.homeY,
-  _nextMoveAt: Date.now() + Math.random() * MOVE_INTERVAL_MAX,
-  _nextChatAt:
-    Date.now() +
-    CHAT_INTERVAL_MIN +
-    Math.random() * (CHAT_INTERVAL_MAX - CHAT_INTERVAL_MIN),
-}));
+const npcs = DEFINITIONS.map((def) => {
+  const idStr = String(def.id ?? "");
+  const isPurchasableRomance =
+    typeof def.companionPrice === "number" && Boolean(def.courtPlayer) && !def.isTrader;
+  const courtAggressive = isPurchasableRomance ? romanceCourtAggressiveFromId(idStr) : false;
+  const longHair = isPurchasableRomance && def.bondTag === "gf";
+  const romanceSilhouette = longHair ? "soft_curves" : null;
+  return {
+    ...def,
+    courtAggressive,
+    longHair,
+    romanceSilhouette,
+    x: def.homeX + (Math.random() * 2 - 1),
+    y: def.homeY + (Math.random() * 2 - 1),
+    facing: Math.random() * Math.PI * 2,
+    moving: false,
+    _targetX: def.homeX,
+    _targetY: def.homeY,
+    _nextMoveAt: Date.now() + Math.random() * MOVE_INTERVAL_MAX,
+    _nextChatAt:
+      Date.now() +
+      CHAT_INTERVAL_MIN +
+      Math.random() * (CHAT_INTERVAL_MAX - CHAT_INTERVAL_MIN),
+  };
+});
 
 const hubLinkedNpcIds = new Set(HUB_NPC_ORDER.map((entry) => entry.id));
 
@@ -970,6 +1038,9 @@ function applyCompanionCourt(npc, companionCtx, onChat, now) {
   if (!companionCtx || typeof npc.companionPrice !== "number" || soldCompanionNpcIds.has(npc.id)) {
     return false;
   }
+  if (!npc.courtAggressive) {
+    return false;
+  }
   if (npc._meetPeerId) {
     return false;
   }
@@ -1198,6 +1269,9 @@ function getNpcSnapshot() {
       facing: Number(npc.facing.toFixed(3)),
       moving: npc.moving,
       isTrader: npc.isTrader || false,
+      ...(npc.bondTag ? { bondTag: npc.bondTag } : {}),
+      ...(npc.longHair ? { longHair: true } : {}),
+      ...(npc.romanceSilhouette ? { romanceSilhouette: npc.romanceSilhouette } : {})
     }));
 }
 
