@@ -5022,13 +5022,51 @@ const BUILDING_PALETTES = {
   ember:  { roofBase: "#2c1c10", roofDark: "#140c08", roofMid: "#482818", roofLight: "#7a3c1c", roofRidge: "#080404", eave: "#0c0604", wall: "#281410", wallLight: "#483028", wallDark: "#140a08", wallLine: "#0c0604", win: "#ff8820", door: "#0c0404", doorFrame: "#8c3410", ground: "#2c2014" },
 };
 
+function getFrontDoorOpenFactor(building, roofless) {
+  if (roofless) return 1;
+  const self = state.players.get(state.selfId);
+  if (!self) return 0;
+  const px = Number.isFinite(self.renderX) ? self.renderX : self.x;
+  const py = Number.isFinite(self.renderY) ? self.renderY : self.y;
+  const doorWx = building.x + building.w / 2;
+  const doorWy = building.y + building.h - 0.5;
+  const d = Math.hypot(px - doorWx, py - doorWy);
+  const far = 3.6;
+  const near = 1.05;
+  if (d >= far) return 0;
+  if (d <= near) return 1;
+  const u = (far - d) / (far - near);
+  return u * u * (3 - 2 * u);
+}
+
+function drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, openT, framePad = 2) {
+  const t = Math.max(0, Math.min(1, openT));
+  const split = t * Math.max(3, Math.round(doorW * 0.44));
+  ctx.fillStyle = p.doorFrame;
+  ctx.fillRect(doorX - framePad, doorY - 2, doorW + framePad * 2, doorH + 2);
+  const mid = doorX + doorW / 2;
+  const halfW = Math.max(2, Math.round(doorW / 2) - 1);
+  const leftX = Math.round(mid - halfW - split);
+  const rightX = Math.round(mid + split);
+  ctx.fillStyle = p.door;
+  ctx.fillRect(leftX, doorY, halfW, doorH);
+  ctx.fillRect(rightX, doorY, halfW, doorH);
+  ctx.fillStyle = blend(p.door, "#ffffff", 0.15);
+  ctx.fillRect(leftX + 1, doorY + 3, Math.max(2, Math.round(halfW / 2) - 2), Math.max(2, Math.round(doorH / 2) - 4));
+  ctx.fillRect(rightX + 1, doorY + 3, Math.max(2, Math.round(halfW / 2) - 2), Math.max(2, Math.round(doorH / 2) - 4));
+  ctx.fillStyle = blend(p.door, "#ffffff", 0.08);
+  ctx.fillRect(leftX + 1, doorY + Math.round(doorH / 2), Math.max(2, Math.round(halfW / 2) - 2), Math.max(2, Math.round(doorH / 2) - 4));
+  ctx.fillRect(rightX + 1, doorY + Math.round(doorH / 2), Math.max(2, Math.round(halfW / 2) - 2), Math.max(2, Math.round(doorH / 2) - 4));
+  ctx.fillStyle = "#e8c040";
+  ctx.fillRect(leftX + 2, doorY + Math.round(doorH / 2) - 1, 3, 3);
+  ctx.fillRect(rightX + halfW - 5, doorY + Math.round(doorH / 2) - 1, 3, 3);
+}
+
 function drawHouse(building, sx, sy, w, h, variant, roofless) {
   const p = BUILDING_PALETTES[variant] || BUILDING_PALETTES.timber;
   const wallH = Math.max(38, Math.min(56, Math.round(h * 0.26)));
   const roofH = h - wallH;
   const wallY = sy + roofH;
-  const inset = 4;
-  const rw = w - inset * 2;
 
   ctx.save();
   ctx.shadowColor = "rgba(0,0,0,0.32)";
@@ -5085,66 +5123,71 @@ function drawHouse(building, sx, sy, w, h, variant, roofless) {
     ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
   }
 
-  // --- FRONT WALL ---
-  ctx.fillStyle = p.wall;
-  ctx.fillRect(sx - 3, wallY, w + 6, wallH);
-
-  // Wall texture: vertical boards (timber/wood) or horizontal blocks (stone)
-  if (variant === "stone") {
-    ctx.fillStyle = p.wallDark;
-    for (let ly = 0; ly < wallH; ly += 9) {
-      const offset = Math.floor(ly / 9) % 2 === 0 ? 0 : 14;
-      for (let lx = -14 + offset; lx < w + 6; lx += 28) {
-        ctx.fillRect(sx - 3 + lx, wallY + ly, 27, 8);
-      }
-    }
-    ctx.fillStyle = p.wallLine;
-    for (let ly = 0; ly < wallH; ly += 9) {
-      ctx.fillRect(sx - 3, wallY + ly, w + 6, 1);
-    }
-  } else {
-    ctx.fillStyle = p.wallLine;
-    for (let lx = 8; lx < w + 6; lx += 8) {
-      ctx.fillRect(sx - 3 + lx, wallY, 1, wallH);
-    }
-  }
-
-  // Wall top highlight
-  ctx.fillStyle = p.wallLight;
-  ctx.fillRect(sx - 3, wallY, w + 6, 3);
-
-  // Wall side shadow
-  ctx.fillStyle = "rgba(0,0,0,0.22)";
-  ctx.fillRect(sx - 3, wallY, 4, wallH);
-  ctx.fillRect(sx + w - 1, wallY, 4, wallH);
-
-  // --- WINDOWS ---
-  const numWin = building.w >= 10 ? 2 : 1;
-  const winW = 12; const winH = Math.max(10, wallH - 14);
-  const winY = wallY + 6;
-  if (numWin === 2) {
-    drawHouseWindow(sx + Math.round(w * 0.18), winY, winW, winH, p);
-    drawHouseWindow(sx + Math.round(w * 0.70), winY, winW, winH, p);
-  } else {
-    drawHouseWindow(sx + Math.round(w * 0.30), winY, winW, winH, p);
-  }
-
-  // --- DOOR ---
-  const doorW = Math.max(22, Math.round(w * 0.18));
-  const doorH = wallH;
+  const doorOpen = getFrontDoorOpenFactor(building, roofless);
+  const doorW = Math.max(13, Math.round(w * 0.102));
+  const doorH = wallH - 2;
   const doorX = sx + Math.round(w / 2) - Math.round(doorW / 2);
   const doorY = wallY + wallH - doorH;
-  ctx.fillStyle = p.doorFrame;
-  ctx.fillRect(doorX - 2, doorY - 2, doorW + 4, doorH + 2);
-  ctx.fillStyle = p.door;
-  ctx.fillRect(doorX, doorY, doorW, doorH);
-  // Door panels
-  ctx.fillStyle = blend(p.door, "#ffffff", 0.15);
-  ctx.fillRect(doorX + 2, doorY + 3, Math.round(doorW / 2) - 3, Math.round(doorH / 2) - 4);
-  ctx.fillRect(doorX + 2, doorY + Math.round(doorH / 2), Math.round(doorW / 2) - 3, Math.round(doorH / 2) - 4);
-  // Door handle
-  ctx.fillStyle = "#e8c040";
-  ctx.fillRect(doorX + doorW - 5, doorY + Math.round(doorH / 2) - 1, 4, 4);
+
+  if (!roofless) {
+    // --- FRONT WALL ---
+    ctx.fillStyle = p.wall;
+    ctx.fillRect(sx - 3, wallY, w + 6, wallH);
+
+    // Wall texture: vertical boards (timber/wood) or horizontal blocks (stone)
+    if (variant === "stone") {
+      ctx.fillStyle = p.wallDark;
+      for (let ly = 0; ly < wallH; ly += 9) {
+        const offset = Math.floor(ly / 9) % 2 === 0 ? 0 : 14;
+        for (let lx = -14 + offset; lx < w + 6; lx += 28) {
+          ctx.fillRect(sx - 3 + lx, wallY + ly, 27, 8);
+        }
+      }
+      ctx.fillStyle = p.wallLine;
+      for (let ly = 0; ly < wallH; ly += 9) {
+        ctx.fillRect(sx - 3, wallY + ly, w + 6, 1);
+      }
+    } else {
+      ctx.fillStyle = p.wallLine;
+      for (let lx = 8; lx < w + 6; lx += 8) {
+        ctx.fillRect(sx - 3 + lx, wallY, 1, wallH);
+      }
+    }
+
+    // Wall top highlight
+    ctx.fillStyle = p.wallLight;
+    ctx.fillRect(sx - 3, wallY, w + 6, 3);
+
+    // Wall side shadow
+    ctx.fillStyle = "rgba(0,0,0,0.22)";
+    ctx.fillRect(sx - 3, wallY, 4, wallH);
+    ctx.fillRect(sx + w - 1, wallY, 4, wallH);
+
+    // --- WINDOWS ---
+    const numWin = building.w >= 10 ? 2 : 1;
+    const winW = 12; const winH = Math.max(10, wallH - 14);
+    const winY = wallY + 6;
+    if (numWin === 2) {
+      drawHouseWindow(sx + Math.round(w * 0.18), winY, winW, winH, p);
+      drawHouseWindow(sx + Math.round(w * 0.70), winY, winW, winH, p);
+    } else {
+      drawHouseWindow(sx + Math.round(w * 0.30), winY, winW, winH, p);
+    }
+
+    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, doorOpen, 2);
+  } else {
+    // Cutaway: facade outline only + door (still shows entry)
+    ctx.strokeStyle = blend(p.wallDark, p.wallLine, 0.5);
+    ctx.lineWidth = 2;
+    ctx.strokeRect(sx - 3 + 0.5, wallY + 0.5, w + 6 - 1, wallH - 1);
+    ctx.strokeStyle = blend(p.wallLight, "#000000", 0.35);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(sx - 3, wallY + 0.5);
+    ctx.lineTo(sx + w + 3, wallY + 0.5);
+    ctx.stroke();
+    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, 1, 2);
+  }
 
   ctx.restore();
 
@@ -5205,35 +5248,37 @@ function drawHut(building, sx, sy, w, h, variant, roofless) {
     ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
   }
 
-  // Round wall (circular hut feel)
-  ctx.fillStyle = p.wall;
-  ctx.fillRect(sx + 2, wallY, w - 4, wallH);
-  ctx.fillStyle = p.wallLight;
-  ctx.fillRect(sx + 2, wallY, w - 4, 3);
-  ctx.fillStyle = "rgba(0,0,0,0.18)";
-  ctx.fillRect(sx + 2, wallY, 3, wallH);
-  ctx.fillRect(sx + w - 5, wallY, 3, wallH);
-
-  // Single small window
-  const winW = 10; const winH = Math.max(8, wallH - 12);
-  drawHouseWindow(sx + Math.round(w * 0.32), wallY + 5, winW, winH, p);
-
-  // Door
-  const doorW = Math.max(12, Math.round(w * 0.18));
-  const doorH = wallH - 3;
+  const doorOpen = getFrontDoorOpenFactor(building, roofless);
+  const doorW = Math.max(10, Math.round(w * 0.11));
+  const doorH = wallH - 4;
   const doorX = sx + Math.round(w / 2) - Math.round(doorW / 2);
   const doorY = wallY + wallH - doorH;
-  ctx.fillStyle = p.doorFrame;
-  ctx.fillRect(doorX - 2, doorY - 2, doorW + 4, doorH + 2);
-  ctx.fillStyle = p.door;
-  ctx.fillRect(doorX, doorY, doorW, doorH);
-  // Arched door top
-  ctx.fillStyle = p.door;
-  ctx.beginPath();
-  ctx.arc(doorX + doorW / 2, doorY, doorW / 2, Math.PI, 0);
-  ctx.fill();
-  ctx.fillStyle = "#e8c040";
-  ctx.fillRect(doorX + doorW - 4, doorY + Math.round(doorH / 2) - 1, 3, 3);
+
+  if (!roofless) {
+    ctx.fillStyle = p.wall;
+    ctx.fillRect(sx + 2, wallY, w - 4, wallH);
+    ctx.fillStyle = p.wallLight;
+    ctx.fillRect(sx + 2, wallY, w - 4, 3);
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.fillRect(sx + 2, wallY, 3, wallH);
+    ctx.fillRect(sx + w - 5, wallY, 3, wallH);
+
+    const winW = 10; const winH = Math.max(8, wallH - 12);
+    drawHouseWindow(sx + Math.round(w * 0.32), wallY + 5, winW, winH, p);
+
+    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, doorOpen, 2);
+  } else {
+    ctx.strokeStyle = blend(p.wallDark, p.wallLine, 0.55);
+    ctx.lineWidth = 2;
+    ctx.strokeRect(sx + 2 + 0.5, wallY + 0.5, w - 5, wallH - 1);
+    ctx.strokeStyle = blend(p.wallLight, "#000", 0.3);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(sx + 2, wallY + 0.5);
+    ctx.lineTo(sx + w - 2, wallY + 0.5);
+    ctx.stroke();
+    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, 1, 2);
+  }
 
   ctx.restore();
   drawBuildingFrontDetail(sx + 2, sx + w - 2, sy + h, variant, p);
@@ -5244,8 +5289,6 @@ function drawBigHouse(building, sx, sy, w, h, variant, roofless) {
   const wallH = Math.max(52, Math.min(72, Math.round(h * 0.28)));
   const roofH = h - wallH;
   const wallY = sy + roofH;
-  const inset = 3;
-  const rw = w - inset * 2;
 
   ctx.save();
   ctx.shadowColor = "rgba(0,0,0,0.35)";
@@ -5301,64 +5344,74 @@ function drawBigHouse(building, sx, sy, w, h, variant, roofless) {
     ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
   }
 
-  // Front wall with two-story band
-  ctx.fillStyle = p.wall;
-  ctx.fillRect(sx - 4, wallY, w + 8, wallH);
-
-  // Second-storey band (horizontal divide)
   const midFloor = Math.round(wallH * 0.45);
-  ctx.fillStyle = p.eave;
-  ctx.fillRect(sx - 4, wallY + midFloor - 2, w + 8, 4);
-
-  // Wall texture
-  if (variant === "stone") {
-    ctx.fillStyle = p.wallDark;
-    for (let ly = 0; ly < wallH; ly += 9) {
-      const offset = Math.floor(ly / 9) % 2 === 0 ? 0 : 14;
-      for (let lx = -14 + offset; lx < w + 8; lx += 28) {
-        ctx.fillRect(sx - 4 + lx, wallY + ly, 27, 8);
-      }
-    }
-  } else {
-    ctx.fillStyle = p.wallLine;
-    for (let lx = 8; lx < w + 8; lx += 8) {
-      ctx.fillRect(sx - 4 + lx, wallY, 1, wallH);
-    }
-  }
-
-  ctx.fillStyle = p.wallLight;
-  ctx.fillRect(sx - 4, wallY, w + 8, 3);
-  ctx.fillStyle = "rgba(0,0,0,0.22)";
-  ctx.fillRect(sx - 4, wallY, 4, wallH);
-  ctx.fillRect(sx + w, wallY, 4, wallH);
-
-  // Three windows: two upper, two lower
-  const winW = 13; const winH = Math.max(10, midFloor - 14);
-  const lowerWinH = Math.max(10, wallH - midFloor - 12);
-  drawHouseWindow(sx + Math.round(w * 0.14), wallY + 5, winW, winH, p);
-  drawHouseWindow(sx + Math.round(w * 0.50), wallY + 5, winW, winH, p);
-  drawHouseWindow(sx + Math.round(w * 0.76), wallY + 5, winW, winH, p);
-  drawHouseWindow(sx + Math.round(w * 0.14), wallY + midFloor + 6, winW, lowerWinH, p);
-  drawHouseWindow(sx + Math.round(w * 0.72), wallY + midFloor + 6, winW, lowerWinH, p);
-
-  // Door (larger, with columns)
-  const doorW = Math.max(18, Math.round(w * 0.13));
-  const doorH = wallH - midFloor - 3;
+  const doorOpen = getFrontDoorOpenFactor(building, roofless);
+  const doorW = Math.max(12, Math.round(w * 0.088));
+  const doorH = wallH - midFloor - 4;
   const doorX = sx + Math.round(w / 2) - Math.round(doorW / 2);
   const doorY = wallY + wallH - doorH;
-  // Column pillars
-  ctx.fillStyle = p.wallLight;
-  ctx.fillRect(doorX - 5, doorY - 4, 5, doorH + 4);
-  ctx.fillRect(doorX + doorW, doorY - 4, 5, doorH + 4);
-  ctx.fillStyle = p.doorFrame;
-  ctx.fillRect(doorX - 2, doorY - 3, doorW + 4, doorH + 3);
-  ctx.fillStyle = p.door;
-  ctx.fillRect(doorX, doorY, doorW, doorH);
-  ctx.fillStyle = blend(p.door, "#ffffff", 0.15);
-  ctx.fillRect(doorX + 2, doorY + 3, Math.round(doorW / 2) - 3, Math.round(doorH / 2) - 4);
-  ctx.fillRect(doorX + 2, doorY + Math.round(doorH / 2), Math.round(doorW / 2) - 3, Math.round(doorH / 2) - 4);
-  ctx.fillStyle = "#e8c040";
-  ctx.fillRect(doorX + doorW - 5, doorY + Math.round(doorH / 2) - 1, 4, 4);
+
+  if (!roofless) {
+    ctx.fillStyle = p.wall;
+    ctx.fillRect(sx - 4, wallY, w + 8, wallH);
+
+    ctx.fillStyle = p.eave;
+    ctx.fillRect(sx - 4, wallY + midFloor - 2, w + 8, 4);
+
+    if (variant === "stone") {
+      ctx.fillStyle = p.wallDark;
+      for (let ly = 0; ly < wallH; ly += 9) {
+        const offset = Math.floor(ly / 9) % 2 === 0 ? 0 : 14;
+        for (let lx = -14 + offset; lx < w + 8; lx += 28) {
+          ctx.fillRect(sx - 4 + lx, wallY + ly, 27, 8);
+        }
+      }
+    } else {
+      ctx.fillStyle = p.wallLine;
+      for (let lx = 8; lx < w + 8; lx += 8) {
+        ctx.fillRect(sx - 4 + lx, wallY, 1, wallH);
+      }
+    }
+
+    ctx.fillStyle = p.wallLight;
+    ctx.fillRect(sx - 4, wallY, w + 8, 3);
+    ctx.fillStyle = "rgba(0,0,0,0.22)";
+    ctx.fillRect(sx - 4, wallY, 4, wallH);
+    ctx.fillRect(sx + w, wallY, 4, wallH);
+
+    const winW = 13; const winH = Math.max(10, midFloor - 14);
+    const lowerWinH = Math.max(10, wallH - midFloor - 12);
+    drawHouseWindow(sx + Math.round(w * 0.14), wallY + 5, winW, winH, p);
+    drawHouseWindow(sx + Math.round(w * 0.50), wallY + 5, winW, winH, p);
+    drawHouseWindow(sx + Math.round(w * 0.76), wallY + 5, winW, winH, p);
+    drawHouseWindow(sx + Math.round(w * 0.14), wallY + midFloor + 6, winW, lowerWinH, p);
+    drawHouseWindow(sx + Math.round(w * 0.72), wallY + midFloor + 6, winW, lowerWinH, p);
+
+    ctx.fillStyle = p.wallLight;
+    ctx.fillRect(doorX - 5, doorY - 4, 5, doorH + 4);
+    ctx.fillRect(doorX + doorW, doorY - 4, 5, doorH + 4);
+    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, doorOpen, 2);
+  } else {
+    ctx.strokeStyle = blend(p.wallDark, p.wallLine, 0.5);
+    ctx.lineWidth = 2;
+    ctx.strokeRect(sx - 4 + 0.5, wallY + 0.5, w + 8 - 1, wallH - 1);
+    ctx.strokeStyle = blend(p.eave, "#000", 0.45);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(sx - 4, wallY + midFloor);
+    ctx.lineTo(sx + w + 4, wallY + midFloor);
+    ctx.stroke();
+    ctx.strokeStyle = blend(p.wallLight, "#000", 0.35);
+    ctx.beginPath();
+    ctx.moveTo(sx - 4, wallY + 0.5);
+    ctx.lineTo(sx + w + 4, wallY + 0.5);
+    ctx.stroke();
+    ctx.strokeStyle = blend(p.wallLight, "#000", 0.45);
+    ctx.lineWidth = 2;
+    ctx.strokeRect(doorX - 5 + 0.5, doorY - 4 + 0.5, 4, doorH + 4 - 1);
+    ctx.strokeRect(doorX + doorW + 0.5, doorY - 4 + 0.5, 4, doorH + 4 - 1);
+    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, 1, 2);
+  }
 
   ctx.restore();
   drawBuildingFrontDetail(sx - 4, sx - 4 + w + 8, sy + h, variant, p);
@@ -5449,45 +5502,49 @@ function drawTreehouse(building, sx, sy, w, h, variant, roofless) {
     ctx.fillRect(sx - 3, wallY + 3, w + 6, 2);
   }
 
-  // Wall (wood planks)
-  ctx.fillStyle = "#4a2e14";
-  ctx.fillRect(sx + 2, wallY, w - 4, wallH);
-  ctx.fillStyle = "#1e0e04";
-  for (let lx = 6; lx < w - 4; lx += 7) {
-    ctx.fillRect(sx + 2 + lx, wallY, 1, wallH);
-  }
-  ctx.fillStyle = "#6a4828";
-  ctx.fillRect(sx + 2, wallY, w - 4, 3);
-  ctx.fillStyle = "rgba(0,0,0,0.2)";
-  ctx.fillRect(sx + 2, wallY, 3, wallH);
-  ctx.fillRect(sx + w - 5, wallY, 3, wallH);
-
-  // Windows (circular porthole style)
-  const winR = Math.max(5, Math.round(Math.min(wallH, w / 6) * 0.4));
-  for (const fx of [0.25, 0.65]) {
-    const wx = sx + Math.round(w * fx);
-    const wy = wallY + Math.round(wallH * 0.35);
-    ctx.fillStyle = "#2c1a08";
-    ctx.beginPath(); ctx.arc(wx, wy, winR + 2, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#b8e8b8";
-    ctx.beginPath(); ctx.arc(wx, wy, winR, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "rgba(255,255,255,0.5)";
-    ctx.beginPath(); ctx.arc(wx - 2, wy - 2, Math.round(winR * 0.45), 0, Math.PI * 2); ctx.fill();
-  }
-
-  // Door (small, centered)
-  const doorW = Math.max(12, Math.round(w * 0.2));
-  const doorH2 = wallH - 4;
+  const doorOpen = getFrontDoorOpenFactor(building, roofless);
+  const doorW = Math.max(9, Math.round(w * 0.14));
+  const doorH2 = wallH - 5;
   const doorX = sx + Math.round(w / 2) - Math.round(doorW / 2);
   const doorY = wallY + wallH - doorH2;
-  ctx.fillStyle = "#9a6828";
-  ctx.fillRect(doorX - 2, doorY - 2, doorW + 4, doorH2 + 2);
-  ctx.fillStyle = "#180c04";
-  ctx.fillRect(doorX, doorY, doorW, doorH2);
-  ctx.fillStyle = "rgba(255,255,255,0.1)";
-  ctx.fillRect(doorX + 2, doorY + 2, doorW - 4, Math.round(doorH2 * 0.45));
-  ctx.fillStyle = "#e8c040";
-  ctx.fillRect(doorX + doorW - 5, doorY + Math.round(doorH2 / 2) - 1, 3, 3);
+
+  if (!roofless) {
+    ctx.fillStyle = "#4a2e14";
+    ctx.fillRect(sx + 2, wallY, w - 4, wallH);
+    ctx.fillStyle = "#1e0e04";
+    for (let lx = 6; lx < w - 4; lx += 7) {
+      ctx.fillRect(sx + 2 + lx, wallY, 1, wallH);
+    }
+    ctx.fillStyle = "#6a4828";
+    ctx.fillRect(sx + 2, wallY, w - 4, 3);
+    ctx.fillStyle = "rgba(0,0,0,0.2)";
+    ctx.fillRect(sx + 2, wallY, 3, wallH);
+    ctx.fillRect(sx + w - 5, wallY, 3, wallH);
+
+    const winR = Math.max(5, Math.round(Math.min(wallH, w / 6) * 0.4));
+    for (const fx of [0.25, 0.65]) {
+      const wx = sx + Math.round(w * fx);
+      const wy = wallY + Math.round(wallH * 0.35);
+      ctx.fillStyle = "#2c1a08";
+      ctx.beginPath(); ctx.arc(wx, wy, winR + 2, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#b8e8b8";
+      ctx.beginPath(); ctx.arc(wx, wy, winR, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.5)";
+      ctx.beginPath(); ctx.arc(wx - 2, wy - 2, Math.round(winR * 0.45), 0, Math.PI * 2); ctx.fill();
+    }
+
+    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH2, doorOpen, 2);
+  } else {
+    ctx.strokeStyle = blend(p.wallDark, p.wallLine, 0.55);
+    ctx.lineWidth = 2;
+    ctx.strokeRect(sx + 2 + 0.5, wallY + 0.5, w - 5, wallH - 1);
+    ctx.strokeStyle = blend(p.wallLight, "#000", 0.35);
+    ctx.beginPath();
+    ctx.moveTo(sx + 2, wallY + 0.5);
+    ctx.lineTo(sx + w - 2, wallY + 0.5);
+    ctx.stroke();
+    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH2, 1, 2);
+  }
 
   ctx.restore();
 }
@@ -5558,74 +5615,83 @@ function drawCastle(building, sx, sy, w, h, variant, roofless) {
     ctx.fillRect(tx + Math.round(towerW / 2) - 1, wallY - towerH + wallH + 10, 3, 10);
   }
 
-  // Main wall
-  ctx.fillStyle = p.wall;
-  ctx.fillRect(sx + towerW, wallY, w - towerW * 2, wallH);
-
-  // Stone block texture
-  ctx.fillStyle = p.wallDark;
-  for (let ly = 0; ly < wallH; ly += 9) {
-    const offset = Math.floor(ly / 9) % 2 === 0 ? 0 : 14;
-    for (let lx = -14 + offset; lx < w - towerW * 2; lx += 28) {
-      ctx.fillRect(sx + towerW + lx, wallY + ly, 27, 8);
-    }
-  }
-  ctx.fillStyle = p.wallLine;
-  for (let ly = 0; ly < wallH; ly += 9) {
-    ctx.fillRect(sx + towerW, wallY + ly, w - towerW * 2, 1);
-  }
-
-  // Wall highlights and shadow
-  ctx.fillStyle = p.wallLight;
-  ctx.fillRect(sx + towerW, wallY, w - towerW * 2, 3);
-  ctx.fillStyle = "rgba(0,0,0,0.2)";
-  ctx.fillRect(sx + towerW, wallY, 4, wallH);
-  ctx.fillRect(sx + w - towerW - 4, wallY, 4, wallH);
-
-  // Battlements on main wall top
-  for (let mx = sx + towerW + 4; mx < sx + w - towerW - 4; mx += 10) {
-    ctx.fillStyle = p.wall;
-    ctx.fillRect(mx, wallY - 8, 6, 9);
-  }
-
-  // Eave / wall-join
-  ctx.fillStyle = p.eave;
-  ctx.fillRect(sx + towerW - 2, wallY - 5, w - towerW * 2 + 4, 7);
-  ctx.fillStyle = blend(p.eave, "#000", 0.5);
-  ctx.fillRect(sx + towerW - 2, wallY + 2, w - towerW * 2 + 4, 3);
-
-  // Windows (tall narrow arrow slits on wall)
-  const numWin = Math.max(2, Math.floor((w - towerW * 2) / 32));
-  const winW = 6; const winH = Math.max(14, wallH - 16);
-  for (let i = 0; i < numWin; i += 1) {
-    const wx = sx + towerW + Math.round((i + 0.5) * (w - towerW * 2) / numWin) - Math.round(winW / 2);
-    const midX = wx + winW / 2;
-    if (Math.abs(midX - (sx + w / 2)) < 24) continue; // skip door area
-    drawHouseWindow(wx, wallY + 6, winW, winH, p);
-  }
-
-  // Gate / arched door
-  const doorW = Math.max(20, Math.round(w * 0.12));
-  const doorH = wallH - 2;
+  const doorOpen = getFrontDoorOpenFactor(building, roofless);
+  const doorW = Math.max(14, Math.round(w * 0.095));
+  const doorH = wallH - 4;
   const doorX = sx + Math.round(w / 2) - Math.round(doorW / 2);
   const doorY2 = wallY + wallH - doorH;
-  ctx.fillStyle = blend(p.wall, "#000", 0.5);
-  ctx.fillRect(doorX - 3, doorY2 - 4, doorW + 6, doorH + 4);
-  ctx.fillStyle = p.door;
-  ctx.fillRect(doorX, doorY2, doorW, doorH);
-  ctx.fillStyle = p.door;
-  ctx.beginPath();
-  ctx.arc(doorX + doorW / 2, doorY2, doorW / 2, Math.PI, 0);
-  ctx.fill();
-  // Door detail: iron bands
-  ctx.fillStyle = blend(p.door, "#000", 0.4);
-  for (const bandY of [doorY2 + Math.round(doorH * 0.3), doorY2 + Math.round(doorH * 0.65)]) {
-    ctx.fillRect(doorX, bandY, doorW, 3);
+  const mwX = sx + towerW;
+  const mwW = w - towerW * 2;
+
+  if (!roofless) {
+    ctx.fillStyle = p.wall;
+    ctx.fillRect(mwX, wallY, mwW, wallH);
+
+    ctx.fillStyle = p.wallDark;
+    for (let ly = 0; ly < wallH; ly += 9) {
+      const offset = Math.floor(ly / 9) % 2 === 0 ? 0 : 14;
+      for (let lx = -14 + offset; lx < mwW; lx += 28) {
+        ctx.fillRect(mwX + lx, wallY + ly, 27, 8);
+      }
+    }
+    ctx.fillStyle = p.wallLine;
+    for (let ly = 0; ly < wallH; ly += 9) {
+      ctx.fillRect(mwX, wallY + ly, mwW, 1);
+    }
+
+    ctx.fillStyle = p.wallLight;
+    ctx.fillRect(mwX, wallY, mwW, 3);
+    ctx.fillStyle = "rgba(0,0,0,0.2)";
+    ctx.fillRect(mwX, wallY, 4, wallH);
+    ctx.fillRect(sx + w - towerW - 4, wallY, 4, wallH);
+
+    for (let mx = mwX + 4; mx < sx + w - towerW - 4; mx += 10) {
+      ctx.fillStyle = p.wall;
+      ctx.fillRect(mx, wallY - 8, 6, 9);
+    }
+
+    ctx.fillStyle = p.eave;
+    ctx.fillRect(mwX - 2, wallY - 5, mwW + 4, 7);
+    ctx.fillStyle = blend(p.eave, "#000", 0.5);
+    ctx.fillRect(mwX - 2, wallY + 2, mwW + 4, 3);
+
+    const numWin = Math.max(2, Math.floor(mwW / 32));
+    const winW = 6; const winH = Math.max(14, wallH - 16);
+    for (let i = 0; i < numWin; i += 1) {
+      const wx = mwX + Math.round((i + 0.5) * mwW / numWin) - Math.round(winW / 2);
+      const midX = wx + winW / 2;
+      if (Math.abs(midX - (sx + w / 2)) < doorW + 14) continue;
+      drawHouseWindow(wx, wallY + 6, winW, winH, p);
+    }
+
+    ctx.fillStyle = blend(p.wall, "#000", 0.5);
+    ctx.fillRect(doorX - 3, doorY2 - 4, doorW + 6, doorH + 4);
+    drawSplitWoodenDoor(p, doorX, doorY2, doorW, doorH, doorOpen, 3);
+    ctx.fillStyle = blend(p.door, "#000", 0.4);
+    for (const bandY of [doorY2 + Math.round(doorH * 0.3), doorY2 + Math.round(doorH * 0.65)]) {
+      ctx.fillRect(doorX, bandY, doorW, 3);
+    }
+    ctx.fillStyle = p.wallLight;
+    ctx.fillRect(doorX - 3, doorY2 - 4, doorW + 6, 3);
+  } else {
+    ctx.strokeStyle = blend(p.wallDark, p.wallLine, 0.5);
+    ctx.lineWidth = 2;
+    ctx.strokeRect(mwX + 0.5, wallY + 0.5, mwW - 1, wallH - 1);
+    ctx.strokeStyle = blend(p.wallLight, "#000", 0.35);
+    ctx.beginPath();
+    ctx.moveTo(mwX, wallY + 0.5);
+    ctx.lineTo(mwX + mwW, wallY + 0.5);
+    ctx.stroke();
+    ctx.fillStyle = blend(p.wall, "#000", 0.5);
+    ctx.fillRect(doorX - 3, doorY2 - 4, doorW + 6, doorH + 4);
+    drawSplitWoodenDoor(p, doorX, doorY2, doorW, doorH, 1, 3);
+    ctx.fillStyle = blend(p.door, "#000", 0.4);
+    for (const bandY of [doorY2 + Math.round(doorH * 0.3), doorY2 + Math.round(doorH * 0.65)]) {
+      ctx.fillRect(doorX, bandY, doorW, 3);
+    }
+    ctx.fillStyle = p.wallLight;
+    ctx.fillRect(doorX - 3, doorY2 - 4, doorW + 6, 3);
   }
-  ctx.fillStyle = p.wallLight;
-  ctx.fillRect(doorX - 3, doorY2 - 4, doorW + 6, 3);
-  ctx.fillStyle = "#e8c040";
-  ctx.fillRect(doorX + doorW / 2 - 2, doorY2 + Math.round(doorH / 2), 5, 5);
 
   ctx.restore();
   drawBuildingFrontDetail(sx + towerW, sx + w - towerW, sy + h, variant, p);
