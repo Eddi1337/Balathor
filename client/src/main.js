@@ -225,6 +225,8 @@ const TILE = {
   SHELF: 17,
   FIREPLACE: 18,
   CHAIR: 19,
+  CHEST: 20,
+  HOME_TREE: 21
 };
 
 /** Mirrors server/src/index.js getBuildingPrice */
@@ -438,6 +440,8 @@ const tilePalette = {
   [TILE.SHELF]: ["#5a3824", "#b8844d", "#2b1a10"],
   [TILE.FIREPLACE]: ["#3a2820", "#e05010", "#ffa040"],
   [TILE.CHAIR]: ["#5f3d24", "#8b5f3e", "#352010"],
+  [TILE.CHEST]: ["#4a3018", "#7a5230", "#d4af37"],
+  [TILE.HOME_TREE]: ["#315f45", "#2f7a4e", "#6c4b2e"]
 };
 
 resize();
@@ -2387,40 +2391,30 @@ function screenEventToWorld(event) {
   };
 }
 
-/** Matches server ownedHouseCornerInset / interior anchors */
-function ownedHouseCornerInset(building) {
-  const span = Math.min(building.w, building.h);
-  return Math.min(2.55, Math.max(2.05, span * 0.26));
-}
-
 function getOwnedHouseHomeTreeWorldPos(building) {
-  const d = ownedHouseCornerInset(building);
-  return { x: building.x + d, y: building.y + d };
+  return { x: building.x + 1.5, y: building.y + 1.5 };
 }
 
 function getOwnedHouseChestWorldPos(building) {
-  const d = ownedHouseCornerInset(building);
-  return { x: building.x + building.w - d, y: building.y + d };
+  const w = Math.max(1, building.w | 0);
+  return { x: building.x + w - 2 + 0.5, y: building.y + 1.5 };
 }
 
-/** Bottom dining tile row centres (aligned with phantom residential slabs). */
+/** Companion stand / lie anchors (tile centres, matches server residential layout). */
 function residentialPhantomCompanionAnchors(building) {
   const bw = Math.max(1, building.w | 0);
   const bh = Math.max(1, building.h | 0);
-  const dineRow = bh - 4;
-  const dineFloorY = building.y + dineRow + 0.48;
   return {
-    bed: { wx: building.x + 1.5, wy: building.y + bh - 3.52 },
-    /** Chair sits west of table (local x = w − 4), faces east (+x toward table). */
+    bed: { wx: building.x + 1.5, wy: building.y + (bh - 2) + 0.48 },
     dine: {
-      wx: building.x + (bw - 4) + 0.52,
-      wy: dineFloorY,
-      facing: 0,
+      wx: building.x + (bw - 2) + 0.5,
+      wy: building.y + (bh - 2) + 0.48,
+      facing: -Math.PI / 2,
       restingBench: true
     },
     flirtStand: {
-      wx: building.x + Math.min(bw - 3.8, bw * 0.48),
-      wy: building.y + Math.min(bh - 4.9, dineRow + 0.62)
+      wx: building.x + Math.min(bw - 3.2, bw * 0.48),
+      wy: building.y + Math.min(bh - 3.5, bh * 0.55)
     }
   };
 }
@@ -4513,7 +4507,9 @@ function isInteriorDrawTile(tile) {
     tile === TILE.TABLE ||
     tile === TILE.SHELF ||
     tile === TILE.FIREPLACE ||
-    tile === TILE.CHAIR;
+    tile === TILE.CHAIR ||
+    tile === TILE.CHEST ||
+    tile === TILE.HOME_TREE;
 }
 
 function isNpcRestingOnBench(npc) {
@@ -5988,6 +5984,51 @@ function drawInteriorTile(tile, sx, sy, tx, ty) {
     return;
   }
 
+  if (tile === TILE.CHEST) {
+    drawEllipseShadow(sx + 8, sy + 26, 16, 5, 0.22);
+    ctx.fillStyle = colors[0];
+    ctx.fillRect(sx + 7, sy + 15, 18, 15);
+    ctx.fillStyle = colors[1];
+    ctx.fillRect(sx + 9, sy + 9, 14, 9);
+    ctx.strokeStyle = "rgba(40,24,10,0.55)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(sx + 7, sy + 15, 18, 15);
+    ctx.strokeRect(sx + 9, sy + 9, 14, 9);
+    ctx.fillStyle = colors[2];
+    ctx.fillRect(sx + 13, sy + 11, 6, 4);
+    return;
+  }
+
+  if (tile === TILE.HOME_TREE) {
+    const t = performance.now() / 1000;
+    const bob = Math.sin(t * 2.6) * 1.1;
+    const glimmer = 0.38 + Math.sin(t * 5.4) * 0.22;
+    ctx.fillStyle = "#9d7954";
+    ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+    drawEllipseShadow(sx + 9, sy + 28, 14, 4, 0.18);
+    ctx.save();
+    ctx.translate(sx + 16 + bob * 0.22, sy + 28);
+    ctx.fillStyle = "#5b3b26";
+    ctx.fillRect(-2, -11, 4, 11);
+    ctx.fillStyle = `rgba(47, 122, 72, ${0.82 + glimmer * 0.18})`;
+    ctx.beginPath();
+    ctx.arc(0, -17 + bob * 0.28, 8.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(120, 210, 150, 0.55)";
+    ctx.beginPath();
+    ctx.arc(-3, -19 + bob * 0.32, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(20,40,24,0.45)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = `rgba(200, 255, 220, ${0.15 + glimmer * 0.35})`;
+    ctx.beginPath();
+    ctx.arc(2, -14, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
   if (tile === TILE.SHELF) {
     drawEllipseShadow(sx + 5, sy + 24, 22, 6, 0.24);
     ctx.fillStyle = colors[2];
@@ -6468,8 +6509,6 @@ function drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY) {
     const sy = Math.floor(building.y * TILE_SIZE - state.camera.y + halfH);
     const roofless = !!(playerBuilding && playerBuilding.x === building.x && playerBuilding.y === building.y);
     drawBuildingSprite(building, sx, sy, roofless);
-    drawOwnedHouseInteriorHomeTree(building, roofless, halfW, halfH);
-    drawOwnedHouseInteriorChest(building, roofless, halfW, halfH);
     drawOwnedHouseInteriorCompanion(building, roofless, halfW, halfH);
   }
 }
@@ -6549,72 +6588,6 @@ function drawOwnedHouseInteriorCompanion(building, roofless, halfW, halfH) {
     hp: null
   };
   drawCharacter(ent, anchor.cx, anchor.groundY + groundBump, true, poseExtras);
-}
-
-function drawOwnedHouseInteriorHomeTree(building, roofless, halfW, halfH) {
-  const self = state.players.get(state.selfId);
-  if (!roofless || !self?.homeBuildingKey) {
-    return;
-  }
-  if (`${building.x},${building.y}` !== self.homeBuildingKey) {
-    return;
-  }
-  const tp = getOwnedHouseHomeTreeWorldPos(building);
-  const { cx, groundY } = interiorFloorAnchorFromWorld(tp.x, tp.y, halfW, halfH);
-  drawInteriorHomeTree(cx, groundY);
-}
-
-function drawOwnedHouseInteriorChest(building, roofless, halfW, halfH) {
-  const self = state.players.get(state.selfId);
-  if (!roofless || !self?.homeBuildingKey) {
-    return;
-  }
-  if (`${building.x},${building.y}` !== self.homeBuildingKey) {
-    return;
-  }
-  const cp = getOwnedHouseChestWorldPos(building);
-  const { cx, groundY } = interiorFloorAnchorFromWorld(cp.x, cp.y, halfW, halfH);
-  drawInteriorHouseChest(cx, groundY);
-}
-
-/** Interior chest — opens bags via houseChestAction; `groundY` = soles on floor tiles */
-function drawInteriorHouseChest(cx, groundY) {
-  ctx.save();
-  drawCastShadow(cx - 6, groundY + 4, 22, 6, 0.2);
-  ctx.fillStyle = "#5c3d22";
-  ctx.fillRect(cx - 14, groundY - 18, 28, 18);
-  ctx.fillStyle = "#7a5230";
-  ctx.fillRect(cx - 12, groundY - 22, 24, 8);
-  ctx.strokeStyle = "rgba(40,24,10,0.55)";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(cx - 14, groundY - 18, 28, 18);
-  ctx.strokeRect(cx - 12, groundY - 22, 24, 8);
-  ctx.fillStyle = "#d4af37";
-  ctx.fillRect(cx - 3, groundY - 14, 6, 5);
-  ctx.restore();
-}
-
-/** Compact decorative tree — click handled via houseHomeTree message */
-function drawInteriorHomeTree(cx, groundY) {
-  const trunk = "#5b3b26";
-  const leaf = "#2f7a48";
-  const leafHi = "#58a068";
-  ctx.save();
-  drawCastShadow(cx - 8, groundY + 2, 22, 6, 0.2);
-  ctx.fillStyle = trunk;
-  ctx.fillRect(cx - 3, groundY - 14, 6, 14);
-  ctx.fillStyle = leaf;
-  ctx.beginPath();
-  ctx.arc(cx, groundY - 24, 14, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = leafHi;
-  ctx.beginPath();
-  ctx.arc(cx - 5, groundY - 28, 7, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = "rgba(20,40,24,0.45)";
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  ctx.restore();
 }
 
 function drawBuildingSprite(building, sx, sy, roofless) {

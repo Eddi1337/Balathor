@@ -30,9 +30,11 @@ assert.equal(world.generateTile(ix, iy), world.TILE.WALL);
 assert.equal(world.generateTile(ix + home.w - 1, iy + home.h - 1), world.TILE.WALL);
 assert.equal(world.generateTile(ix + Math.floor(home.w / 2), iy + home.h - 1), world.TILE.DOOR);
 assert.equal(world.generateTile(ix + home.w - 3, iy + 2), world.TILE.SHELF);
-assert.equal(world.generateTile(ix + 1, iy + home.h - 4), world.TILE.BED);
-assert.equal(world.generateTile(ix + home.w - 4, iy + home.h - 4), world.TILE.CHAIR);
-assert.equal(world.generateTile(ix + home.w - 3, iy + home.h - 4), world.TILE.TABLE);
+assert.equal(world.generateTile(ix + 1, iy + 1), world.TILE.HOME_TREE);
+assert.equal(world.generateTile(ix + home.w - 2, iy + 1), world.TILE.CHEST);
+assert.equal(world.generateTile(ix + 1, iy + home.h - 2), world.TILE.BED);
+assert.equal(world.generateTile(ix + home.w - 2, iy + home.h - 3), world.TILE.TABLE);
+assert.equal(world.generateTile(ix + home.w - 2, iy + home.h - 2), world.TILE.CHAIR);
 assert.equal(world.generateTile(ix - 1, iy + home.h), world.generateTile(home.x - 1, home.y + home.h));
 assert.equal(Boolean(world.getShopFixtureAt(ix + home.w - 2.5, iy + 2.5)), true);
 

@@ -839,21 +839,15 @@ function resolveOwnedHouseDoorOutside(building) {
   return { x: southDoorAnchorWorldX(building), y: building.y + building.h + 0.35 };
 }
 
-/** NW interior corner — matches client cutaway view for tree anchor. */
-function ownedHouseCornerInset(building) {
-  const span = Math.min(building.w, building.h);
-  return Math.min(2.55, Math.max(2.05, span * 0.26));
-}
-
+/** Interior tile (1,1): centre of top-left home-teleport tree slab. */
 function getOwnedHouseHomeTreeWorldPos(building) {
-  const d = ownedHouseCornerInset(building);
-  return { x: building.x + d, y: building.y + d };
+  return { x: building.x + 1.5, y: building.y + 1.5 };
 }
 
-/** NE interior corner — chest anchor opposite the tree. */
+/** Interior tile (w−2, 1): centre of top-right house chest. */
 function getOwnedHouseChestWorldPos(building) {
-  const d = ownedHouseCornerInset(building);
-  return { x: building.x + building.w - d, y: building.y + d };
+  const w = Math.max(1, building.w | 0);
+  return { x: building.x + w - 2 + 0.5, y: building.y + 1.5 };
 }
 
 function resolveHomeTeleportDestination(player, accountKey) {

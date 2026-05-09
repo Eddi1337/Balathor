@@ -21,9 +21,24 @@ const TILE = {
   SHELF: 17,
   FIREPLACE: 18,
   CHAIR: 19,
+  /** Player-owned home storage (single tile, top-right interior). */
+  CHEST: 20,
+  /** Compact home-teleport tree (single tile, top-left interior). */
+  HOME_TREE: 21
 };
 
-const BLOCKED_TILES = new Set([TILE.WATER, TILE.WALL, TILE.LAVA, TILE.BED, TILE.TABLE, TILE.SHELF, TILE.FIREPLACE, TILE.CHAIR]);
+const BLOCKED_TILES = new Set([
+  TILE.WATER,
+  TILE.WALL,
+  TILE.LAVA,
+  TILE.BED,
+  TILE.TABLE,
+  TILE.SHELF,
+  TILE.FIREPLACE,
+  TILE.CHAIR,
+  TILE.CHEST,
+  TILE.HOME_TREE
+]);
 const PORTAL_RADIUS = 1.6;
 const DOOR_RADIUS = 0.52;
 const INTERIOR_BASE_X = 10000;
@@ -903,8 +918,8 @@ function getInteriorShopShelf(interior) {
 }
 
 /**
- * Player-facing houses & big villas: hearth north, trader shelf fixed,
- * 2×2 bed bottom-left, table + chair bottom-right, hearth rug stripe.
+ * Player-facing houses & big villas: hearth north, trader shelf, one-tile home tree NW,
+ * one-tile chest NE, one-tile bed SW, one-tile table with one-tile chair below it SE column.
  */
 function residentialDwellingInnerTileLocalsOrFloor(localX, localY, w, h, shelfLocalX, shelfLocalY) {
   if (w < 7 || h < 6) {
@@ -920,17 +935,21 @@ function residentialDwellingInnerTileLocalsOrFloor(localX, localY, w, h, shelfLo
     return TILE.FIREPLACE;
   }
 
-  const dineLo = h - 4;
-  const dineHi = h - 3;
+  if (localX === 1 && localY === 1) {
+    return TILE.HOME_TREE;
+  }
+  if (localX === w - 2 && localY === 1) {
+    return TILE.CHEST;
+  }
 
-  if (localX >= 1 && localX <= 2 && localY >= dineLo && localY <= dineHi) {
+  if (localX === 1 && localY === h - 2) {
     return TILE.BED;
   }
-  if (localY >= dineLo && localY <= dineHi && localX >= w - 4 && localX <= w - 2) {
-    if (localX === w - 4) {
-      return TILE.CHAIR;
-    }
+  if (localX === w - 2 && localY === h - 3) {
     return TILE.TABLE;
+  }
+  if (localX === w - 2 && localY === h - 2) {
+    return TILE.CHAIR;
   }
 
   const rugRow = Math.max(3, Math.min(h - 7, 4));
