@@ -303,6 +303,8 @@ const state = {
   tradeDragInvSlot: null,
   friendsWindowOpen: false,
   partyPanelMinimized: false,
+  /** @type {{ start: number, until: number, tx: number, ty: number } | null} */
+  fountainToss: null,
   requestedChunks: new Set(),
   population: 0,
   input: { up: false, down: false, left: false, right: false },
@@ -808,6 +810,18 @@ function handleServerMessage(message) {
     return;
   }
 
+  if (message.type === "fountainToss") {
+    const d = Number(message.durationMs);
+    const ms = Number.isFinite(d) ? Math.max(400, Math.min(2200, d)) : 920;
+    const tx = Number(message.targetX);
+    const ty = Number(message.targetY);
+    if (Number.isFinite(tx) && Number.isFinite(ty)) {
+      const now = performance.now();
+      state.fountainToss = { start: now, until: now + ms, tx, ty };
+    }
+    return;
+  }
+
   if (message.type === "houseChestState") {
     const bk = typeof message.buildingKey === "string" ? message.buildingKey : null;
     const slots = Array.isArray(message.slots) ? message.slots : [];
@@ -925,6 +939,8 @@ function handleServerMessage(message) {
         name: "Realm",
         text: `${message.name || "Someone"} wants to trade with you.`
       });
+    } else if (message.message === "fountain_no_gold") {
+      appendChat({ kind: "system", name: "Realm", text: "You need at least 1 gold to toss into the fountain." });
     } else if (message.message === "pub_need_house") {
       appendChat({
         kind: "system",
@@ -2865,7 +2881,7 @@ function refreshWorldHoverTooltip(event) {
     const rfH = Math.max(1, Math.floor(Number(f.footprintH) || 1));
     const ax = f.x + rfW / 2;
     const ay = f.y + rfH / 2 + (f.kind === "market_stand" ? 0.1 : 0.55);
-    const reach = f.kind === "market_stand" ? 1.45 : 1.12;
+    const reach = f.kind === "market_stand" ? 1.45 : f.kind === "fountain" ? 2.35 : 1.12;
     if (Math.hypot(world.x - ax, world.y - ay) <= reach) {
       state.hoverTooltipText =
         f.kind === "bench"
@@ -3334,6 +3350,7 @@ function clearWorldState() {
   friendsWindow?.classList.add("hidden");
   tradePanel?.classList.add("hidden");
   playerContextMenu?.classList.add("hidden");
+  state.fountainToss = null;
 }
 
 function sendAttack() {
@@ -4401,6 +4418,35 @@ function drawWorldHoverTooltip() {
   ctx.restore();
 }
 
+function drawFountainTossFx(halfW, halfH) {
+  const toss = state.fountainToss;
+  if (!toss) return;
+  const now = performance.now();
+  if (now >= toss.until) {
+    state.fountainToss = null;
+    return;
+  }
+  const self = state.players.get(state.selfId);
+  if (!self) return;
+  const span = Math.max(120, toss.until - toss.start);
+  const u = Math.min(1, (now - toss.start) / span);
+  const sx = self.renderX * TILE_SIZE - state.camera.x + halfW;
+  const sy = self.renderY * TILE_SIZE - state.camera.y + halfH - 18;
+  const ex = toss.tx * TILE_SIZE - state.camera.x + halfW;
+  const ey = toss.ty * TILE_SIZE - state.camera.y + halfH - 16;
+  const x = sx + (ex - sx) * u;
+  const y = sy + (ey - sy) * u - Math.sin(u * Math.PI) * 40;
+  ctx.save();
+  ctx.fillStyle = "#ffd166";
+  ctx.strokeStyle = "rgba(40,30,10,0.55)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(x, y, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
 function draw() {
   ctx.imageSmoothingEnabled = false;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -4426,6 +4472,7 @@ function draw() {
   drawWorld();
   drawPortals();
   drawPlayers();
+  drawFountainTossFx(halfW, halfH);
   drawTreeCanopies();
   drawCombatFx();
   drawTalentSpellFx();
@@ -4534,26 +4581,39 @@ function drawRoadsideFeatures(minTileX, maxTileX, minTileY, maxTileY) {
     ctx.fill();
   };
 
-  const drawFountainSprite = (cx, gy) => {
+  const drawFountainSprite = (cx, gy, fwTiles = 4, fhTiles = 4) => {
+    const wpx = Math.max(TILE_SIZE * 2, fwTiles * TILE_SIZE);
+    const hpx = Math.max(TILE_SIZE * 2, fhTiles * TILE_SIZE);
+    const rim = Math.min(22, Math.round(wpx * 0.08));
     ctx.save();
-    drawEllipseShadow(cx - 14, gy + 2, 30, 8, 0.22);
-    ctx.fillStyle = "#697288";
+    drawEllipseShadow(cx - wpx / 2 + 6, gy + 4, wpx - 8, 14, 0.22);
+    ctx.fillStyle = "#5a6278";
     ctx.beginPath();
-    ctx.ellipse(cx, gy - 6, 16, 7, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx, gy - hpx * 0.35, wpx / 2 - rim, hpx * 0.28, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = "rgba(26,34,52,0.45)";
+    ctx.lineWidth = 2;
     ctx.stroke();
-    ctx.fillStyle = "rgba(74,138,226,0.45)";
+    ctx.fillStyle = "rgba(74,138,226,0.42)";
     ctx.beginPath();
-    ctx.ellipse(cx, gy - 6, 11, 4.8, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx, gy - hpx * 0.32, wpx / 2 - rim - 10, hpx * 0.2, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = "rgba(235,248,255,0.5)";
-    ctx.fillRect(cx - 4, gy - 20, 2, 11);
-    ctx.fillRect(cx + 2, gy - 19, 2, 9);
-    ctx.fillStyle = "rgba(220,238,255,0.7)";
+    ctx.fillStyle = "rgba(235,248,255,0.45)";
+    ctx.fillRect(cx - wpx * 0.22, gy - hpx * 0.62, 5, hpx * 0.35);
+    ctx.fillRect(cx + wpx * 0.14, gy - hpx * 0.58, 5, hpx * 0.3);
+    ctx.fillStyle = "rgba(220,238,255,0.75)";
     ctx.beginPath();
-    ctx.arc(cx, gy - 8, 2.2, 0, Math.PI * 2);
+    ctx.arc(cx, gy - hpx * 0.42, 4, 0, Math.PI * 2);
     ctx.fill();
+    ctx.fillStyle = "rgba(90,98,120,0.9)";
+    for (const [ox, oy] of [
+      [-wpx * 0.38, -hpx * 0.05],
+      [wpx * 0.38, -hpx * 0.05],
+      [-wpx * 0.38, -hpx * 0.52],
+      [wpx * 0.38, -hpx * 0.52]
+    ]) {
+      ctx.fillRect(cx + ox - 5, gy + oy - 18, 10, 18);
+    }
     ctx.restore();
   };
 
@@ -4583,7 +4643,9 @@ function drawRoadsideFeatures(minTileX, maxTileX, minTileY, maxTileY) {
     if (f.kind === "bench") {
       ctx.save();
       ctx.translate(cx, gy);
-      /** Benches are always upright (single orientation). */
+      /** Flip vertically so seat / legs read toward the ground tile. */
+      ctx.scale(1, -1);
+      ctx.translate(0, 12);
       drawBenchLocal();
       ctx.restore();
     } else if (f.kind === "market_stand") {
@@ -4600,7 +4662,7 @@ function drawRoadsideFeatures(minTileX, maxTileX, minTileY, maxTileY) {
       drawSmallTreeLocal();
       ctx.restore();
     } else if (f.kind === "fountain") {
-      drawFountainSprite(cx, gy - 6);
+      drawFountainSprite(cx, gy - 4, fw, fh);
     } else if (f.kind === "table") {
       drawTableOutline(cx, gy, 38, "#7a5436");
     } else if (f.kind === "pub_table") {

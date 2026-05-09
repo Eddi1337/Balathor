@@ -2068,16 +2068,43 @@ function handleInteract(client, message = {}) {
       /** Sit until voluntary movement clears it on client; server echoes position each snapshot. */
       send(client, { type: "roadsideRest", seatBench: true });
       broadcastSnapshot();
+      pushChat({
+        kind: "system",
+        name: "Realm",
+        text: "You rest awhile on the bench."
+      });
+      return;
+    }
+    if (roadside.kind === "fountain") {
+      if ((client.player.gold || 0) < 1) {
+        send(client, { type: "serverMessage", message: "fountain_no_gold" });
+        return;
+      }
+      client.player.gold -= 1;
+      const fw = Math.max(1, Math.floor(Number(roadside.footprintW) || 4));
+      const fh = Math.max(1, Math.floor(Number(roadside.footprintH) || 4));
+      const tcx = roadside.x + fw / 2;
+      const tcy = roadside.y + fh / 2;
+      send(client, {
+        type: "fountainToss",
+        durationMs: 920,
+        targetX: tcx,
+        targetY: tcy
+      });
+      saveClientCharacter(client);
+      broadcastSnapshot();
+      pushChat({
+        kind: "system",
+        name: "Realm",
+        text: "You flip a gold coin into the fountain — it rings once and vanishes in the shimmer."
+      });
+      return;
     }
     let vibe = "You linger at the roadside.";
-    if (roadside.kind === "bench") {
-      vibe = "You rest awhile on the bench.";
-    } else if (roadside.kind === "market_stand") {
+    if (roadside.kind === "market_stand") {
       vibe = "You browse crates and linens at the market stand.";
     } else if (roadside.kind === "small_tree") {
       vibe = "You pause in the shade of a small tree.";
-    } else if (roadside.kind === "fountain") {
-      vibe = "Cool water coils in the fountain basin.";
     } else if (roadside.kind.includes("chair")) {
       vibe = "You sit on the pub chair awhile.";
     } else if (roadside.kind.includes("pub")) {

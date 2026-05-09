@@ -645,10 +645,44 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
       const onGarden = gardenKeys.has(`${tx},${ty}`);
       if (!(onGarden || adjPath >= 2)) continue;
       if (hz(tx, ty, 8819) < 0.986) continue;
-      const ukey = `${tx},${ty}`;
-      if (used.has(ukey)) continue;
-      used.add(ukey);
-      list.push({ id: `hub_fn_${tx}_${ty}`, x: tx, y: ty, kind: "fountain", facing: 0 });
+      let clear4 = true;
+      for (let dy = 0; dy < 4 && clear4; dy += 1) {
+        for (let dx = 0; dx < 4; dx += 1) {
+          const ax = tx + dx;
+          const ay = ty + dy;
+          if (plazaTree(ax, ay) || nearListedPortal(ax, ay, 125)) {
+            clear4 = false;
+            break;
+          }
+          if (isPath(ax, ay) || wallKeys.has(`${ax},${ay}`)) {
+            clear4 = false;
+            break;
+          }
+          if (buildingBlock(ax, ay)) {
+            clear4 = false;
+            break;
+          }
+          if (used.has(`${ax},${ay}`)) {
+            clear4 = false;
+            break;
+          }
+        }
+      }
+      if (!clear4) continue;
+      for (let dy = 0; dy < 4; dy += 1) {
+        for (let dx = 0; dx < 4; dx += 1) {
+          used.add(`${tx + dx},${ty + dy}`);
+        }
+      }
+      list.push({
+        id: `hub_fn_${tx}_${ty}`,
+        x: tx,
+        y: ty,
+        kind: "fountain",
+        facing: 0,
+        footprintW: 4,
+        footprintH: 4
+      });
     }
   }
 
