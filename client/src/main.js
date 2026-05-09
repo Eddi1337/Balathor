@@ -1225,7 +1225,7 @@ function updateSmoothPlayers(dt) {
     }
   }
 
-  const npcFollow = 1 - Math.pow(0.0005, dt);
+  const npcFollow = Math.min(1, 16 * dt);
   for (const npc of state.npcs.values()) {
     npc.renderX += (npc.targetX - npc.renderX) * npcFollow;
     npc.renderY += (npc.targetY - npc.renderY) * npcFollow;
@@ -5226,7 +5226,8 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
     ((state.benchSeatIndefinite || false) || (state.benchSitUntil || 0) > performance.now());
   const benchSeatPose = restingBenchPose || selfBenchSit;
   const compressLowerBody = benchSeatPose || lyingBedPose;
-  const sitBumpPx = lyingBedPose ? 11 : benchSeatPose ? 7 : 0;
+  /** Negative nudge draws the torso higher so the character reads as sitting on the plank, not under it. */
+  const sitBumpPx = lyingBedPose ? 11 : benchSeatPose ? -13 : 0;
   const headSitNudge = benchSeatPose ? Math.round(s * 0.85) : lyingBedPose ? Math.round(s * 0.42) : 0;
 
   const bx = x;

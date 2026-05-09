@@ -2001,30 +2001,27 @@ function lootWorldChest(client, chest) {
   return true;
 }
 
-function approximateRoadsideCentroidWX(feat) {
-  const fw = Math.max(1, Math.floor(Number(feat.footprintW) || 1));
-  const fh = Math.max(1, Math.floor(Number(feat.footprintH) || 1));
-  return { cx: feat.x + fw / 2, cy: feat.y + fh / 2 };
-}
-
-/** Sit just in front (south+) of bench; face toward its back (~north / −Math.PI/2). */
-function resolveBenchSeatForPlayer(player, roadsideBench) {
-  const { cx, cy } = approximateRoadsideCentroidWX(roadsideBench);
+/** Sit on the bench seat row (matches upright client sprite), facing the bench back (−Math.PI/2). */
+function resolveBenchSeatForPlayer(roadsideBench) {
+  const fw = Math.max(1, Math.floor(Number(roadsideBench.footprintW) || 1));
+  const fh = Math.max(1, Math.floor(Number(roadsideBench.footprintH) || 1));
+  const cx = roadsideBench.x + fw / 2;
+  /** Plank is along the upper part of the footprint, not south of the centroid. */
+  const seatY = roadsideBench.y + Math.max(0.22, Math.min(fh - 0.55, fh * 0.38));
   const candidates = [
-    { x: cx, y: cy + 0.42 },
-    { x: cx, y: cy + 0.55 },
-    { x: cx + 0.14, y: cy + 0.48 },
-    { x: cx - 0.14, y: cy + 0.48 },
-    { x: cx, y: cy + 0.3 }
+    { x: cx, y: seatY },
+    { x: cx + 0.12, y: seatY + 0.02 },
+    { x: cx - 0.12, y: seatY + 0.02 },
+    { x: cx + 0.22, y: seatY + 0.04 },
+    { x: cx - 0.22, y: seatY + 0.04 }
   ];
-  let pick = candidates[1];
+  let pick = candidates[0];
   for (const c of candidates) {
     if (!isBlockedCircle(c.x, c.y)) {
       pick = c;
       break;
     }
   }
-  /** North-facing slump toward the bench */
   const facing = -Math.PI / 2;
   return { dx: Number(pick.x.toFixed(5)), dy: Number(pick.y.toFixed(5)), facing };
 }
@@ -2061,7 +2058,7 @@ function handleInteract(client, message = {}) {
   const roadside = resolveInteractRoadside(client.player, message);
   if (roadside) {
     if (roadside.kind === "bench") {
-      const seat = resolveBenchSeatForPlayer(client.player, roadside);
+      const seat = resolveBenchSeatForPlayer(roadside);
       client.player.x = seat.dx;
       client.player.y = seat.dy;
       client.player.facing = seat.facing;
@@ -2824,18 +2821,20 @@ function snapshotForEachCellInWorldRect(minX, maxX, minY, maxY, cellSize, visito
 
 function broadcastSnapshot() {
   const margin = CHAT_VIEW_MARGIN_TILES;
+  /** Widen NPC inclusion so crowds at the view edge still get position updates. */
+  const npcMargin = margin + 18;
   const cellSize = CHUNK_SIZE;
   const mobCullBounds = computePlayerViewUnionBounds(CHAT_VIEW_MARGIN_TILES);
 
   // Helper: is a point inside a client's view (with optional margin)
-  function isInView(view, x, y) {
+  function isInView(view, x, y, pad = margin) {
     return (
       Number.isFinite(x) &&
       Number.isFinite(y) &&
-      x >= view.x - view.halfW - margin &&
-      x <= view.x + view.halfW + margin &&
-      y >= view.y - view.halfH - margin &&
-      y <= view.y + view.halfH + margin
+      x >= view.x - view.halfW - pad &&
+      x <= view.x + view.halfW + pad &&
+      y >= view.y - view.halfH - pad &&
+      y <= view.y + view.halfH + pad
     );
   }
 
@@ -2987,7 +2986,7 @@ function broadcastSnapshot() {
         if (seenNpc.has(n.id)) {
           continue;
         }
-        if (isInView(view, n.x, n.y)) {
+        if (isInView(view, n.x, n.y, npcMargin)) {
           seenNpc.add(n.id);
           npcs.push(n);
         }
@@ -4169,11 +4168,15 @@ function normalizeView(view = {}, player = null) {
   const y = Number(view.y);
   const halfW = Number(view.halfW);
   const halfH = Number(view.halfH);
+  /**
+   * Caps must cover client max zoom-out (zoom 0.25 → large halfW in tiles) or hub NPCs
+   * stay culled from snapshots while still visible — they look frozen.
+   */
   return {
     x: Number.isFinite(x) ? x : fallback.x,
     y: Number.isFinite(y) ? y : fallback.y,
-    halfW: Number.isFinite(halfW) ? Math.max(6, Math.min(80, halfW)) : fallback.halfW,
-    halfH: Number.isFinite(halfH) ? Math.max(4, Math.min(45, halfH)) : fallback.halfH
+    halfW: Number.isFinite(halfW) ? Math.max(6, Math.min(220, halfW)) : fallback.halfW,
+    halfH: Number.isFinite(halfH) ? Math.max(4, Math.min(140, halfH)) : fallback.halfH
   };
 }
 
