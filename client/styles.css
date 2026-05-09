@@ -374,6 +374,7 @@ button:focus-visible {
 }
 
 .equipment-slot.legendary, .inventory-slot.legendary, .shop-row.legendary { border-left-color: #ffb84d; }
+.equipment-slot.mythic,    .inventory-slot.mythic,    .shop-row.mythic    { border-left-color: #fb7185; }
 .equipment-slot.epic,      .inventory-slot.epic,      .shop-row.epic      { border-left-color: #a855f7; }
 .equipment-slot.rare,      .inventory-slot.rare,      .shop-row.rare      { border-left-color: #3b82f6; }
 .equipment-slot.uncommon,  .inventory-slot.uncommon,  .shop-row.uncommon  { border-left-color: #22c55e; }

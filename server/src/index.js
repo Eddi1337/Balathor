@@ -119,8 +119,12 @@ const BLOCK_CHANCE_BY_RARITY = Object.freeze({
   uncommon: 0.28,
   rare: 0.36,
   epic: 0.45,
-  legendary: 0.62
+  legendary: 0.62,
+  mythic: 0.72
 });
+const consecrationZones = [];
+const CONSECRATION_DURATION_MS = 5000;
+const CONSECRATION_TICK_MS = 500;
 const MOB_TYPES = Object.freeze({
   forest: {
     enemies: [
@@ -240,6 +244,98 @@ const ITEM_COLORS = [
   "#45aaf2", "#a55eea", "#fd79a8", "#00cec9", "#6c5ce7",
   "#e17055", "#74b9ff", "#55efc4", "#fdcb6e", "#c8a0ff",
   "#ff7675", "#00b894", "#e84393", "#0984e3", "#f39c12"
+];
+
+/** Above legendary — unique visuals & combat perks via specialEffects (see getEquipmentSpecial). */
+const MYTHIC_ARTIFACT_TEMPLATES = [
+  {
+    templateId: "mythic_dawnblade",
+    type: "weapon",
+    name: "☆ Dawnblade Ascendant",
+    icon: "sword",
+    rarity: "mythic",
+    color: "#ffaa44",
+    weaponKind: "sword",
+    visual: { weaponStyle: "ascendant", weaponColor: "#ffaa44" },
+    stats: { damage: 46, strength: 10 },
+    specialEffects: { lifesteal: 0.07 },
+    value: 11200
+  },
+  {
+    templateId: "mythic_starsing",
+    type: "weapon",
+    name: "☆ Starsinger Choirstaff",
+    icon: "staff",
+    rarity: "mythic",
+    color: "#66ffe8",
+    weaponKind: "staff",
+    visual: { weaponStyle: "ascendant", weaponColor: "#66ffe8" },
+    stats: { damage: 44, strength: 8 },
+    specialEffects: { lifesteal: 0.055 },
+    value: 10800
+  },
+  {
+    templateId: "mythic_voidbranch",
+    type: "weapon",
+    name: "☆ Voidbranch Longbow",
+    icon: "bow",
+    rarity: "mythic",
+    color: "#cc77ff",
+    weaponKind: "bow",
+    visual: { weaponStyle: "ascendant", weaponColor: "#cc77ff" },
+    stats: { damage: 42, strength: 9 },
+    specialEffects: { lifesteal: 0.065 },
+    value: 10600
+  },
+  {
+    templateId: "mythic_sunspire_edge",
+    type: "weapon",
+    name: "☆ Sunspire Crusblade",
+    icon: "sword",
+    rarity: "mythic",
+    color: "#ffe066",
+    weaponKind: "sword",
+    visual: { weaponStyle: "ascendant", weaponColor: "#ffe066" },
+    stats: { damage: 50, strength: 11 },
+    specialEffects: { lifesteal: 0.08 },
+    value: 12800
+  },
+  {
+    templateId: "mythic_aegisvault",
+    type: "armor",
+    name: "☆ Aegisvault Mantle",
+    icon: "armor",
+    rarity: "mythic",
+    color: "#8899ff",
+    visual: { torsoStyle: "ascendant", torsoColor: "#8899ff" },
+    stats: { health: 120, armour: 22 },
+    specialEffects: { consecrationPower: 0.35 },
+    value: 11800
+  },
+  {
+    templateId: "mythic_soulwoven_robes",
+    type: "armor",
+    name: "☆ Soulwoven Apexrobe",
+    icon: "armor",
+    rarity: "mythic",
+    color: "#ffaacc",
+    visual: { torsoStyle: "ascendant", torsoColor: "#ffaacc" },
+    stats: { health: 135, armour: 14 },
+    specialEffects: { consecrationPower: 0.45 },
+    value: 12200
+  },
+  {
+    templateId: "mythic_ironsoul_carapace",
+    type: "armor",
+    name: "☆ Ironsoul Warplate",
+    icon: "armor",
+    rarity: "mythic",
+    color: "#b87333",
+    visual: { torsoStyle: "ascendant", torsoColor: "#b87333" },
+    stats: { health: 95, armour: 34 },
+    specialEffects: { consecrationPower: 0.22 },
+    value: 11900
+  }
 ];
 
 let nextClientId = 1;
@@ -651,6 +747,8 @@ function simulate() {
 
   updateNpcs(dt, pushChat, computeNpcActivationBounds());
   updateMobs(dt, computePlayerViewUnionBounds(CHAT_VIEW_MARGIN_TILES + MOB_ACTIVITY_MARGIN_TILES));
+
+  processConsecrationZones(Date.now());
 
   if (tick % Math.round(TICK_RATE / SNAPSHOT_RATE) === 0) {
     broadcastSnapshot();
@@ -1174,6 +1272,14 @@ function handleAttack(client, message = {}) {
     event.endX = Number(hitX.toFixed(3));
     event.endY = Number(hitY.toFixed(3));
 
+    const ls = getEquipmentSpecial(client.player).lifesteal;
+    if (ls > 0 && client.player.hp < client.player.maxHp) {
+      client.player.hp = Math.min(
+        client.player.maxHp,
+        client.player.hp + Math.max(1, Math.round(damage * ls))
+      );
+    }
+
     if (hitKind === "mob" && hit.hp <= 0) {
       hit.dead = true;
       hit.respawnAt = now + (hit.isCritter ? 4200 : MOB_RESPAWN_MS);
@@ -1574,6 +1680,141 @@ function getEquipmentStats(player) {
     }
   }
   return totals;
+}
+
+function getEquipmentSpecial(player) {
+  let lifesteal = 0;
+  let consecrationPower = 0;
+  for (const item of Object.values(player.equipment || {})) {
+    const se = item?.specialEffects;
+    if (!se || typeof se !== "object") continue;
+    lifesteal += Number(se.lifesteal || 0);
+    consecrationPower += Number(se.consecrationPower || 0);
+  }
+  return { lifesteal, consecrationPower };
+}
+
+function getPlayerById(id) {
+  for (const c of clients.values()) {
+    if (c.player?.id === id) {
+      return c.player;
+    }
+  }
+  return null;
+}
+
+function spawnConsecrationZone(player, now) {
+  const gx = Math.floor(player.x) + 0.5;
+  const gy = Math.floor(player.y) + 0.5;
+  consecrationZones.push({
+    casterId: player.id,
+    gx,
+    gy,
+    radius: SPELL_DAMAGE_PROFILES.consecration.radius,
+    expiresAt: now + CONSECRATION_DURATION_MS,
+    nextTickAt: now + CONSECRATION_TICK_MS
+  });
+}
+
+function processConsecrationZones(now) {
+  consecrationZones = consecrationZones.filter((z) => z.expiresAt > now);
+  for (const z of consecrationZones) {
+    if (now < z.nextTickAt) continue;
+    z.nextTickAt = now + CONSECRATION_TICK_MS;
+
+    const consecrationCaster = getPlayerById(z.casterId);
+    if (!consecrationCaster || consecrationCaster.hp <= 0) continue;
+
+    const profile = SPELL_DAMAGE_PROFILES.consecration;
+    const equip = getEquipmentStats(consecrationCaster);
+    const spec = getEquipmentSpecial(consecrationCaster);
+    const baseDamage =
+      profile.damage +
+      consecrationCaster.stats.strength * STAT_POINT_STRENGTH_DAMAGE +
+      equip.damage;
+    const tickDamage = Math.max(
+      1,
+      Math.round(baseDamage * 0.11 * (1 + (spec.consecrationPower || 0)))
+    );
+
+    for (const mob of mobs) {
+      if (mob.dead) continue;
+      if (Math.hypot(mob.x - z.gx, mob.y - z.gy) > z.radius) continue;
+
+      const damage = Math.max(1, Math.round(tickDamage + mob.level * 3));
+      mob.hp = Math.max(0, mob.hp - damage);
+      const event = {
+        type: "combat",
+        kind: "spell",
+        weapon: "consecration",
+        projectileKind: null,
+        attackerId: consecrationCaster.id,
+        x: Number(consecrationCaster.x.toFixed(3)),
+        y: Number(consecrationCaster.y.toFixed(3)),
+        facing: Number(consecrationCaster.facing.toFixed(3)),
+        range: z.radius,
+        hit: true,
+        targetId: mob.id,
+        targetKind: "mob",
+        damage,
+        targetHp: mob.hp,
+        endX: Number(mob.x.toFixed(3)),
+        endY: Number(mob.y.toFixed(3))
+      };
+
+      if (mob.hp <= 0 && !mob.dead) {
+        mob.dead = true;
+        mob.respawnAt = now + (mob.isCritter ? 4200 : MOB_RESPAWN_MS);
+        event.defeated = true;
+        const progress = awardXp(consecrationCaster, xpForMob(mob));
+        event.xpGained = progress.xpGained;
+        event.levelsGained = progress.levelsGained;
+        const goldReward = goldForMob(mob);
+        consecrationCaster.gold += goldReward;
+        event.goldGained = goldReward;
+        dropLootForMob(mob);
+      }
+
+      broadcastCombat(event);
+    }
+
+    const healAmt = Math.max(
+      3,
+      Math.round(consecrationCaster.maxHp * 0.016 * (1 + (spec.consecrationPower || 0) * 0.55))
+    );
+
+    for (const client of clients.values()) {
+      const pl = client.player;
+      if (!pl || pl.hp <= 0) continue;
+      if (Math.hypot(pl.x - z.gx, pl.y - z.gy) > z.radius) continue;
+
+      const before = pl.hp;
+      pl.hp = Math.min(pl.maxHp, pl.hp + healAmt);
+      const gained = pl.hp - before;
+      if (gained <= 0) continue;
+
+      broadcastCombat({
+        type: "combat",
+        kind: "spell",
+        weapon: "consecration",
+        projectileKind: null,
+        attackerId: consecrationCaster.id,
+        heal: true,
+        healAmount: gained,
+        x: Number(pl.x.toFixed(3)),
+        y: Number(pl.y.toFixed(3)),
+        facing: Number(pl.facing.toFixed(3)),
+        range: z.radius,
+        hit: true,
+        targetId: pl.id,
+        targetKind: "player",
+        damage: 0,
+        targetHp: pl.hp,
+        endX: Number(pl.x.toFixed(3)),
+        endY: Number(pl.y.toFixed(3))
+      });
+    }
+  }
 }
 
 function getActiveLoadout(player) {
@@ -2150,7 +2391,7 @@ function createItemDatabase() {
     result.push(createItemTemplate(type, rarity, i));
   }
 
-  return result;
+  return [...result, ...MYTHIC_ARTIFACT_TEMPLATES];
 }
 
 function createItemTemplate(type, rarity, index) {
@@ -2252,7 +2493,13 @@ function createChests() {
 
 function createLootItem(seedX, seedY, qualityBias = 0) {
   const roll = hash2(seedX + nextItemId, seedY - nextItemId, 820) + qualityBias;
-  const highQuality = roll > 0.97 ? "legendary" : roll > 0.92 ? "epic" : roll > 0.74 ? "rare" : roll > 0.46 ? "uncommon" : null;
+  const highQuality =
+    roll > 0.992 ? "mythic"
+      : roll > 0.97 ? "legendary"
+      : roll > 0.92 ? "epic"
+      : roll > 0.74 ? "rare"
+      : roll > 0.46 ? "uncommon"
+      : null;
   const candidates = highQuality
     ? itemDatabase.filter((item) => item.rarity === highQuality)
     : itemDatabase;
@@ -2265,7 +2512,8 @@ function cloneItem(template) {
     ...template,
     id: `item_${nextItemId++}`,
     stats: { ...(template.stats || {}) },
-    visual: { ...(template.visual || {}) }
+    visual: { ...(template.visual || {}) },
+    specialEffects: template.specialEffects ? { ...template.specialEffects } : undefined
   };
 }
 
@@ -2281,7 +2529,8 @@ function getItemValue(item) {
     uncommon: 1.35,
     rare: 1.8,
     epic: 2.35,
-    legendary: 3.5
+    legendary: 3.5,
+    mythic: 5.5
   }[item?.rarity] || 1;
   const statValue =
     (Number(stats.damage) || 0) * 4 +
@@ -2389,6 +2638,7 @@ function publicShopItem(template) {
     weaponKind: template.weaponKind,
     stats: template.stats || {},
     visual: template.visual || {},
+    specialEffects: template.specialEffects ? { ...template.specialEffects } : undefined,
     value: getItemValue(template),
     price: getBuyPrice(template),
     sellPrice: getSellPrice(template)
@@ -3186,7 +3436,9 @@ function sanitizeItem(item) {
     id: String(item.id || `item_${nextItemId++}`).slice(0, 48),
     value: clampInteger(item.value ?? getItemValue(item), 0, 1000000),
     stats: typeof item.stats === "object" && item.stats ? { ...item.stats } : {},
-    visual: typeof item.visual === "object" && item.visual ? { ...item.visual } : {}
+    visual: typeof item.visual === "object" && item.visual ? { ...item.visual } : {},
+    specialEffects:
+      typeof item.specialEffects === "object" && item.specialEffects ? { ...item.specialEffects } : {}
   };
 }
 
@@ -3251,6 +3503,12 @@ function handleCastSpell(client, spellId) {
     send(client, { type: "spellCooldown", spellId, cooldownMs: cd, readyAt: nextReadyAt });
     return;
   }
+
+  if (spellId === "consecration" && !canAttackAt(p.x, p.y)) {
+    send(client, { type: "serverMessage", message: "combat_protected" });
+    return;
+  }
+
   SPELL_COOLDOWNS.set(cdKey, now);
 
   if (spellId === "healing_aura" || spellId === "lay_on_hands") {
@@ -3261,15 +3519,35 @@ function handleCastSpell(client, spellId) {
     p._buffExpires = now + 5000;
     p._buff = spellId;
   }
-  applySpellDamage(client, spellId, now);
+  if (spellId === "consecration") {
+    spawnConsecrationZone(p, now);
+  } else {
+    applySpellDamage(client, spellId, now);
+  }
+
+  const gx = Math.floor(p.x) + 0.5;
+  const gy = Math.floor(p.y) + 0.5;
   for (const c of clients.values()) {
-    send(c, { type: "spellCast", casterId: p.id, spellId, x: p.x, y: p.y, facing: p.facing, cooldownMs: cd, readyAt: now + cd });
+    send(c, {
+      type: "spellCast",
+      casterId: p.id,
+      spellId,
+      x: spellId === "consecration" ? gx : p.x,
+      y: spellId === "consecration" ? gy : p.y,
+      groundAnchor: spellId === "consecration",
+      facing: p.facing,
+      cooldownMs: cd,
+      readyAt: now + cd
+    });
   }
   send(client, { type: "spellCooldown", spellId, cooldownMs: cd, readyAt: now + cd });
   broadcastSnapshot();
 }
 
 function applySpellDamage(client, spellId, now) {
+  if (spellId === "consecration") {
+    return;
+  }
   const player = client.player;
   const profile = SPELL_DAMAGE_PROFILES[spellId];
   if (!player || !profile || !canAttackAt(player.x, player.y)) {

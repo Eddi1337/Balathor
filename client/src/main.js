@@ -90,6 +90,8 @@ const safeZoneIndicator = document.querySelector("#safeZoneIndicator");
 const TILE_SIZE = 32;
 /** Mirrors server/src/world.js STARTING_AREA — combat-disabled plaza only */
 const STARTING_SAFE_ZONE = { x: 0, y: 0, radius: 26 };
+/** Matches server SPELL_DAMAGE_PROFILES.consecration.radius */
+const CONSECRATION_RADIUS_TILES = 4.6;
 const BUY_HOUSE_INTERACT_RADIUS = 8;
 const TRADER_CLICK_HIT_RADIUS = 3.6;
 const TRADER_CLICK_PLAYER_RADIUS = 8;
@@ -128,7 +130,7 @@ const TALENT_TREES = {
     ]},
     { name: "Retribution", spells: [
       { id: "holy_strike",    name: "Holy Strike",    desc: "Holy-charged powerful melee blow" },
-      { id: "consecration",   name: "Consecration",   desc: "Bless the ground, damaging nearby foes" },
+      { id: "consecration",   name: "Consecration",   desc: "Consecrate the ground for ~5s — hurts foes, heals allies in the circle" },
       { id: "divine_wrath",   name: "Divine Wrath",   desc: "Smite enemies in a wide arc" }
     ]},
     { name: "Recovery", spells: [
@@ -746,6 +748,7 @@ function handleServerMessage(message) {
       x: message.x,
       y: message.y,
       facing: message.facing,
+      fixedGround: Boolean(message.groundAnchor),
       createdAt: performance.now(),
       ttl: SPELL_ANIMATION_CONFIG[message.spellId]?.ttl || 900
     });
@@ -930,7 +933,16 @@ function applyCombatEvent(event) {
   state.combatFx.push({
     ...event,
     createdAt: performance.now(),
-    ttl: event.kind === "projectile" ? (event.projectileKind === "fireball" ? 560 : 420) : event.hit ? 360 : 220
+    ttl:
+      event.kind === "projectile"
+        ? event.projectileKind === "fireball"
+          ? 560
+          : 420
+        : event.hit && event.heal
+          ? 520
+          : event.hit
+            ? 360
+            : 220
   });
 }
 
@@ -2836,7 +2848,7 @@ const SPELL_ANIMATION_CONFIG = {
   divine_shield: { kind: "barrier", color: "#ffe066", accent: "#ffffff", ttl: 1100 },
   fortify: { kind: "fortify", color: "#aabbcc", accent: "#edf3f7", ttl: 1000 },
   holy_strike: { kind: "melee", color: "#ffee88", accent: "#ffffff", ttl: 620 },
-  consecration: { kind: "ground", color: "#ffd700", accent: "#ffee88", ttl: 1100 },
+  consecration: { kind: "ground", color: "#ffd700", accent: "#ffee88", ttl: 5000 },
   divine_wrath: { kind: "wrath", color: "#ffcc44", accent: "#ffffff", ttl: 980 },
   healing_aura: { kind: "heal", color: "#66ff88", accent: "#d8ffd8", ttl: 1100 },
   lay_on_hands: { kind: "heal_big", color: "#44dd66", accent: "#ffffff", ttl: 1200 },
@@ -3545,6 +3557,23 @@ function drawItemIcon(item, x, y) {
     const isHeavy = vstyle === "armor"  || nm.includes("chestplate") || nm.includes("plate");
     const isRobe  = vstyle === "robe"   || nm.includes("robe");
 
+    if (vstyle === "ascendant") {
+      ctx.shadowColor = "#c084fc";
+      ctx.shadowBlur = 6;
+      ctx.fillStyle = color;
+      ctx.fillRect(x - 8, y - 10, 16, 14);
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = "#67e8f9";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x - 8, y - 10, 16, 14);
+      ctx.fillStyle = "#fde68a";
+      ctx.fillRect(x - 8, y - 10, 16, 3);
+      ctx.fillRect(x - 8, y + 2, 16, 3);
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.fillRect(x - 2, y - 7, 4, 10);
+      return;
+    }
+
     if (isHeavy) {
       // Breastplate — wide shoulders, centre seam
       ctx.fillStyle = color;
@@ -3765,6 +3794,24 @@ function drawTorso2(tx, ty, s, style, torsoColor, trimColor, classId, fx, fy) {
     return;
   }
 
+  if (style === "ascendant") {
+    ctx.shadowColor = "#e879f9";
+    ctx.shadowBlur = 11;
+    ctx.fillStyle = torsoColor;
+    ctx.fillRect(tx, ty, w, h);
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = "transparent";
+    ctx.fillStyle = "#fde68a";
+    ctx.fillRect(tx, ty, w, s);
+    ctx.fillRect(tx, ty + h - s, w, s);
+    ctx.fillStyle = "#67e8f9";
+    ctx.fillRect(tx, ty + s, s, h - 2 * s);
+    ctx.fillRect(tx + w - s, ty + s, s, h - 2 * s);
+    ctx.fillStyle = "rgba(255,255,255,0.42)";
+    ctx.fillRect(tx + (w >> 1) - Math.max(1, s >> 1), ty + s, Math.max(2, s), h - 2 * s);
+    return;
+  }
+
   if (style === "armor") {
     // Chestplate — boxy, metallic
     ctx.fillStyle = "#5a6577";
@@ -3889,36 +3936,38 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
   if (!entity.weaponKind) {
     return;
   }
+  const ornateWeapon = style === "ornate" || style === "legendary" || style === "ascendant";
   const isLegendary = style === "legendary";
+  const isAscendant = style === "ascendant";
   ctx.save();
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
-  if (isLegendary) {
+  if (isLegendary || isAscendant) {
     ctx.save();
-    ctx.shadowColor = "#ffd166";
-    ctx.shadowBlur = 14;
+    ctx.shadowColor = isAscendant ? "#c084fc" : "#ffd166";
+    ctx.shadowBlur = isAscendant ? 17 : 14;
   }
 
   if (weaponKind === "staff") {
     const tipX = lHandX + dirX * 8 - sideX * 4;
     const tipY = lHandY - 40 + dirY * 8 - sideY * 4;
-    ctx.strokeStyle = style === "ornate" || style === "legendary" ? accent : "#6b4428";
+    ctx.strokeStyle = ornateWeapon ? accent : "#6b4428";
     ctx.lineWidth = style === "heavy" ? 7 : 5;
     ctx.beginPath();
     ctx.moveTo(lHandX, lHandY);
     ctx.lineTo(tipX, tipY);
     ctx.stroke();
-    ctx.fillStyle = style === "ornate" || style === "legendary" ? "#c79cff" : "#ff7a45";
+    ctx.fillStyle = ornateWeapon ? (isAscendant ? "#67e8f9" : "#c79cff") : "#ff7a45";
     ctx.beginPath();
     ctx.arc(tipX, tipY, style === "heavy" ? 8 : 6, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = "#ffd166";
+    ctx.fillStyle = isAscendant ? "#fde68a" : "#ffd166";
     ctx.fillRect(tipX - 3, tipY - 3, 6, 6);
   } else if (weaponKind === "sword") {
     const swordTipX = rHandX + dirX * 28 + sideX * 6;
     const swordTipY = rHandY - 10 + dirY * 28 + sideY * 6;
-    ctx.strokeStyle = style === "ornate" || style === "legendary" ? accent : "#edf3f7";
+    ctx.strokeStyle = ornateWeapon ? accent : "#edf3f7";
     ctx.lineWidth = style === "heavy" ? 7 : 5;
     ctx.beginPath();
     ctx.moveTo(rHandX, rHandY);
@@ -3940,11 +3989,11 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
     ctx.stroke();
     ctx.fillStyle = accent;
     ctx.fillRect(lHandX - 2, lHandY - 14, 4, 20);
-    if (style === "ornate" || style === "legendary") {
+    if (ornateWeapon) {
       ctx.fillRect(lHandX - 7, lHandY - 6, 14, 4);
     }
   } else {
-    ctx.strokeStyle = style === "ornate" || style === "legendary" ? accent : "#8b5a34";
+    ctx.strokeStyle = ornateWeapon ? accent : "#8b5a34";
     ctx.lineWidth = style === "heavy" ? 7 : 5;
     ctx.beginPath();
     ctx.moveTo(lHandX - dirX * 12, lHandY - 12 - dirY * 12);
@@ -3964,7 +4013,7 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
     ctx.stroke();
   }
 
-  if (isLegendary) {
+  if (isLegendary || isAscendant) {
     ctx.restore();
   }
 
@@ -4067,6 +4116,11 @@ function drawCombatFx() {
       continue;
     }
 
+    if (fx.heal) {
+      drawDamageFx(fx, pct, halfW, halfH);
+      continue;
+    }
+
     const reach = 28 + pct * 8;
 
     ctx.save();
@@ -4162,9 +4216,15 @@ function drawDamageFx(fx, pct, halfW, halfH) {
   }
 
   ctx.globalAlpha = 1 - pct;
-  ctx.fillStyle = fx.blocked ? "#b9d7ff" : "#ffdf7a";
   ctx.font = "13px ui-sans-serif, system-ui";
   ctx.textAlign = "center";
+  if (fx.heal && Number.isFinite(fx.healAmount) && fx.healAmount > 0) {
+    ctx.fillStyle = "#86ffb8";
+    ctx.fillText(`+${fx.healAmount}`, tx, ty - 22 - pct * 18);
+    ctx.globalAlpha = 1;
+    return;
+  }
+  ctx.fillStyle = fx.blocked ? "#b9d7ff" : "#ffdf7a";
   ctx.fillText(fx.blocked ? `blocked -${fx.damage}` : `-${fx.damage}`, tx, ty - 22 - pct * 18);
   ctx.globalAlpha = 1;
 }
@@ -4179,8 +4239,16 @@ function drawTalentSpellFx() {
     const age = now - fx.createdAt;
     const pct = Math.max(0, Math.min(1, age / fx.ttl));
     const caster = state.players.get(fx.casterId);
-    const worldX = Number.isFinite(caster?.renderX) ? caster.renderX : fx.x;
-    const worldY = Number.isFinite(caster?.renderY) ? caster.renderY : fx.y;
+    const worldX = fx.fixedGround
+      ? fx.x
+      : Number.isFinite(caster?.renderX)
+        ? caster.renderX
+        : fx.x;
+    const worldY = fx.fixedGround
+      ? fx.y
+      : Number.isFinite(caster?.renderY)
+        ? caster.renderY
+        : fx.y;
     const sx = worldX * TILE_SIZE - state.camera.x + halfW;
     const sy = worldY * TILE_SIZE - state.camera.y + halfH;
     const angle = Number.isFinite(fx.facing) ? fx.facing : Number.isFinite(caster?.facing) ? caster.facing : 0;
@@ -4232,7 +4300,7 @@ function drawTalentSpellFx() {
         drawHolyStrike(sx, sy, angle, pct, cfg);
         break;
       case "ground":
-        drawConsecration(sx, sy, pct, cfg);
+        drawConsecration(sx, sy, age, pct, cfg);
         break;
       case "wrath":
         drawDivineWrath(sx, sy, angle, pct, cfg);
@@ -4412,17 +4480,55 @@ function drawHolyStrike(x, y, angle, pct, cfg) {
   ctx.restore();
 }
 
-function drawConsecration(x, y, pct, cfg) {
-  drawSpellRing(x, y, 36, cfg.color);
-  drawSpellRing(x, y, 52 * pct, cfg.accent);
-  ctx.strokeStyle = cfg.accent;
-  ctx.lineWidth = 2;
+function drawConsecration(x, y, ageMs, pct, cfg) {
+  const radiusPx = CONSECRATION_RADIUS_TILES * TILE_SIZE;
+  const rx = radiusPx * 0.92;
+  const ry = radiusPx * 0.48;
+  const pulse = 0.5 + 0.5 * Math.sin(ageMs * 0.007 + pct * 4);
+  const baseAlpha = Math.max(0.12, 0.42 * (1 - pct * 0.55) + pulse * 0.12);
+
+  ctx.save();
+  ctx.translate(x, y + TILE_SIZE * 0.08);
+  ctx.globalCompositeOperation = "lighter";
+
+  const floorGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+  floorGlow.addColorStop(0, hexWithAlpha(cfg.accent, baseAlpha + 0.18));
+  floorGlow.addColorStop(0.45, hexWithAlpha(cfg.color, baseAlpha * 0.85));
+  floorGlow.addColorStop(1, hexWithAlpha(cfg.color, 0));
+
+  ctx.fillStyle = floorGlow;
   ctx.beginPath();
-  ctx.moveTo(x - 28, y - 8);
-  ctx.lineTo(x + 28, y - 8);
-  ctx.moveTo(x, y - 36);
-  ctx.lineTo(x, y + 20);
+  ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = hexWithAlpha(cfg.accent, 0.35 + pulse * 0.35);
+  ctx.lineWidth = 2;
+  ctx.setLineDash([10, 7]);
+  ctx.beginPath();
+  ctx.ellipse(0, 0, rx * 0.88, ry * 0.82, 0, 0, Math.PI * 2);
   ctx.stroke();
+  ctx.setLineDash([]);
+
+  const inner = ctx.createRadialGradient(0, 0, 0, 0, 0, rx * 0.35);
+  inner.addColorStop(0, hexWithAlpha("#ffffff", 0.15 + pulse * 0.12));
+  inner.addColorStop(1, hexWithAlpha(cfg.accent, 0));
+  ctx.fillStyle = inner;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, rx * 0.34, ry * 0.22, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function hexWithAlpha(hex, a) {
+  const h = String(hex).replace("#", "");
+  if (h.length !== 6) {
+    return `rgba(255,215,0,${Math.max(0, Math.min(1, a))})`;
+  }
+  const r = Number.parseInt(h.slice(0, 2), 16);
+  const g = Number.parseInt(h.slice(2, 4), 16);
+  const b = Number.parseInt(h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${Math.max(0, Math.min(1, a))})`;
 }
 
 function drawDivineWrath(x, y, angle, pct, cfg) {
