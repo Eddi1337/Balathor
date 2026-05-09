@@ -1216,8 +1216,11 @@ function updateSmoothPlayers(dt) {
     if (player.renderMoving) {
       player.walkPhase = (player.walkPhase || 0) + dt * 9;
       if (player.id === state.selfId) {
-        state.benchSitUntil = 0;
-        state.benchSeatIndefinite = false;
+        /** Do not clear bench pose from render catch-up while server still reports idle. */
+        if (!state.benchSeatIndefinite || isMoving) {
+          state.benchSitUntil = 0;
+          state.benchSeatIndefinite = false;
+        }
       }
     }
   }
@@ -3015,8 +3018,8 @@ function tryRoadsideBenchClickInteract(event) {
     return false;
   }
 
-  /** Must reach the stall from here (matches server leash for click-target interacts). */
-  if (Math.hypot(world.x - self.x, world.y - self.y) > 6.1) {
+  /** Match server `resolveInteractRoadside`: player must be near the bench anchor (not click→player — a far click on the seat still sits you in one try). */
+  if (Math.hypot(self.x - bx, self.y - by) > 5.85) {
     return false;
   }
 
