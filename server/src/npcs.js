@@ -1,4 +1,6 @@
-const { isBlockedCircle } = require("./world");
+const WORLD = require("./world");
+const { isBlockedCircle } = WORLD;
+const { HUB_NPC_ORDER } = require("./hubRoundTown.js");
 
 const NPC_SPEED = 2.0;
 const MOVE_INTERVAL_MIN = 3000;
@@ -6,7 +8,251 @@ const MOVE_INTERVAL_MAX = 9000;
 const CHAT_INTERVAL_MIN = 28000;
 const CHAT_INTERVAL_MAX = 70000;
 
-const DEFINITIONS = [
+const HUB_POPULATION_TARGET = 100;
+const CLASSES_ROT = ["knight", "ranger", "mage"];
+
+/** Cached tile centres for procedural hub walkers */
+let _hubNavAnchorsCache = [];
+
+function rebuildHubNavAnchors(navKeys) {
+  _hubNavAnchorsCache = [];
+  if (!(navKeys instanceof Set) || navKeys.size < 48) return;
+  for (const k of navKeys) {
+    const [tx, ty] = k.split(",").map(Number);
+    _hubNavAnchorsCache.push({ cx: tx + 0.5, cy: ty + 0.5 });
+  }
+}
+
+function npcIdHashSeed(idStr) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < idStr.length; i += 1) {
+    h ^= idStr.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
+}
+
+function hubTileKey(xf, yf) {
+  return `${Math.floor(xf)},${Math.floor(yf)}`;
+}
+
+/** Grid-aligned hops that stay inside the procedural road mask. */
+function steerNpcGridAlongPaths(npc, navSet, step) {
+  const dx = npc._targetX - npc.x;
+  const dy = npc._targetY - npc.y;
+  const dist = Math.hypot(dx, dy);
+  if (!(navSet instanceof Set) || navSet.size < 48 || dist < 0.08) {
+    return false;
+  }
+  const ux = dx / dist;
+  const uy = dy / dist;
+  const CARD = [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1]
+  ];
+  CARD.sort((a, b) => b[0] * ux + b[1] * uy - (a[0] * ux + a[1] * uy));
+  for (const scaler of [1, 0.55]) {
+    const s = step * scaler;
+    for (const [mx, my] of CARD) {
+      const nx = npc.x + mx * s;
+      const ny = npc.y + my * s;
+      if (navSet.has(hubTileKey(nx, ny))) {
+        npc.x = nx;
+        npc.y = ny;
+        npc.facing = Math.atan2(my, mx);
+        npc.moving = true;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function sampleHubPatrolWaypoint(npc, navSet) {
+  const pts = _hubNavAnchorsCache;
+  if (!(navSet instanceof Set) || pts.length < 60 || npc.patrolRadius < 0.95) {
+    return null;
+  }
+  npc._hubWalkSalt = (((npc._hubWalkSalt ?? npcIdHashSeed(npc.id)) + 982451653) >>> 0) >>> 0;
+  const bubble = Number(WORLD.HUB_TOWN_GRASS_RADIUS) || 132;
+  const maxSq = Math.min((npc.patrolRadius + 13) ** 2, bubble * bubble);
+  const picks = pts.length;
+
+  function jitterSeed(pi) {
+    const jx = (npc._hubWalkSalt + pi * 7) % 19;
+    const jy = ((npc._hubWalkSalt >>> 11) ^ pi) % 19;
+    return {
+      tx: pts[pi].cx + jx / 170 - 0.055,
+      ty: pts[pi].cy + jy / 170 - 0.055
+    };
+  }
+
+  for (let t = 0; t < 190; t += 1) {
+    const pi = ((npc._hubWalkSalt + t * 1103515245) >>> 0) % picks;
+    const q = pts[pi];
+    const ddx = q.cx - npc.homeX;
+    const ddy = q.cy - npc.homeY;
+    if (ddx * ddx + ddy * ddy <= maxSq) {
+      return jitterSeed(pi);
+    }
+  }
+  for (let t = 0; t < 120; t += 1) {
+    const pi = ((npc._hubWalkSalt + t * 747796405) >>> 0) % picks;
+    const q = pts[pi];
+    const ddx = q.cx - npc.x;
+    const ddy = q.cy - npc.y;
+    if (ddx * ddx + ddy * ddy <= (npc.patrolRadius + 36) ** 2) {
+      return jitterSeed(pi);
+    }
+  }
+  return null;
+}
+
+const MINGLE_DIALOGUE_POOL = Object.freeze([
+  "Mind the carts — dripped wax everywhere.",
+  "Heard someone lost a pouch near the fountains.",
+  "The east ring's packed today!",
+  "Pass the salt gossip, will you?",
+  "They say the baker's apprentice eloped.",
+  "If you sniff smoke, that's just the smith flirting with trouble.",
+  "Keep to the pavers — ankles hate mud.",
+  "Wall bell rang twice — must be supper soon.",
+  "Caravan rumours are ninety percent cloak-lint.",
+  "My boots still smell like last week's rain.",
+  "Could use a quieter corner and a sharper cheese.",
+  "They paved another spoke — marvellous dust.",
+]);
+
+const SEEK_GF_CHAT = Object.freeze([
+  "Your boots pause like someone's planning shelves.",
+  "Three quiet seconds beside you and I'd risk a rhyme.",
+  "Homestead rumours travel fast — you'd make them kinder.",
+  "If you tucked me by your hearth, I'd mind the mugs.",
+]);
+
+const SEEK_BF_CHAT = Object.freeze([
+  "Stillness suits you — mind if I lean into it?",
+  "I've got clumsy bravery and nowhere to stash it tonight.",
+  "Stand there a heartbeat longer?",
+  "If you whisper where you tuck your cloak, I'd meet you halfway.",
+]);
+
+function buildHydratedHubNpcExtras() {
+  const navKeys = WORLD.HUB_NAV_PATH_KEYS instanceof Set ? WORLD.HUB_NAV_PATH_KEYS : null;
+  rebuildHubNavAnchors(navKeys || new Set());
+  /** @type {any[]} */
+  const out = [];
+  const roadside = WORLD.HUB_ROADSIDE_FEATURES || [];
+
+  /** Procedural stall vendors (+2×1 stand footprint in hubRoundTown) */
+  for (const rs of roadside) {
+    if (rs.kind !== "market_stand") continue;
+    const vid =
+      typeof rs.vendorNpcId === "string"
+        ? rs.vendorNpcId
+        : `hub_vendor_${typeof rs.id === "string" ? rs.id : `${rs.x}_${rs.y}`}`;
+    const nx = rs.x | 0;
+    const ny = rs.y | 0;
+    const stallHue = ((((nx * 79) ^ (ny * 131)) >>> 0) % 0x666650) + 0x393028;
+    out.push({
+      id: vid,
+      name: "Stall Trader",
+      classId: "ranger",
+      primary: `#${(stallHue & 0xffffff).toString(16).padStart(6, "0")}`,
+      accent: "#ddb66a",
+      homeX: nx + 1,
+      homeY: ny + 0.38,
+      patrolRadius: 0,
+      isTrader: true,
+      dialogue: [
+        "Two tiles of shade, honest coin.",
+        "Spices cooled overnight — sweetest deal before noon.",
+        "Browse slow; I pack faster than I chatter.",
+        "Need thread, ink, luck? Mixed bag today.",
+      ]
+    });
+  }
+
+  const baseCount = BASE_NPC_DEFINITIONS.length;
+  const extrasSoFar = out.length;
+  const crowdBudget = Math.max(0, HUB_POPULATION_TARGET - baseCount - extrasSoFar);
+  const seekersPlanned = Math.min(crowdBudget, Math.max(48, Math.floor(HUB_POPULATION_TARGET * 0.55)));
+  const minglersTotal = crowdBudget - seekersPlanned;
+
+  /** @type {{ cx: number, cy: number }[]} */
+  const homes = [..._hubNavAnchorsCache];
+  function pickHome(ix, bannedSet) {
+    if (!homes.length || !bannedSet) return null;
+    for (let t = 0; t < 240; t += 1) {
+      const ti = (((ix * 193) >>> 0) + t * 514229) >>> 0;
+      const p = homes[ti % homes.length];
+      const k = `${Math.floor(p.cx)},${Math.floor(p.cy)}`;
+      if (!bannedSet.has(k)) {
+        bannedSet.add(k);
+        return { cx: p.cx, cy: p.cy, key: k };
+      }
+    }
+    return null;
+  }
+
+  const homeBanned = new Set();
+
+  /** Extra romance-seekers circulating the paths */
+  for (let si = 0; si < seekersPlanned; si += 1) {
+    const id = `hub_seek_${si}`;
+    /** Bias toward more girlfriend solicitations */
+    const gf = si % 3 !== 2;
+    const spot = pickHome(si + 1200, homeBanned);
+    if (!spot) break;
+    const seed = npcIdHashSeed(`${id}_${spot.key}`);
+    const primHue = ((((seed >>> 3) ^ 0x8899aa) >>> 0) % 0xababab) + 0x303040;
+    out.push({
+      id,
+      name: gf ? `Seeker ${si + 1}` : `Suit ${si + 1}`,
+      classId: CLASSES_ROT[seed % CLASSES_ROT.length],
+      primary: `#${(primHue & 0xffffff).toString(16).padStart(6, "0")}`,
+      accent: gf ? "#fbcfe8" : "#fde68a",
+      homeX: spot.cx + ((seed % 7) / 130 - 0.026),
+      homeY: spot.cy + ((((seed >>> 9) % 7) >>> 0) / 130 - 0.026),
+      patrolRadius: 26 + ((seed >>> 13) % 15),
+      courtPlayer: true,
+      companionPrice: 438 + (((seed >>> 17) % 41) >>> 0) + (gf ? 0 : 2),
+      bondTag: gf ? "gf" : "bf",
+      dialogue: gf ? [...SEEK_GF_CHAT] : [...SEEK_BF_CHAT]
+    });
+  }
+
+  /** General crowd without romance hooks */
+  for (let mi = 0; mi < minglersTotal; mi += 1) {
+    const id = `hub_m_${mi}`;
+    const spot = pickHome(mi + 9000, homeBanned);
+    if (!spot) break;
+    const seed = npcIdHashSeed(`${id}_${spot.key}`);
+    out.push({
+      id,
+      name: `Townsfolk ${mi + 1}`,
+      classId: CLASSES_ROT[(seed >>> 5) % CLASSES_ROT.length],
+      primary: `#${(
+        ((((seed >>> 2) ^ (mi << 11)) >>> 0) % 0xc0c0b0) +
+        0x252528
+      )
+        .toString(16)
+        .padStart(6, "0")
+        .slice(-6)}`,
+      accent: ((seed >>> 17) % 2) >>> 0 ? "#a8cfe8" : "#e8cfa8",
+      homeX: spot.cx + ((((seed >>> 13) % 5) >>> 0) / 220 - 0.016),
+      homeY: spot.cy + ((((seed >>> 19) % 5) >>> 0) / 220 - 0.016),
+      patrolRadius: 18 + (((seed >>> 23) % 18) >>> 0),
+      dialogue: [...MINGLE_DIALOGUE_POOL.slice(0, Math.min(MINGLE_DIALOGUE_POOL.length, 6))]
+    });
+  }
+
+  return out;
+}
+
+const BASE_NPC_DEFINITIONS = [
   // --- North Village ---
   {
     id: "npc_mara", name: "Innkeeper Mara",
@@ -405,6 +651,8 @@ const DEFINITIONS = [
   },
 ];
 
+const DEFINITIONS = BASE_NPC_DEFINITIONS.concat(buildHydratedHubNpcExtras());
+
 const soldCompanionNpcIds = new Set();
 const SOCIAL_PAIR_INTERVAL_MS = 11000;
 const SOCIAL_NEAR_HOME = 168;
@@ -447,6 +695,27 @@ const npcs = DEFINITIONS.map((def) => ({
     Math.random() * (CHAT_INTERVAL_MAX - CHAT_INTERVAL_MIN),
 }));
 
+const hubLinkedNpcIds = new Set(HUB_NPC_ORDER.map((entry) => entry.id));
+
+/** Keep road-following walkers aligned once homes move beside doors. */
+function refreshHubPathFollowingFlags() {
+  const hubBubble = Number(WORLD.HUB_TOWN_GRASS_RADIUS || 132) - 11;
+  for (const n of npcs) {
+    const idStr = typeof n.id === "string" ? n.id : "";
+    let follow = false;
+    if (idStr.startsWith("hub_m_") || idStr.startsWith("hub_seek_")) {
+      follow = !soldCompanionNpcIds.has(idStr);
+    } else if (hubLinkedNpcIds.has(idStr)) {
+      if (!(n.isTrader && n.patrolRadius <= 1.251)) {
+        follow = Math.hypot(n.homeX, n.homeY) <= hubBubble && Number(n.patrolRadius ?? 0) >= 3;
+      }
+    }
+    n._followHubPaths = follow;
+  }
+}
+
+refreshHubPathFollowingFlags();
+
 /** Repoint villagers + romance NPCs toward their shack door after hub regeneration. */
 function syncNpcHubHomesFromBuildings(buildings, southDoorAnchorWorldXFn) {
   if (typeof southDoorAnchorWorldXFn !== "function" || !buildings?.length) {
@@ -477,6 +746,7 @@ function syncNpcHubHomesFromBuildings(buildings, southDoorAnchorWorldXFn) {
     n.x = hx + Math.random() * 0.7 - 0.35;
     n.y = hy + Math.random() * 0.45 + 0.04;
   }
+  refreshHubPathFollowingFlags();
 }
 
 function syncSoldCompanionIdsFromAccounts(accountsRoot) {
@@ -759,6 +1029,8 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
   const now = Date.now();
   maybeStartNpcMeeting(now, activationBounds);
 
+  const navSetStatic = WORLD.HUB_NAV_PATH_KEYS instanceof Set ? WORLD.HUB_NAV_PATH_KEYS : null;
+
   for (const npc of npcs) {
     if (!npcPatrolIntersectsBounds(npc, activationBounds)) {
       continue;
@@ -784,6 +1056,18 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
       continue;
     }
 
+    const loveSeeking =
+      Boolean(npc.courtPlayer) &&
+      typeof npc.companionPrice === "number" &&
+      !soldCompanionNpcIds.has(npc.id);
+    const socialWalkTowardPeer = npc._meetPeerId && npc._meetPhase === "walk";
+    const gridPathsOk =
+      npc._followHubPaths &&
+      navSetStatic &&
+      navSetStatic.size > 96 &&
+      !(loveSeeking && courtSteers) &&
+      !(socialWalkTowardPeer);
+
     const dx = npc._targetX - npc.x;
     const dy = npc._targetY - npc.y;
     const dist = Math.hypot(dx, dy);
@@ -793,10 +1077,20 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
 
       const socialWalk = npc._meetPeerId && npc._meetPhase === "walk";
       if (!(courtSteers || socialWalk) && now >= npc._nextMoveAt && !soldCompanionNpcIds.has(npc.id)) {
-        const angle = Math.random() * Math.PI * 2;
-        const radius = Math.random() * npc.patrolRadius;
-        const tx = npc.homeX + Math.cos(angle) * radius;
-        const ty = npc.homeY + Math.sin(angle) * radius;
+        let tx;
+        let ty;
+        const hubPick =
+          npc._followHubPaths && npc.patrolRadius >= 0.98
+            ? sampleHubPatrolWaypoint(npc, navSetStatic)
+            : null;
+        if (hubPick) {
+          ({ tx: tx, ty: ty } = hubPick);
+        } else {
+          const angle = Math.random() * Math.PI * 2;
+          const radius = Math.random() * npc.patrolRadius;
+          tx = npc.homeX + Math.cos(angle) * radius;
+          ty = npc.homeY + Math.sin(angle) * radius;
+        }
 
         if (!isBlockedCircle(tx, ty)) {
           npc._targetX = tx;
@@ -812,23 +1106,33 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
       const nx = dx / dist;
       const ny = dy / dist;
       const step = NPC_SPEED * dt;
-      const nextX = npc.x + nx * step;
-      const nextY = npc.y + ny * step;
 
-      if (!isBlockedCircle(nextX, npc.y)) {
-        npc.x = nextX;
-      } else if (!soldCompanionNpcIds.has(npc.id)) {
-        npc._targetX = npc.homeX;
+      if (!gridPathsOk) {
+        const nextX = npc.x + nx * step;
+        const nextY = npc.y + ny * step;
+
+        if (!isBlockedCircle(nextX, npc.y)) {
+          npc.x = nextX;
+        } else if (!soldCompanionNpcIds.has(npc.id)) {
+          npc._targetX = npc.homeX;
+        }
+
+        if (!isBlockedCircle(npc.x, nextY)) {
+          npc.y = nextY;
+        } else if (!soldCompanionNpcIds.has(npc.id)) {
+          npc._targetY = npc.homeY;
+        }
+
+        npc.facing = Math.atan2(ny, nx);
+        npc.moving = true;
+      } else if (!steerNpcGridAlongPaths(npc, navSetStatic, step)) {
+        if (!soldCompanionNpcIds.has(npc.id)) {
+          npc._targetX = npc.homeX + (Math.random() * 2 - 1) * 0.06;
+          npc._targetY = npc.homeY + (Math.random() * 2 - 1) * 0.06;
+        }
+        npc.facing = Math.atan2(ny, nx);
+        npc.moving = false;
       }
-
-      if (!isBlockedCircle(npc.x, nextY)) {
-        npc.y = nextY;
-      } else if (!soldCompanionNpcIds.has(npc.id)) {
-        npc._targetY = npc.homeY;
-      }
-
-      npc.facing = Math.atan2(ny, nx);
-      npc.moving = true;
     }
 
     const skipSoloRamble =
