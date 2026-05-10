@@ -1881,7 +1881,7 @@ function joinWorld(client, message, savedCharacter = null) {
   });
 
   streamChunks(client, nearbyChunks(spawn.x, spawn.y, 3));
-  const accForSocial = accountStore.accounts[client.account.key];
+  const accForSocial = client.account ? accountStore.accounts[client.account.key] : null;
   if (accForSocial && social) {
     social.ensureFriendsArray(accForSocial);
     send(client, { type: "socialFriendsUpdated", friends: social.getFriendsList(client) });
