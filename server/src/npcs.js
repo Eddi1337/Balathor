@@ -31,7 +31,7 @@ function hubScheduleEnsureInit(npc, now = Date.now()) {
   }
   if (!npc._schedPhase) {
     npc._schedPhase = SCHED_HOME;
-    npc._schedUntil = now + 1000 + ((npcIdHashSeed(`${String(npc.id)}|init`) >>> 0) % 4000);
+    npc._schedUntil = now + 200 + ((npcIdHashSeed(`${String(npc.id)}|init`) >>> 0) % 800);
     npc._schedRoamGoal = 0;
     npc._schedDoneRoam = 0;
     npc._schedMingleUntil = 0;
@@ -152,7 +152,7 @@ function hubScheduleAdvance(npc, now, navSet) {
           npc._targetX = nt.tx + 0.5;
           npc._targetY = nt.ty + 0.5;
         }
-        npc._homeMicroAt = now + 1500 + Math.random() * 2000;
+        npc._homeMicroAt = now + 150 + Math.random() * 350;
       }
       return;
     }
@@ -163,7 +163,7 @@ function hubScheduleAdvance(npc, now, navSet) {
     const wp = pickCommuteTowardPlaza(npc, navSet);
     if (!assignScheduleNavTarget(npc, wp, navSet, now)) {
       npc._schedPhase = SCHED_HOME;
-      npc._schedUntil = now + 2000 + (((npcIdHashSeed(`${String(npc.id)}|bk`) >>> 0) % 4000));
+      npc._schedUntil = now + 300 + (((npcIdHashSeed(`${String(npc.id)}|bk`) >>> 0) % 600));
     }
     return;
   }
@@ -214,7 +214,7 @@ function hubScheduleAdvance(npc, now, navSet) {
       return;
     }
 
-    npc._schedMingleUntil = now + 2000 + (((npcIdHashSeed(`${String(npc.id)}|mg`) >>> 0) % 3000));
+    npc._schedMingleUntil = now + 400 + (((npcIdHashSeed(`${String(npc.id)}|mg`) >>> 0) % 800));
     npc._schedUntil = 0;
     npc._schedLegStartAt = undefined;
     return;
@@ -222,13 +222,13 @@ function hubScheduleAdvance(npc, now, navSet) {
 
   if (npc._schedPhase === SCHED_RETURN) {
     npc._schedPhase = SCHED_HOME;
-    npc._schedUntil = now + 3000 + (((npcIdHashSeed(`${String(npc.id)}|hm`) >>> 0) % 6000));
+    npc._schedUntil = now + 200 + (((npcIdHashSeed(`${String(npc.id)}|hm`) >>> 0) % 600));
     assignScheduleNavTarget(npc, pickHomeNavTarget(npc, navSet), navSet, now);
     return;
   }
 
   npc._schedPhase = SCHED_HOME;
-  npc._schedUntil = now + 2000;
+  npc._schedUntil = now + 200;
 }
 /** Standoff spot in front of hub market stalls (patrons mingle here). */
 const HUB_MARKET_BROWSE_WAYPOINTS = [];
@@ -665,6 +665,31 @@ const ROMANCE_MALE_EPITHET = Object.freeze([
   "Ravenhelm", "Silvermark", "Tideborn", "Undermark", "Velvetward", "Wintermark"
 ]);
 
+const CROWD_GIVEN = Object.freeze([
+  "Aldwyn", "Brynn", "Castor", "Davan", "Eorn", "Fyrian", "Garath", "Hroth",
+  "Isvan", "Joren", "Kelrin", "Lyven", "Meryn", "Narek", "Oswin", "Paret",
+  "Riven", "Soryn", "Tavan", "Urven", "Varek", "Wyrn", "Aelric", "Bayne",
+  "Corin", "Drath", "Elwyn", "Faron", "Garet", "Haryn", "Irek", "Jorin",
+  "Sylva", "Thira", "Vera", "Wynne", "Xyla", "Yenna", "Arin", "Bela",
+  "Cera", "Eryn", "Fenna", "Gyra", "Hara", "Iryn", "Jora", "Kira",
+  "Myra", "Pyra", "Syla", "Tryn", "Ulra", "Vyra", "Wren", "Zora",
+  "Aldric", "Borin", "Cavel", "Dryn", "Evorn", "Fendal", "Grynn", "Helm",
+]);
+
+const CROWD_EPITHET = Object.freeze([
+  "the Baker", "the Weaver", "the Tanner", "the Cooper", "the Miller",
+  "the Chandler", "the Fletcher", "the Cobbler", "the Thatcher", "the Sower",
+  "of the Crossroads", "of the North Road", "of the Mill Quarter",
+  "Ironhands", "Brighthelm", "Farrow", "Dunworth", "Ashfield", "Coldfen",
+  "Stoneway", "Greenhollow", "Bramblewood", "Fernwatch", "Crestfall", "Hillborn",
+  "Saltwick", "Dunmoor", "Faldwyn", "Greyfen", "Harwick", "Ironside",
+]);
+
+function pickCrowdName(seed) {
+  const s = seed >>> 0;
+  return `${CROWD_GIVEN[s % CROWD_GIVEN.length]} ${CROWD_EPITHET[(s >>> 9) % CROWD_EPITHET.length]}`;
+}
+
 /** Deterministic fantasy display name for procedural romance walkers */
 function pickFantasyRomanceName(seed, gf) {
   const s = seed >>> 0;
@@ -779,7 +804,7 @@ function buildHydratedHubNpcExtras() {
     const seed = npcIdHashSeed(`${id}_${spot.key}`);
     out.push({
       id,
-      name: `Townsfolk ${mi + 1}`,
+      name: pickCrowdName(seed ^ (mi * 2246822519)),
       classId: CLASSES_ROT[(seed >>> 5) % CLASSES_ROT.length],
       primary: `#${(
         ((((seed >>> 2) ^ (mi << 11)) >>> 0) % 0xc0c0b0) +
@@ -1353,7 +1378,7 @@ function syncNpcHubHomesFromBuildings(buildings, southDoorAnchorWorldXFn) {
     const tn = Date.now();
     if (hubScheduleEligible(n)) {
       n._schedPhase = SCHED_HOME;
-      n._schedUntil = tn + 1500 + (((npcIdHashSeed(`${String(n.id)}|rs`) >>> 0) % 3000));
+      n._schedUntil = tn + 200 + (((npcIdHashSeed(`${String(n.id)}|rs`) >>> 0) % 500));
       n._schedRoamGoal = 2;
       n._schedDoneRoam = 0;
       n._schedMingleUntil = 0;
@@ -1446,8 +1471,8 @@ function maybeStartNpcMeeting(now, activationBounds) {
     b._meetPeerId = a.id;
     a._meetPhase = "walk";
     b._meetPhase = "walk";
-    a._meetEndAt = now + 16000;
-    b._meetEndAt = now + 16000;
+    a._meetEndAt = now + 5000;
+    b._meetEndAt = now + 5000;
     a._meetNextLineAt = now + 2200;
     b._meetNextLineAt = now + 2200 + 550;
     a._meetTurnSpeaker = Math.random() < 0.5 ? a.id : b.id;

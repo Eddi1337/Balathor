@@ -802,6 +802,30 @@ function computeHubDistrict() {
     hubBuildings.push(bld);
   }
 
+  /** Gate towers — stone watchtower beside each of the 8 wall openings */
+  const GATE_TOWER_W = 3;
+  const GATE_TOWER_H = 5;
+  const GATE_TOWER_DEFS = [
+    { x:   6, y: -116 }, // N
+    { x:  83, y:  -79 }, // NE
+    { x: 112, y:    4 }, // E
+    { x:  75, y:   82 }, // SE
+    { x:  -8, y:  112 }, // S
+    { x: -86, y:   73 }, // SW
+    { x:-114, y:   -8 }, // W
+    { x: -78, y:  -87 }, // NW
+  ];
+  for (const td of GATE_TOWER_DEFS) {
+    rects.push({ x: td.x, y: td.y, w: GATE_TOWER_W, h: GATE_TOWER_H });
+    hubBuildings.push({
+      x: td.x, y: td.y,
+      w: GATE_TOWER_W, h: GATE_TOWER_H,
+      name: "Gate Tower",
+      type: "tower",
+      forSale: false,
+    });
+  }
+
   const wallKeys = new Set();
   const pathKeys = new Set();
   const gardenKeys = new Set();

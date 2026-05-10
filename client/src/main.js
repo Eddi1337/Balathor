@@ -7130,13 +7130,95 @@ function drawOwnedHouseInteriorCompanion(building, roofless, halfW, halfH) {
   drawCharacter(ent, anchor.cx, anchor.groundY + groundBump, true, poseExtras);
 }
 
+function drawTower(building, sx, sy, w, h) {
+  const battleH = Math.round(h * 0.14);
+  const platH   = Math.round(h * 0.06);
+  const wallH   = h - battleH - platH;
+  const platY   = sy + battleH;
+  const wallY   = platY + platH;
+  const col     = sx + Math.round(w * 0.15);
+  const colW    = w - Math.round(w * 0.30);
+
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.45)";
+  ctx.shadowBlur   = 12;
+  ctx.shadowOffsetX = 5;
+  ctx.shadowOffsetY = 9;
+
+  // Main stone column
+  ctx.fillStyle = "#646b6b";
+  ctx.fillRect(col, wallY, colW, wallH);
+  // Horizontal mortar lines
+  ctx.fillStyle = "#505656";
+  for (let ry = wallY + 8; ry < wallY + wallH; ry += 11) {
+    ctx.fillRect(col, ry, colW, 2);
+  }
+  // Corner quoins
+  ctx.fillStyle = "#3e4444";
+  ctx.fillRect(col, wallY, 5, wallH);
+  ctx.fillRect(col + colW - 5, wallY, 5, wallH);
+
+  ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+
+  // Wooden platform
+  ctx.fillStyle = "#3a2410";
+  ctx.fillRect(sx - 4, platY, w + 8, platH + 3);
+  ctx.fillStyle = "#5a3a1a";
+  for (let lx = 0; lx < w + 8; lx += 9) {
+    ctx.fillRect(sx - 4 + lx, platY + 1, 7, platH);
+  }
+  ctx.fillStyle = "#24140a";
+  ctx.fillRect(sx - 4, platY, w + 8, 2);
+  ctx.fillRect(sx - 4, platY + platH, w + 8, 3);
+
+  // Battlements / merlons
+  const mW = Math.max(6, Math.round(w * 0.22));
+  const mGap = Math.round(mW * 0.55);
+  ctx.fillStyle = "#646b6b";
+  for (let mx = sx + 2; mx < sx + w - 4; mx += mW + mGap) {
+    ctx.fillRect(mx, sy, Math.min(mW, sx + w - 4 - mx), battleH + platH + 2);
+    ctx.fillStyle = "#505656";
+    ctx.fillRect(mx + 1, sy + 3, Math.min(mW - 2, sx + w - 5 - mx), 2);
+    ctx.fillStyle = "#646b6b";
+  }
+
+  // Stone arch doorway at ground level
+  const dw = Math.max(6, Math.round(colW * 0.38));
+  const dh = Math.round(wallH * 0.26);
+  const dx = col + Math.round((colW - dw) / 2);
+  const dy = wallY + wallH - dh;
+  ctx.fillStyle = "#1a1e1e";
+  ctx.fillRect(dx, dy, dw, dh);
+  ctx.beginPath();
+  ctx.arc(dx + dw / 2, dy, dw / 2, Math.PI, 0);
+  ctx.fill();
+  // Door frame
+  ctx.strokeStyle = "#3e4444";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(dx - 1, dy - 1, dw + 2, dh + 1);
+
+  // Ladder on right side
+  const lx = col + colW - 1;
+  ctx.strokeStyle = "#7a5830";
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(lx - 4, platY + platH + 2); ctx.lineTo(lx - 4, wallY + wallH - dh - 4); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(lx + 2, platY + platH + 2); ctx.lineTo(lx + 2, wallY + wallH - dh - 4); ctx.stroke();
+  ctx.lineWidth = 1.5;
+  for (let ry = platY + platH + 6; ry < wallY + wallH - dh - 6; ry += 7) {
+    ctx.beginPath(); ctx.moveTo(lx - 4, ry); ctx.lineTo(lx + 2, ry); ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
 function drawBuildingSprite(building, sx, sy, roofless) {
   const w = building.w * TILE_SIZE;
   const h = building.h * TILE_SIZE;
   const variant = getBuildingVariant(building);
   const type = building.type || "house";
   if (!roofless) drawCastShadow(sx + 10, sy + h - 14, w - 6, 18, 0.28);
-  if (type === "hut") drawHut(building, sx, sy, w, h, variant, roofless);
+  if (type === "tower") drawTower(building, sx, sy, w, h);
+  else if (type === "hut") drawHut(building, sx, sy, w, h, variant, roofless);
   else if (type === "big_house") drawBigHouse(building, sx, sy, w, h, variant, roofless);
   else if (type === "treehouse") drawTreehouse(building, sx, sy, w, h, variant, roofless);
   else if (type === "castle") drawCastle(building, sx, sy, w, h, variant, roofless);
