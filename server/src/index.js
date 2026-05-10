@@ -58,6 +58,8 @@ const ACCOUNT_STORE_PATH = process.env.ACCOUNT_STORE_PATH || path.join(__dirname
 const DISCORD_AUTH_WEBHOOK_URL = resolveDiscordAuthWebhookUrl();
 const TICK_RATE = 30;
 const SNAPSHOT_RATE = 20;
+const MAX_CONNECTED_CLIENTS = Number(process.env.MAX_CLIENTS || 180);
+const MSG_RATE_LIMIT = 240; // max messages per second per client before dropping
 // Base player movement speed (tiles per second).
 const PLAYER_SPEED = 5.2;
 const MAX_CHUNKS_PER_REQUEST = 64;
@@ -570,6 +572,12 @@ server.on("upgrade", (req, socket) => {
     return;
   }
 
+  if (clients.size >= MAX_CONNECTED_CLIENTS) {
+    socket.write("HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+
   const key = req.headers["sec-websocket-key"];
   if (!key) {
     socket.destroy();
@@ -603,6 +611,8 @@ server.on("upgrade", (req, socket) => {
     lastDoorAt: 0,
     lastPortalAt: 0,
     lastHomeAt: 0,
+    _msgCount: 0,
+    _msgWindowEnd: 0,
     input: { up: false, down: false, left: false, right: false },
     view: null,
     account: null,
@@ -1437,6 +1447,17 @@ function receive(client, data) {
 }
 
 function handleMessage(client, raw) {
+  // Per-client rate limiting — drop burst traffic that would overwhelm the sim
+  const nowMs = Date.now();
+  if (nowMs >= client._msgWindowEnd) {
+    client._msgCount = 0;
+    client._msgWindowEnd = nowMs + 1000;
+  }
+  client._msgCount += 1;
+  if (client._msgCount > MSG_RATE_LIMIT) {
+    return;
+  }
+
   let message;
   try {
     message = JSON.parse(raw);
@@ -4015,16 +4036,19 @@ function nearestAttackablePlayer(mob) {
   }
   let nearest = null;
   let nearestDistance = Infinity;
+  const aggroSq = MOB_AGGRO_RADIUS * MOB_AGGRO_RADIUS;
 
   for (const client of clients.values()) {
     const player = client.player;
     if (!player || player.hp <= 0 || !canAttackAt(player.x, player.y)) {
       continue;
     }
-    const dist = distance(mob, player);
-    if (dist <= MOB_AGGRO_RADIUS && dist < nearestDistance) {
+    const ddx = mob.x - player.x;
+    const ddy = mob.y - player.y;
+    const distSq = ddx * ddx + ddy * ddy;
+    if (distSq <= aggroSq && distSq < nearestDistance) {
       nearest = player;
-      nearestDistance = dist;
+      nearestDistance = distSq;
     }
   }
 

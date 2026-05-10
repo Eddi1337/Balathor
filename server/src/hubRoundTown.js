@@ -596,7 +596,7 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
       x: nx,
       y: ny,
       kind,
-      facing: kind === "bench" ? 0 : Math.atan2(meanDy, meanDx)
+      facing: 0
     });
   }
 

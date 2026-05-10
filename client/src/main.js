@@ -4772,7 +4772,6 @@ function drawRoadsideFeatures(minTileX, maxTileX, minTileY, maxTileY) {
     } else if (f.kind === "small_tree") {
       ctx.save();
       ctx.translate(cx, gy);
-      ctx.rotate(facing + Math.PI / 2);
       drawSmallTreeLocal();
       ctx.restore();
     } else if (f.kind === "fountain") {
