@@ -412,12 +412,28 @@ function buildScatterEnemyCamps() {
         ? (cappedTier >= 2 && bossRoll > 0.55)
         : (cappedTier >= 3 && bossRoll > 0.87);
 
+      // Assign enemy faction — sludge near start, bandits mid, dragons deep
+      const factionRoll = hash2(tx, ty, 6200);
+      let faction;
+      if (cappedTier <= 1) {
+        faction = "sludge";
+      } else if (cappedTier <= 2) {
+        faction = factionRoll < 0.58 ? "sludge" : "bandit";
+      } else if (cappedTier <= 3) {
+        faction = factionRoll < 0.38 ? "sludge" : factionRoll < 0.74 ? "bandit" : "dragon";
+      } else if (cappedTier <= 4) {
+        faction = factionRoll < 0.18 ? "sludge" : factionRoll < 0.58 ? "bandit" : "dragon";
+      } else {
+        faction = factionRoll < 0.32 ? "bandit" : "dragon";
+      }
+
       out.push({
         id: `scatter_wild_${scatterId}`,
         x: tx,
         y: ty,
         size,
         tier: cappedTier,
+        faction,
         ...(campType ? { type: campType } : {}),
         ...(boss ? { boss: true } : {})
       });

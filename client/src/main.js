@@ -5810,8 +5810,9 @@ function drawMob(entity, x, y) {
   const accent    = entity.accent   || "#c7f5b0";
   const isBoss    = Boolean(entity.isBoss);
   const isCritter = Boolean(entity.isCritter);
+  const isDragon  = Boolean(entity.isDragon);
 
-  const sc  = isBoss ? 2.0 : isCritter ? 0.65 : 1.0;
+  const sc  = isBoss ? 2.0 : isDragon ? 1.45 : isCritter ? 0.65 : 1.0;
   const bW  = Math.round(22 * sc);
   const bH  = Math.round(9  * sc);
   const hW  = Math.round(18 * sc);
@@ -5820,11 +5821,24 @@ function drawMob(entity, x, y) {
   const legH = Math.round(4  * sc);
   const bounce = Math.round(Math.sin(phase * 3) * (isCritter ? 1.5 : 1));
 
-  const nameY = y - (isBoss ? 42 : isCritter ? 20 : 28);
-  const barW  = isBoss ? 48 : isCritter ? 22 : 30;
-  const barY  = y - (isBoss ? 35 : isCritter ? 14 : 22);
+  const nameY = y - (isBoss ? 42 : isDragon ? 34 : isCritter ? 20 : 28);
+  const barW  = isBoss ? 48 : isDragon ? 38 : isCritter ? 22 : 30;
+  const barY  = y - (isBoss ? 35 : isDragon ? 28 : isCritter ? 14 : 22);
 
-  drawEllipseShadow(x - bW / 2, y + 8, bW, Math.round(isBoss ? 9 : isCritter ? 3 : 5), isCritter ? 0.18 : 0.28);
+  drawEllipseShadow(x - bW / 2, y + 8, bW, Math.round(isBoss ? 9 : isCritter ? 3 : isDragon ? 7 : 5), isCritter ? 0.18 : 0.28);
+
+  // Dragon wings (drawn behind body)
+  if (isDragon) {
+    const wingSpread = Math.round(bW * 1.2);
+    const wingH = Math.round(bH * 1.4);
+    const wingY = Math.round(y - bH / 2 + bounce) - 2;
+    ctx.fillStyle = blend(primary, "#000000", 0.45);
+    ctx.fillRect(x - bW / 2 - wingSpread, wingY, wingSpread, wingH);
+    ctx.fillRect(x + bW / 2,              wingY, wingSpread, wingH);
+    ctx.fillStyle = blend(primary, "#000000", 0.28);
+    ctx.fillRect(x - bW / 2 - wingSpread + 2, wingY + 2, wingSpread - 4, wingH - 4);
+    ctx.fillRect(x + bW / 2 + 2,              wingY + 2, wingSpread - 4, wingH - 4);
+  }
 
   // Stump legs
   if (!isCritter) {
@@ -5861,6 +5875,13 @@ function drawMob(entity, x, y) {
     ctx.fillRect(x + Math.round(hW * 0.08), eyeY, eyeSz, eyeSz);
   }
 
+  // Dragon horns
+  if (isDragon && !isBoss) {
+    ctx.fillStyle = accent;
+    ctx.fillRect(x - Math.round(hW * 0.35), headY - 6, 3, 6);
+    ctx.fillRect(x + Math.round(hW * 0.22), headY - 6, 3, 6);
+  }
+
   // Boss crown / horns
   if (isBoss) {
     ctx.fillStyle = "#ffd166";
@@ -5870,11 +5891,11 @@ function drawMob(entity, x, y) {
   }
 
   // Label
-  ctx.font = `${isBoss ? 13 : isCritter ? 10 : 11}px ui-sans-serif, system-ui`;
+  ctx.font = `${isBoss ? 13 : isDragon ? 12 : isCritter ? 10 : 11}px ui-sans-serif, system-ui`;
   ctx.textAlign = "center";
   ctx.lineWidth = isCritter ? 2 : 3;
   ctx.strokeStyle = "rgba(8,12,18,0.82)";
-  ctx.fillStyle   = isBoss ? "#ffd166" : isCritter ? "#d8eec8" : "#ffc0a0";
+  ctx.fillStyle   = isBoss ? "#ffd166" : isDragon ? "#ffd700" : isCritter ? "#d8eec8" : "#ffc0a0";
   const label = Number.isFinite(entity.level) && !isCritter
     ? `Lv ${entity.level} ${entity.name}` : entity.name;
   ctx.strokeText(label, x, nameY);

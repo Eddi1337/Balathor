@@ -232,6 +232,34 @@ const MOB_TYPES = Object.freeze({
     bossLevel: 17,
     bossPrimary: "#a43b2b",
     bossAccent: "#ffdf7a"
+  },
+  bandit: {
+    enemies: [
+      { name: "Cutpurse",      level: 4, hp: 95,  damage: 15, speed: 1.9  },
+      { name: "Brigand",       level: 5, hp: 115, damage: 18, speed: 1.75 },
+      { name: "Outlaw",        level: 6, hp: 130, damage: 21, speed: 1.7  },
+      { name: "Sellsword",     level: 8, hp: 155, damage: 25, speed: 1.65 },
+    ],
+    primary: "#4a3f5e",
+    accent:  "#c0b8e0",
+    bossName:  "Bandit Warlord",
+    bossLevel: 12,
+    bossPrimary: "#2d1f3e",
+    bossAccent:  "#e8c060"
+  },
+  dragon: {
+    enemies: [
+      { name: "Whelpling",     level: 10, hp: 190, damage: 32, speed: 1.6  },
+      { name: "Drake",         level: 12, hp: 250, damage: 40, speed: 1.5  },
+      { name: "Drake Warden",  level: 14, hp: 310, damage: 48, speed: 1.45 },
+      { name: "Ancient Drake", level: 16, hp: 380, damage: 58, speed: 1.4  },
+    ],
+    primary: "#8b1a1a",
+    accent:  "#ffd700",
+    bossName:  "Elder Dragon",
+    bossLevel: 20,
+    bossPrimary: "#5a0808",
+    bossAccent:  "#ff9900"
   }
 });
 const WILDERNESS_BOSSES = Object.freeze([
@@ -2388,13 +2416,15 @@ function xpForMob(mob) {
   if (mob.isBoss) {
     return 120 + mob.level * 24 + Math.max(0, mob.maxHp - 120);
   }
-  return 18 + mob.level * 8 + Math.floor(mob.maxHp / 8);
+  const factionMult = mob.faction === "dragon" ? 2.4 : mob.faction === "bandit" ? 1.5 : 1.0;
+  return Math.round((18 + mob.level * 8 + Math.floor(mob.maxHp / 8)) * factionMult);
 }
 
 function goldForMob(mob) {
   if (mob.isCritter) return 1;
   if (mob.isBoss) return 25 + mob.level * 5;
-  return 3 + mob.level * 2;
+  const factionMult = mob.faction === "dragon" ? 3.0 : mob.faction === "bandit" ? 1.8 : 1.0;
+  return Math.round((3 + mob.level * 2) * factionMult);
 }
 
 function awardXp(player, amount) {
@@ -3616,7 +3646,8 @@ function createWildernessMobs() {
       continue;
     }
     const biome = camp.biome || getBiome(camp.x, camp.y);
-    const type = MOB_TYPES[biome] || MOB_TYPES.forest;
+    const faction = camp.faction;
+    const type = (faction && MOB_TYPES[faction]) ? MOB_TYPES[faction] : (MOB_TYPES[biome] || MOB_TYPES.forest);
     const count = scaledCampEncounterSize(camp.size, camp);
     const tier = camp.tier || Math.max(1, Math.floor(Math.hypot(camp.x, camp.y) / 90));
 
@@ -3641,6 +3672,8 @@ function createWildernessMobs() {
         accent: type.accent,
         campId: camp.id,
         biome,
+        faction: faction || null,
+        isDragon: faction === "dragon",
         maxHp: enemy.hp + level * 7 + Math.floor(hash2(camp.x, camp.y, 500 + i) * 14),
         attackDamage: enemy.damage + Math.floor(level * 1.15),
         roamRadius: camp.size >= 6 ? 6.5 : 4.8,
@@ -3651,6 +3684,7 @@ function createWildernessMobs() {
     if (camp.boss) {
       const bossHome = findOpenMobHome(camp.x, camp.y, camp.x, camp.y);
       const level = type.bossLevel + tier;
+      const isDragonBoss = faction === "dragon";
       mobs.push({
         id: `mob_boss_${camp.id}`,
         name: type.bossName,
@@ -3661,11 +3695,13 @@ function createWildernessMobs() {
         accent: type.bossAccent,
         campId: camp.id,
         biome,
+        faction: faction || null,
+        isDragon: isDragonBoss,
         isBoss: true,
-        maxHp: 150 + level * 18,
-        attackDamage: 16 + level * 2,
-        roamRadius: 7,
-        speed: 1.25
+        maxHp: isDragonBoss ? 350 + level * 28 : 150 + level * 18,
+        attackDamage: isDragonBoss ? 40 + level * 3 : 16 + level * 2,
+        roamRadius: isDragonBoss ? 9 : 7,
+        speed: isDragonBoss ? 1.15 : 1.25
       });
     }
   }
@@ -4026,7 +4062,9 @@ function getMobSnapshot(viewBounds) {
       maxHp: mob.maxHp,
       level: mob.level,
       biome: mob.biome || getBiome(mob.homeX, mob.homeY),
+      faction: mob.faction,
       isBoss: Boolean(mob.isBoss),
+      isDragon: Boolean(mob.isDragon),
       isCritter: Boolean(mob.isCritter),
       x: Number(mob.x.toFixed(3)),
       y: Number(mob.y.toFixed(3)),
