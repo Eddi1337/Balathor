@@ -601,30 +601,42 @@ function stopNpcAfterBlockedStep(npc) {
   scheduleNpcNextPatrol(npc);
 }
 
-/** If an NPC hasn't moved for 5.5 s, snap to nearest road tile and force a new goal. */
+/** If an NPC hasn't moved for 3 s, snap to nearest road tile and force a new goal. */
 function tickNpcStuckCheck(npc, now, navSet) {
   if (!npc._followHubPaths || !(navSet instanceof Set)) return;
   if (npc._schedPhase === SCHED_SLEEP) return;
   if (npc._meetPhase === "talk") return;
   if (npc._schedPhase === SCHED_TOWN && (npc._schedMingleUntil || 0) > now) return;
 
-  const dx = npc.x - (npc._stuckLastX ?? npc.x);
-  const dy = npc.y - (npc._stuckLastY ?? npc.y);
-  if (dx * dx + dy * dy > 0.04) {
+  // First call: seed the baseline — never use ?-chaining here or the timer never starts.
+  if (npc._stuckLastX === undefined) {
     npc._stuckLastX = npc.x;
     npc._stuckLastY = npc.y;
     npc._stuckSince = now;
     return;
   }
-  if (now - (npc._stuckSince ?? now) > 5500) {
+
+  const dx = npc.x - npc._stuckLastX;
+  const dy = npc.y - npc._stuckLastY;
+  if (dx * dx + dy * dy > 0.04) {
+    // Moved — reset baseline
     npc._stuckLastX = npc.x;
     npc._stuckLastY = npc.y;
     npc._stuckSince = now;
+    return;
+  }
+
+  // Hasn't moved at least 0.2 tiles since baseline was set
+  if (now - npc._stuckSince > 3000) {
+    npc._stuckLastX = npc.x;
+    npc._stuckLastY = npc.y;
+    npc._stuckSince = now;
+    // Snap onto the road mesh, then restart the schedule immediately
     const nt = nearestHubNavTile(npc.x, npc.y, navSet);
     if (nt) { npc.x = nt.tx + 0.5; npc.y = nt.ty + 0.5; }
     invalidateNpcHubRoadPath(npc);
-    npc._targetX = npc.homeX;
-    npc._targetY = npc.homeY;
+    npc._targetX = npc.x;
+    npc._targetY = npc.y;
     npc._schedPhase = SCHED_HOME;
     npc._schedUntil = now;
   }
@@ -1843,6 +1855,20 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
 
       if (!(courtSteers || socialWalk) && hubSchedActive) {
         hubScheduleAdvance(npc, now, navSetStatic);
+        // Safety net: if the schedule still left us with no new target (nav unavailable,
+        // all paths failed, etc.), fall through to a simple open-space patrol so the NPC
+        // never freezes indefinitely even without a working nav mesh.
+        const stillHere =
+          Math.hypot(npc._targetX - npc.x, npc._targetY - npc.y) < NPC_STOP_DISTANCE;
+        if (stillHere && npc._schedPhase !== SCHED_SLEEP && now >= npc._nextMoveAt) {
+          const fallback = chooseOpenPatrolTarget(npc);
+          if (fallback) {
+            npc._targetX = fallback.tx;
+            npc._targetY = fallback.ty;
+            invalidateNpcHubRoadPath(npc);
+          }
+          scheduleNpcNextPatrol(npc);
+        }
       } else if (
         !(courtSteers || socialWalk) &&
         now >= npc._nextMoveAt &&
