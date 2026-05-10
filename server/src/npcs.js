@@ -3,6 +3,9 @@ const { isBlockedCircle } = WORLD;
 const { HUB_NPC_ORDER } = require("./hubRoundTown.js");
 
 const NPC_SPEED = 2.0;
+const NPC_STOP_DISTANCE = 0.08;
+const NPC_STUCK_EPSILON = 0.001;
+const NPC_PATROL_TARGET_ATTEMPTS = 8;
 const MOVE_INTERVAL_MIN = 3000;
 const MOVE_INTERVAL_MAX = 9000;
 /** Hub road followers re-pick destinations often so the town stays visually busy (non-scheduled NPCs). */
@@ -518,6 +521,32 @@ function scheduleNpcNextPatrol(npc) {
       : MOVE_INTERVAL_MAX - MOVE_INTERVAL_MIN;
   const lo = npc._followHubPaths ? HUB_PATH_MOVE_INTERVAL_MIN : MOVE_INTERVAL_MIN;
   npc._nextMoveAt = now + lo + Math.random() * span;
+}
+
+function stopNpcAfterBlockedStep(npc) {
+  npc._targetX = npc.x;
+  npc._targetY = npc.y;
+  npc.moving = false;
+  scheduleNpcNextPatrol(npc);
+}
+
+function chooseOpenPatrolTarget(npc) {
+  for (let attempt = 0; attempt < NPC_PATROL_TARGET_ATTEMPTS; attempt += 1) {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = Math.random() * npc.patrolRadius;
+    const tx = npc.homeX + Math.cos(angle) * radius;
+    const ty = npc.homeY + Math.sin(angle) * radius;
+
+    if (!isBlockedCircle(tx, ty)) {
+      return { tx, ty };
+    }
+  }
+
+  if (!isBlockedCircle(npc.homeX, npc.homeY)) {
+    return { tx: npc.homeX, ty: npc.homeY };
+  }
+
+  return null;
 }
 
 function sampleHubPatrolWaypoint(npc, navSet) {
@@ -1640,7 +1669,7 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
     const dy = npc._targetY - npc.y;
     const dist = Math.hypot(dx, dy);
 
-    if (dist < 0.08) {
+    if (dist < NPC_STOP_DISTANCE) {
       npc.moving = false;
 
       const socialWalk = npc._meetPeerId && npc._meetPhase === "walk";
@@ -1680,13 +1709,15 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
         } else if (hubPick) {
           ({ tx: tx, ty: ty } = hubPick);
         } else {
-          const angle = Math.random() * Math.PI * 2;
-          const radius = Math.random() * npc.patrolRadius;
-          tx = npc.homeX + Math.cos(angle) * radius;
-          ty = npc.homeY + Math.sin(angle) * radius;
+          const patrolTarget = chooseOpenPatrolTarget(npc);
+          if (patrolTarget) {
+            ({ tx: tx, ty: ty } = patrolTarget);
+          }
         }
 
         if (
+          Number.isFinite(tx) &&
+          Number.isFinite(ty) &&
           npc._followHubPaths &&
           navSetStatic instanceof Set &&
           navSetStatic.size > 96 &&
@@ -1699,7 +1730,7 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
           }
         }
 
-        if (!isBlockedCircle(tx, ty)) {
+        if (Number.isFinite(tx) && Number.isFinite(ty) && !isBlockedCircle(tx, ty)) {
           invalidateNpcHubRoadPath(npc);
           npc._targetX = tx;
           npc._targetY = ty;
@@ -1710,9 +1741,11 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
     } else {
       const nx = dx / dist;
       const ny = dy / dist;
-      const step = NPC_SPEED * dt;
+      const step = Math.min(NPC_SPEED * dt, dist);
 
       if (!gridPathsOk) {
+        const startX = npc.x;
+        const startY = npc.y;
         const nextX = npc.x + nx * step;
         const nextY = npc.y + ny * step;
 
@@ -1729,7 +1762,10 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
         }
 
         npc.facing = Math.atan2(ny, nx);
-        npc.moving = true;
+        npc.moving = Math.hypot(npc.x - startX, npc.y - startY) > NPC_STUCK_EPSILON;
+        if (!npc.moving && !soldCompanionNpcIds.has(npc.id)) {
+          stopNpcAfterBlockedStep(npc);
+        }
       } else {
         let movedGrid = stepNpcAlongHubRoadPath(npc, navSetStatic, dt);
         if (!movedGrid) {
