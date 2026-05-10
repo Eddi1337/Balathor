@@ -8,6 +8,9 @@ const MOVE_INTERVAL_MAX = 9000;
 /** Hub road followers re-pick destinations often so the town stays visually busy (non-scheduled NPCs). */
 const HUB_PATH_MOVE_INTERVAL_MIN = 420;
 const HUB_PATH_MOVE_INTERVAL_MAX = 1100;
+/** Breadth-first search cap for hub road paths (one rebuild per new goal / drift). */
+const HUB_NAV_PATH_BFS_CAP = 4500;
+const HUB_NAV_TILE_ARRIVE = 0.11;
 
 /** Hub villager routine: doorstep → commute into town → several stroll waypoints → mingle → walk home → repeat */
 const SCHED_HOME = "home";
@@ -55,9 +58,12 @@ function assignScheduleNavTarget(npc, pt, navSet, ts = Date.now()) {
   }
   npc._targetX = tx;
   npc._targetY = ty;
-  /** Leg progress: require real movement (or long dwell) before counting "arrived" for town legs — avoids doneRoam ticking @ 30Hz on the same tile. */
+  invalidateNpcHubRoadPath(npc);
+  /** Leg completion: only count a town roam leg after real travel or a dwell timeout (see hubScheduleAdvance). */
   npc._schedLegStartAt = ts;
-  npc._schedSepPeak = Math.hypot(npc._targetX - npc.x, npc._targetY - npc.y);
+  npc._schedLegAnchorX = npc.x;
+  npc._schedLegAnchorY = npc.y;
+  npc._schedLegMoved = false;
   return true;
 }
 
@@ -178,8 +184,7 @@ function hubScheduleAdvance(npc, now, navSet) {
     }
 
     const legAge = now - (npc._schedLegStartAt ?? now);
-    const sepOk = (npc._schedSepPeak ?? 0) > 0.11;
-    if (!sepOk && legAge < 3200) {
+    if (!npc._schedLegMoved && legAge < 3400) {
       return;
     }
 
@@ -197,7 +202,6 @@ function hubScheduleAdvance(npc, now, navSet) {
 
     npc._schedMingleUntil = now + 7500 + (((npcIdHashSeed(`${String(npc.id)}|mg`) >>> 0) % 9500));
     npc._schedUntil = 0;
-    npc._schedSepPeak = undefined;
     npc._schedLegStartAt = undefined;
     return;
   }
@@ -318,6 +322,8 @@ function snapNpcOntoHubNavIfNeeded(npc, navSet) {
   }
   npc.x = hit.tx + 0.5;
   npc.y = hit.ty + 0.5;
+  npc._hubPathGoalKey = null;
+  npc._hubTilePath = null;
   /**
    * Never overwrite the locomotion goal here. A one-frame float / tile-boundary
    * read can look “off mesh” while the NPC is legitimately walking; resetting
@@ -327,77 +333,181 @@ function snapNpcOntoHubNavIfNeeded(npc, navSet) {
   npc.moving = false;
 }
 
-/** Grid-aligned hops that stay inside the procedural road mask. */
-function steerNpcGridAlongPaths(npc, navSet, step) {
-  const dx = npc._targetX - npc.x;
-  const dy = npc._targetY - npc.y;
-  const dist = Math.hypot(dx, dy);
-  if (!(navSet instanceof Set) || navSet.size < 48 || dist < 0.08) {
-    return false;
+function hubNavTileAtWorld(wx, wy, navSet) {
+  if (!(navSet instanceof Set) || navSet.size < 48) {
+    return null;
   }
-  const ux = dx / dist;
-  const uy = dy / dist;
-  const CARD = [
+  const tx = Math.floor(wx);
+  const ty = Math.floor(wy);
+  if (navSet.has(`${tx},${ty}`)) {
+    return { tx, ty };
+  }
+  return nearestHubNavTile(wx, wy, navSet);
+}
+
+function invalidateNpcHubRoadPath(npc) {
+  npc._hubPathGoalKey = null;
+  npc._hubTilePath = null;
+}
+
+/**
+ * Shortest cardinal path along `HUB_NAV_PATH_KEYS` (road mask). Returns tile centres to visit after the current tile.
+ */
+function hubNavShortestPath(startTx, startTy, goalTx, goalTy, navSet) {
+  const sk = `${startTx},${startTy}`;
+  const gk = `${goalTx},${goalTy}`;
+  if (!navSet.has(sk) || !navSet.has(gk)) {
+    return null;
+  }
+  if (sk === gk) {
+    return [];
+  }
+  const q = [[startTx, startTy]];
+  const prev = new Map([[sk, null]]);
+  const neigh = [
     [1, 0],
     [-1, 0],
     [0, 1],
     [0, -1]
   ];
-  CARD.sort((a, b) => b[0] * ux + b[1] * uy - (a[0] * ux + a[1] * uy));
-  for (const scaler of [1, 0.55]) {
-    const s = step * scaler;
-    for (const [mx, my] of CARD) {
-      const nx = npc.x + mx * s;
-      const ny = npc.y + my * s;
-      if (navSet.has(hubTileKey(nx, ny))) {
-        npc.x = nx;
-        npc.y = ny;
-        npc.facing = Math.atan2(my, mx);
-        npc.moving = true;
-        return true;
+  for (let qi = 0; qi < q.length && prev.size < HUB_NAV_PATH_BFS_CAP; qi += 1) {
+    const [x, y] = q[qi];
+    for (const [dx, dy] of neigh) {
+      const nx = x + dx;
+      const ny = y + dy;
+      const nk = `${nx},${ny}`;
+      if (!navSet.has(nk) || prev.has(nk)) {
+        continue;
       }
+      prev.set(nk, `${x},${y}`);
+      if (nk === gk) {
+        const out = [];
+        let cur = gk;
+        while (cur && cur !== sk) {
+          const [cx, cy] = cur.split(",").map(Number);
+          out.push({ tx: cx, ty: cy });
+          cur = prev.get(cur);
+        }
+        out.reverse();
+        return out;
+      }
+      q.push([nx, ny]);
+    }
+  }
+  return null;
+}
+
+function ensureNpcHubTilePath(npc, navSet) {
+  if (!(navSet instanceof Set) || navSet.size < 96) {
+    return null;
+  }
+  const goalTile = hubNavTileAtWorld(npc._targetX, npc._targetY, navSet);
+  if (!goalTile) {
+    invalidateNpcHubRoadPath(npc);
+    return null;
+  }
+  const goalKey = `${goalTile.tx},${goalTile.ty}`;
+  const startTile = hubNavTileAtWorld(npc.x, npc.y, navSet);
+  if (!startTile) {
+    invalidateNpcHubRoadPath(npc);
+    return null;
+  }
+
+  let path = npc._hubTilePath;
+  const goalMismatch = npc._hubPathGoalKey !== goalKey;
+  if (goalMismatch || !Array.isArray(path)) {
+    path = hubNavShortestPath(startTile.tx, startTile.ty, goalTile.tx, goalTile.ty, navSet);
+    if (!path) {
+      invalidateNpcHubRoadPath(npc);
+      return null;
+    }
+    npc._hubPathGoalKey = goalKey;
+    npc._hubTilePath = path;
+    return path;
+  }
+
+  if (path.length > 0) {
+    const next = path[0];
+    const manh =
+      Math.abs(startTile.tx - next.tx) + Math.abs(startTile.ty - next.ty);
+    if (manh !== 1) {
+      path = hubNavShortestPath(startTile.tx, startTile.ty, goalTile.tx, goalTile.ty, navSet);
+      if (!path) {
+        invalidateNpcHubRoadPath(npc);
+        return null;
+      }
+      npc._hubTilePath = path;
+    }
+  }
+  return npc._hubTilePath;
+}
+
+function stepNpcAlongHubRoadPath(npc, navSet, dt) {
+  const step = NPC_SPEED * dt;
+  const path = ensureNpcHubTilePath(npc, navSet);
+  const goalTile = hubNavTileAtWorld(npc._targetX, npc._targetY, navSet);
+
+  if ((!path || path.length === 0) && goalTile) {
+    const st = hubNavTileAtWorld(npc.x, npc.y, navSet);
+    const onGoal =
+      st &&
+      st.tx === goalTile.tx &&
+      st.ty === goalTile.ty &&
+      Math.hypot(npc._targetX - npc.x, npc._targetY - npc.y) < HUB_NAV_TILE_ARRIVE;
+    if (onGoal) {
+      return false;
     }
   }
 
-  /**
-   * Fallback: prefer the cardinal neighbor *tile* whose centre is closest to the
-   * target. Dot-product ordering can dead-end near junctions while a short detour exists.
-   */
-  const tx = Math.floor(npc.x);
-  const ty = Math.floor(npc.y);
-  if (!navSet.has(`${tx},${ty}`)) {
+  if (!path || path.length === 0) {
+    const dx = npc._targetX - npc.x;
+    const dy = npc._targetY - npc.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 0.06) {
+      return false;
+    }
+    const ux = dx / dist;
+    const uy = dy / dist;
+    const nx = npc.x + ux * Math.min(step, dist);
+    const ny = npc.y + uy * Math.min(step, dist);
+    if (!navSet.has(hubTileKey(nx, ny))) {
+      invalidateNpcHubRoadPath(npc);
+      return false;
+    }
+    npc.x = nx;
+    npc.y = ny;
+    npc.facing = Math.atan2(uy, ux);
+    npc.moving = true;
+    return true;
+  }
+
+  const next = path[0];
+  const tcx = next.tx + 0.5;
+  const tcy = next.ty + 0.5;
+  const dx = tcx - npc.x;
+  const dy = tcy - npc.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist <= HUB_NAV_TILE_ARRIVE + step * 0.35) {
+    npc.x = tcx;
+    npc.y = tcy;
+    path.shift();
+    npc.facing = Math.atan2(dy, dx);
+    npc.moving = true;
+    return true;
+  }
+  const ux = dx / dist;
+  const uy = dy / dist;
+  const nx = npc.x + ux * Math.min(step, dist);
+  const ny = npc.y + uy * Math.min(step, dist);
+  if (!navSet.has(hubTileKey(nx, ny))) {
+    invalidateNpcHubRoadPath(npc);
     return false;
   }
-  const cand = [];
-  for (const [mx, my] of CARD) {
-    const nk = `${tx + mx},${ty + my}`;
-    if (!navSet.has(nk)) {
-      continue;
-    }
-    const cx = tx + mx + 0.5;
-    const cy = ty + my + 0.5;
-    cand.push([
-      mx,
-      my,
-      (cx - npc._targetX) ** 2 + (cy - npc._targetY) ** 2
-    ]);
-  }
-  cand.sort((a, b) => a[2] - b[2]);
-  for (const scaler of [1, 0.55]) {
-    const s = step * scaler;
-    for (const [mx, my] of cand) {
-      const nx = npc.x + mx * s;
-      const ny = npc.y + my * s;
-      if (navSet.has(hubTileKey(nx, ny))) {
-        npc.x = nx;
-        npc.y = ny;
-        npc.facing = Math.atan2(my, mx);
-        npc.moving = true;
-        return true;
-      }
-    }
-  }
-  return false;
+  npc.x = nx;
+  npc.y = ny;
+  npc.facing = Math.atan2(uy, ux);
+  npc.moving = true;
+  return true;
 }
 
 function scheduleNpcNextPatrol(npc) {
@@ -1163,6 +1273,7 @@ function syncNpcHubHomesFromBuildings(buildings, southDoorAnchorWorldXFn) {
     }
     n.homeX = hx;
     n.homeY = hy;
+    invalidateNpcHubRoadPath(n);
     n._targetX = hx;
     n._targetY = hy;
     n.x = hx + Math.random() * 0.7 - 0.35;
@@ -1297,6 +1408,7 @@ function shuffleInPlace(arr) {
 function clearMeeting(npc) {
   const buddy = getNpcBuddy(npc);
   const resume = Date.now();
+  invalidateNpcHubRoadPath(npc);
   npc._meetPeerId = undefined;
   npc._meetPhase = undefined;
   npc._meetEndAt = undefined;
@@ -1306,6 +1418,7 @@ function clearMeeting(npc) {
   npc._meetMidY = undefined;
   npc._nextMoveAt = resume;
   if (buddy) {
+    invalidateNpcHubRoadPath(buddy);
     buddy._meetPeerId = undefined;
     buddy._meetPhase = undefined;
     buddy._meetEndAt = undefined;
@@ -1523,18 +1636,6 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
       !(loveSeeking && courtSteers) &&
       !(socialWalkTowardPeer);
 
-    if (
-      hubScheduleEligible(npc) &&
-      npc._schedSepPeak !== undefined &&
-      npc._schedPhase &&
-      npc._schedPhase !== SCHED_HOME
-    ) {
-      npc._schedSepPeak = Math.max(
-        npc._schedSepPeak,
-        Math.hypot(npc._targetX - npc.x, npc._targetY - npc.y)
-      );
-    }
-
     const dx = npc._targetX - npc.x;
     const dy = npc._targetY - npc.y;
     const dist = Math.hypot(dx, dy);
@@ -1599,6 +1700,7 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
         }
 
         if (!isBlockedCircle(tx, ty)) {
+          invalidateNpcHubRoadPath(npc);
           npc._targetX = tx;
           npc._targetY = ty;
         }
@@ -1629,11 +1731,9 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
         npc.facing = Math.atan2(ny, nx);
         npc.moving = true;
       } else {
-        let movedGrid = steerNpcGridAlongPaths(npc, navSetStatic, step);
-        if (!movedGrid && hubScheduleEligible(npc)) {
-          movedGrid = steerNpcGridAlongPaths(npc, navSetStatic, Math.max(step * 2.1, 0.12));
-        }
+        let movedGrid = stepNpcAlongHubRoadPath(npc, navSetStatic, dt);
         if (!movedGrid) {
+          invalidateNpcHubRoadPath(npc);
           if (!soldCompanionNpcIds.has(npc.id)) {
             if (
               hubScheduleEligible(npc) &&
@@ -1658,6 +1758,18 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
           npc.facing = Math.atan2(ny, nx);
           npc.moving = false;
         }
+      }
+    }
+
+    if (
+      hubScheduleEligible(npc) &&
+      npc._schedLegAnchorX !== undefined &&
+      !npc._schedLegMoved
+    ) {
+      if (
+        Math.hypot(npc.x - npc._schedLegAnchorX, npc.y - npc._schedLegAnchorY) > 0.22
+      ) {
+        npc._schedLegMoved = true;
       }
     }
 
