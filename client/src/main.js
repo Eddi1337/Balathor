@@ -251,6 +251,24 @@ const TILE = {
 /** Mirrors server/src/index.js getBuildingPrice */
 const BUILDING_TYPE_PRICES = { hut: 200, treehouse: 350, house: 500, big_house: 900, castle: 2000 };
 
+const RARITY_ICON_COLORS = {
+  common:    "#4ade80",
+  uncommon:  "#22d3ee",
+  rare:      "#60a5fa",
+  epic:      "#c084fc",
+  legendary: "#f97316",
+  mythic:    "#e2e8f0",
+};
+const RARITY_GLOW_COLORS = {
+  rare:      "rgba(96,165,250,0.55)",
+  epic:      "rgba(192,132,252,0.6)",
+  legendary: "rgba(249,115,22,0.65)",
+  mythic:    "rgba(226,232,240,0.7)",
+};
+function rarityIconColor(rarity) {
+  return RARITY_ICON_COLORS[rarity] || RARITY_ICON_COLORS.common;
+}
+
 const kenneyRpgBase = new Image();
 kenneyRpgBase.src = "./assets/kenney-rpg-base.png";
 const KENNEY_TILE_SIZE = 64;
@@ -4308,7 +4326,7 @@ function renderNearbyLoot() {
 function createItemIcon(item) {
   const icon = document.createElement("span");
   icon.className = `item-icon ${item.icon || item.type}`;
-  icon.style.setProperty("--item-color", item.color || "#d7e4ef");
+  icon.style.setProperty("--item-color", rarityIconColor(item.rarity));
   return icon;
 }
 
@@ -5152,8 +5170,14 @@ function drawChest(x, y) {
 }
 
 function drawItemIcon(item, x, y) {
-  const color = item?.color || "#d7e4ef";
+  ctx.save();
+  const color = rarityIconColor(item?.rarity);
+  const glowColor = RARITY_GLOW_COLORS[item?.rarity];
   drawEllipseShadow(x - 8, y + 7, 16, 4, 0.18);
+  if (glowColor) {
+    ctx.shadowColor = glowColor;
+    ctx.shadowBlur = item?.rarity === "mythic" ? 10 : item?.rarity === "legendary" ? 8 : 6;
+  }
   ctx.fillStyle = color;
 
   if (item?.icon === "potion") {
@@ -5161,6 +5185,7 @@ function drawItemIcon(item, x, y) {
     ctx.fillRect(x - 2, y - 10, 4, 4);
     ctx.fillStyle = "#f26d6d";
     ctx.fillRect(x - 5, y - 6, 10, 12);
+    ctx.restore();
     return;
   }
 
@@ -5171,8 +5196,6 @@ function drawItemIcon(item, x, y) {
     const isRobe  = vstyle === "robe"   || nm.includes("robe");
 
     if (vstyle === "ascendant") {
-      ctx.shadowColor = "#c084fc";
-      ctx.shadowBlur = 6;
       ctx.fillStyle = color;
       ctx.fillRect(x - 8, y - 10, 16, 14);
       ctx.shadowBlur = 0;
@@ -5184,21 +5207,20 @@ function drawItemIcon(item, x, y) {
       ctx.fillRect(x - 8, y + 2, 16, 3);
       ctx.fillStyle = "rgba(255,255,255,0.55)";
       ctx.fillRect(x - 2, y - 7, 4, 10);
+      ctx.restore();
       return;
     }
 
     if (isHeavy) {
-      // Breastplate — wide shoulders, centre seam
       ctx.fillStyle = color;
       ctx.fillRect(x - 7, y - 9, 14, 12);
-      ctx.fillRect(x - 9, y - 8,  4,  7);  // left pauldron
-      ctx.fillRect(x + 5, y - 8,  4,  7);  // right pauldron
+      ctx.fillRect(x - 9, y - 8,  4,  7);
+      ctx.fillRect(x + 5, y - 8,  4,  7);
       ctx.fillStyle = "rgba(0,0,0,0.35)";
-      ctx.fillRect(x - 1, y - 9, 2, 12);   // centre seam
+      ctx.fillRect(x - 1, y - 9, 2, 12);
       ctx.fillStyle = "rgba(255,255,255,0.55)";
-      ctx.fillRect(x - 6, y - 8, 4, 2);    // highlight
+      ctx.fillRect(x - 6, y - 8, 4, 2);
     } else if (isRobe) {
-      // Robe — trapezoid, magic trim
       ctx.fillStyle = color;
       ctx.beginPath();
       ctx.moveTo(x - 4, y - 10);
@@ -5211,7 +5233,6 @@ function drawItemIcon(item, x, y) {
       ctx.fillRect(x - 4, y - 10, 8, 2);
       ctx.fillRect(x - 8, y + 1,  16, 2);
     } else {
-      // Leather jerkin — compact, diagonal strap
       ctx.fillStyle = color;
       ctx.fillRect(x - 5, y - 8, 10, 11);
       ctx.strokeStyle = "rgba(0,0,0,0.4)";
@@ -5223,6 +5244,7 @@ function drawItemIcon(item, x, y) {
       ctx.fillStyle = "rgba(255,255,255,0.35)";
       ctx.fillRect(x - 4, y - 7, 4, 2);
     }
+    ctx.restore();
     return;
   }
 
@@ -5234,6 +5256,7 @@ function drawItemIcon(item, x, y) {
     ctx.stroke();
     ctx.fillStyle = "#ffd166";
     ctx.fillRect(x - 2, y - 12, 4, 4);
+    ctx.restore();
     return;
   }
 
@@ -5243,6 +5266,7 @@ function drawItemIcon(item, x, y) {
   ctx.moveTo(x - 8, y + 6);
   ctx.lineTo(x + 8, y - 10);
   ctx.stroke();
+  ctx.restore();
 }
 
 /** Green cloak — anchored tight to the back; subtle motion only at the hem */
