@@ -164,8 +164,15 @@ function gateCarveSkip(tx, ty) {
   if (!(d >= 112 && d <= 125)) return false;
   const g = GATE_AXIS_HALF_WIDTH_TILES;
   const edge = HUB_WALL_R_IN_MAIN - 20;
+  // Axis gates: N, S, E, W
   if (Math.abs(tx) <= g && (ty <= -edge || ty >= edge)) return true;
   if (Math.abs(ty) <= g && (tx <= -edge || tx >= edge)) return true;
+  // Diagonal gates: NE, SE, SW, NW (45° between the axis gates)
+  const diagEdge = Math.floor(edge * 0.707); // ~68
+  if (Math.abs(tx + ty + 1) <= g &&  tx >= diagEdge && -ty >= diagEdge) return true; // NE
+  if (Math.abs(tx - ty)     <= g &&  tx >= diagEdge &&  ty >= diagEdge) return true; // SE
+  if (Math.abs(tx + ty + 1) <= g && -tx >= diagEdge &&  ty >= diagEdge) return true; // SW
+  if (Math.abs(tx - ty)     <= g && -tx >= diagEdge && -ty >= diagEdge) return true; // NW
   return false;
 }
 
@@ -471,8 +478,10 @@ function buildHubNavPathKeys(pathKeys, wallKeys) {
   }
   for (let t = -lim; t <= lim; t += 1) {
     for (const [tx, ty] of [
-      [t, 0],
-      [0, t]
+      [t, 0],   // E–W avenue
+      [0, t],   // N–S avenue
+      [t, -t],  // NE–SW diagonal avenue (through NE and SW gates)
+      [t, t],   // SE–NW diagonal avenue (through SE and NW gates)
     ]) {
       if (plazaCell(tx, ty)) continue;
       const k = `${tx},${ty}`;

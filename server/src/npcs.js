@@ -22,7 +22,7 @@ const SCHED_TOWN = "town";
 const SCHED_RETURN = "return";
 
 function hubScheduleEligible(npc) {
-  return npc._followHubPaths && !npc.isTrader && !soldCompanionNpcIds.has(npc.id);
+  return npc._followHubPaths && !npc.isTrader && !npc.isGuard && !soldCompanionNpcIds.has(npc.id);
 }
 
 function hubScheduleEnsureInit(npc, now = Date.now()) {
@@ -31,7 +31,7 @@ function hubScheduleEnsureInit(npc, now = Date.now()) {
   }
   if (!npc._schedPhase) {
     npc._schedPhase = SCHED_HOME;
-    npc._schedUntil = now + 8000 + ((npcIdHashSeed(`${String(npc.id)}|init`) >>> 0) % 16000);
+    npc._schedUntil = now + 1000 + ((npcIdHashSeed(`${String(npc.id)}|init`) >>> 0) % 4000);
     npc._schedRoamGoal = 0;
     npc._schedDoneRoam = 0;
     npc._schedMingleUntil = 0;
@@ -145,14 +145,14 @@ function hubScheduleAdvance(npc, now, navSet) {
     if (now < npc._schedUntil) {
       /** Micro-wander around doorstep so NPCs never look completely frozen at home. */
       if (!(npc._homeMicroAt > now)) {
-        const jx = (Math.random() * 2 - 1) * 2.5;
-        const jy = (Math.random() * 2 - 1) * 2.5;
+        const jx = (Math.random() * 2 - 1) * 4.0;
+        const jy = (Math.random() * 2 - 1) * 4.0;
         const nt = nearestHubNavTile(npc.homeX + jx, npc.homeY + jy, navSet);
         if (nt) {
           npc._targetX = nt.tx + 0.5;
           npc._targetY = nt.ty + 0.5;
         }
-        npc._homeMicroAt = now + 5000 + Math.random() * 4000;
+        npc._homeMicroAt = now + 1500 + Math.random() * 2000;
       }
       return;
     }
@@ -163,7 +163,7 @@ function hubScheduleAdvance(npc, now, navSet) {
     const wp = pickCommuteTowardPlaza(npc, navSet);
     if (!assignScheduleNavTarget(npc, wp, navSet, now)) {
       npc._schedPhase = SCHED_HOME;
-      npc._schedUntil = now + 9000 + (((npcIdHashSeed(`${String(npc.id)}|bk`) >>> 0) % 12000));
+      npc._schedUntil = now + 2000 + (((npcIdHashSeed(`${String(npc.id)}|bk`) >>> 0) % 4000));
     }
     return;
   }
@@ -214,7 +214,7 @@ function hubScheduleAdvance(npc, now, navSet) {
       return;
     }
 
-    npc._schedMingleUntil = now + 7500 + (((npcIdHashSeed(`${String(npc.id)}|mg`) >>> 0) % 9500));
+    npc._schedMingleUntil = now + 2000 + (((npcIdHashSeed(`${String(npc.id)}|mg`) >>> 0) % 3000));
     npc._schedUntil = 0;
     npc._schedLegStartAt = undefined;
     return;
@@ -222,20 +222,20 @@ function hubScheduleAdvance(npc, now, navSet) {
 
   if (npc._schedPhase === SCHED_RETURN) {
     npc._schedPhase = SCHED_HOME;
-    npc._schedUntil = now + 12000 + (((npcIdHashSeed(`${String(npc.id)}|hm`) >>> 0) % 20000));
+    npc._schedUntil = now + 3000 + (((npcIdHashSeed(`${String(npc.id)}|hm`) >>> 0) % 6000));
     assignScheduleNavTarget(npc, pickHomeNavTarget(npc, navSet), navSet, now);
     return;
   }
 
   npc._schedPhase = SCHED_HOME;
-  npc._schedUntil = now + 9000;
+  npc._schedUntil = now + 2000;
 }
 /** Standoff spot in front of hub market stalls (patrons mingle here). */
 const HUB_MARKET_BROWSE_WAYPOINTS = [];
 const CHAT_INTERVAL_MIN = 28000;
 const CHAT_INTERVAL_MAX = 70000;
 
-const HUB_POPULATION_TARGET = 100;
+const HUB_POPULATION_TARGET = 200;
 const CLASSES_ROT = ["knight", "ranger", "mage"];
 
 /** Cached tile centres for procedural hub walkers */
@@ -796,6 +796,38 @@ function buildHydratedHubNpcExtras() {
     });
   }
 
+  /** Gate guards — one per entrance gap in the perimeter wall (8 gates total) */
+  const GATE_GUARD_SPECS = [
+    { id: "hub_g_n",  homeX: 0,    homeY: -105 },
+    { id: "hub_g_ne", homeX: 74,   homeY: -74  },
+    { id: "hub_g_e",  homeX: 105,  homeY: 0    },
+    { id: "hub_g_se", homeX: 74,   homeY: 74   },
+    { id: "hub_g_s",  homeX: 0,    homeY: 105  },
+    { id: "hub_g_sw", homeX: -74,  homeY: 74   },
+    { id: "hub_g_w",  homeX: -105, homeY: 0    },
+    { id: "hub_g_nw", homeX: -74,  homeY: -74  },
+  ];
+  for (const gs of GATE_GUARD_SPECS) {
+    out.push({
+      id: gs.id,
+      name: "Gate Guard",
+      classId: "knight",
+      primary: "#6e7a8a",
+      accent: "#c8c8c8",
+      homeX: gs.homeX,
+      homeY: gs.homeY,
+      patrolRadius: 8,
+      isGuard: true,
+      dialogue: [
+        "The gate is open — travel safely.",
+        "Mind the road beyond the walls.",
+        "All are welcome in the town.",
+        "Report any trouble to me.",
+        "Clear skies today — good travel weather.",
+      ]
+    });
+  }
+
   return out;
 }
 
@@ -1261,7 +1293,7 @@ function refreshHubPathFollowingFlags() {
   for (const n of npcs) {
     const idStr = typeof n.id === "string" ? n.id : "";
     let follow = false;
-    if (idStr.startsWith("hub_m_") || idStr.startsWith("hub_seek_")) {
+    if (idStr.startsWith("hub_m_") || idStr.startsWith("hub_seek_") || idStr.startsWith("hub_g_")) {
       follow = !soldCompanionNpcIds.has(idStr);
     } else if (hubLinkedNpcIds.has(idStr)) {
       if (!(n.isTrader && n.patrolRadius <= 1.251)) {
@@ -1321,7 +1353,7 @@ function syncNpcHubHomesFromBuildings(buildings, southDoorAnchorWorldXFn) {
     const tn = Date.now();
     if (hubScheduleEligible(n)) {
       n._schedPhase = SCHED_HOME;
-      n._schedUntil = tn + 6000 + (((npcIdHashSeed(`${String(n.id)}|rs`) >>> 0) % 14000));
+      n._schedUntil = tn + 1500 + (((npcIdHashSeed(`${String(n.id)}|rs`) >>> 0) % 3000));
       n._schedRoamGoal = 2;
       n._schedDoneRoam = 0;
       n._schedMingleUntil = 0;
