@@ -143,6 +143,17 @@ function hubScheduleAdvance(npc, now, navSet) {
 
   if (npc._schedPhase === SCHED_HOME) {
     if (now < npc._schedUntil) {
+      /** Micro-wander around doorstep so NPCs never look completely frozen at home. */
+      if (!(npc._homeMicroAt > now)) {
+        const jx = (Math.random() * 2 - 1) * 2.5;
+        const jy = (Math.random() * 2 - 1) * 2.5;
+        const nt = nearestHubNavTile(npc.homeX + jx, npc.homeY + jy, navSet);
+        if (nt) {
+          npc._targetX = nt.tx + 0.5;
+          npc._targetY = nt.ty + 0.5;
+        }
+        npc._homeMicroAt = now + 5000 + Math.random() * 4000;
+      }
       return;
     }
     npc._schedPhase = SCHED_TO_TOWN;
