@@ -32,7 +32,7 @@ function hubScheduleEnsureInit(npc, now = Date.now()) {
   }
 }
 
-function assignScheduleNavTarget(npc, pt, navSet) {
+function assignScheduleNavTarget(npc, pt, navSet, ts = Date.now()) {
   if (!pt || !navSet || !hubScheduleEligible(npc)) {
     return false;
   }
@@ -55,6 +55,9 @@ function assignScheduleNavTarget(npc, pt, navSet) {
   }
   npc._targetX = tx;
   npc._targetY = ty;
+  /** Leg progress: require real movement (or long dwell) before counting "arrived" for town legs — avoids doneRoam ticking @ 30Hz on the same tile. */
+  npc._schedLegStartAt = ts;
+  npc._schedSepPeak = Math.hypot(npc._targetX - npc.x, npc._targetY - npc.y);
   return true;
 }
 
@@ -83,15 +86,28 @@ function pickTownRoamWaypointForSchedule(npc, navSet) {
   const savedHx = npc.homeX;
   const savedHy = npc.homeY;
   const savedR = npc.patrolRadius;
+  const savedSalt = npc._hubWalkSalt;
   const sx = Number(WORLD.START_SPAWN?.x) || 0;
   const sy = Number(WORLD.START_SPAWN?.y) || 0;
   npc.homeX = (savedHx + sx) / 2;
   npc.homeY = (savedHy + sy) / 2;
   npc.patrolRadius = Math.min(savedR + 28, Number(WORLD.HUB_TOWN_GRASS_RADIUS) || 132);
-  let p = sampleHubPatrolWaypoint(npc, navSet);
+  let p = null;
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    p = sampleHubPatrolWaypoint(npc, navSet);
+    if (!p) {
+      break;
+    }
+    const d = Math.hypot((p.tx ?? 0) - npc.x, (p.ty ?? 0) - npc.y);
+    if (d >= 0.42) {
+      break;
+    }
+    npc._hubWalkSalt = (((npc._hubWalkSalt ?? 0) + 1300021) >>> 0) >>> 0;
+  }
   npc.homeX = savedHx;
   npc.homeY = savedHy;
   npc.patrolRadius = savedR;
+  npc._hubWalkSalt = savedSalt;
   if (!p) {
     p = sampleHubPatrolWaypoint(npc, navSet);
   }
@@ -125,7 +141,7 @@ function hubScheduleAdvance(npc, now, navSet) {
     npc._schedDoneRoam = 0;
     npc._schedMingleUntil = 0;
     const wp = pickCommuteTowardPlaza(npc, navSet);
-    if (!assignScheduleNavTarget(npc, wp, navSet)) {
+    if (!assignScheduleNavTarget(npc, wp, navSet, now)) {
       npc._schedPhase = SCHED_HOME;
       npc._schedUntil = now + 9000 + (((npcIdHashSeed(`${String(npc.id)}|bk`) >>> 0) % 12000));
     }
@@ -137,7 +153,7 @@ function hubScheduleAdvance(npc, now, navSet) {
     npc._schedDoneRoam = 0;
     npc._schedMingleUntil = 0;
     const wp = pickTownRoamWaypointForSchedule(npc, navSet);
-    if (!assignScheduleNavTarget(npc, wp, navSet)) {
+    if (!assignScheduleNavTarget(npc, wp, navSet, now)) {
       npc._schedUntil = now + 850;
       return;
     }
@@ -153,7 +169,7 @@ function hubScheduleAdvance(npc, now, navSet) {
       }
       npc._schedMingleUntil = 0;
       npc._schedPhase = SCHED_RETURN;
-      assignScheduleNavTarget(npc, pickHomeNavTarget(npc, navSet), navSet);
+      assignScheduleNavTarget(npc, pickHomeNavTarget(npc, navSet), navSet, now);
       npc._schedUntil = 0;
       return;
     }
@@ -161,10 +177,16 @@ function hubScheduleAdvance(npc, now, navSet) {
       return;
     }
 
+    const legAge = now - (npc._schedLegStartAt ?? now);
+    const sepOk = (npc._schedSepPeak ?? 0) > 0.11;
+    if (!sepOk && legAge < 3200) {
+      return;
+    }
+
     npc._schedDoneRoam += 1;
     if (npc._schedDoneRoam < npc._schedRoamGoal) {
       const wp = pickTownRoamWaypointForSchedule(npc, navSet);
-      if (!assignScheduleNavTarget(npc, wp, navSet)) {
+      if (!assignScheduleNavTarget(npc, wp, navSet, now)) {
         npc._schedDoneRoam -= 1;
         npc._schedUntil = now + 950;
       } else {
@@ -175,13 +197,15 @@ function hubScheduleAdvance(npc, now, navSet) {
 
     npc._schedMingleUntil = now + 7500 + (((npcIdHashSeed(`${String(npc.id)}|mg`) >>> 0) % 9500));
     npc._schedUntil = 0;
+    npc._schedSepPeak = undefined;
+    npc._schedLegStartAt = undefined;
     return;
   }
 
   if (npc._schedPhase === SCHED_RETURN) {
     npc._schedPhase = SCHED_HOME;
     npc._schedUntil = now + 12000 + (((npcIdHashSeed(`${String(npc.id)}|hm`) >>> 0) % 20000));
-    assignScheduleNavTarget(npc, pickHomeNavTarget(npc, navSet), navSet);
+    assignScheduleNavTarget(npc, pickHomeNavTarget(npc, navSet), navSet, now);
     return;
   }
 
@@ -1499,6 +1523,18 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
       !(loveSeeking && courtSteers) &&
       !(socialWalkTowardPeer);
 
+    if (
+      hubScheduleEligible(npc) &&
+      npc._schedSepPeak !== undefined &&
+      npc._schedPhase &&
+      npc._schedPhase !== SCHED_HOME
+    ) {
+      npc._schedSepPeak = Math.max(
+        npc._schedSepPeak,
+        Math.hypot(npc._targetX - npc.x, npc._targetY - npc.y)
+      );
+    }
+
     const dx = npc._targetX - npc.x;
     const dy = npc._targetY - npc.y;
     const dist = Math.hypot(dx, dy);
@@ -1592,13 +1628,36 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
 
         npc.facing = Math.atan2(ny, nx);
         npc.moving = true;
-      } else if (!steerNpcGridAlongPaths(npc, navSetStatic, step)) {
-        if (!soldCompanionNpcIds.has(npc.id)) {
-          npc._targetX = npc.homeX + (Math.random() * 2 - 1) * 0.06;
-          npc._targetY = npc.homeY + (Math.random() * 2 - 1) * 0.06;
+      } else {
+        let movedGrid = steerNpcGridAlongPaths(npc, navSetStatic, step);
+        if (!movedGrid && hubScheduleEligible(npc)) {
+          movedGrid = steerNpcGridAlongPaths(npc, navSetStatic, Math.max(step * 2.1, 0.12));
         }
-        npc.facing = Math.atan2(ny, nx);
-        npc.moving = false;
+        if (!movedGrid) {
+          if (!soldCompanionNpcIds.has(npc.id)) {
+            if (
+              hubScheduleEligible(npc) &&
+              navSetStatic instanceof Set &&
+              navSetStatic.size > 96
+            ) {
+              const mx = npc.x + (npc._targetX - npc.x) * 0.42;
+              const my = npc.y + (npc._targetY - npc.y) * 0.42;
+              const nt = nearestHubNavTile(mx, my, navSetStatic);
+              if (nt) {
+                npc._targetX = nt.tx + 0.5;
+                npc._targetY = nt.ty + 0.5;
+              } else {
+                npc._targetX = npc.homeX + (Math.random() * 2 - 1) * 0.06;
+                npc._targetY = npc.homeY + (Math.random() * 2 - 1) * 0.06;
+              }
+            } else {
+              npc._targetX = npc.homeX + (Math.random() * 2 - 1) * 0.06;
+              npc._targetY = npc.homeY + (Math.random() * 2 - 1) * 0.06;
+            }
+          }
+          npc.facing = Math.atan2(ny, nx);
+          npc.moving = false;
+        }
       }
     }
 
