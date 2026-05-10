@@ -3604,6 +3604,44 @@ function closeMenu() {
   menu.setAttribute("aria-hidden", "true");
 }
 
+const AUTO_CLOSE_RADIUS = TRADER_CLICK_PLAYER_RADIUS + 4;
+
+function checkWindowAutoClose() {
+  const self = state.players.get(state.selfId);
+  if (!self) return;
+  const px = self.renderX ?? self.x;
+  const py = self.renderY ?? self.y;
+
+  if (state.traderNpcId) {
+    const npc = state.npcs.get(state.traderNpcId);
+    if (!npc || Math.hypot(px - npc.x, py - npc.y) > AUTO_CLOSE_RADIUS) {
+      traderPanel.classList.add("hidden");
+      state.traderNpcId = null;
+    }
+  }
+
+  if (state.shop?.open) {
+    const dist = Math.hypot(px - state.shop.x, py - state.shop.y);
+    if (dist > AUTO_CLOSE_RADIUS) {
+      closeShop();
+    }
+  }
+
+  if (state.buyHouseOffer) {
+    const dist = Math.hypot(px - state.buyHouseOffer.buildingX, py - state.buyHouseOffer.buildingY);
+    if (dist > AUTO_CLOSE_RADIUS) {
+      closeBuyHousePanel();
+    }
+  }
+
+  if (state.pendingCompanionInvite) {
+    const npc = state.npcs.get(state.pendingCompanionInvite.npcId);
+    if (!npc || Math.hypot(px - npc.x, py - npc.y) > AUTO_CLOSE_RADIUS) {
+      closeCompanionInvitePanel();
+    }
+  }
+}
+
 function changeServer(url) {
   const normalizedUrl = normalizeServerUrl(url);
   closeMenu();
@@ -3626,6 +3664,7 @@ function frame(now) {
   }
   updateSmoothPlayers(dt);
   updateCamera(dt);
+  checkWindowAutoClose();
   draw();
   requestAnimationFrame(frame);
 }
