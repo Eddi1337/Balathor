@@ -260,6 +260,48 @@ const MOB_TYPES = Object.freeze({
     bossLevel: 20,
     bossPrimary: "#5a0808",
     bossAccent:  "#ff9900"
+  },
+  undead: {
+    enemies: [
+      { name: "Skeleton",      level: 3, hp: 62,  damage: 11, speed: 1.65 },
+      { name: "Grave Walker",  level: 4, hp: 78,  damage: 14, speed: 1.5  },
+      { name: "Bone Archer",   level: 5, hp: 70,  damage: 17, speed: 1.55 },
+      { name: "Wight",         level: 7, hp: 108, damage: 21, speed: 1.4  },
+    ],
+    primary: "#c8c8b4",
+    accent:  "#8b2fb8",
+    bossName:  "Lich King",
+    bossLevel: 13,
+    bossPrimary: "#d4d4c0",
+    bossAccent:  "#c060ff"
+  },
+  demon: {
+    enemies: [
+      { name: "Fiend",         level: 8,  hp: 148, damage: 27, speed: 1.7  },
+      { name: "Hellspawn",     level: 10, hp: 185, damage: 33, speed: 1.65 },
+      { name: "Pit Demon",     level: 12, hp: 228, damage: 40, speed: 1.6  },
+      { name: "Void Reaver",   level: 14, hp: 272, damage: 47, speed: 1.55 },
+    ],
+    primary: "#1a0a2e",
+    accent:  "#ff5500",
+    bossName:  "Demon Lord",
+    bossLevel: 18,
+    bossPrimary: "#0d0518",
+    bossAccent:  "#ff2200"
+  },
+  golem: {
+    enemies: [
+      { name: "Stone Hulk",    level: 12, hp: 285, damage: 44, speed: 1.2  },
+      { name: "Iron Golem",    level: 14, hp: 345, damage: 52, speed: 1.1  },
+      { name: "Void Construct",level: 16, hp: 405, damage: 60, speed: 1.05 },
+      { name: "Titan Shard",   level: 18, hp: 465, damage: 68, speed: 1.0  },
+    ],
+    primary: "#5a5a6e",
+    accent:  "#00ffcc",
+    bossName:  "Stone Colossus",
+    bossLevel: 22,
+    bossPrimary: "#3a3a4e",
+    bossAccent:  "#00ffff"
   }
 });
 const WILDERNESS_BOSSES = Object.freeze([
@@ -2416,15 +2458,17 @@ function xpForMob(mob) {
   if (mob.isBoss) {
     return 120 + mob.level * 24 + Math.max(0, mob.maxHp - 120);
   }
-  const factionMult = mob.faction === "dragon" ? 2.4 : mob.faction === "bandit" ? 1.5 : 1.0;
-  return Math.round((18 + mob.level * 8 + Math.floor(mob.maxHp / 8)) * factionMult);
+  const factionMult = mob.faction === "golem" ? 2.8 : mob.faction === "dragon" ? 2.4 : mob.faction === "demon" ? 2.0 : mob.faction === "bandit" ? 1.5 : mob.faction === "undead" ? 1.35 : 1.0;
+  const megaMult = mob.megaBoss ? 4.0 : 1.0;
+  return Math.round((18 + mob.level * 8 + Math.floor(mob.maxHp / 8)) * factionMult * megaMult);
 }
 
 function goldForMob(mob) {
   if (mob.isCritter) return 1;
   if (mob.isBoss) return 25 + mob.level * 5;
-  const factionMult = mob.faction === "dragon" ? 3.0 : mob.faction === "bandit" ? 1.8 : 1.0;
-  return Math.round((3 + mob.level * 2) * factionMult);
+  const factionMult = mob.faction === "golem" ? 3.5 : mob.faction === "dragon" ? 3.0 : mob.faction === "demon" ? 2.4 : mob.faction === "bandit" ? 1.8 : mob.faction === "undead" ? 1.4 : 1.0;
+  const megaMult = mob.megaBoss ? 5.0 : 1.0;
+  return Math.round((3 + mob.level * 2) * factionMult * megaMult);
 }
 
 function awardXp(player, amount) {
@@ -3685,10 +3729,14 @@ function createWildernessMobs() {
       const bossHome = findOpenMobHome(camp.x, camp.y, camp.x, camp.y);
       const level = type.bossLevel + tier;
       const isDragonBoss = faction === "dragon";
+      const isGolemBoss  = faction === "golem";
+      const isDemonBoss  = faction === "demon";
+      const megaBoss = camp.size >= 9 && tier >= 4;
+      const hpBase = isDragonBoss ? 350 + level * 28 : isGolemBoss ? 500 + level * 35 : isDemonBoss ? 300 + level * 24 : 150 + level * 18;
       mobs.push({
         id: `mob_boss_${camp.id}`,
-        name: type.bossName,
-        level,
+        name: megaBoss ? `${type.bossName} [COLOSSUS]` : type.bossName,
+        level: megaBoss ? level + 4 : level,
         homeX: bossHome.x,
         homeY: bossHome.y,
         primary: type.bossPrimary,
@@ -3698,10 +3746,11 @@ function createWildernessMobs() {
         faction: faction || null,
         isDragon: isDragonBoss,
         isBoss: true,
-        maxHp: isDragonBoss ? 350 + level * 28 : 150 + level * 18,
-        attackDamage: isDragonBoss ? 40 + level * 3 : 16 + level * 2,
-        roamRadius: isDragonBoss ? 9 : 7,
-        speed: isDragonBoss ? 1.15 : 1.25
+        megaBoss,
+        maxHp: megaBoss ? hpBase * 2.5 : hpBase,
+        attackDamage: megaBoss ? (isDragonBoss ? 55 + level * 4 : isGolemBoss ? 70 + level * 4 : isDemonBoss ? 50 + level * 3 : 28 + level * 3) : (isDragonBoss ? 40 + level * 3 : 16 + level * 2),
+        roamRadius: megaBoss ? 12 : isDragonBoss ? 9 : 7,
+        speed: megaBoss ? 0.95 : isDragonBoss ? 1.15 : 1.25
       });
     }
   }
@@ -4065,6 +4114,7 @@ function getMobSnapshot(viewBounds) {
       faction: mob.faction,
       isBoss: Boolean(mob.isBoss),
       isDragon: Boolean(mob.isDragon),
+      megaBoss: Boolean(mob.megaBoss),
       isCritter: Boolean(mob.isCritter),
       x: Number(mob.x.toFixed(3)),
       y: Number(mob.y.toFixed(3)),

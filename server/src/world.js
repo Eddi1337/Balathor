@@ -412,19 +412,19 @@ function buildScatterEnemyCamps() {
         ? (cappedTier >= 2 && bossRoll > 0.55)
         : (cappedTier >= 3 && bossRoll > 0.87);
 
-      // Assign enemy faction — sludge near start, bandits mid, dragons deep
+      // Assign enemy faction — 6 types spread by tier (sludge/undead near start, demons/golems deep)
       const factionRoll = hash2(tx, ty, 6200);
       let faction;
       if (cappedTier <= 1) {
-        faction = "sludge";
-      } else if (cappedTier <= 2) {
-        faction = factionRoll < 0.58 ? "sludge" : "bandit";
-      } else if (cappedTier <= 3) {
-        faction = factionRoll < 0.38 ? "sludge" : factionRoll < 0.74 ? "bandit" : "dragon";
-      } else if (cappedTier <= 4) {
-        faction = factionRoll < 0.18 ? "sludge" : factionRoll < 0.58 ? "bandit" : "dragon";
+        faction = factionRoll < 0.8 ? "sludge" : "undead";
+      } else if (cappedTier === 2) {
+        faction = factionRoll < 0.45 ? "sludge" : factionRoll < 0.82 ? "undead" : "bandit";
+      } else if (cappedTier === 3) {
+        faction = factionRoll < 0.22 ? "sludge" : factionRoll < 0.52 ? "undead" : factionRoll < 0.84 ? "bandit" : "demon";
+      } else if (cappedTier === 4) {
+        faction = factionRoll < 0.15 ? "undead" : factionRoll < 0.42 ? "bandit" : factionRoll < 0.68 ? "demon" : "dragon";
       } else {
-        faction = factionRoll < 0.32 ? "bandit" : "dragon";
+        faction = factionRoll < 0.22 ? "demon" : factionRoll < 0.52 ? "dragon" : "golem";
       }
 
       out.push({

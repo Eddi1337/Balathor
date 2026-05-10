@@ -5805,102 +5805,481 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
 }
 
 function drawMob(entity, x, y) {
-  const phase     = entity.walkPhase || 0;
-  const primary   = entity.primary  || "#56b88f";
-  const accent    = entity.accent   || "#c7f5b0";
-  const isBoss    = Boolean(entity.isBoss);
+  const faction = entity.faction;
+  if (entity.megaBoss)         return drawMobMegaBoss(entity, x, y);
+  if (faction === "dragon" || entity.isDragon) return drawMobDragon(entity, x, y);
+  if (faction === "undead")    return drawMobUndead(entity, x, y);
+  if (faction === "demon")     return drawMobDemon(entity, x, y);
+  if (faction === "golem")     return drawMobGolem(entity, x, y);
+  if (faction === "bandit")    return drawMobBandit(entity, x, y);
+  drawMobSludge(entity, x, y);
+}
+
+function _mobLabel(entity, x, nameY, labelColor, fontSize) {
+  ctx.font = `${fontSize}px ui-sans-serif, system-ui`;
+  ctx.textAlign = "center";
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(8,12,18,0.85)";
+  ctx.fillStyle = labelColor;
+  const label = Number.isFinite(entity.level) ? `Lv ${entity.level} ${entity.name}` : entity.name;
+  ctx.strokeText(label, x, nameY);
+  ctx.fillText(label, x, nameY);
+}
+
+// ── Sludge / nature creatures (green blobs) ────────────────────────────────
+function drawMobSludge(entity, x, y) {
+  const phase   = entity.walkPhase || 0;
+  const primary = entity.primary || "#4f9f5f";
+  const accent  = entity.accent  || "#d8f0a0";
+  const isBoss  = Boolean(entity.isBoss);
   const isCritter = Boolean(entity.isCritter);
-  const isDragon  = Boolean(entity.isDragon);
-
-  const sc  = isBoss ? 2.0 : isDragon ? 1.45 : isCritter ? 0.65 : 1.0;
-  const bW  = Math.round(22 * sc);
-  const bH  = Math.round(9  * sc);
-  const hW  = Math.round(18 * sc);
-  const hH  = Math.round(11 * sc);
-  const legW = Math.round(6  * sc);
-  const legH = Math.round(4  * sc);
+  const sc      = isBoss ? 2.0 : isCritter ? 0.65 : 1.0;
+  const bW = Math.round(22 * sc), bH = Math.round(9 * sc);
+  const hW = Math.round(18 * sc), hH = Math.round(11 * sc);
+  const legW = Math.round(6 * sc), legH = Math.round(4 * sc);
   const bounce = Math.round(Math.sin(phase * 3) * (isCritter ? 1.5 : 1));
-
-  const nameY = y - (isBoss ? 42 : isDragon ? 34 : isCritter ? 20 : 28);
-  const barW  = isBoss ? 48 : isDragon ? 38 : isCritter ? 22 : 30;
-  const barY  = y - (isBoss ? 35 : isDragon ? 28 : isCritter ? 14 : 22);
-
-  drawEllipseShadow(x - bW / 2, y + 8, bW, Math.round(isBoss ? 9 : isCritter ? 3 : isDragon ? 7 : 5), isCritter ? 0.18 : 0.28);
-
-  // Dragon wings (drawn behind body)
-  if (isDragon) {
-    const wingSpread = Math.round(bW * 1.2);
-    const wingH = Math.round(bH * 1.4);
-    const wingY = Math.round(y - bH / 2 + bounce) - 2;
-    ctx.fillStyle = blend(primary, "#000000", 0.45);
-    ctx.fillRect(x - bW / 2 - wingSpread, wingY, wingSpread, wingH);
-    ctx.fillRect(x + bW / 2,              wingY, wingSpread, wingH);
-    ctx.fillStyle = blend(primary, "#000000", 0.28);
-    ctx.fillRect(x - bW / 2 - wingSpread + 2, wingY + 2, wingSpread - 4, wingH - 4);
-    ctx.fillRect(x + bW / 2 + 2,              wingY + 2, wingSpread - 4, wingH - 4);
-  }
-
-  // Stump legs
+  const nameY  = y - (isBoss ? 42 : isCritter ? 20 : 28);
+  const barW   = isBoss ? 48 : isCritter ? 22 : 30;
+  const barY   = y - (isBoss ? 35 : isCritter ? 14 : 22);
+  drawEllipseShadow(x - bW / 2, y + 8, bW, Math.round(isBoss ? 9 : isCritter ? 3 : 5), isCritter ? 0.18 : 0.28);
   if (!isCritter) {
-    const legY = Math.round(y + bH / 2 + bounce);
     ctx.fillStyle = blend(primary, "#000000", 0.38);
+    const legY = Math.round(y + bH / 2 + bounce);
     ctx.fillRect(x - legW - 1, legY, legW, legH);
-    ctx.fillRect(x + 1,        legY, legW, legH);
+    ctx.fillRect(x + 1, legY, legW, legH);
   }
-
-  // Body
   ctx.fillStyle = blend(primary, "#000000", 0.22);
   ctx.fillRect(x - bW / 2, Math.round(y - bH / 2 + bounce), bW, bH);
   ctx.fillStyle = primary;
   ctx.fillRect(x - bW / 2, Math.round(y - bH / 2 + bounce), bW, bH - 2);
-
-  // Head
   const headY = Math.round(y - bH / 2 - hH + bounce);
   ctx.fillStyle = primary;
   ctx.fillRect(x - hW / 2, headY, hW, hH);
   ctx.fillStyle = blend(primary, "#ffffff", 0.18);
   ctx.fillRect(x - hW / 2, headY, hW, 3);
-
-  // Eyes / ears (accent)
   ctx.fillStyle = accent;
   if (isCritter) {
-    const eW = Math.round(hW * 0.22);
-    const eH = Math.round(hH * 0.5);
+    const eW = Math.round(hW * 0.22), eH = Math.round(hH * 0.5);
     ctx.fillRect(x - Math.round(hW * 0.38), headY - eH + 2, eW, eH);
     ctx.fillRect(x + Math.round(hW * 0.16), headY - eH + 2, eW, eH);
   } else {
-    const eyeSz = Math.max(2, Math.round(3 * sc));
-    const eyeY  = headY + Math.round(hH * 0.38);
-    ctx.fillRect(x - Math.round(hW * 0.3),  eyeY, eyeSz, eyeSz);
+    const eyeSz = Math.max(2, Math.round(3 * sc)), eyeY = headY + Math.round(hH * 0.38);
+    ctx.fillRect(x - Math.round(hW * 0.3), eyeY, eyeSz, eyeSz);
     ctx.fillRect(x + Math.round(hW * 0.08), eyeY, eyeSz, eyeSz);
   }
-
-  // Dragon horns
-  if (isDragon && !isBoss) {
-    ctx.fillStyle = accent;
-    ctx.fillRect(x - Math.round(hW * 0.35), headY - 6, 3, 6);
-    ctx.fillRect(x + Math.round(hW * 0.22), headY - 6, 3, 6);
-  }
-
-  // Boss crown / horns
   if (isBoss) {
     ctx.fillStyle = "#ffd166";
-    ctx.fillRect(x - 14, headY - 8,  6, 8);
-    ctx.fillRect(x -  3, headY - 12, 6, 12);
-    ctx.fillRect(x +  8, headY - 8,  6, 8);
+    ctx.fillRect(x - 14, headY - 8, 6, 8); ctx.fillRect(x - 3, headY - 12, 6, 12); ctx.fillRect(x + 8, headY - 8, 6, 8);
   }
-
-  // Label
-  ctx.font = `${isBoss ? 13 : isDragon ? 12 : isCritter ? 10 : 11}px ui-sans-serif, system-ui`;
-  ctx.textAlign = "center";
-  ctx.lineWidth = isCritter ? 2 : 3;
-  ctx.strokeStyle = "rgba(8,12,18,0.82)";
-  ctx.fillStyle   = isBoss ? "#ffd166" : isDragon ? "#ffd700" : isCritter ? "#d8eec8" : "#ffc0a0";
-  const label = Number.isFinite(entity.level) && !isCritter
-    ? `Lv ${entity.level} ${entity.name}` : entity.name;
-  ctx.strokeText(label, x, nameY);
-  ctx.fillText(label,   x, nameY);
+  _mobLabel(entity, x, nameY, isBoss ? "#ffd166" : isCritter ? "#d8eec8" : "#ffc0a0", isBoss ? 13 : isCritter ? 10 : 11);
   drawHealthBar(x - barW / 2, barY, barW, isCritter ? 3 : 4, entity.hp, entity.maxHp);
+}
+
+// ── Bandits (armoured humans) ──────────────────────────────────────────────
+function drawMobBandit(entity, x, y) {
+  const phase   = entity.walkPhase || 0;
+  const primary = entity.primary || "#4a3f5e";
+  const accent  = entity.accent  || "#c0b8e0";
+  const isBoss  = Boolean(entity.isBoss);
+  const sc      = isBoss ? 2.0 : 1.0;
+  const bounce  = Math.round(Math.sin(phase * 2.8) * 1);
+  // Proportions — taller/thinner than sludge
+  const bW = Math.round(16 * sc), bH = Math.round(14 * sc);
+  const hW = Math.round(13 * sc), hH = Math.round(10 * sc);
+  const legW = Math.round(5 * sc), legH = Math.round(6 * sc);
+  const nameY = y - (isBoss ? 50 : 34), barW = isBoss ? 48 : 30, barY = y - (isBoss ? 43 : 28);
+  drawEllipseShadow(x - bW / 2, y + 9, bW + 4, isBoss ? 9 : 5, 0.28);
+  // Boots
+  ctx.fillStyle = blend(primary, "#000000", 0.55);
+  const legY = Math.round(y + bH / 2 + bounce);
+  ctx.fillRect(x - legW - 1, legY, legW, legH); ctx.fillRect(x + 2, legY, legW, legH);
+  // Tabard / body armour
+  ctx.fillStyle = blend(primary, "#000000", 0.3);
+  ctx.fillRect(x - bW / 2, Math.round(y - bH / 2 + bounce), bW, bH);
+  ctx.fillStyle = primary;
+  ctx.fillRect(x - bW / 2 + 1, Math.round(y - bH / 2 + bounce), bW - 2, bH - 3);
+  // Belt stripe
+  ctx.fillStyle = blend(accent, "#000000", 0.3);
+  ctx.fillRect(x - bW / 2, Math.round(y + bounce), bW, 2);
+  // Weapon arm (sword hilt sticking up on right)
+  ctx.fillStyle = blend(accent, "#000000", 0.1);
+  ctx.fillRect(x + Math.round(bW / 2) + 1, Math.round(y - bH / 4 + bounce), 3, Math.round(bH * 0.7));
+  ctx.fillStyle = accent;
+  ctx.fillRect(x + Math.round(bW / 2) + 0, Math.round(y - bH / 2 + bounce - 4), 5, 3);
+  // Head / helmet
+  const headY = Math.round(y - bH / 2 - hH + bounce);
+  ctx.fillStyle = blend(primary, "#000000", 0.4);
+  ctx.fillRect(x - hW / 2, headY, hW, hH);
+  ctx.fillStyle = blend(primary, "#ffffff", 0.12);
+  ctx.fillRect(x - hW / 2, headY, hW, 3);
+  // Visor slit (dark band across helmet)
+  ctx.fillStyle = blend(primary, "#000000", 0.7);
+  ctx.fillRect(x - hW / 2 + 2, headY + Math.round(hH * 0.35), hW - 4, 3);
+  // Eyes glinting through visor
+  ctx.fillStyle = accent;
+  const eyeY = headY + Math.round(hH * 0.38);
+  ctx.fillRect(x - Math.round(hW * 0.28), eyeY, 2, 2);
+  ctx.fillRect(x + Math.round(hW * 0.1), eyeY, 2, 2);
+  if (isBoss) {
+    ctx.fillStyle = "#e8c060";
+    ctx.fillRect(x - 14, headY - 10, 5, 10); ctx.fillRect(x - 3, headY - 14, 6, 14); ctx.fillRect(x + 9, headY - 10, 5, 10);
+  }
+  _mobLabel(entity, x, nameY, isBoss ? "#e8c060" : "#d8c8ff", isBoss ? 13 : 11);
+  drawHealthBar(x - barW / 2, barY, barW, 4, entity.hp, entity.maxHp);
+}
+
+// ── Dragons ────────────────────────────────────────────────────────────────
+function drawMobDragon(entity, x, y) {
+  const phase   = entity.walkPhase || 0;
+  const primary = entity.primary || "#8b1a1a";
+  const accent  = entity.accent  || "#ffd700";
+  const isBoss  = Boolean(entity.isBoss);
+  const sc      = isBoss ? 2.2 : 1.45;
+  const bW = Math.round(22 * sc), bH = Math.round(9 * sc);
+  const hW = Math.round(18 * sc), hH = Math.round(11 * sc);
+  const legW = Math.round(6 * sc), legH = Math.round(4 * sc);
+  const bounce = Math.round(Math.sin(phase * 3) * 1);
+  const nameY = y - (isBoss ? 52 : 38), barW = isBoss ? 56 : 40, barY = y - (isBoss ? 44 : 30);
+  drawEllipseShadow(x - bW * 0.8, y + 8, bW * 1.6, isBoss ? 11 : 7, 0.3);
+  // Wings behind body
+  const wingW = Math.round(bW * 1.1), wingH = Math.round(bH * 1.6);
+  const wingY = Math.round(y - bH / 2 + bounce) - 3;
+  ctx.fillStyle = blend(primary, "#000000", 0.5);
+  ctx.fillRect(x - bW / 2 - wingW, wingY, wingW, wingH);
+  ctx.fillRect(x + bW / 2, wingY, wingW, wingH);
+  ctx.fillStyle = blend(primary, "#000000", 0.32);
+  ctx.fillRect(x - bW / 2 - wingW + 2, wingY + 2, wingW - 4, wingH - 4);
+  ctx.fillRect(x + bW / 2 + 2, wingY + 2, wingW - 4, wingH - 4);
+  // Wing membrane veins
+  ctx.fillStyle = blend(primary, "#000000", 0.65);
+  ctx.fillRect(x - bW / 2 - wingW + 3, wingY + 3, 2, wingH - 8);
+  ctx.fillRect(x + bW / 2 + wingW - 5, wingY + 3, 2, wingH - 8);
+  // Legs
+  const legY = Math.round(y + bH / 2 + bounce);
+  ctx.fillStyle = blend(primary, "#000000", 0.38);
+  ctx.fillRect(x - legW - 1, legY, legW, legH); ctx.fillRect(x + 1, legY, legW, legH);
+  // Body
+  ctx.fillStyle = blend(primary, "#000000", 0.22);
+  ctx.fillRect(x - bW / 2, Math.round(y - bH / 2 + bounce), bW, bH);
+  ctx.fillStyle = primary;
+  ctx.fillRect(x - bW / 2, Math.round(y - bH / 2 + bounce), bW, bH - 2);
+  // Belly scales (lighter stripe)
+  ctx.fillStyle = blend(primary, "#ffffff", 0.15);
+  ctx.fillRect(x - Math.round(bW * 0.22), Math.round(y - bH / 2 + bounce) + 1, Math.round(bW * 0.44), bH - 4);
+  // Head
+  const headY = Math.round(y - bH / 2 - hH + bounce);
+  ctx.fillStyle = primary;
+  ctx.fillRect(x - hW / 2, headY, hW, hH);
+  ctx.fillStyle = blend(primary, "#ffffff", 0.1);
+  ctx.fillRect(x - hW / 2, headY, hW, 3);
+  // Snout extension
+  ctx.fillStyle = blend(primary, "#000000", 0.15);
+  ctx.fillRect(x + Math.round(hW * 0.3), headY + Math.round(hH * 0.3), Math.round(hW * 0.35), Math.round(hH * 0.5));
+  // Glowing eyes
+  ctx.fillStyle = accent;
+  const eyeY = headY + Math.round(hH * 0.35);
+  ctx.fillRect(x - Math.round(hW * 0.32), eyeY, Math.max(2, Math.round(3 * sc)), Math.max(2, Math.round(3 * sc)));
+  ctx.fillRect(x + Math.round(hW * 0.06), eyeY, Math.max(2, Math.round(3 * sc)), Math.max(2, Math.round(3 * sc)));
+  // Horns
+  ctx.fillStyle = accent;
+  ctx.fillRect(x - Math.round(hW * 0.38), headY - Math.round(8 * sc / 1.45), Math.round(3 * sc / 1.45), Math.round(8 * sc / 1.45));
+  ctx.fillRect(x + Math.round(hW * 0.25), headY - Math.round(8 * sc / 1.45), Math.round(3 * sc / 1.45), Math.round(8 * sc / 1.45));
+  if (isBoss) {
+    ctx.fillStyle = accent;
+    ctx.fillRect(x - 16, headY - 14, 6, 14); ctx.fillRect(x - 3, headY - 20, 6, 20); ctx.fillRect(x + 10, headY - 14, 6, 14);
+  }
+  _mobLabel(entity, x, nameY, isBoss ? "#ff9900" : "#ffd700", isBoss ? 14 : 12);
+  drawHealthBar(x - barW / 2, barY, barW, 4, entity.hp, entity.maxHp);
+}
+
+// ── Undead (skeletons / wights) ────────────────────────────────────────────
+function drawMobUndead(entity, x, y) {
+  const phase   = entity.walkPhase || 0;
+  const primary = entity.primary || "#c8c8b4";
+  const accent  = entity.accent  || "#8b2fb8";
+  const isBoss  = Boolean(entity.isBoss);
+  const sc      = isBoss ? 2.0 : 1.0;
+  // Floaty hover instead of bounce
+  const hover   = Math.round(Math.sin(phase * 2.2) * 2);
+  const nameY   = y - (isBoss ? 52 : 36), barW = isBoss ? 48 : 30, barY = y - (isBoss ? 44 : 29);
+  // Thin leg bones
+  const legW = Math.round(2 * sc), legH = Math.round(7 * sc);
+  ctx.fillStyle = blend(primary, "#000000", 0.25);
+  const legY = Math.round(y + 2 + hover);
+  ctx.fillRect(x - Math.round(5 * sc), legY, legW, legH);
+  ctx.fillRect(x + Math.round(3 * sc), legY, legW, legH);
+  // Foot bones
+  ctx.fillRect(x - Math.round(7 * sc), legY + legH, Math.round(5 * sc), Math.round(2 * sc));
+  ctx.fillRect(x + Math.round(2 * sc), legY + legH, Math.round(5 * sc), Math.round(2 * sc));
+  // Ribcage body — narrow with ribs
+  const bW = Math.round(12 * sc), bH = Math.round(14 * sc);
+  const bodyY = Math.round(y - bH / 2 + hover);
+  ctx.fillStyle = blend(primary, "#000000", 0.2);
+  ctx.fillRect(x - bW / 2, bodyY, bW, bH);
+  ctx.fillStyle = primary;
+  ctx.fillRect(x - bW / 2, bodyY, bW, bH - 2);
+  // Rib lines
+  ctx.fillStyle = blend(primary, "#000000", 0.45);
+  for (let r = 0; r < 4; r++) {
+    const ry = bodyY + Math.round(2 + r * (bH - 4) / 4);
+    ctx.fillRect(x - bW / 2 + 1, ry, bW - 2, 1);
+  }
+  // Arm bones
+  ctx.fillStyle = primary;
+  ctx.fillRect(x - bW / 2 - Math.round(5 * sc), bodyY + Math.round(2 * sc), Math.round(4 * sc), Math.round(10 * sc));
+  ctx.fillRect(x + bW / 2 + Math.round(1 * sc), bodyY + Math.round(2 * sc), Math.round(4 * sc), Math.round(10 * sc));
+  // Skull head — wider than body, hollow eyes
+  const hW = Math.round(16 * sc), hH = Math.round(12 * sc);
+  const headY = Math.round(y - bH / 2 - hH + hover);
+  ctx.fillStyle = primary;
+  ctx.fillRect(x - hW / 2, headY, hW, hH);
+  ctx.fillStyle = blend(primary, "#ffffff", 0.2);
+  ctx.fillRect(x - hW / 2, headY, hW, 2);
+  // Hollow eye sockets (dark)
+  ctx.fillStyle = blend(accent, "#000000", 0.3);
+  const eyeW = Math.round(4 * sc), eyeH = Math.round(4 * sc);
+  const eyeY = headY + Math.round(hH * 0.28);
+  ctx.fillRect(x - Math.round(hW * 0.38), eyeY, eyeW, eyeH);
+  ctx.fillRect(x + Math.round(hW * 0.12), eyeY, eyeW, eyeH);
+  // Glowing pupils in sockets
+  ctx.fillStyle = accent;
+  ctx.fillRect(x - Math.round(hW * 0.32), eyeY + 1, Math.round(eyeW * 0.5), Math.round(eyeH * 0.5));
+  ctx.fillRect(x + Math.round(hW * 0.18), eyeY + 1, Math.round(eyeW * 0.5), Math.round(eyeH * 0.5));
+  // Jaw / teeth marks
+  ctx.fillStyle = blend(primary, "#000000", 0.4);
+  ctx.fillRect(x - Math.round(hW * 0.3), headY + hH - 3, Math.round(hW * 0.6), 3);
+  if (isBoss) {
+    // Lich crown
+    ctx.fillStyle = accent;
+    ctx.fillRect(x - 14, headY - 10, 5, 10); ctx.fillRect(x - 3, headY - 14, 6, 14); ctx.fillRect(x + 9, headY - 10, 5, 10);
+    // Glow aura hint
+    ctx.fillStyle = blend(accent, "#000000", 0.6);
+    ctx.fillRect(x - hW / 2 - 2, headY - 2, hW + 4, hH + 4);
+    ctx.fillStyle = primary;
+    ctx.fillRect(x - hW / 2, headY, hW, hH);
+  }
+  drawEllipseShadow(x - Math.round(bW * 0.7), y + 8, Math.round(bW * 1.4), isBoss ? 8 : 4, 0.2);
+  _mobLabel(entity, x, nameY, isBoss ? "#c060ff" : "#d0a8ff", isBoss ? 13 : 11);
+  drawHealthBar(x - barW / 2, barY, barW, 4, entity.hp, entity.maxHp);
+}
+
+// ── Demons ─────────────────────────────────────────────────────────────────
+function drawMobDemon(entity, x, y) {
+  const phase   = entity.walkPhase || 0;
+  const primary = entity.primary || "#1a0a2e";
+  const accent  = entity.accent  || "#ff5500";
+  const isBoss  = Boolean(entity.isBoss);
+  const sc      = isBoss ? 2.0 : 1.0;
+  const bounce  = Math.round(Math.sin(phase * 2.6) * 1);
+  // Wide shoulders — trapezoidal body
+  const bWTop = Math.round(28 * sc), bWBot = Math.round(16 * sc), bH = Math.round(14 * sc);
+  const hW = Math.round(14 * sc), hH = Math.round(10 * sc);
+  const nameY = y - (isBoss ? 52 : 38), barW = isBoss ? 48 : 34, barY = y - (isBoss ? 44 : 30);
+  drawEllipseShadow(x - bWBot / 2, y + 8, bWTop, isBoss ? 10 : 6, 0.32);
+  // Tail
+  ctx.fillStyle = blend(primary, "#ffffff", 0.1);
+  ctx.fillRect(x + Math.round(bWBot / 2) - 1, Math.round(y + bounce) + 2, Math.round(4 * sc), Math.round(5 * sc));
+  ctx.fillRect(x + Math.round(bWBot / 2) + Math.round(2 * sc), Math.round(y + bounce) + 6, Math.round(3 * sc), Math.round(4 * sc));
+  // Legs
+  ctx.fillStyle = blend(primary, "#000000", 0.25);
+  const legY = Math.round(y + bH / 2 + bounce);
+  ctx.fillRect(x - Math.round(7 * sc), legY, Math.round(6 * sc), Math.round(5 * sc));
+  ctx.fillRect(x + Math.round(1 * sc), legY, Math.round(6 * sc), Math.round(5 * sc));
+  // Body (trapezoid via overlapping rects)
+  ctx.fillStyle = blend(primary, "#000000", 0.25);
+  const bodyY = Math.round(y - bH / 2 + bounce);
+  ctx.fillRect(x - bWTop / 2, bodyY, bWTop, Math.round(bH * 0.45));
+  ctx.fillRect(x - bWBot / 2, bodyY + Math.round(bH * 0.45), bWBot, Math.round(bH * 0.55));
+  ctx.fillStyle = primary;
+  ctx.fillRect(x - bWTop / 2, bodyY, bWTop, Math.round(bH * 0.45) - 1);
+  ctx.fillRect(x - bWBot / 2, bodyY + Math.round(bH * 0.45), bWBot, Math.round(bH * 0.55) - 2);
+  // Glowing chest rune
+  ctx.fillStyle = accent;
+  ctx.fillRect(x - Math.round(2 * sc), bodyY + Math.round(bH * 0.25), Math.round(4 * sc), Math.round(4 * sc));
+  // Claw marks on sides
+  ctx.fillStyle = blend(accent, "#000000", 0.3);
+  for (let c = 0; c < 3; c++) {
+    ctx.fillRect(x - bWTop / 2 - Math.round(3 * sc), bodyY + Math.round(c * 3 * sc), Math.round(3 * sc), Math.round(1.5 * sc));
+    ctx.fillRect(x + bWTop / 2, bodyY + Math.round(c * 3 * sc), Math.round(3 * sc), Math.round(1.5 * sc));
+  }
+  // Head
+  const headY = Math.round(y - bH / 2 - hH + bounce);
+  ctx.fillStyle = blend(primary, "#ffffff", 0.08);
+  ctx.fillRect(x - hW / 2, headY, hW, hH);
+  ctx.fillStyle = primary;
+  ctx.fillRect(x - hW / 2, headY, hW, hH - 2);
+  // Glowing ember eyes
+  ctx.fillStyle = accent;
+  const eyeY = headY + Math.round(hH * 0.35);
+  ctx.fillRect(x - Math.round(hW * 0.35), eyeY, Math.round(4 * sc), Math.round(3 * sc));
+  ctx.fillRect(x + Math.round(hW * 0.1), eyeY, Math.round(4 * sc), Math.round(3 * sc));
+  // Large curved horns
+  const hornH = Math.round(12 * sc);
+  ctx.fillStyle = blend(primary, "#ffffff", 0.2);
+  ctx.fillRect(x - Math.round(hW * 0.42), headY - hornH, Math.round(4 * sc), hornH);
+  ctx.fillRect(x - Math.round(hW * 0.42) - Math.round(3 * sc), headY - hornH, Math.round(3 * sc), Math.round(hornH * 0.5));
+  ctx.fillRect(x + Math.round(hW * 0.26), headY - hornH, Math.round(4 * sc), hornH);
+  ctx.fillRect(x + Math.round(hW * 0.26) + Math.round(3 * sc), headY - hornH, Math.round(3 * sc), Math.round(hornH * 0.5));
+  if (isBoss) {
+    ctx.fillStyle = accent;
+    ctx.fillRect(x - 18, headY - hornH - 6, 6, 6);
+    ctx.fillRect(x + 12, headY - hornH - 6, 6, 6);
+  }
+  _mobLabel(entity, x, nameY, isBoss ? "#ff2200" : "#ff8844", isBoss ? 13 : 11);
+  drawHealthBar(x - barW / 2, barY, barW, 4, entity.hp, entity.maxHp);
+}
+
+// ── Golems (stone constructs) ──────────────────────────────────────────────
+function drawMobGolem(entity, x, y) {
+  const phase   = entity.walkPhase || 0;
+  const primary = entity.primary || "#5a5a6e";
+  const accent  = entity.accent  || "#00ffcc";
+  const isBoss  = Boolean(entity.isBoss);
+  const sc      = isBoss ? 2.0 : 1.0;
+  // Golems have almost no movement — heavy thud
+  const stomp   = Math.abs(Math.sin(phase * 1.5)) > 0.85 ? Math.round(2 * sc) : 0;
+  const nameY   = y - (isBoss ? 54 : 38), barW = isBoss ? 52 : 36, barY = y - (isBoss ? 46 : 30);
+  // Very thick chunky legs
+  const legW = Math.round(8 * sc), legH = Math.round(6 * sc);
+  ctx.fillStyle = blend(primary, "#000000", 0.45);
+  const legY = Math.round(y + 5 + stomp);
+  ctx.fillRect(x - legW - 1, legY, legW, legH); ctx.fillRect(x + 2, legY, legW, legH);
+  drawEllipseShadow(x - Math.round(20 * sc), y + 10, Math.round(40 * sc), isBoss ? 11 : 7, 0.35);
+  // Square body — taller than wide
+  const bW = Math.round(24 * sc), bH = Math.round(18 * sc);
+  const bodyY = Math.round(y - bH / 2 + stomp);
+  ctx.fillStyle = blend(primary, "#000000", 0.35);
+  ctx.fillRect(x - bW / 2, bodyY, bW, bH);
+  ctx.fillStyle = primary;
+  ctx.fillRect(x - bW / 2, bodyY, bW, bH - 2);
+  // Stone crack lines on body
+  ctx.fillStyle = blend(primary, "#000000", 0.5);
+  ctx.fillRect(x - Math.round(3 * sc), bodyY + 2, 1, Math.round(bH * 0.6));
+  ctx.fillRect(x - Math.round(7 * sc), bodyY + Math.round(bH * 0.3), Math.round(8 * sc), 1);
+  ctx.fillRect(x + Math.round(2 * sc), bodyY + Math.round(bH * 0.55), Math.round(6 * sc), 1);
+  // Glowing core gem
+  const gemW = Math.round(6 * sc), gemH = Math.round(6 * sc);
+  ctx.fillStyle = blend(accent, "#000000", 0.2);
+  ctx.fillRect(x - gemW / 2 - 1, bodyY + Math.round(bH * 0.38) - 1, gemW + 2, gemH + 2);
+  ctx.fillStyle = accent;
+  ctx.fillRect(x - gemW / 2, bodyY + Math.round(bH * 0.38), gemW, gemH);
+  ctx.fillStyle = blend(accent, "#ffffff", 0.5);
+  ctx.fillRect(x - gemW / 2 + 1, bodyY + Math.round(bH * 0.38) + 1, Math.round(gemW * 0.4), Math.round(gemH * 0.4));
+  // Blocky arms
+  const armW = Math.round(6 * sc), armH = Math.round(14 * sc);
+  ctx.fillStyle = blend(primary, "#000000", 0.3);
+  ctx.fillRect(x - bW / 2 - armW, bodyY + Math.round(2 * sc), armW, armH);
+  ctx.fillRect(x + bW / 2, bodyY + Math.round(2 * sc), armW, armH);
+  ctx.fillStyle = blend(primary, "#ffffff", 0.06);
+  ctx.fillRect(x - bW / 2 - armW, bodyY + Math.round(2 * sc), armW, 2);
+  ctx.fillRect(x + bW / 2, bodyY + Math.round(2 * sc), armW, 2);
+  // Square head (sits directly on body — no neck)
+  const hW = Math.round(20 * sc), hH = Math.round(12 * sc);
+  const headY = Math.round(y - bH / 2 - hH + stomp);
+  ctx.fillStyle = blend(primary, "#000000", 0.3);
+  ctx.fillRect(x - hW / 2, headY, hW, hH);
+  ctx.fillStyle = primary;
+  ctx.fillRect(x - hW / 2, headY, hW, hH - 2);
+  ctx.fillStyle = blend(primary, "#000000", 0.5);
+  ctx.fillRect(x - Math.round(4 * sc), headY + 2, 1, Math.round(hH * 0.5));
+  // Glowing eye slits
+  ctx.fillStyle = accent;
+  ctx.fillRect(x - Math.round(hW * 0.35), headY + Math.round(hH * 0.35), Math.round(6 * sc), Math.round(2 * sc));
+  ctx.fillRect(x + Math.round(hW * 0.06), headY + Math.round(hH * 0.35), Math.round(6 * sc), Math.round(2 * sc));
+  if (isBoss) {
+    ctx.fillStyle = accent;
+    ctx.fillRect(x - 16, headY - 8, 6, 8); ctx.fillRect(x - 3, headY - 12, 6, 12); ctx.fillRect(x + 10, headY - 8, 6, 8);
+  }
+  _mobLabel(entity, x, nameY, isBoss ? "#00ffff" : "#a0fff0", isBoss ? 13 : 11);
+  drawHealthBar(x - barW / 2, barY, barW, 4, entity.hp, entity.maxHp);
+}
+
+// ── Mega Boss (colossus-tier, any faction) ─────────────────────────────────
+function drawMobMegaBoss(entity, x, y) {
+  const faction = entity.faction;
+  const primary = entity.primary || "#5a0808";
+  const accent  = entity.accent  || "#ff9900";
+  const phase   = entity.walkPhase || 0;
+  const stomp   = Math.abs(Math.sin(phase * 1.2)) > 0.8 ? 3 : 0;
+  const sc      = 3.2;
+  const bW = Math.round(22 * sc), bH = Math.round(14 * sc);
+  const hW = Math.round(18 * sc), hH = Math.round(13 * sc);
+  const nameY = y - 88, barW = 80, barY = y - 78;
+  drawEllipseShadow(x - Math.round(bW * 0.7), y + 10, Math.round(bW * 1.4), 14, 0.4);
+  // Dragon mega boss gets wings
+  if (faction === "dragon" || entity.isDragon) {
+    const wingW = Math.round(bW * 1.3), wingH = Math.round(bH * 1.8);
+    const wingY = Math.round(y - bH / 2 + stomp) - 4;
+    ctx.fillStyle = blend(primary, "#000000", 0.5);
+    ctx.fillRect(x - bW / 2 - wingW, wingY, wingW, wingH);
+    ctx.fillRect(x + bW / 2, wingY, wingW, wingH);
+    ctx.fillStyle = blend(primary, "#000000", 0.3);
+    ctx.fillRect(x - bW / 2 - wingW + 3, wingY + 3, wingW - 6, wingH - 6);
+    ctx.fillRect(x + bW / 2 + 3, wingY + 3, wingW - 6, wingH - 6);
+  }
+  // Golem mega boss gets massive arms
+  if (faction === "golem") {
+    ctx.fillStyle = blend(primary, "#000000", 0.3);
+    ctx.fillRect(x - bW / 2 - 22, Math.round(y - bH / 2 + stomp) + 4, 20, 40);
+    ctx.fillRect(x + bW / 2 + 2,  Math.round(y - bH / 2 + stomp) + 4, 20, 40);
+    ctx.fillStyle = accent;
+    const gemY = Math.round(y - bH / 2 + stomp) + 10;
+    ctx.fillRect(x - 7, gemY, 14, 14);
+    ctx.fillStyle = blend(accent, "#ffffff", 0.5);
+    ctx.fillRect(x - 4, gemY + 2, 6, 5);
+  }
+  // Demon mega boss gets massive horns
+  if (faction === "demon") {
+    ctx.fillStyle = blend(primary, "#ffffff", 0.25);
+    ctx.fillRect(x - Math.round(hW * 0.46), Math.round(y - bH / 2 + stomp) - hH - 28, 10, 28);
+    ctx.fillRect(x - Math.round(hW * 0.46) - 9, Math.round(y - bH / 2 + stomp) - hH - 18, 9, 14);
+    ctx.fillRect(x + Math.round(hW * 0.26), Math.round(y - bH / 2 + stomp) - hH - 28, 10, 28);
+    ctx.fillRect(x + Math.round(hW * 0.26) + 10, Math.round(y - bH / 2 + stomp) - hH - 18, 9, 14);
+  }
+  // Legs
+  const legW2 = Math.round(10 * sc / 2), legH2 = Math.round(6 * sc / 2);
+  ctx.fillStyle = blend(primary, "#000000", 0.42);
+  const legY = Math.round(y + bH / 2 + stomp);
+  ctx.fillRect(x - legW2 - 2, legY, legW2, legH2); ctx.fillRect(x + 2, legY, legW2, legH2);
+  // Body
+  ctx.fillStyle = blend(primary, "#000000", 0.25);
+  ctx.fillRect(x - bW / 2, Math.round(y - bH / 2 + stomp), bW, bH);
+  ctx.fillStyle = primary;
+  ctx.fillRect(x - bW / 2, Math.round(y - bH / 2 + stomp), bW, bH - 3);
+  // Glowing core / chest mark
+  ctx.fillStyle = accent;
+  ctx.fillRect(x - 7, Math.round(y - bH / 4 + stomp), 14, 10);
+  ctx.fillStyle = blend(accent, "#ffffff", 0.5);
+  ctx.fillRect(x - 4, Math.round(y - bH / 4 + stomp) + 2, 7, 5);
+  // Head
+  const headY = Math.round(y - bH / 2 - hH + stomp);
+  ctx.fillStyle = primary;
+  ctx.fillRect(x - hW / 2, headY, hW, hH);
+  ctx.fillStyle = blend(primary, "#ffffff", 0.12);
+  ctx.fillRect(x - hW / 2, headY, hW, 4);
+  // Massive glowing eyes
+  ctx.fillStyle = accent;
+  const eyeY = headY + Math.round(hH * 0.38);
+  ctx.fillRect(x - Math.round(hW * 0.32), eyeY, 10, 7);
+  ctx.fillRect(x + Math.round(hW * 0.08), eyeY, 10, 7);
+  ctx.fillStyle = blend(accent, "#ffffff", 0.6);
+  ctx.fillRect(x - Math.round(hW * 0.3), eyeY + 1, 4, 3);
+  ctx.fillRect(x + Math.round(hW * 0.1), eyeY + 1, 4, 3);
+  // Crown
+  ctx.fillStyle = "#ffd700";
+  ctx.fillRect(x - 22, headY - 14, 9, 14); ctx.fillRect(x - 5, headY - 20, 10, 20); ctx.fillRect(x + 13, headY - 14, 9, 14);
+  ctx.fillStyle = accent;
+  ctx.fillRect(x - 18, headY - 17, 5, 5); ctx.fillRect(x, headY - 23, 5, 5); ctx.fillRect(x + 14, headY - 17, 5, 5);
+  // [COLOSSUS] label in red above name
+  ctx.font = "bold 11px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.strokeStyle = "rgba(8,12,18,0.9)";
+  ctx.lineWidth = 3;
+  ctx.fillStyle = "#ff2200";
+  ctx.strokeText("⚠ COLOSSUS", x, nameY - 14);
+  ctx.fillText("⚠ COLOSSUS", x, nameY - 14);
+  _mobLabel(entity, x, nameY, "#ffd700", 14);
+  drawHealthBar(x - barW / 2, barY, barW, 6, entity.hp, entity.maxHp);
 }
 
 function drawCombatFx() {
