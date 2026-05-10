@@ -5,6 +5,9 @@ const { HUB_NPC_ORDER } = require("./hubRoundTown.js");
 const NPC_SPEED = 2.0;
 const MOVE_INTERVAL_MIN = 3000;
 const MOVE_INTERVAL_MAX = 9000;
+/** Hub road followers re-pick destinations often so the town stays visually busy. */
+const HUB_PATH_MOVE_INTERVAL_MIN = 420;
+const HUB_PATH_MOVE_INTERVAL_MAX = 1100;
 /** Standoff spot in front of hub market stalls (patrons mingle here). */
 const HUB_MARKET_BROWSE_WAYPOINTS = [];
 const CHAT_INTERVAL_MIN = 28000;
@@ -151,7 +154,56 @@ function steerNpcGridAlongPaths(npc, navSet, step) {
       }
     }
   }
+
+  /**
+   * Fallback: prefer the cardinal neighbor *tile* whose centre is closest to the
+   * target. Dot-product ordering can dead-end near junctions while a short detour exists.
+   */
+  const tx = Math.floor(npc.x);
+  const ty = Math.floor(npc.y);
+  if (!navSet.has(`${tx},${ty}`)) {
+    return false;
+  }
+  const cand = [];
+  for (const [mx, my] of CARD) {
+    const nk = `${tx + mx},${ty + my}`;
+    if (!navSet.has(nk)) {
+      continue;
+    }
+    const cx = tx + mx + 0.5;
+    const cy = ty + my + 0.5;
+    cand.push([
+      mx,
+      my,
+      (cx - npc._targetX) ** 2 + (cy - npc._targetY) ** 2
+    ]);
+  }
+  cand.sort((a, b) => a[2] - b[2]);
+  for (const scaler of [1, 0.55]) {
+    const s = step * scaler;
+    for (const [mx, my] of cand) {
+      const nx = npc.x + mx * s;
+      const ny = npc.y + my * s;
+      if (navSet.has(hubTileKey(nx, ny))) {
+        npc.x = nx;
+        npc.y = ny;
+        npc.facing = Math.atan2(my, mx);
+        npc.moving = true;
+        return true;
+      }
+    }
+  }
   return false;
+}
+
+function scheduleNpcNextPatrol(npc) {
+  const now = Date.now();
+  const span =
+    npc._followHubPaths
+      ? HUB_PATH_MOVE_INTERVAL_MAX - HUB_PATH_MOVE_INTERVAL_MIN
+      : MOVE_INTERVAL_MAX - MOVE_INTERVAL_MIN;
+  const lo = npc._followHubPaths ? HUB_PATH_MOVE_INTERVAL_MIN : MOVE_INTERVAL_MIN;
+  npc._nextMoveAt = now + lo + Math.random() * span;
 }
 
 function sampleHubPatrolWaypoint(npc, navSet) {
@@ -864,6 +916,20 @@ function refreshHubPathFollowingFlags() {
     }
     n._followHubPaths = follow;
   }
+
+  const tHub = Date.now();
+  for (const n of npcs) {
+    if (!n._followHubPaths || soldCompanionNpcIds.has(n.id)) {
+      continue;
+    }
+    /** First patrol leg should start quickly so the hub does not look deserted on join. */
+    n._nextMoveAt = Math.min(
+      n._nextMoveAt,
+      tHub +
+        HUB_PATH_MOVE_INTERVAL_MIN +
+        Math.random() * (HUB_PATH_MOVE_INTERVAL_MAX - HUB_PATH_MOVE_INTERVAL_MIN)
+    );
+  }
 }
 
 refreshHubPathFollowingFlags();
@@ -1000,8 +1066,7 @@ function maybeStartNpcMeeting(now, activationBounds) {
     b._meetMidX = mx;
     a._meetMidY = my;
     b._meetMidY = my;
-    a._nextMoveAt = now + 28000;
-    b._nextMoveAt = now + 28000;
+    /** Do not push _nextMoveAt far ahead — it suppresses patrol for a long time after the chat ends. */
   }
 }
 
@@ -1018,6 +1083,7 @@ function shuffleInPlace(arr) {
 
 function clearMeeting(npc) {
   const buddy = getNpcBuddy(npc);
+  const resume = Date.now();
   npc._meetPeerId = undefined;
   npc._meetPhase = undefined;
   npc._meetEndAt = undefined;
@@ -1025,6 +1091,7 @@ function clearMeeting(npc) {
   npc._meetTurnSpeaker = undefined;
   npc._meetMidX = undefined;
   npc._meetMidY = undefined;
+  npc._nextMoveAt = resume;
   if (buddy) {
     buddy._meetPeerId = undefined;
     buddy._meetPhase = undefined;
@@ -1033,6 +1100,7 @@ function clearMeeting(npc) {
     buddy._meetTurnSpeaker = undefined;
     buddy._meetMidX = undefined;
     buddy._meetMidY = undefined;
+    buddy._nextMoveAt = resume;
   }
 }
 
@@ -1293,10 +1361,7 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
           npc._targetY = ty;
         }
 
-        npc._nextMoveAt =
-          now +
-          MOVE_INTERVAL_MIN +
-          Math.random() * (MOVE_INTERVAL_MAX - MOVE_INTERVAL_MIN);
+        scheduleNpcNextPatrol(npc);
       }
     } else {
       const nx = dx / dist;
