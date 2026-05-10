@@ -5,9 +5,189 @@ const { HUB_NPC_ORDER } = require("./hubRoundTown.js");
 const NPC_SPEED = 2.0;
 const MOVE_INTERVAL_MIN = 3000;
 const MOVE_INTERVAL_MAX = 9000;
-/** Hub road followers re-pick destinations often so the town stays visually busy. */
+/** Hub road followers re-pick destinations often so the town stays visually busy (non-scheduled NPCs). */
 const HUB_PATH_MOVE_INTERVAL_MIN = 420;
 const HUB_PATH_MOVE_INTERVAL_MAX = 1100;
+
+/** Hub villager routine: doorstep → commute into town → several stroll waypoints → mingle → walk home → repeat */
+const SCHED_HOME = "home";
+const SCHED_TO_TOWN = "to_town";
+const SCHED_TOWN = "town";
+const SCHED_RETURN = "return";
+
+function hubScheduleEligible(npc) {
+  return npc._followHubPaths && !npc.isTrader && !soldCompanionNpcIds.has(npc.id);
+}
+
+function hubScheduleEnsureInit(npc, now = Date.now()) {
+  if (!hubScheduleEligible(npc)) {
+    return;
+  }
+  if (!npc._schedPhase) {
+    npc._schedPhase = SCHED_HOME;
+    npc._schedUntil = now + 8000 + ((npcIdHashSeed(`${String(npc.id)}|init`) >>> 0) % 16000);
+    npc._schedRoamGoal = 0;
+    npc._schedDoneRoam = 0;
+    npc._schedMingleUntil = 0;
+  }
+}
+
+function assignScheduleNavTarget(npc, pt, navSet) {
+  if (!pt || !navSet || !hubScheduleEligible(npc)) {
+    return false;
+  }
+  let tx = pt.tx ?? pt.x;
+  let ty = pt.ty ?? pt.y;
+  if (!Number.isFinite(tx) || !Number.isFinite(ty)) {
+    return false;
+  }
+  const k = hubTileKey(tx, ty);
+  if (!navSet.has(k)) {
+    const nt = nearestHubNavTile(tx, ty, navSet);
+    if (!nt) {
+      return false;
+    }
+    tx = nt.tx + 0.5;
+    ty = nt.ty + 0.5;
+  }
+  if (isBlockedCircle(tx, ty)) {
+    return false;
+  }
+  npc._targetX = tx;
+  npc._targetY = ty;
+  return true;
+}
+
+function pickCommuteTowardPlaza(npc, navSet) {
+  if (!(navSet instanceof Set) || navSet.size < 48) {
+    return null;
+  }
+  const bubble = Number(WORLD.HUB_TOWN_GRASS_RADIUS) || 132;
+  const ax = Number(WORLD.START_SPAWN?.x) || 0;
+  const ay = Number(WORLD.START_SPAWN?.y) || 0;
+  const jx = ((npcIdHashSeed(`${String(npc.id)}|cmx`) >>> 0) % 31) / 19 - 0.82;
+  const jy = ((npcIdHashSeed(`${String(npc.id)}|cmy`) >>> 0) % 31) / 19 - 0.82;
+  let px = npc.homeX * 0.3 + ax * 0.7 + jx;
+  let py = npc.homeY * 0.3 + ay * 0.7 + jy;
+  const dCtr = Math.hypot(px - ax, py - ay);
+  if (dCtr > bubble - 20) {
+    const s = (bubble - 22) / Math.max(dCtr, 0.01);
+    px = ax + (px - ax) * s;
+    py = ay + (py - ay) * s;
+  }
+  const nt = nearestHubNavTile(px, py, navSet);
+  return nt ? { tx: nt.tx + 0.5, ty: nt.ty + 0.5 } : null;
+}
+
+function pickTownRoamWaypointForSchedule(npc, navSet) {
+  const savedHx = npc.homeX;
+  const savedHy = npc.homeY;
+  const savedR = npc.patrolRadius;
+  const sx = Number(WORLD.START_SPAWN?.x) || 0;
+  const sy = Number(WORLD.START_SPAWN?.y) || 0;
+  npc.homeX = (savedHx + sx) / 2;
+  npc.homeY = (savedHy + sy) / 2;
+  npc.patrolRadius = Math.min(savedR + 28, Number(WORLD.HUB_TOWN_GRASS_RADIUS) || 132);
+  let p = sampleHubPatrolWaypoint(npc, navSet);
+  npc.homeX = savedHx;
+  npc.homeY = savedHy;
+  npc.patrolRadius = savedR;
+  if (!p) {
+    p = sampleHubPatrolWaypoint(npc, navSet);
+  }
+  return p;
+}
+
+function pickHomeNavTarget(npc, navSet) {
+  if (!(navSet instanceof Set)) {
+    return null;
+  }
+  const nt = nearestHubNavTile(npc.homeX + 0.02, npc.homeY + 0.12, navSet);
+  return nt ? { tx: nt.tx + 0.5, ty: nt.ty + 0.5 } : null;
+}
+
+/**
+ * Advance the daily routine when the NPC has reached its current waypoint.
+ * Caller must enforce dist≈0, not courting-move, not social walk.
+ */
+function hubScheduleAdvance(npc, now, navSet) {
+  if (!navSet || navSet.size < 96 || !hubScheduleEligible(npc)) {
+    return;
+  }
+  hubScheduleEnsureInit(npc, now);
+
+  if (npc._schedPhase === SCHED_HOME) {
+    if (now < npc._schedUntil) {
+      return;
+    }
+    npc._schedPhase = SCHED_TO_TOWN;
+    npc._schedRoamGoal = 2 + ((npcIdHashSeed(`${String(npc.id)}|rg`) >>> 0) % 4);
+    npc._schedDoneRoam = 0;
+    npc._schedMingleUntil = 0;
+    const wp = pickCommuteTowardPlaza(npc, navSet);
+    if (!assignScheduleNavTarget(npc, wp, navSet)) {
+      npc._schedPhase = SCHED_HOME;
+      npc._schedUntil = now + 9000 + (((npcIdHashSeed(`${String(npc.id)}|bk`) >>> 0) % 12000));
+    }
+    return;
+  }
+
+  if (npc._schedPhase === SCHED_TO_TOWN) {
+    npc._schedPhase = SCHED_TOWN;
+    npc._schedDoneRoam = 0;
+    npc._schedMingleUntil = 0;
+    const wp = pickTownRoamWaypointForSchedule(npc, navSet);
+    if (!assignScheduleNavTarget(npc, wp, navSet)) {
+      npc._schedUntil = now + 850;
+      return;
+    }
+    /** No dwell before counting the first roam leg — otherwise they freeze on the commuter tile */
+    npc._schedUntil = 0;
+    return;
+  }
+
+  if (npc._schedPhase === SCHED_TOWN) {
+    if (npc._schedMingleUntil > 0) {
+      if (now < npc._schedMingleUntil) {
+        return;
+      }
+      npc._schedMingleUntil = 0;
+      npc._schedPhase = SCHED_RETURN;
+      assignScheduleNavTarget(npc, pickHomeNavTarget(npc, navSet), navSet);
+      npc._schedUntil = 0;
+      return;
+    }
+    if (npc._schedUntil && now < npc._schedUntil) {
+      return;
+    }
+
+    npc._schedDoneRoam += 1;
+    if (npc._schedDoneRoam < npc._schedRoamGoal) {
+      const wp = pickTownRoamWaypointForSchedule(npc, navSet);
+      if (!assignScheduleNavTarget(npc, wp, navSet)) {
+        npc._schedDoneRoam -= 1;
+        npc._schedUntil = now + 950;
+      } else {
+        npc._schedUntil = now + 400 + (((npcIdHashSeed(`${String(npc.id)}|rj${npc._schedDoneRoam}`) >>> 0) % 1000));
+      }
+      return;
+    }
+
+    npc._schedMingleUntil = now + 7500 + (((npcIdHashSeed(`${String(npc.id)}|mg`) >>> 0) % 9500));
+    npc._schedUntil = 0;
+    return;
+  }
+
+  if (npc._schedPhase === SCHED_RETURN) {
+    npc._schedPhase = SCHED_HOME;
+    npc._schedUntil = now + 12000 + (((npcIdHashSeed(`${String(npc.id)}|hm`) >>> 0) % 20000));
+    assignScheduleNavTarget(npc, pickHomeNavTarget(npc, navSet), navSet);
+    return;
+  }
+
+  npc._schedPhase = SCHED_HOME;
+  npc._schedUntil = now + 9000;
+}
 /** Standoff spot in front of hub market stalls (patrons mingle here). */
 const HUB_MARKET_BROWSE_WAYPOINTS = [];
 const CHAT_INTERVAL_MIN = 28000;
@@ -963,6 +1143,14 @@ function syncNpcHubHomesFromBuildings(buildings, southDoorAnchorWorldXFn) {
     n._targetY = hy;
     n.x = hx + Math.random() * 0.7 - 0.35;
     n.y = hy + Math.random() * 0.45 + 0.04;
+    const tn = Date.now();
+    if (hubScheduleEligible(n)) {
+      n._schedPhase = SCHED_HOME;
+      n._schedUntil = tn + 6000 + (((npcIdHashSeed(`${String(n.id)}|rs`) >>> 0) % 14000));
+      n._schedRoamGoal = 2;
+      n._schedDoneRoam = 0;
+      n._schedMingleUntil = 0;
+    }
   }
   refreshHubPathFollowingFlags();
   const navSnap = WORLD.HUB_NAV_PATH_KEYS instanceof Set ? WORLD.HUB_NAV_PATH_KEYS : null;
@@ -1018,7 +1206,8 @@ function maybeStartNpcMeeting(now, activationBounds) {
       !soldCompanionNpcIds.has(n.id) &&
       !n._meetPeerId &&
       n.patrolRadius >= 5 &&
-      Math.hypot(n.homeX, n.homeY) <= SOCIAL_NEAR_HOME
+      Math.hypot(n.homeX, n.homeY) <= SOCIAL_NEAR_HOME &&
+      (!hubScheduleEligible(n) || n._schedPhase === SCHED_TOWN)
   );
   if (cand.length < 2) {
     return;
@@ -1256,6 +1445,12 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
   }
 
   const now = Date.now();
+  /** Social pairing checks _schedPhase; ensure schedules exist before maybeStartNpcMeeting runs. */
+  for (const n of npcs) {
+    if (npcPatrolIntersectsBounds(n, activationBounds) && hubScheduleEligible(n)) {
+      hubScheduleEnsureInit(n, now);
+    }
+  }
   maybeStartNpcMeeting(now, activationBounds);
 
   const navSetStatic = WORLD.HUB_NAV_PATH_KEYS instanceof Set ? WORLD.HUB_NAV_PATH_KEYS : null;
@@ -1312,7 +1507,18 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
       npc.moving = false;
 
       const socialWalk = npc._meetPeerId && npc._meetPhase === "walk";
-      if (!(courtSteers || socialWalk) && now >= npc._nextMoveAt && !soldCompanionNpcIds.has(npc.id)) {
+      hubScheduleEnsureInit(npc, now);
+      const hubSchedActive =
+        hubScheduleEligible(npc) && !(courtSteers && loveSeeking) && !socialWalk;
+
+      if (!(courtSteers || socialWalk) && hubSchedActive) {
+        hubScheduleAdvance(npc, now, navSetStatic);
+      } else if (
+        !(courtSteers || socialWalk) &&
+        now >= npc._nextMoveAt &&
+        !soldCompanionNpcIds.has(npc.id) &&
+        !hubSchedActive
+      ) {
         let tx;
         let ty;
         const crowdBrowsing =

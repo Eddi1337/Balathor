@@ -1693,6 +1693,19 @@ function wireUi() {
     syncSafeZoneIndicator(selfMid);
     syncHomeTeleportSlot(selfMid);
   });
+  abilityBarToggle.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (!(event.pointerType === "touch" || event.pointerType === "pen")) return;
+      event.preventDefault();
+      const minimized = abilityBar.classList.toggle("minimized");
+      abilityBarToggle.textContent = minimized ? "+" : "−";
+      const selfMid = state.players.get(state.selfId);
+      syncSafeZoneIndicator(selfMid);
+      syncHomeTeleportSlot(selfMid);
+    },
+    { passive: false }
+  );
 
   safeZoneIndicator?.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -1719,9 +1732,68 @@ function wireUi() {
     send({ type: "setAbilitySlot", slot: Number(slot.dataset.slot), spellId: null });
   });
 
-  // Potion slot click to use potion
-  potionSlotEl?.addEventListener("click", () => { if (state.joined) useHealthPotion(); });
+  /** Mobile & pen: numeric keys often absent — pointerdown activates without waiting for synthetic click latency */
+  const abilityTapGuard = { t: 0, ix: -1 };
+  abilitySlotsEl.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (!state.joined || state.menuOpen || abilityBar.classList.contains("minimized")) return;
+      if (!(event.pointerType === "touch" || event.pointerType === "pen")) return;
+      const slot = event.target.closest(".ability-slot[data-slot]");
+      if (!slot) return;
+      const ix = Number(slot.dataset.slot);
+      if (!Number.isFinite(ix)) return;
+      event.preventDefault();
+      const now = performance.now();
+      if (abilityTapGuard.ix === ix && now - abilityTapGuard.t < 420) return;
+      abilityTapGuard.t = now;
+      abilityTapGuard.ix = ix;
+      castAbilitySlot(ix);
+    },
+    { passive: false }
+  );
 
+  abilitySlotsEl.addEventListener("click", (event) => {
+    if (!state.joined || state.menuOpen || abilityBar.classList.contains("minimized")) return;
+    const slot = event.target.closest(".ability-slot[data-slot]");
+    if (!slot) return;
+    const ix = Number(slot.dataset.slot);
+    if (!Number.isFinite(ix)) return;
+    const now = performance.now();
+    /** Touch path already cast on pointerdown; skip delayed synthetic click doubling abilities */
+    if (abilityTapGuard.ix === ix && now - abilityTapGuard.t < 450) return;
+    event.preventDefault();
+    castAbilitySlot(ix);
+  });
+
+  /** Potion / home teleport: touch needs pointer handlers (click alone misses on some browsers) */
+  potionSlotEl?.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (!(event.pointerType === "touch" || event.pointerType === "pen")) return;
+      if (!state.joined || state.menuOpen) return;
+      event.preventDefault();
+      useHealthPotion();
+    },
+    { passive: false }
+  );
+  potionSlotEl?.addEventListener("click", () => {
+    if (!state.joined || state.menuOpen) return;
+    useHealthPotion();
+  });
+
+  homeTeleportSlotEl?.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (!(event.pointerType === "touch" || event.pointerType === "pen")) return;
+      if (!state.joined || state.menuOpen) return;
+      const self = state.players.get(state.selfId);
+      if (!self?.homeBuildingKey) return;
+      event.preventDefault();
+      sendHome();
+    },
+    { passive: false }
+  );
   homeTeleportSlotEl?.addEventListener("click", () => {
     if (!state.joined || state.menuOpen) return;
     const self = state.players.get(state.selfId);

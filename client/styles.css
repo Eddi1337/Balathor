@@ -1966,6 +1966,21 @@ body.mobile .ability-bar {
   transform: translateY(-50%);
   flex-direction: column;
   gap: 6px;
+  /** Above joystick row / overlays so taps reach spells */
+  z-index: 120;
+  touch-action: manipulation;
+}
+
+body.mobile .ability-slot:not(.cooling-down) {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+body.mobile .potion-slot,
+body.mobile .home-teleport-slot,
+body.mobile .ability-bar-toggle {
+  touch-action: manipulation;
 }
 
 body.mobile .ability-slots {
