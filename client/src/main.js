@@ -334,6 +334,7 @@ const state = {
   spellCooldowns: new Map(),
   levelUpFx: [],
   portalTransition: null,
+  teleportGuardUntil: 0,
   chunks: new Map(),
   portals: new Map(),
   buildings: new Map(),
@@ -740,6 +741,8 @@ function handleServerMessage(message) {
     }
     state.camera.x = message.x * TILE_SIZE;
     state.camera.y = message.y * TILE_SIZE;
+    // Block stale pre-teleport snapshots from snapping the player back
+    state.teleportGuardUntil = performance.now() + 700;
     state.requestedChunks.clear();
     chunkCanvasCache.clear();
     clearMovementInput();
@@ -1133,9 +1136,14 @@ function applySnapshot(players) {
       continue;
     }
 
+    // During the post-teleport guard window, ignore snapshot position for the
+    // local player — stale server snapshots from before the teleport would
+    // otherwise snap renderX/Y back to the old portal position.
+    const isSelf = snapshot.id === state.selfId;
+    const posGuarded = isSelf && now < state.teleportGuardUntil;
     Object.assign(player, snapshot, {
-      targetX: snapshot.x,
-      targetY: snapshot.y,
+      targetX: posGuarded ? player.targetX : snapshot.x,
+      targetY: posGuarded ? player.targetY : snapshot.y,
       renderMoving: Boolean(snapshot.moving),
       lastSeen: now
     });
@@ -3709,6 +3717,7 @@ function clearWorldState() {
   state.combatFx = [];
   state.levelUpFx = [];
   state.portalTransition = null;
+  state.teleportGuardUntil = 0;
   state.chunks.clear();
   state.portals.clear();
   state.buildings.clear();

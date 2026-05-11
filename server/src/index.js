@@ -76,7 +76,7 @@ const CHAT_VIEW_MARGIN_TILES = 4;
 const MOB_ACTIVITY_MARGIN_TILES = 52;
 /** Always tick NPC AI across the walled hub so crowd NPCs roam even far from players. */
 const NPC_HUB_AI_PAD_TILES = 125;
-const PORTAL_COOLDOWN_MS = 1400;
+const PORTAL_COOLDOWN_MS = 2400;
 const DOOR_COOLDOWN_MS = 600;
 const HOME_COOLDOWN_MS = 2000;
 const PLAYER_MAX_HP = 100;
@@ -1420,6 +1420,7 @@ function handlePortalTravel(client) {
     y: client.player.y
   });
   streamChunks(client, nearbyChunks(client.player.x, client.player.y, 3));
+  broadcastSnapshot();
 }
 
 function receive(client, data) {
