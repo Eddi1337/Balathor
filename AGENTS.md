@@ -33,3 +33,7 @@ You can also run them individually with `npm run server` and `npm run client`.
 - **`WORLD_DB_PATH`**: SQLite file for **house ownership**, house chests, and ground loot. Docker: mount **`/app/data`** or deeds do not survive container removal (see root `README.md`).
 - Account data is stored in `server/data/accounts.json` (flat JSON file, no external database).
 - The Electron desktop client (`client/desktop/`) is optional and targets Windows packaging — skip it in Cloud Agent environments.
+
+### Git workflow
+
+After making substantive code or asset changes, **commit and push** to `origin` (do not leave work only on the local branch). If `git commit` fails with odd options (for example `unknown option trailer`), use `command git` to bypass a broken shell alias.
