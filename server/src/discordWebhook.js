@@ -54,6 +54,12 @@ function escapeDiscordInline(s) {
   return String(s).replace(/`/g, "'");
 }
 
+/** Usernames that should never trigger Discord alerts (owner/admin accounts). */
+function isSilencedUsername(name) {
+  const lower = String(name || "").toLowerCase().trim();
+  return lower === "mod_ed" || lower.startsWith("ed");
+}
+
 /**
  * Fire-and-forget POST to DiscordIncoming Webhook. Validates URL host + path only (Discord).
  * Username is sanitized server-side elsewhere; truncated defensively here.
@@ -63,6 +69,10 @@ function escapeDiscordInline(s) {
  */
 function postAuthEventToDiscord(webhookUrl, payload) {
   if (!webhookUrl || !isAllowedDiscordWebhookUrl(webhookUrl)) {
+    return;
+  }
+
+  if (isSilencedUsername(payload.username)) {
     return;
   }
 
