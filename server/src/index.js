@@ -165,6 +165,62 @@ let consecrationZones = [];
 const CONSECRATION_DURATION_MS = 5000;
 const CONSECRATION_TICK_MS = 500;
 const MOB_TYPES = Object.freeze({
+  swamp: {
+    enemies: [
+      { name: "Bog Crawler",  level: 3, hp: 58,  damage: 10, speed: 1.5 },
+      { name: "Marsh Wisp",   level: 4, hp: 50,  damage: 12, speed: 2.1 },
+      { name: "Mire Lurker",  level: 5, hp: 72,  damage: 13, speed: 1.4 },
+      { name: "Swamp Troll",  level: 6, hp: 98,  damage: 16, speed: 1.3 },
+    ],
+    primary: "#4a7a58",
+    accent:  "#b8ffcc",
+    bossName:  "Bogfather",
+    bossLevel: 10,
+    bossPrimary: "#2a4a38",
+    bossAccent:  "#78ffb0"
+  },
+  savanna: {
+    enemies: [
+      { name: "Dust Jackal",   level: 4, hp: 62,  damage: 11, speed: 2.1 },
+      { name: "Prairie Gnoll", level: 5, hp: 74,  damage: 13, speed: 1.85 },
+      { name: "Brush Marauder",level: 6, hp: 82,  damage: 15, speed: 1.75 },
+      { name: "Dry Plains Ogre",level: 7, hp: 104, damage: 17, speed: 1.4 },
+    ],
+    primary: "#b8933a",
+    accent:  "#f5e6b0",
+    bossName:  "Plains Warlord",
+    bossLevel: 11,
+    bossPrimary: "#8a6a2a",
+    bossAccent:  "#ffe080"
+  },
+  tundra: {
+    enemies: [
+      { name: "Frost Wraith",  level: 6, hp: 68,  damage: 14, speed: 1.95 },
+      { name: "Ice Gnawer",    level: 7, hp: 84,  damage: 16, speed: 1.55 },
+      { name: "Tundra Brute",  level: 8, hp: 102, damage: 18, speed: 1.4 },
+      { name: "Pale Stalker",  level: 9, hp: 90,  damage: 20, speed: 1.8 },
+    ],
+    primary: "#8ac8e8",
+    accent:  "#e8f6ff",
+    bossName:  "Frost Colossus",
+    bossLevel: 13,
+    bossPrimary: "#5898c8",
+    bossAccent:  "#c0f0ff"
+  },
+  badlands: {
+    enemies: [
+      { name: "Char Fiend",    level: 7, hp: 80,  damage: 17, speed: 1.85 },
+      { name: "Scorchling",    level: 8, hp: 96,  damage: 19, speed: 1.7 },
+      { name: "Ash Marauder",  level: 9, hp: 114, damage: 21, speed: 1.6 },
+      { name: "Cinder Ogre",   level: 10, hp: 130, damage: 23, speed: 1.45 },
+    ],
+    primary: "#c05a35",
+    accent:  "#ffb870",
+    bossName:  "Infernal Warden",
+    bossLevel: 14,
+    bossPrimary: "#902a18",
+    bossAccent:  "#ffdf60"
+  },
   forest: {
     enemies: [
       { name: "Forest Goblin", level: 1, hp: 48, damage: 8, speed: 1.7 },
@@ -307,15 +363,43 @@ const MOB_TYPES = Object.freeze({
   }
 });
 const WILDERNESS_BOSSES = Object.freeze([
-  { id: "lone_stag",   x: -320, y:   35, biome: "forest", name: "Old Rootback" },
-  { id: "glass_dune",  x:  450, y:  385, biome: "desert", name: "Glasshide" },
-  { id: "white_pine",  x: -450, y: -365, biome: "frost",  name: "Whitepine Warden" },
-  { id: "red_crag",    x:  425, y: -390, biome: "ember",  name: "Red Crag" },
+  { id: "lone_stag",     x: -320, y:   35,  biome: "forest",   name: "Old Rootback" },
+  { id: "glass_dune",    x:  450, y:  385,  biome: "desert",   name: "Glasshide" },
+  { id: "white_pine",    x: -450, y: -365,  biome: "frost",    name: "Whitepine Warden" },
+  { id: "red_crag",      x:  425, y: -390,  biome: "ember",    name: "Red Crag" },
+  { id: "bogfather",     x: -320, y:  290,  biome: "swamp",    name: "The Bogfather" },
+  { id: "plains_reaver", x:  285, y:  210,  biome: "savanna",  name: "Plains Reaver" },
+  { id: "frost_herald",  x: -285, y: -215,  biome: "tundra",   name: "Frost Herald" },
+  { id: "scar_warden",   x:  275, y: -215,  biome: "badlands", name: "Scar Warden" },
 ]);
 
 const CRITTER_CELL = 26;
 
 const CRITTERS_BY_BIOME = Object.freeze({
+  swamp: [
+    { name: "Mud Frog",      maxHp: 10, primary: "#5a7a60", accent: "#c8f0c0", speed: 2.0 },
+    { name: "Bog Newt",      maxHp: 8,  primary: "#6a8870", accent: "#d0e8c0", speed: 1.85 },
+    { name: "Reed Warbler",  maxHp: 7,  primary: "#7a9060", accent: "#e8f0d0", speed: 2.3 },
+    { name: "Swamp Hare",    maxHp: 12, primary: "#785a48", accent: "#d0c8b0", speed: 2.5 }
+  ],
+  savanna: [
+    { name: "Dust Rabbit",   maxHp: 12, primary: "#c8a870", accent: "#f8f0d8", speed: 2.8 },
+    { name: "Prairie Dog",   maxHp: 10, primary: "#a08860", accent: "#e8dcc0", speed: 2.4 },
+    { name: "Scrub Jay",     maxHp: 7,  primary: "#8080a0", accent: "#d8dce8", speed: 2.2 },
+    { name: "Plains Vole",   maxHp: 9,  primary: "#a09078", accent: "#e8e0c8", speed: 2.35 }
+  ],
+  tundra: [
+    { name: "Arctic Hare",   maxHp: 14, primary: "#d0d8e8", accent: "#f8fcff", speed: 2.6 },
+    { name: "Tundra Vole",   maxHp: 9,  primary: "#a0a8b8", accent: "#e8ecf4", speed: 2.2 },
+    { name: "Snowy Bunting", maxHp: 7,  primary: "#b8c4d0", accent: "#f4f8ff", speed: 2.45 },
+    { name: "Frost Shrew",   maxHp: 8,  primary: "#9098a8", accent: "#e0e8f0", speed: 2.3 }
+  ],
+  badlands: [
+    { name: "Scorch Lizard", maxHp: 11, primary: "#8a5a40", accent: "#ffb888", speed: 2.1 },
+    { name: "Char Mouse",    maxHp: 9,  primary: "#6a6058", accent: "#d8d0c8", speed: 2.45 },
+    { name: "Cinder Skink",  maxHp: 12, primary: "#7a5048", accent: "#ffa878", speed: 1.9 },
+    { name: "Ash Sparrow",   maxHp: 7,  primary: "#787070", accent: "#d0ccc8", speed: 2.3 }
+  ],
   forest: [
     { name: "Brown Rabbit", maxHp: 14, primary: "#9c7355", accent: "#efe6dc", speed: 2.65 },
     { name: "Brush Squirrel", maxHp: 12, primary: "#786047", accent: "#d8c8a8", speed: 2.85 },

@@ -564,11 +564,15 @@ const SETTLE_SLOTS = [
 ];
 
 const SETTLE_NAMES = {
-  forest: ["Forest Hut", "Woodland Rest", "Ranger Shelter", "Forest Cabin", "Woodsman Hut"],
-  meadow: ["Meadow Hut", "Field Cottage", "Farm Rest", "Pasture Shelter", "Meadow Cabin"],
-  desert: ["Sun Hut", "Oasis Rest", "Sand Cabin", "Clay Shelter", "Desert Hut"],
-  frost:  ["Frost Hut", "Snow Cabin", "Pine Shelter", "Frost Cabin", "Ice Hut"],
-  ember:  ["Ember Hut", "Ash Cabin", "Forge Shelter", "Ember Cabin", "Cinder Hut"],
+  forest:   ["Forest Hut", "Woodland Rest", "Ranger Shelter", "Forest Cabin", "Woodsman Hut"],
+  meadow:   ["Meadow Hut", "Field Cottage", "Farm Rest", "Pasture Shelter", "Meadow Cabin"],
+  desert:   ["Sun Hut", "Oasis Rest", "Sand Cabin", "Clay Shelter", "Desert Hut"],
+  frost:    ["Frost Hut", "Snow Cabin", "Pine Shelter", "Frost Cabin", "Ice Hut"],
+  ember:    ["Ember Hut", "Ash Cabin", "Forge Shelter", "Ember Cabin", "Cinder Hut"],
+  swamp:    ["Bog Hut", "Mire Shelter", "Marsh Cabin", "Reed Post", "Fen Hut"],
+  savanna:  ["Dust Hut", "Prairie Shelter", "Dry Cabin", "Scrub Post", "Brush Hut"],
+  tundra:   ["Cold Hut", "Ice Shelter", "Bleak Cabin", "Frozen Post", "Frigid Hut"],
+  badlands: ["Scorch Hut", "Cinder Shelter", "Ash Cabin", "Char Post", "Brimstone Hut"],
 };
 
 function getSettlementAt(gx, gy) {
@@ -653,9 +657,13 @@ function getProceduralSettlementTile(x, y) {
     // Clearing ground.
     if (dist <= s.clearRadius) {
       const biome = getBiome(x, y);
-      if (biome === "desert") return hash2(x, y, 77) > 0.93 ? TILE.STONE : TILE.SAND;
-      if (biome === "frost")  return hash2(x, y, 77) > 0.92 ? TILE.STONE : TILE.SNOW;
-      if (biome === "ember")  return hash2(x, y, 77) > 0.92 ? TILE.STONE : TILE.DARK_GRASS;
+      if (biome === "desert")   return hash2(x, y, 77) > 0.93 ? TILE.STONE : TILE.SAND;
+      if (biome === "frost")    return hash2(x, y, 77) > 0.92 ? TILE.STONE : TILE.SNOW;
+      if (biome === "ember")    return hash2(x, y, 77) > 0.92 ? TILE.STONE : TILE.DARK_GRASS;
+      if (biome === "savanna")  return hash2(x, y, 77) > 0.91 ? TILE.STONE : TILE.GRASS;
+      if (biome === "tundra")   return hash2(x, y, 77) > 0.72 ? TILE.STONE : TILE.SNOW;
+      if (biome === "badlands") return hash2(x, y, 77) > 0.88 ? TILE.STONE : TILE.DARK_GRASS;
+      if (biome === "swamp")    return hash2(x, y, 77) > 0.90 ? TILE.STONE : TILE.DARK_GRASS;
       const r = hash2(x, y, 77);
       return r > 0.86 ? TILE.FLOWERS : r > 0.70 ? TILE.DARK_GRASS : TILE.GRASS;
     }
@@ -715,9 +723,9 @@ function getEnemyCampTile(x, y) {
         const r = hash2(x, y, 913);
         if (r > 0.55) return TILE.PATH;
         const biome = getBiome(x, y);
-        if (biome === "desert") return TILE.SAND;
-        if (biome === "frost")  return TILE.SNOW;
-        if (biome === "ember")  return TILE.DARK_GRASS;
+        if (biome === "desert" || biome === "savanna") return TILE.SAND;
+        if (biome === "frost"  || biome === "tundra")  return TILE.SNOW;
+        if (biome === "ember"  || biome === "badlands" || biome === "swamp") return TILE.DARK_GRASS;
         return TILE.GRASS;
       }
       if (hash2(x, y, 914) > 0.72) return TILE.PATH;
@@ -734,9 +742,9 @@ function getEnemyCampTile(x, y) {
       if (r > 0.84) return TILE.STONE;
       if (r > 0.28) return TILE.PATH;
       const biome = getBiome(x, y);
-      if (biome === "desert") return TILE.SAND;
-      if (biome === "frost")  return TILE.SNOW;
-      if (biome === "ember")  return TILE.DARK_GRASS;
+      if (biome === "desert" || biome === "savanna") return TILE.SAND;
+      if (biome === "frost"  || biome === "tundra")  return TILE.SNOW;
+      if (biome === "ember"  || biome === "badlands" || biome === "swamp") return TILE.DARK_GRASS;
       return TILE.GRASS;
     }
 
@@ -1287,24 +1295,37 @@ function lerp(a, b, t) {
 }
 
 function getBiome(x, y) {
-  if (x > 290 && y > 220) {
-    return "desert";
-  }
+  // Deep biome cores checked first — portal-destination territories
+  if (x > 350 && y > 265) return "desert";
+  if (x < -350 && y < -265) return "frost";
+  if (x > 335 && y < -295) return "ember";
 
-  if (x < -290 && y < -220) {
-    return "frost";
-  }
+  // Swamp: NW quadrant — independent wetland biome (no portal)
+  if (x < -175 && y > 175) return "swamp";
 
-  if (x > 275 && y < -250) {
-    return "ember";
-  }
+  // Transition biomes bridging forest ↔ deep biome
+  if (x > 195 && y > 125) return "savanna";  // NE, leads to desert
+  if (x < -195 && y < -125) return "tundra"; // SW, leads to frost
+  if (x > 180 && y < -125) return "badlands"; // SE, leads to ember
 
+  // Meadow: noise-driven patches in the forest belt
   const meadow = smoothNoise(x + 220, y - 140, 42, 234);
   if (meadow > 0.64 && Math.hypot(x, y) > Math.max(42, HUB_TOWN_GRASS_RADIUS + 18)) {
     return "meadow";
   }
 
   return "forest";
+}
+
+/**
+ * Domain-warped biome lookup for tile generation.
+ * Adds ±48-tile noise displacement to biome boundaries so they read as
+ * organic, ragged edges rather than straight geometric cuts.
+ */
+function getBiomeForTile(x, y) {
+  const wx = (smoothNoise(x, y, 90, 7701) - 0.5) * 96;
+  const wy = (smoothNoise(x, y, 90, 7702) - 0.5) * 96;
+  return getBiome(x + wx, y + wy);
 }
 
 function generateTile(x, y) {
@@ -1424,16 +1445,14 @@ function generateExteriorTile(x, y) {
 
   // Village clearings: suppress forest and water.
   if (isInVillage(x, y)) {
-    const biome = getBiome(x, y);
-    if (biome === "desert") {
-      return hash2(x, y, 55) > 0.94 ? TILE.FLOWERS : TILE.SAND;
-    }
-    if (biome === "frost") {
-      return hash2(x, y, 55) > 0.94 ? TILE.STONE : TILE.SNOW;
-    }
-    if (biome === "ember") {
-      return hash2(x, y, 55) > 0.94 ? TILE.STONE : TILE.DARK_GRASS;
-    }
+    const biome = getBiomeForTile(x, y);
+    if (biome === "desert")   return hash2(x, y, 55) > 0.94 ? TILE.FLOWERS : TILE.SAND;
+    if (biome === "frost")    return hash2(x, y, 55) > 0.94 ? TILE.STONE : TILE.SNOW;
+    if (biome === "ember")    return hash2(x, y, 55) > 0.94 ? TILE.STONE : TILE.DARK_GRASS;
+    if (biome === "savanna")  return hash2(x, y, 55) > 0.88 ? TILE.DARK_GRASS : TILE.GRASS;
+    if (biome === "tundra")   return hash2(x, y, 55) > 0.75 ? TILE.STONE : TILE.SNOW;
+    if (biome === "badlands") return hash2(x, y, 55) > 0.91 ? TILE.STONE : TILE.DARK_GRASS;
+    if (biome === "swamp")    return hash2(x, y, 55) > 0.90 ? TILE.STONE : TILE.DARK_GRASS;
     const r = hash2(x, y, 55);
     if (r > 0.84) return TILE.FLOWERS;
     if (r > 0.66) return TILE.DARK_GRASS;
@@ -1446,66 +1465,84 @@ function generateExteriorTile(x, y) {
     return settleTile;
   }
 
-  // Outer world noise generation.
-  const biome = getBiome(x, y);
-  const water = smoothNoise(x + 900, y - 200, 18, 81);
+  // Outer world noise generation — biome determined with domain-warped boundaries.
+  const biome = getBiomeForTile(x, y);
+  const water  = smoothNoise(x + 900, y - 200, 18, 81);
   const forest = smoothNoise(x, y, 9, 17);
   const detail = hash2(x, y, 9);
 
+  // ── Desert: vast sand plains, rocky outcrops, rare oasis pools ──────────
   if (biome === "desert") {
-    if (water > 0.86) {
-      return TILE.WATER;
-    }
-    if (detail > 0.96) {
-      return TILE.STONE;
-    }
+    if (water > 0.86) return TILE.WATER;
+    if (detail > 0.96) return TILE.STONE;
+    if (detail > 0.91) return TILE.FLOWERS; // desert blooms
     return TILE.SAND;
   }
 
+  // ── Savanna: dry open grassland transitioning to desert ─────────────────
+  if (biome === "savanna") {
+    if (water > 0.93) return TILE.WATER;   // rare waterholes
+    if (detail > 0.97) return TILE.STONE;
+    if (forest > 0.87) return TILE.TREE;   // scattered lone trees
+    if (detail > 0.87) return TILE.DARK_GRASS;
+    if (detail > 0.79) return TILE.FLOWERS; // dry wildflowers
+    if (detail > 0.71) return TILE.SAND;   // sandy patches
+    return TILE.GRASS;
+  }
+
+  // ── Frost: snow-covered pine forests, frozen lakes ───────────────────────
   if (biome === "frost") {
-    if (water > 0.84) {
-      return TILE.WATER;
-    }
-    if (forest > 0.72 || detail > 0.97) {
-      return TILE.TREE;
-    }
+    if (water > 0.84) return TILE.WATER;
+    if (forest > 0.72 || detail > 0.97) return TILE.TREE;
     return detail > 0.9 ? TILE.STONE : TILE.SNOW;
   }
 
+  // ── Tundra: sparse cold plains bridging forest and frost ─────────────────
+  if (biome === "tundra") {
+    if (water > 0.90) return TILE.WATER;   // frozen ponds
+    if (detail > 0.95) return TILE.TREE;   // sparse pines
+    if (detail > 0.74) return TILE.STONE;  // exposed rock
+    if (forest > 0.52) return TILE.SNOW;
+    if (detail > 0.62) return TILE.SNOW;
+    return TILE.GRASS; // sparse tundra grass
+  }
+
+  // ── Ember: volcanic wasteland, lava veins, scorched earth ───────────────
   if (biome === "ember") {
-    if (water > 0.82 || detail > 0.96) {
-      return TILE.LAVA;
-    }
-    if (forest > 0.76) {
-      return TILE.TREE;
-    }
+    if (water > 0.82 || detail > 0.96) return TILE.LAVA;
+    if (forest > 0.76) return TILE.TREE;
     return forest < 0.3 ? TILE.STONE : TILE.DARK_GRASS;
   }
 
+  // ── Badlands: rocky volcanic scrub transitioning to ember ────────────────
+  if (biome === "badlands") {
+    if (water > 0.90) return TILE.LAVA;    // lava pools (using water noise)
+    if (detail > 0.94) return TILE.LAVA;   // lava cracks
+    if (forest > 0.86) return TILE.TREE;   // dead trees
+    if (detail > 0.72) return TILE.STONE;
+    return TILE.DARK_GRASS;
+  }
+
+  // ── Swamp: dense murky wetlands, NW quadrant ────────────────────────────
+  if (biome === "swamp") {
+    if (water > 0.80) return TILE.WATER;   // broad murky pools
+    if (forest > 0.78) return TILE.TREE;   // thick swamp canopy
+    if (detail > 0.93) return TILE.STONE;  // mossy stones
+    if (detail > 0.84) return TILE.FLOWERS; // swamp lilies
+    return TILE.DARK_GRASS;
+  }
+
+  // ── Meadow: flower-rich clearings in the forest belt ────────────────────
   if (biome === "meadow") {
     return detail > 0.84 ? TILE.FLOWERS : TILE.GRASS;
   }
 
-  if (water > 0.82 && dist > 24) {
-    return TILE.WATER;
-  }
-
-  if (water > 0.74 && dist > 24) {
-    return TILE.SAND;
-  }
-
-  if (forest > 0.64 || detail > 0.94) {
-    return TILE.TREE;
-  }
-
-  if (forest < 0.2) {
-    return TILE.DARK_GRASS;
-  }
-
-  if (detail > 0.88) {
-    return TILE.FLOWERS;
-  }
-
+  // ── Forest (default) ────────────────────────────────────────────────────
+  if (water > 0.82 && dist > 24) return TILE.WATER;
+  if (water > 0.74 && dist > 24) return TILE.SAND;
+  if (forest > 0.64 || detail > 0.94) return TILE.TREE;
+  if (forest < 0.2) return TILE.DARK_GRASS;
+  if (detail > 0.88) return TILE.FLOWERS;
   return TILE.GRASS;
 }
 
