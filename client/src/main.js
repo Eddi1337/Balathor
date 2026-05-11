@@ -1468,7 +1468,7 @@ function showNpcContextMenu(npc) {
     } else if (kind === "hawker") {
       const shopBtn = document.createElement("button");
       shopBtn.dataset.npcAction = "shop";
-      shopBtn.textContent = "Buy";
+      shopBtn.textContent = "Trade";
       const shooBtn = document.createElement("button");
       shooBtn.dataset.npcAction = "shoo";
       shooBtn.className = "npc-ctx-shoo";
