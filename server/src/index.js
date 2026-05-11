@@ -817,7 +817,8 @@ function serializePlayer(player) {
       : {}),
     ...(player.houseCompanion && typeof player.houseCompanion === "object"
       ? { houseCompanion: player.houseCompanion }
-      : {})
+      : {}),
+    ...(player.flirtFollowNpcId ? { flirtFollowNpcId: player.flirtFollowNpcId } : {})
   };
 }
 
@@ -1624,7 +1625,56 @@ function handleMessage(client, raw) {
       npc._givenUpUntil = null;
       npc._targetX = npc.homeX;
       npc._targetY = npc.homeY;
+      // Release flirt follower
+      if (client.player && client.player.flirtFollowNpcId === npc.id) {
+        client.player.flirtFollowNpcId = null;
+        saveClientCharacter(client);
+      }
     }
+    return;
+  }
+
+  if (message.type === "pursueFlirt") {
+    const p = client.player;
+    if (!p) return;
+    const npc = getNpcById(String(message.npcId || "").slice(0, 96));
+    if (!npc || !npc.wandersToFlirt || !npc.bondTag) return;
+    if (p.houseCompanion || p.flirtFollowNpcId) {
+      send(client, { type: "serverMessage", message: "companion_already" });
+      return;
+    }
+    if (Math.hypot(npc.x - p.x, npc.y - p.y) > 5) {
+      send(client, { type: "serverMessage", message: "companion_too_far" });
+      return;
+    }
+
+    if (p.homeBuildingKey) {
+      const house = ownedBuildings.get(p.homeBuildingKey);
+      if (house && client.account && house.ownerAccountKey === client.account.key) {
+        // Player has a house — NPC enters house companion system
+        p.houseCompanion = buildHouseCompanionFromTemplate(npc);
+        registerCompanionSold(npc.id);
+        saveClientCharacter(client);
+        broadcastSnapshot();
+        pushChat({
+          kind: "system", name: "Realm",
+          text: `${npc.name} smiles warmly. "I'll find my way to your hearth."`,
+        });
+        return;
+      }
+    }
+
+    // No house — follow the player around
+    npc._followingPlayerId = p.id;
+    npc._engagedAt = null;
+    npc._givenUpUntil = null;
+    p.flirtFollowNpcId = npc.id;
+    saveClientCharacter(client);
+    broadcastSnapshot();
+    pushChat({
+      kind: "system", name: "Realm",
+      text: `${npc.name} smiles and falls into step beside you.`,
+    });
     return;
   }
 
@@ -1892,6 +1942,9 @@ function joinWorld(client, message, savedCharacter = null) {
   }
   client.player.homeBuildingKey = homeBuildingKey;
   client.player.houseCompanion = sanitizeHouseCompanion(savedCharacter?.houseCompanion);
+  client.player.flirtFollowNpcId = typeof savedCharacter?.flirtFollowNpcId === "string"
+    ? savedCharacter.flirtFollowNpcId.slice(0, 96)
+    : null;
 
   applyDerivedPlayerStats(client.player);
   client.player.hp = savedCharacter
@@ -3029,6 +3082,9 @@ function broadcastSnapshot() {
     }
     if (viewerId && p.id === viewerId && p.houseCompanion) {
       snap.houseCompanion = p.houseCompanion;
+    }
+    if (viewerId && p.id === viewerId && p.flirtFollowNpcId) {
+      snap.flirtFollowNpcId = p.flirtFollowNpcId;
     }
     playerSnapCache.set(cacheKey, snap);
     return snap;

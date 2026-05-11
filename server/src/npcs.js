@@ -1927,6 +1927,31 @@ function approachGiveUp(npc, now) {
 }
 
 /**
+ * Flirt follower: NPC stays with the player indefinitely (no give-up, no cost).
+ * Used when a player pursues a flirt walker but has no house yet.
+ */
+function applyFollowPlayer(npc, player, onChat, now) {
+  const dx = player.x - npc.x;
+  const dy = player.y - npc.y;
+  const dist = Math.hypot(dx, dy);
+
+  if (dist > 2.5) {
+    const angle = Math.atan2(dy, dx);
+    npc._targetX = player.x - Math.cos(angle) * 2.0;
+    npc._targetY = player.y - Math.sin(angle) * 2.0;
+    invalidateNpcHubRoadPath(npc);
+  }
+
+  if (dist < 3 && now - (npc._flirtLineAt || 0) > 12000) {
+    npc._flirtLineAt = now;
+    const line = npc.dialogue[Math.floor(Math.random() * npc.dialogue.length)];
+    onChat({ kind: "npc", fromId: npc.id, name: npc.name, text: line, x: npc.x, y: npc.y });
+  }
+
+  return dist > 1.5;
+}
+
+/**
  * Flirt-walker NPC approaches the most attractive player within range.
  * Range and pickiness both scale with playerAttractionScore.
  * NPCs orbit around the player rather than stacking, and give up after 20 s.
@@ -2105,7 +2130,14 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
     if (npc.wandersToPlayer) {
       courtSteers = applyHawkerApproach(npc, companionCtx, onChat, now);
     } else if (npc.wandersToFlirt) {
-      courtSteers = applyFlirtApproach(npc, companionCtx, onChat, now);
+      const followerRow = companionCtx?.allPlayers?.find(
+        row => row.player.flirtFollowNpcId === npc.id
+      );
+      if (followerRow) {
+        courtSteers = applyFollowPlayer(npc, followerRow.player, onChat, now);
+      } else {
+        courtSteers = applyFlirtApproach(npc, companionCtx, onChat, now);
+      }
     } else if (companionCtx && typeof npc.companionPrice === "number") {
       courtSteers = applyCompanionCourt(npc, companionCtx, onChat, now);
     }

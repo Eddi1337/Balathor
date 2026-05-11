@@ -1457,14 +1457,19 @@ function showNpcContextMenu(npc) {
   if (npcContextMenuButtons) {
     npcContextMenuButtons.replaceChildren();
     if (kind === "romance") {
-      const buyBtn = document.createElement("button");
-      buyBtn.dataset.npcAction = "buy_companion";
-      buyBtn.textContent = npc.bondTag === "bf" ? "Pursue him" : "Pursue her";
+      const self = state.players.get(state.selfId);
+      const isMyFollower = npc.wandersToFlirt && self?.flirtFollowNpcId === npc.id;
+      if (!isMyFollower) {
+        const buyBtn = document.createElement("button");
+        buyBtn.dataset.npcAction = npc.wandersToFlirt ? "pursue_flirt" : "buy_companion";
+        buyBtn.textContent = npc.bondTag === "bf" ? "Pursue him" : "Pursue her";
+        npcContextMenuButtons.append(buyBtn);
+      }
       const shooBtn = document.createElement("button");
       shooBtn.dataset.npcAction = "shoo";
       shooBtn.className = "npc-ctx-shoo";
-      shooBtn.textContent = "Shoo";
-      npcContextMenuButtons.append(buyBtn, shooBtn);
+      shooBtn.textContent = isMyFollower ? "Say goodbye" : "Shoo";
+      npcContextMenuButtons.append(shooBtn);
     } else if (kind === "hawker") {
       const shopBtn = document.createElement("button");
       shopBtn.dataset.npcAction = "shop";
@@ -2225,6 +2230,8 @@ function wireUi() {
       send({ type: "shoo_npc", npcId });
     } else if (act === "shop") {
       send({ type: "traderOpen", npcId });
+    } else if (act === "pursue_flirt") {
+      send({ type: "pursueFlirt", npcId });
     } else if (act === "buy_companion") {
       send({ type: "companionApproach", npcId });
     }
