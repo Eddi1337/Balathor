@@ -5720,16 +5720,38 @@ function drawCorridorObject(obj, sx, sy) {
   const x = sx - w / 2;
   const y = sy - h / 2;
   ctx.save();
-  ctx.fillStyle = "rgba(17, 32, 54, 0.95)";
+  const longHorizontal = w >= h;
+  ctx.fillStyle = "rgba(10, 18, 30, 0.96)";
   ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = "rgba(103, 240, 255, 0.16)";
-  ctx.fillRect(x + 4, y + h * 0.2, w - 8, h * 0.6);
-  ctx.fillStyle = "rgba(255,255,255,0.08)";
-  for (let i = 0; i < Math.max(3, Math.round(w / 42)); i += 1) {
-    const px = x + 10 + i * (w - 20) / Math.max(1, Math.round(w / 42));
-    ctx.fillRect(px, y + 4, 4, h - 8);
+  ctx.fillStyle = "rgba(34, 48, 72, 0.96)";
+  ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
+  ctx.fillStyle = "rgba(103, 240, 255, 0.14)";
+  ctx.fillRect(x + 6, y + 6, w - 12, h - 12);
+  ctx.fillStyle = "rgba(8, 14, 22, 0.95)";
+  if (longHorizontal) {
+    ctx.fillRect(x + 10, y + h * 0.38, w - 20, h * 0.24);
+    ctx.fillStyle = "rgba(103, 240, 255, 0.22)";
+    ctx.fillRect(x + 10, y + h * 0.46, w - 20, 3);
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    for (let i = 0; i < Math.max(3, Math.round(w / 60)); i += 1) {
+      const px = x + 10 + i * (w - 20) / Math.max(1, Math.round(w / 60));
+      ctx.fillRect(px, y + 6, 4, h - 12);
+    }
+  } else {
+    ctx.fillRect(x + w * 0.38, y + 10, w * 0.24, h - 20);
+    ctx.fillStyle = "rgba(103, 240, 255, 0.22)";
+    ctx.fillRect(x + w * 0.46, y + 10, 3, h - 20);
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    for (let i = 0; i < Math.max(2, Math.round(h / 60)); i += 1) {
+      const py = y + 10 + i * (h - 20) / Math.max(1, Math.round(h / 60));
+      ctx.fillRect(x + 6, py, w - 12, 4);
+    }
   }
-  ctx.strokeStyle = "rgba(103,240,255,0.25)";
+  ctx.fillStyle = "rgba(255,255,255,0.18)";
+  ctx.fillRect(x + 8, y + 8, 8, 2);
+  ctx.fillStyle = "rgba(103,240,255,0.36)";
+  ctx.fillRect(x + w - 14, y + h - 14, 6, 6);
+  ctx.strokeStyle = "rgba(103,240,255,0.32)";
   ctx.lineWidth = 2;
   ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
   ctx.restore();
@@ -5741,15 +5763,20 @@ function drawShopBayObject(obj, sx, sy) {
   const x = sx - w / 2;
   const y = sy - h / 2;
   ctx.save();
-  ctx.fillStyle = "rgba(15, 23, 39, 0.96)";
+  ctx.fillStyle = "rgba(12, 18, 31, 0.96)";
   ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = "rgba(103, 240, 255, 0.14)";
+  ctx.fillStyle = "rgba(103, 240, 255, 0.12)";
   ctx.fillRect(x + 3, y + 3, w - 6, h - 6);
-  ctx.fillStyle = "rgba(255, 216, 102, 0.85)";
-  ctx.fillRect(x + 6, y + h - 8, w - 12, 3);
-  ctx.fillStyle = "rgba(255,255,255,0.82)";
-  ctx.fillRect(x + w * 0.2, y + 8, w * 0.6, 4);
-  ctx.strokeStyle = "rgba(103,240,255,0.4)";
+  ctx.fillStyle = "rgba(255, 216, 102, 0.92)";
+  ctx.fillRect(x + 6, y + h - 9, w - 12, 3);
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  ctx.fillRect(x + w * 0.18, y + 8, w * 0.64, 4);
+  ctx.fillStyle = "rgba(78, 207, 255, 0.2)";
+  ctx.fillRect(x + 10, y + 12, w - 20, h - 22);
+  ctx.fillStyle = "rgba(255,255,255,0.18)";
+  ctx.fillRect(x + 8, y + 14, 6, h - 26);
+  ctx.fillRect(x + w - 14, y + 14, 6, h - 26);
+  ctx.strokeStyle = "rgba(103,240,255,0.44)";
   ctx.lineWidth = 2;
   ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
   ctx.restore();
@@ -5761,11 +5788,17 @@ function drawShipBayObject(obj, sx, sy) {
   const x = sx - w / 2;
   const y = sy - h / 2;
   ctx.save();
-  ctx.fillStyle = "rgba(10, 14, 24, 0.95)";
+  ctx.fillStyle = "rgba(8, 12, 22, 0.96)";
   ctx.fillRect(x, y, w, h);
   ctx.fillStyle = "rgba(103, 240, 255, 0.12)";
   ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
   drawEllipseShadow(x + w * 0.48 - 6, y + h * 0.78, w * 0.36, 10, 0.2);
+  ctx.fillStyle = "rgba(255,255,255,0.08)";
+  ctx.fillRect(x + 8, y + 8, w - 16, 4);
+  ctx.fillStyle = "rgba(103, 240, 255, 0.25)";
+  ctx.fillRect(x + 10, y + h * 0.62, w - 20, 4);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.14)";
+  ctx.fillRect(x + 6, y + h * 0.18, 6, h * 0.46);
   ctx.fillStyle = "#e9fbff";
   ctx.beginPath();
   ctx.moveTo(x + w * 0.2, y + h * 0.65);
@@ -6466,6 +6499,22 @@ function drawModHood(hx, hy, scale, dirX) {
   ctx.fillRect(hx - scale, hy - scale, 7 * scale, Math.max(scale, 2));
 }
 
+function drawSciFiHelmet(hx, hy, scale, shellColor, visorColor, dirX) {
+  const visorShift = Math.max(0, Math.round(dirX)) * scale;
+  ctx.fillStyle = blend(shellColor, "#000000", 0.26);
+  ctx.fillRect(hx - scale, hy - scale, 7 * scale, 6 * scale);
+  ctx.fillStyle = shellColor;
+  ctx.fillRect(hx, hy, 5 * scale, 4 * scale);
+  ctx.fillStyle = blend(shellColor, "#ffffff", 0.12);
+  ctx.fillRect(hx + scale, hy - scale, 3 * scale, scale);
+  ctx.fillStyle = visorColor;
+  ctx.fillRect(hx + scale + visorShift, hy + scale, 3 * scale, 2 * scale);
+  ctx.fillStyle = "rgba(255,255,255,0.45)";
+  ctx.fillRect(hx + scale + visorShift, hy + scale, 2 * scale, scale);
+  ctx.fillStyle = "rgba(103,240,255,0.25)";
+  ctx.fillRect(hx - scale, hy - scale, 7 * scale, Math.max(scale, 2));
+}
+
 function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const isMod = !!entity.isMod;
   const s = isMod ? 3 * 1.2 : 3;
@@ -6484,13 +6533,16 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const fx   = Math.round(dirX);
   const fy   = Math.round(dirY * 0.6);
 
+  const sciFiNpc = !!(isNpc && (entity.npcTheme === SCI_FI_THEME || entity.sciFiLook));
   const torsoColor  = isMod ? "#697987" : (entity.torsoColor || entity.primary || "#5cc8ff");
   const weaponColor = entity.weaponColor || entity.accent || "#ffd166";
-  const torsoStyle  = isMod ? "robe" : (entity.torsoStyle || "tunic");
-  const skinColor   = "#f0c9a2";
-  const skinShadow  = "#c88a60";
-  const pantColor   = isMod ? "#454e5c" : "#2a3044";
-  const bootColor   = isMod ? "#2f3641" : "#1a1e2c";
+  const torsoStyle  = isMod ? "robe" : sciFiNpc ? "sciFi" : (entity.torsoStyle || "tunic");
+  const skinColor   = sciFiNpc ? "#bfd8ea" : "#f0c9a2";
+  const skinShadow  = sciFiNpc ? "#6f91a7" : "#c88a60";
+  const pantColor   = isMod ? "#454e5c" : sciFiNpc ? blend(torsoColor, "#000000", 0.22) : "#2a3044";
+  const bootColor   = isMod ? "#2f3641" : sciFiNpc ? blend(torsoColor, "#000000", 0.38) : "#1a1e2c";
+  const helmetColor = entity.helmetColor || blend(torsoColor, "#ffffff", 0.08);
+  const visorColor = entity.visorColor || "#67f0ff";
 
   const lyingBedPose = !!(poseOpts && poseOpts.lyingBed);
   const restingBenchPose = !!(poseOpts && poseOpts.restingBench);
@@ -6564,7 +6616,7 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   }
 
   // Short arms (raised + glowing while channeling home teleport)
-  ctx.fillStyle = isMod ? torsoColor : skinColor;
+  ctx.fillStyle = isMod ? torsoColor : sciFiNpc ? blend(torsoColor, "#ffffff", 0.02) : skinColor;
   let lAX;
   let lAY;
   let rAX;
@@ -6610,7 +6662,9 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   // Head / hood
   const hx = bx - 2 * s + fx * s;
   const hy = by - 7 * s + fy + headSitNudge;
-  if (isMod) {
+  if (sciFiNpc) {
+    drawSciFiHelmet(hx, hy, s, helmetColor, visorColor, fx);
+  } else if (isMod) {
     drawModHood(hx, hy, s, dirX);
   } else {
     ctx.fillStyle = skinColor;
@@ -6658,7 +6712,7 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   ctx.textAlign = "center";
   ctx.lineWidth = 3;
   ctx.strokeStyle = "rgba(8,12,18,0.82)";
-  ctx.fillStyle = isNpc ? "#ffd27a" : entity.isMod ? "#b8efd0" : "#f7f3df";
+  ctx.fillStyle = sciFiNpc ? "#9fefff" : isNpc ? "#ffd27a" : entity.isMod ? "#b8efd0" : "#f7f3df";
   const nameLift = entity.isMod ? 38 : 28;
   ctx.strokeText(entity.name, x, y - nameLift);
   ctx.fillText(entity.name, x, y - nameLift);
@@ -6749,6 +6803,24 @@ function drawTorso2(tx, ty, s, style, torsoColor, trimColor, classId, fx, fy) {
     ctx.fillRect(tx + w - s, ty, s, h + 2 * s);
     ctx.fillStyle = blend(torsoColor, "#ffffff", 0.1);
     ctx.fillRect(tx + (w >> 1) - s, ty + s, 2 * s, h - 2 * s);
+    return;
+  }
+
+  if (style === "sciFi") {
+    ctx.fillStyle = blend(torsoColor, "#0a1018", 0.08);
+    ctx.fillRect(tx, ty, w, h);
+    ctx.fillStyle = blend(torsoColor, "#000000", 0.18);
+    ctx.fillRect(tx + s, ty + s, w - 2 * s, h - 2 * s);
+    ctx.fillStyle = trimColor;
+    ctx.fillRect(tx + s, ty, w - 2 * s, s);
+    ctx.fillRect(tx + s, ty + h - s, w - 2 * s, s);
+    ctx.fillStyle = "rgba(103,240,255,0.92)";
+    ctx.fillRect(tx + (w >> 1) - Math.max(1, s >> 1), ty + s, Math.max(2, s), h - 2 * s);
+    ctx.fillStyle = "rgba(255,255,255,0.28)";
+    ctx.fillRect(tx + s, ty + s, w - 2 * s, s);
+    ctx.fillStyle = "rgba(255,255,255,0.16)";
+    ctx.fillRect(tx + 2 * s, ty + 2 * s, 2 * s, 2 * s);
+    ctx.fillRect(tx + w - 4 * s, ty + 2 * s, 2 * s, 2 * s);
     return;
   }
 

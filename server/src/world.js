@@ -84,12 +84,17 @@ const SCI_FI_STATIONS = Object.freeze([
   { id: "station_gate_link", name: "Gate Link", x: 1648, y: 0, w: 14, h: 10, kind: "gate" }
 ]);
 const SCI_FI_STATION_FEATURES = Object.freeze([
-  { id: "station_nova_spine", name: "Central Spine", x: 1850, y: 0, w: 24, h: 4, kind: "corridor" },
-  { id: "station_nova_market", name: "Market Hall", x: 1840, y: 10, w: 18, h: 4, kind: "corridor" },
-  { id: "station_nova_lift", name: "Lift Shaft", x: 1808, y: 0, w: 4, h: 22, kind: "corridor" },
-  { id: "station_nova_ship_bay", name: "Ship Bay", x: 1840, y: -10, w: 8, h: 6, kind: "ship-bay" },
-  { id: "station_nova_ship_shop", name: "Dockyard", x: 1804, y: 12, w: 7, h: 5, kind: "ship-shop", shopType: "ship" },
-  { id: "station_nova_commissary", name: "Commissary", x: 1838, y: -16, w: 6, h: 5, kind: "shop-bay", shopType: "trade" }
+  { id: "station_nova_spine", name: "Central Spine", x: 1854, y: 0, w: 32, h: 4, kind: "corridor" },
+  { id: "station_nova_cross", name: "Cross Passage", x: 1824, y: 16, w: 18, h: 4, kind: "corridor" },
+  { id: "station_nova_lift", name: "Lift Shaft", x: 1806, y: 0, w: 4, h: 22, kind: "corridor" },
+  { id: "station_nova_market", name: "Market Hall", x: 1842, y: 12, w: 18, h: 4, kind: "corridor" },
+  { id: "station_nova_ship_bay", name: "Ship Bay", x: 1844, y: -12, w: 10, h: 6, kind: "ship-bay" },
+  { id: "station_nova_ship_shop", name: "Dockyard", x: 1802, y: 14, w: 8, h: 5, kind: "ship-shop", shopType: "ship" },
+  { id: "station_nova_commissary", name: "Commissary", x: 1838, y: -18, w: 6, h: 5, kind: "shop-bay", shopType: "trade" },
+  { id: "station_nova_medbay", name: "Medbay", x: 1868, y: 12, w: 8, h: 5, kind: "shop-bay", shopType: "trade" },
+  { id: "station_nova_quarters", name: "Crew Quarters", x: 1868, y: -14, w: 8, h: 5, kind: "corridor" },
+  { id: "station_nova_tech", name: "Tech Nook", x: 1880, y: 0, w: 8, h: 5, kind: "shop-bay", shopType: "trade" },
+  { id: "station_nova_hangar", name: "Hangar Spine", x: 1816, y: 24, w: 28, h: 4, kind: "corridor" }
 ]);
 const SCI_FI_PLANETS = Object.freeze([
   { id: "planet_aurelia", name: "Aurelia", x: 2142, y: -382, radius: 74, seed: 8128, type: "lush" },
