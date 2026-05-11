@@ -23,7 +23,8 @@ const {
   scaledCampEncounterSize,
   PRIMARY_HUB_MOBS_CLEAR_RADIUS,
   isTooCloseToAnyPortal,
-  HUB_TOWN_GRASS_RADIUS
+  HUB_TOWN_GRASS_RADIUS,
+  sciFiDockPortForPlayerId
 } = require("./world");
 const {
   updateNpcs,
@@ -922,6 +923,7 @@ function serializeShip(ship) {
     dockX: clampNumber(ship.dockX, -10000, 10000, 1824),
     dockY: clampNumber(ship.dockY, -10000, 10000, 0),
     dockStationId: typeof ship.dockStationId === "string" ? ship.dockStationId : "station_nova_dock",
+    dockPortId: typeof ship.dockPortId === "string" ? ship.dockPortId.slice(0, 48) : null,
     speed: clampNumber(ship.speed, 0, 1000, SHIP_SPEED)
   };
 }
@@ -935,6 +937,7 @@ function createStarterShip() {
     dockX: 1824,
     dockY: 0,
     dockStationId: "station_nova_dock",
+    dockPortId: null,
     speed: SHIP_SPEED
   };
 }
@@ -951,7 +954,23 @@ function sanitizeShip(ship) {
     dockX: clampNumber(ship.dockX, -10000, 10000, 1824),
     dockY: clampNumber(ship.dockY, -10000, 10000, 0),
     dockStationId: typeof ship.dockStationId === "string" ? ship.dockStationId.slice(0, 48) : "station_nova_dock",
+    dockPortId: typeof ship.dockPortId === "string" ? ship.dockPortId.slice(0, 48) : null,
     speed: clampNumber(ship.speed, 0, 1000, SHIP_SPEED)
+  };
+}
+
+function getPlayerDockPort(player) {
+  if (!player?.id) {
+    return null;
+  }
+  const port = sciFiDockPortForPlayerId(player.id);
+  if (!port) {
+    return null;
+  }
+  return {
+    id: port.id,
+    x: port.x,
+    y: port.y
   };
 }
 
@@ -2533,6 +2552,33 @@ function resolveShipBoarding(player) {
   };
 }
 
+function resolveShipLaunchPort(player, message = {}) {
+  if (!player?.ship) {
+    return null;
+  }
+
+  const port = getPlayerDockPort(player);
+  if (!port) {
+    return null;
+  }
+
+  const tx = Number(message.x);
+  const ty = Number(message.y);
+  if (Number.isFinite(tx) && Number.isFinite(ty)) {
+    const clickDist = Math.hypot(tx - port.x, ty - port.y);
+    if (clickDist > 1.6) {
+      return null;
+    }
+  }
+
+  const dist = Math.hypot(player.x - port.x, player.y - port.y);
+  if (dist > SHIP_DOCK_RADIUS + 1.2) {
+    return null;
+  }
+
+  return port;
+}
+
 function handleShipInteract(client) {
   if (!client.player?.ship) {
     return false;
@@ -2579,12 +2625,46 @@ function handleShipInteract(client) {
   return false;
 }
 
+function handleShipLaunchInteract(client, message = {}) {
+  if (!client.player?.ship || client.player.ship.boarded) {
+    return false;
+  }
+
+  const port = resolveShipLaunchPort(client.player, message);
+  if (!port) {
+    return false;
+  }
+
+  client.player.ship.boarded = false;
+  client.player.ship.dockX = port.x;
+  client.player.ship.dockY = port.y;
+  client.player.ship.dockStationId = "station_nova_dock";
+  client.player.ship.dockPortId = port.id;
+  client.player.x = port.x;
+  client.player.y = port.y;
+  client.player.facing = 0;
+  client.player.moving = false;
+  client.player._stillAccumulator = 0;
+  saveClientCharacter(client);
+  send(client, {
+    type: "serverMessage",
+    message: "ship_called",
+    shipName: client.player.ship.name
+  });
+  broadcastSnapshot();
+  return true;
+}
+
 function handleInteract(client, message = {}) {
   if (!client.player) {
     return;
   }
 
   if (handleShipInteract(client)) {
+    return;
+  }
+
+  if (handleShipLaunchInteract(client, message)) {
     return;
   }
 
@@ -4122,14 +4202,16 @@ function handleShopBuy(client, message) {
     }
 
     client.player.gold = Math.max(0, (client.player.gold || 0) - shipPrice);
+    const dockPort = getPlayerDockPort(client.player);
     client.player.ship = sanitizeShip({
       templateId: template.shipTemplateId || template.templateId,
       name: template.shipName || template.name,
       color: template.shipColor || template.color,
       boarded: false,
-      dockX: 1824,
-      dockY: 0,
+      dockX: dockPort?.x ?? 1824,
+      dockY: dockPort?.y ?? 0,
       dockStationId: "station_nova_dock",
+      dockPortId: dockPort?.id || null,
       speed: Number(template.stats?.speed) || SHIP_SPEED
     }) || createStarterShip();
     saveClientCharacter(client);

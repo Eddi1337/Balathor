@@ -1168,6 +1168,8 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: `Boarded ${message.shipName || "your ship"}` });
     } else if (message.message === "ship_docked") {
       appendChat({ kind: "system", name: "Realm", text: `Docked ${message.shipName || "your ship"}` });
+    } else if (message.message === "ship_called") {
+      appendChat({ kind: "system", name: "Realm", text: `Called ${message.shipName || "your ship"} to the dock` });
     } else if (message.message === "ship_already_owned") {
       appendChat({ kind: "system", name: "Realm", text: "You already own a ship." });
     } else if (message.message === "item_sold_out") {
@@ -2471,6 +2473,9 @@ function wireUi() {
     const world = screenEventToWorld(event);
     state.lastPointerWorldX = world.x;
     state.lastPointerWorldY = world.y;
+    if (tryDockPortClickInteract(event)) {
+      return;
+    }
     if (tryOpenBuyHouseAtClick(world.x, world.y)) {
       return;
     }
@@ -3596,6 +3601,33 @@ function refreshWorldHoverTooltip(event) {
   }
 
   const world = screenEventToWorld(event);
+  if (isSciFiWorld()) {
+    let bestStationObject = null;
+    let bestStationDist = Infinity;
+    for (const obj of state.spaceObjects.values()) {
+      if (!obj || (obj.kind !== "ship-port" && obj.kind !== "ship-console")) {
+        continue;
+      }
+      const fw = Math.max(1, Math.floor(Number(obj.w || 1)));
+      const fh = Math.max(1, Math.floor(Number(obj.h || 1)));
+      const ax = obj.x + fw / 2;
+      const ay = obj.y + fh / 2;
+      const reach = obj.kind === "ship-console" ? 1.6 : 1.8;
+      const dist = Math.hypot(world.x - ax, world.y - ay);
+      if (dist <= reach && dist < bestStationDist) {
+        bestStationDist = dist;
+        bestStationObject = obj;
+      }
+    }
+    if (bestStationObject) {
+      state.hoverTooltipText =
+        bestStationObject.kind === "ship-console"
+          ? "Ship console - call your ship"
+          : "Dock port - launch your ship";
+      state.hoverTooltipSmall = true;
+      return;
+    }
+  }
   for (const f of state.roadsides.values()) {
     const rfW = Math.max(1, Math.floor(Number(f.footprintW) || 1));
     const rfH = Math.max(1, Math.floor(Number(f.footprintH) || 1));
@@ -3760,6 +3792,45 @@ function tryRoadsideBenchClickInteract(event) {
   }
 
   sendInteract({ x: bx, y: by });
+  return true;
+}
+
+function tryDockPortClickInteract(event) {
+  if (!isSciFiWorld()) {
+    return false;
+  }
+  const world = screenEventToWorld(event);
+  const self = state.players.get(state.selfId);
+  if (!self) {
+    return false;
+  }
+
+  let best = null;
+  let bestDist = Infinity;
+  for (const obj of state.spaceObjects.values()) {
+    if (!obj || (obj.kind !== "ship-port" && obj.kind !== "ship-console")) {
+      continue;
+    }
+    const fw = Math.max(1, Math.floor(Number(obj.w || 1)));
+    const fh = Math.max(1, Math.floor(Number(obj.h || 1)));
+    const ax = obj.x + fw / 2;
+    const ay = obj.y + fh / 2;
+    const clickReach = obj.kind === "ship-console" ? 1.55 : 1.85;
+    const d = Math.hypot(world.x - ax, world.y - ay);
+    if (d <= clickReach && d < bestDist) {
+      bestDist = d;
+      best = { x: ax, y: ay };
+    }
+  }
+  if (!best) {
+    return false;
+  }
+
+  if (Math.hypot(self.x - best.x, self.y - best.y) > 6.25) {
+    return false;
+  }
+
+  sendInteract({ x: best.x, y: best.y });
   return true;
 }
 
@@ -5704,10 +5775,16 @@ function drawSpaceObjects() {
       drawShipLaneObject(obj, halfW, halfH);
     } else if (obj.kind === "corridor") {
       drawCorridorObject(obj, sx, sy);
+    } else if (obj.kind === "core" || obj.kind === "command" || obj.kind === "quarters" || obj.kind === "reactor" || obj.kind === "docks") {
+      drawStationRoomObject(obj, sx, sy);
     } else if (obj.kind === "ship-bay") {
       drawShipBayObject(obj, sx, sy);
     } else if (obj.kind === "shop-bay" || obj.kind === "ship-shop") {
       drawShopBayObject(obj, sx, sy);
+    } else if (obj.kind === "ship-console") {
+      drawShipConsoleObject(obj, sx, sy);
+    } else if (obj.kind === "ship-port") {
+      drawDockPortObject(obj, sx, sy);
     } else {
       drawStationObject(obj, sx, sy);
     }
@@ -5866,35 +5943,46 @@ function drawStationObject(obj, sx, sy) {
   ctx.save();
   drawEllipseShadow(x - 8, y + h * 0.68, w + 16, 10, 0.26);
   if (obj.id === "station_nova_dock") {
-    const gapW = Math.max(12, Math.round(w * 0.34));
-    const gapH = Math.max(10, Math.round(h * 0.42));
-    const gapX = x + Math.round((w - gapW) / 2);
-    const gapY = y + Math.round((h - gapH) / 2);
-    ctx.fillStyle = "#233141";
-    ctx.fillRect(x, y, w, Math.max(8, Math.round(h * 0.18)));
-    ctx.fillRect(x, y + h - Math.max(8, Math.round(h * 0.18)), w, Math.max(8, Math.round(h * 0.18)));
-    ctx.fillRect(x, y, Math.max(10, Math.round(w * 0.18)), h);
-    ctx.fillRect(x + w - Math.max(10, Math.round(w * 0.18)), y, Math.max(10, Math.round(w * 0.18)), h);
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    const ringR = Math.min(w, h) * 0.32;
+    ctx.fillStyle = "#182330";
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, w * 0.34, h * 0.28, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#394a61";
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, w * 0.28, h * 0.22, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#0a1018";
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, w * 0.18, h * 0.14, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(103,240,255,0.34)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, w * 0.34, h * 0.28, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(103,240,255,0.12)";
+    ctx.fillRect(cx - ringR, cy - 4, ringR * 2, 8);
+    ctx.fillRect(cx - 4, cy - ringR, 8, ringR * 2);
     ctx.fillStyle = "#5e738b";
-    ctx.fillRect(x + 6, y + 6, w - 12, Math.max(6, Math.round(h * 0.12)));
-    ctx.fillRect(x + 6, y + h - Math.max(12, Math.round(h * 0.14)), w - 12, Math.max(6, Math.round(h * 0.12)));
-    ctx.fillRect(x + 6, y + 6, Math.max(6, Math.round(w * 0.1)), h - 12);
-    ctx.fillRect(x + w - Math.max(12, Math.round(w * 0.14)), y + 6, Math.max(6, Math.round(w * 0.1)), h - 12);
-    ctx.fillStyle = "rgba(103,240,255,0.16)";
-    ctx.fillRect(x + 10, y + 10, gapX - x - 10, h - 20);
-    ctx.fillRect(gapX + gapW, y + 10, x + w - (gapX + gapW) - 10, h - 20);
+    ctx.fillRect(cx - 18, y + 3, 36, 10);
+    ctx.fillRect(cx - 18, y + h - 13, 36, 10);
+    ctx.fillRect(x + 3, cy - 18, 10, 36);
+    ctx.fillRect(x + w - 13, cy - 18, 10, 36);
+    ctx.fillStyle = "rgba(103,240,255,0.24)";
+    ctx.fillRect(cx - 26, cy - 2, 52, 4);
+    ctx.fillRect(cx - 2, cy - 26, 4, 52);
     ctx.fillStyle = "#67f0ff";
-    ctx.fillRect(x + 8, y + h / 2 - 2, gapX - x - 10, 4);
-    ctx.fillRect(gapX + gapW, y + h / 2 - 2, x + w - (gapX + gapW) - 8, 4);
-    ctx.fillStyle = "#17222f";
-    ctx.fillRect(x + w * 0.43, y - 12, w * 0.14, 12);
+    ctx.fillRect(cx - 2, cy - 2, 4, 4);
     ctx.fillStyle = "#9edfff";
-    ctx.fillRect(x + w * 0.43 + 1, y - 22, w * 0.12, 10);
-    ctx.fillStyle = "rgba(103,240,255,0.08)";
-    ctx.fillRect(gapX, gapY, gapW, gapH);
-    ctx.strokeStyle = "rgba(103,240,255,0.28)";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(gapX, gapY, gapW, gapH);
+    ctx.fillRect(cx - 6, y + 6, 12, 4);
+    ctx.fillRect(cx - 6, y + h - 10, 12, 4);
+    ctx.fillRect(x + 6, cy - 2, 4, 4);
+    ctx.fillRect(x + w - 10, cy - 2, 4, 4);
+  } else if (obj.kind === "core" || obj.kind === "command" || obj.kind === "quarters" || obj.kind === "reactor" || obj.kind === "docks") {
+    drawStationRoomObject(obj, sx, sy);
   } else {
     ctx.fillStyle = "#233141";
     ctx.fillRect(x, y, w, h);
@@ -5920,6 +6008,113 @@ function drawStationObject(obj, sx, sy) {
   ctx.fillStyle = "#d2f6ff";
   ctx.strokeText(obj.name || "Station", sx, y - 6);
   ctx.fillText(obj.name || "Station", sx, y - 6);
+  ctx.restore();
+}
+
+function drawStationRoomObject(obj, sx, sy) {
+  const w = Math.max(8, Number(obj.w || 10)) * TILE_SIZE;
+  const h = Math.max(6, Number(obj.h || 8)) * TILE_SIZE;
+  const x = sx - w / 2;
+  const y = sy - h / 2;
+  const kind = obj.kind || "core";
+  const palette =
+    kind === "reactor"
+      ? { base: "#19212f", mid: "#31445e", glow: "#67f0ff", edge: "#7fe9ff" }
+      : kind === "quarters"
+        ? { base: "#20283a", mid: "#41516d", glow: "#dffaff", edge: "#c7f4ff" }
+        : kind === "command"
+          ? { base: "#162133", mid: "#324a63", glow: "#9edfff", edge: "#ffffff" }
+          : kind === "docks"
+            ? { base: "#101725", mid: "#24344b", glow: "#67f0ff", edge: "#f4fbff" }
+            : kind === "core"
+              ? { base: "#182232", mid: "#2f425a", glow: "#67f0ff", edge: "#e6fbff" }
+              : { base: "#1d2636", mid: "#394a63", glow: "#67f0ff", edge: "#f4fbff" };
+  ctx.save();
+  drawEllipseShadow(x - 8, y + h * 0.72, w + 16, 10, 0.18);
+  ctx.fillStyle = palette.base;
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = palette.mid;
+  ctx.fillRect(x + 6, y + 6, w - 12, h - 12);
+  ctx.fillStyle = "rgba(103,240,255,0.10)";
+  ctx.fillRect(x + 10, y + 10, w - 20, h - 20);
+  ctx.fillStyle = palette.glow;
+  ctx.fillRect(x + 8, y + h / 2 - 2, w - 16, 4);
+  ctx.fillRect(x + w / 2 - 2, y + 8, 4, h - 16);
+  ctx.fillStyle = palette.edge;
+  ctx.fillRect(x + 4, y + 4, 4, 4);
+  ctx.fillRect(x + w - 8, y + 4, 4, 4);
+  ctx.fillRect(x + 4, y + h - 8, 4, 4);
+  ctx.fillRect(x + w - 8, y + h - 8, 4, 4);
+  if (kind === "reactor") {
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.fillRect(x + w / 2 - 10, y + h / 2 - 10, 20, 20);
+  } else if (kind === "quarters") {
+    ctx.fillStyle = "rgba(255,255,255,0.16)";
+    ctx.fillRect(x + 12, y + 10, 10, 6);
+    ctx.fillRect(x + w - 22, y + h - 16, 10, 6);
+  } else if (kind === "command") {
+    ctx.fillStyle = "rgba(255,255,255,0.24)";
+    ctx.fillRect(x + w / 2 - 12, y + 4, 24, 8);
+  } else if (kind === "docks") {
+    ctx.fillStyle = "rgba(255,255,255,0.14)";
+    ctx.fillRect(x + 8, y + 8, w - 16, 4);
+    ctx.fillRect(x + 8, y + h - 12, w - 16, 4);
+  }
+  ctx.strokeStyle = "rgba(103,240,255,0.32)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+  ctx.restore();
+}
+
+function drawShipConsoleObject(obj, sx, sy) {
+  const w = Math.max(4, Number(obj.w || 6)) * TILE_SIZE;
+  const h = Math.max(4, Number(obj.h || 4)) * TILE_SIZE;
+  const x = sx - w / 2;
+  const y = sy - h / 2;
+  ctx.save();
+  drawEllipseShadow(x - 4, y + h * 0.82, w + 8, 10, 0.18);
+  ctx.fillStyle = "#111a27";
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = "#24344d";
+  ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
+  ctx.fillStyle = "#67f0ff";
+  ctx.fillRect(x + 8, y + 8, w - 16, 4);
+  ctx.fillRect(x + w / 2 - 2, y + 8, 4, h - 16);
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.fillRect(x + 10, y + 10, 6, 6);
+  ctx.fillStyle = "rgba(103,240,255,0.28)";
+  ctx.fillRect(x + 6, y + h - 10, w - 12, 4);
+  ctx.strokeStyle = "rgba(103,240,255,0.44)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+  ctx.restore();
+}
+
+function drawDockPortObject(obj, sx, sy) {
+  const w = Math.max(4, Number(obj.w || 6)) * TILE_SIZE;
+  const h = Math.max(3, Number(obj.h || 4)) * TILE_SIZE;
+  const x = sx - w / 2;
+  const y = sy - h / 2;
+  ctx.save();
+  drawEllipseShadow(x - 2, y + h * 0.84, w + 4, 8, 0.14);
+  ctx.fillStyle = "#0c121d";
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = "#1e2d41";
+  ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
+  ctx.fillStyle = "#67f0ff";
+  ctx.fillRect(x + 8, y + 8, w - 16, 4);
+  ctx.fillStyle = "rgba(255,255,255,0.2)";
+  ctx.fillRect(x + 8, y + h / 2 - 2, w - 16, 4);
+  ctx.fillStyle = "#dffaff";
+  ctx.fillRect(x + w / 2 - 5, y + 12, 10, h - 24);
+  ctx.fillStyle = "rgba(255,255,255,0.55)";
+  ctx.fillRect(x + 12, y + 10, 5, 5);
+  ctx.fillRect(x + w - 17, y + 10, 5, 5);
+  ctx.fillStyle = "rgba(103,240,255,0.22)";
+  ctx.fillRect(x + 6, y + h - 10, w - 12, 4);
+  ctx.strokeStyle = "rgba(103,240,255,0.42)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
   ctx.restore();
 }
 
