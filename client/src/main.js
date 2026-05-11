@@ -272,7 +272,13 @@ const TILE = {
   FIREPLACE: 18,
   CHAIR: 19,
   CHEST: 20,
-  HOME_TREE: 21
+  HOME_TREE: 21,
+  VOID: 22,
+  METAL: 23,
+  WALKWAY: 24,
+  HULL: 25,
+  WINDOW: 26,
+  ENERGY: 27
 };
 
 /** Mirrors server/src/index.js getBuildingPrice */
@@ -697,6 +703,9 @@ requestAnimationFrame(frame);
 setInterval(sendInput, 33);
 
 async function start() {
+  if (globalThis.TechDungeonSprites) {
+    TechDungeonSprites.load().catch(() => {});
+  }
   setStatus("Loading realm config");
   state.config = await loadConfig();
   const serverUrl = localStorage.getItem(SERVER_URL_STORAGE_KEY) || state.config.gameServerUrl;
@@ -6353,6 +6362,14 @@ function drawPortals() {
 function drawTile(tile, sx, sy, tx, ty) {
   if (isInteriorDrawTile(tile)) {
     drawInteriorTile(tile, sx, sy, tx, ty);
+    return;
+  }
+
+  if (
+    isSciFiWorld() &&
+    globalThis.TechDungeonSprites &&
+    TechDungeonSprites.drawTile(ctx, tile, sx, sy, tx, ty)
+  ) {
     return;
   }
 

@@ -1,0 +1,16 @@
+{
+  "about": "Replace tileset.png with your sheet from Pupkin Tech Dungeon (itch). Edit byId: each key is a server tile id; values are [column,row] cells in the sheet (32x32 by default).",
+  "source": "https://trevor-pupkin.itch.io/tech-dungeon-roguelite",
+  "image": "tileset.png",
+  "cellW": 32,
+  "cellH": 32,
+  "salt": 17711,
+  "byId": {
+    "22": [[0, 0]],
+    "23": [[1, 0], [2, 0], [3, 0]],
+    "24": [[4, 0], [5, 0], [6, 0]],
+    "25": [[7, 0], [8, 0]],
+    "26": [[9, 0]],
+    "27": [[10, 0], [11, 0]]
+  }
+}
