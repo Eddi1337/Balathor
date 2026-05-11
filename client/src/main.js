@@ -1531,7 +1531,7 @@ function tryOpenNpcContextMenuFromCanvas(event, worldX, worldY) {
   let bestDist = NPC_CTX_HIT_RADIUS;
   for (const npc of state.npcs.values()) {
     // Only NPCs that actively approach the player are clickable.
-    if (!npc.wandersToPlayer && !npc.bondTag) continue;
+    if (!npc.wandersToPlayer && !npc.bondTag && !npc.wandersToFlirt) continue;
     const nx = Number.isFinite(npc.renderX) ? npc.renderX : npc.x;
     const ny = Number.isFinite(npc.renderY) ? npc.renderY : npc.y;
     const d = Math.hypot(nx - worldX, ny - worldY);

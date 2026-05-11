@@ -752,6 +752,34 @@ const SEEK_BF_CHAT = Object.freeze([
   "If you whisper where you tuck your cloak, I'd meet you halfway.",
 ]);
 
+const FLIRT_GF_LINES = Object.freeze([
+  "You carry yourself like someone worth following home.",
+  "A face like yours deserves a second glance — I'm giving it one.",
+  "New in town? You look too interesting to be local.",
+  "I've been circling this square all afternoon, then you walked by.",
+  "Forgive me for staring — you're just very easy to look at.",
+  "My friends bet I wouldn't say hello. They owe me now.",
+  "That armour suits you better than it has any right to.",
+  "I don't normally chase strangers. Today feels different.",
+  "You have kind eyes for someone who looks like trouble.",
+  "Is it forward of me to say you're the most interesting thing in this market?",
+  "You smell of adventure and I haven't had any in weeks.",
+  "Strong enough to carry a conversation?",
+]);
+
+const FLIRT_BF_LINES = Object.freeze([
+  "I've been looking for someone to share this road with.",
+  "Don't mind me — I just wanted an excuse to walk your way.",
+  "A warrior that striking? The bards will argue over who you are.",
+  "I practice being brave, and you just became my test case.",
+  "Take it as a compliment — I don't usually lose my words.",
+  "Tell me your name so I have something to say when I think about this.",
+  "Good kit, good stride — someone raised you right.",
+  "You look like adventure. I look like trouble. Sounds like a match.",
+  "I've walked past twice. Third time means I have to say something.",
+  "My mother always said I had poor timing. She'd be proud today.",
+]);
+
 const ROMANCE_FEMALE_GIVEN = Object.freeze([
   "Aelithra", "Seraphina", "Morwyn", "Thalindra", "Caelindra", "Elara", "Sylvetra", "Nyssara",
   "Velithra", "Drusilla", "Isolde", "Lyralei", "Vexia", "Orianna", "Selene", "Melisandra",
@@ -875,9 +903,6 @@ function buildHydratedHubNpcExtras() {
     { id: "hub_hawk_0", name: "Wandering Merchant",  primary: "#5a3e28", accent: "#e8c86a", hx: 18, hy: -18 },
     { id: "hub_hawk_1", name: "Travelling Peddler",  primary: "#3a4a2e", accent: "#d4b06a", hx: -18, hy: 18 },
     { id: "hub_hawk_2", name: "Roving Trader",       primary: "#4a2e3a", accent: "#c8a050", hx: 20, hy: 20 },
-    { id: "hub_hawk_3", name: "Wandering Chapman",   primary: "#2e3a4a", accent: "#b8c8e8", hx: -20, hy: -20 },
-    { id: "hub_hawk_4", name: "Drifting Tinker",     primary: "#3a3a2e", accent: "#f0d080", hx: 30, hy: -5 },
-    { id: "hub_hawk_5", name: "Itinerant Dealer",    primary: "#2e4a3a", accent: "#90c890", hx: -30, hy: 5 },
   ];
   for (const hs of HAWKER_SPECS) {
     out.push({
@@ -899,7 +924,8 @@ function buildHydratedHubNpcExtras() {
   const extrasSoFar = out.length;
   const crowdBudget = Math.max(0, HUB_POPULATION_TARGET - baseCount - extrasSoFar);
   const seekersPlanned = Math.min(crowdBudget, Math.max(48, Math.floor(HUB_POPULATION_TARGET * 0.55)));
-  const minglersTotal = crowdBudget - seekersPlanned;
+  const FLIRT_WALKER_COUNT = Math.min(14, Math.max(0, crowdBudget - seekersPlanned));
+  const minglersTotal = crowdBudget - seekersPlanned - FLIRT_WALKER_COUNT;
 
   /** @type {{ cx: number, cy: number }[]} */
   const homes = [..._hubNavAnchorsCache];
@@ -941,6 +967,29 @@ function buildHydratedHubNpcExtras() {
       companionPrice: 438 + (((seed >>> 17) % 41) >>> 0) + (gf ? 0 : 2),
       bondTag: gf ? "gf" : "bf",
       dialogue: gf ? [...SEEK_GF_CHAT] : [...SEEK_BF_CHAT]
+    });
+  }
+
+  /** Wandering flirt NPCs — approach players based on level + armour attractiveness */
+  for (let fi = 0; fi < FLIRT_WALKER_COUNT; fi += 1) {
+    const id = `hub_flirt_${fi}`;
+    const spot = pickHome(fi + 4500, homeBanned);
+    if (!spot) break;
+    const seed = npcIdHashSeed(`${id}_${spot.key}`);
+    const gf = (seed % 10) < 7;
+    const primHue = ((((seed >>> 5) ^ 0x667788) >>> 0) % 0x909080) + 0x282830;
+    out.push({
+      id,
+      name: pickFantasyRomanceName(seed ^ (fi * 1234567891), gf),
+      classId: CLASSES_ROT[seed % CLASSES_ROT.length],
+      primary: `#${(primHue & 0xffffff).toString(16).padStart(6, "0")}`,
+      accent: gf ? "#fbcfe8" : "#fde68a",
+      homeX: spot.cx + ((seed % 7) / 130 - 0.026),
+      homeY: spot.cy + ((((seed >>> 9) % 7) >>> 0) / 130 - 0.026),
+      patrolRadius: 22 + ((seed >>> 13) % 18),
+      bondTag: gf ? "gf" : "bf",
+      wandersToFlirt: true,
+      dialogue: gf ? [...FLIRT_GF_LINES] : [...FLIRT_BF_LINES]
     });
   }
 
@@ -1825,6 +1874,70 @@ function applyCompanionCourt(npc, companionCtx, onChat, now) {
 }
 
 /**
+ * Returns an attraction score for a player based on their level and armour.
+ * Score range: 1 (bare level-1) to 9 (high level + full armour).
+ */
+function playerAttractionScore(player) {
+  const level = Math.max(1, player.level || 1);
+  const levelBonus = Math.min(5, Math.floor(level / 4));
+  const eq = player.equipment || {};
+  const armorFilled = ["chest", "legs", "head", "hands", "feet"].filter(s => eq[s] != null).length;
+  const armorBonus = Math.min(3, Math.floor(armorFilled * 3 / 5));
+  return 1 + levelBonus + armorBonus;
+}
+
+/**
+ * Flirt-walker NPC approaches the most attractive player within range.
+ * Range and pickiness both scale with playerAttractionScore.
+ * @returns {boolean} true if the NPC is steering toward a player this tick
+ */
+function applyFlirtApproach(npc, companionCtx, onChat, now) {
+  if (!npc.wandersToFlirt || !companionCtx?.allPlayers) return false;
+  if ((npc._shooedUntil || 0) > now) {
+    npc._targetX = npc.homeX;
+    npc._targetY = npc.homeY;
+    invalidateNpcHubRoadPath(npc);
+    return false;
+  }
+  if (npc._meetPeerId) return false;
+
+  // Per-NPC pickiness threshold derived from its id: 1–5
+  const threshold = (npcIdHashSeed(npc.id) % 5) + 1;
+
+  let best = null;
+  let bestScore = 0;
+  for (const { player: p } of companionCtx.allPlayers) {
+    const score = playerAttractionScore(p);
+    if (score < threshold) continue;
+    const range = Math.min(38, 8 + score * 3.2);
+    const dsq = (npc.x - p.x) ** 2 + (npc.y - p.y) ** 2;
+    if (dsq > range * range) continue;
+    if (score > bestScore) { bestScore = score; best = p; }
+  }
+
+  if (!best) return false;
+
+  const dx = best.x - npc.x;
+  const dy = best.y - npc.y;
+  const dist = Math.hypot(dx, dy);
+
+  if (dist > 2.2) {
+    const angle = Math.atan2(dy, dx);
+    npc._targetX = best.x - Math.cos(angle) * 1.8;
+    npc._targetY = best.y - Math.sin(angle) * 1.8;
+    invalidateNpcHubRoadPath(npc);
+  }
+
+  if (dist < 2.5 && now - (npc._flirtLineAt || 0) > 8500) {
+    npc._flirtLineAt = now;
+    const line = npc.dialogue[Math.floor(Math.random() * npc.dialogue.length)];
+    onChat({ kind: "npc", fromId: npc.id, name: npc.name, text: line, x: npc.x, y: npc.y });
+  }
+
+  return dist > 1.6;
+}
+
+/**
  * Wandering hawker NPC approaches the nearest player within 28 tiles.
  * @returns {boolean} true if hawker AI steered the NPC this tick
  */
@@ -1910,6 +2023,8 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
     let courtSteers = false;
     if (npc.wandersToPlayer) {
       courtSteers = applyHawkerApproach(npc, companionCtx, onChat, now);
+    } else if (npc.wandersToFlirt) {
+      courtSteers = applyFlirtApproach(npc, companionCtx, onChat, now);
     } else if (companionCtx && typeof npc.companionPrice === "number") {
       courtSteers = applyCompanionCourt(npc, companionCtx, onChat, now);
     }
@@ -2128,7 +2243,8 @@ function getNpcSnapshot() {
       ...(npc.bondTag ? { bondTag: npc.bondTag } : {}),
       ...(npc.longHair ? { longHair: true } : {}),
       ...(npc.romanceSilhouette ? { romanceSilhouette: npc.romanceSilhouette } : {}),
-      ...(npc.wandersToPlayer ? { wandersToPlayer: true } : {})
+      ...(npc.wandersToPlayer ? { wandersToPlayer: true } : {}),
+      ...(npc.wandersToFlirt ? { wandersToFlirt: true } : {})
     }));
 }
 
