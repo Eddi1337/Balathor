@@ -84,7 +84,7 @@ const SCI_FI_STATIONS = Object.freeze([
   { id: "station_gate_link", name: "Gate Link", x: 1648, y: 0, w: 14, h: 10, kind: "gate" }
 ]);
 const SCI_FI_STATION_FEATURES = Object.freeze([
-  { id: "station_nova_spine", name: "Central Spine", x: 1824, y: 0, w: 42, h: 4, kind: "corridor" },
+  { id: "station_nova_spine", name: "Central Spine", x: 1850, y: 0, w: 24, h: 4, kind: "corridor" },
   { id: "station_nova_market", name: "Market Hall", x: 1840, y: 10, w: 18, h: 4, kind: "corridor" },
   { id: "station_nova_lift", name: "Lift Shaft", x: 1808, y: 0, w: 4, h: 22, kind: "corridor" },
   { id: "station_nova_ship_bay", name: "Ship Bay", x: 1840, y: -10, w: 8, h: 6, kind: "ship-bay" },
@@ -202,7 +202,9 @@ function getSciFiObjectsInChunk(cx, cy) {
 
   for (const feature of SCI_FI_STATION_FEATURES) {
     const obj = { ...feature };
-    if (sciFiObjectTouchesChunk(obj, startX, startY, endX, endY)) {
+    const fx = feature.x - Math.floor(feature.w / 2);
+    const fy = feature.y - Math.floor(feature.h / 2);
+    if (sciFiObjectTouchesChunk(obj, startX, startY, endX, endY) && !footprintHitsPortalClearance(fx, fy, Math.max(1, Number(feature.w || 1)), Math.max(1, Number(feature.h || 1)))) {
       out.push(obj);
     }
   }
@@ -433,10 +435,14 @@ function getRoadsideFeaturesInChunk(cx, cy) {
   const endY = startY + CHUNK_SIZE;
   const out = [];
   for (const f of ROADSIDE_FEATURES) {
-    if (roadsideFeatureTouchesChunk(f, startX, startY, endX, endY)) out.push(f);
+    const fw = Math.max(1, Math.floor(Number(f.footprintW) || 1));
+    const fh = Math.max(1, Math.floor(Number(f.footprintH) || 1));
+    if (roadsideFeatureTouchesChunk(f, startX, startY, endX, endY) && !footprintHitsPortalClearance(f.x, f.y, fw, fh)) out.push(f);
   }
   for (const f of HUB_ROADSIDE_FEATURES) {
-    if (roadsideFeatureTouchesChunk(f, startX, startY, endX, endY)) out.push(f);
+    const fw = Math.max(1, Math.floor(Number(f.footprintW) || 1));
+    const fh = Math.max(1, Math.floor(Number(f.footprintH) || 1));
+    if (roadsideFeatureTouchesChunk(f, startX, startY, endX, endY) && !footprintHitsPortalClearance(f.x, f.y, fw, fh)) out.push(f);
   }
   return out;
 }
@@ -448,6 +454,9 @@ function findRoadsideFeatureNear(wx, wy, radiusTiles = 1.35) {
   function consider(f) {
     const fw = Math.max(1, Math.floor(Number(f.footprintW) || 1));
     const fh = Math.max(1, Math.floor(Number(f.footprintH) || 1));
+    if (footprintHitsPortalClearance(f.x, f.y, fw, fh)) {
+      return;
+    }
     const ax = f.x + fw / 2;
     const ay = f.y + fh / 2 + 0.06;
     const dx = wx - ax;
@@ -476,7 +485,7 @@ const PORTALS = [
 
 /** Stone disk under portals (tile-space, portal at integer lattice point). */
 const PORTAL_CLEAR_STONE_RADIUS = 10;
-const PORTAL_CAMP_CLEAR_RADIUS = 11;
+const PORTAL_CAMP_CLEAR_RADIUS = 10;
 /** Wild mobs (camps, roamers, critters) stay outside the starter walled town apron. */
 const PRIMARY_HUB_MOBS_CLEAR_RADIUS = HUB_TOWN_GRASS_RADIUS + 48;
 
@@ -489,6 +498,22 @@ function squaredDistTileToNearestPortal(px, py) {
     if (s < best) best = s;
   }
   return best;
+}
+
+function rectIntersectsPortalClearance(minX, minY, maxX, maxY, clearance = PORTAL_CAMP_CLEAR_RADIUS) {
+  const clearanceSq = clearance * clearance;
+  for (const portal of PORTALS) {
+    const dx = Math.max(minX - portal.x, 0, portal.x - maxX);
+    const dy = Math.max(minY - portal.y, 0, portal.y - maxY);
+    if (dx * dx + dy * dy < clearanceSq) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function footprintHitsPortalClearance(x, y, w, h, clearance = PORTAL_CLEAR_STONE_RADIUS) {
+  return rectIntersectsPortalClearance(x, y, x + w, y + h, clearance);
 }
 
 function isPortalCourtyardStoneTile(ti, tj) {
@@ -1264,6 +1289,9 @@ function isInteriorCoordinate(x, y) {
 
 function isInsideBuilding(x, y) {
   for (const b of BUILDINGS) {
+    if (footprintHitsPortalClearance(b.x, b.y, b.w, b.h)) {
+      continue;
+    }
     if (x > b.x + 0.5 && x < b.x + b.w - 0.5 && y > b.y + 0.5 && y < b.y + b.h - 0.5) return true;
   }
   return false;
@@ -1306,7 +1334,8 @@ function getBuildingsNearDoor(x, y) {
     x >= building.x - 2 &&
     x < building.x + building.w + 2 &&
     y >= building.y - 2 &&
-    y < building.y + building.h + 2
+    y < building.y + building.h + 2 &&
+    !footprintHitsPortalClearance(building.x, building.y, building.w, building.h)
   ));
 
   for (const settlement of getNearbySettlements(x, y)) {
@@ -1330,6 +1359,9 @@ function getDoorTransitionAt(x, y) {
   const ty = Math.round(Number(y));
   for (let i = 0; i < BUILDINGS.length; i += 1) {
     const b = BUILDINGS[i];
+    if (footprintHitsPortalClearance(b.x, b.y, b.w, b.h)) {
+      continue;
+    }
     const doorCols = southDoorWorldXs(b);
     const southRow = Math.floor(b.y) + Math.floor(b.h) - 1;
     if (
@@ -1357,6 +1389,9 @@ function getShopFixtureAt(x, y) {
       }
       const halfW = Math.max(1, Math.floor(feature.w / 2));
       const halfH = Math.max(1, Math.floor(feature.h / 2));
+      if (footprintHitsPortalClearance(feature.x - halfW, feature.y - halfH, feature.w, feature.h)) {
+        continue;
+      }
       if (x >= feature.x - halfW - 0.9 && x <= feature.x + halfW + 0.9 && y >= feature.y - halfH - 0.9 && y <= feature.y + halfH + 0.9) {
         return {
           id: feature.id,
@@ -1923,7 +1958,12 @@ function getBuildingsInChunk(cx, cy) {
   const endY = startY + CHUNK_SIZE;
 
   const result = BUILDINGS
-    .filter((b) => b.x < endX && b.x + b.w > startX && b.y < endY && b.y + b.h > startY)
+    .filter((b) => {
+      if (b.x >= endX || b.x + b.w <= startX || b.y >= endY || b.y + b.h <= startY) {
+        return false;
+      }
+      return !footprintHitsPortalClearance(b.x, b.y, b.w, b.h);
+    })
     .map((b) => ({
       x: b.x,
       y: b.y,
@@ -1950,7 +1990,9 @@ function getBuildingsInChunk(cx, cy) {
       const key = `${b.x},${b.y}`;
       if (!seen.has(key)) {
         seen.add(key);
-        result.push({ x: b.x, y: b.y, w: b.w, h: b.h, name: b.name, type: b.type || "hut", forSale: false });
+        if (!footprintHitsPortalClearance(b.x, b.y, b.w, b.h)) {
+          result.push({ x: b.x, y: b.y, w: b.w, h: b.h, name: b.name, type: b.type || "hut", forSale: false });
+        }
       }
     }
   }
