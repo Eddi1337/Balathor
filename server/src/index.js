@@ -1725,6 +1725,23 @@ function handleMessage(client, raw) {
     broadcastSnapshot();
   }
 
+  if (message.type === "resetTalents") {
+    const p = client.player;
+    if (!p) return;
+    const trees = SERVER_TALENT_TREES[p.classId] || [];
+    const allTalentIds = trees.flat();
+    const spent = allTalentIds.filter(id => Boolean(p.talents?.[id])).length;
+    if (spent === 0) return;
+    p.talentPoints = (p.talentPoints || 0) + spent;
+    p.talents = {};
+    p.abilityBar = (p.abilityBar || [null, null, null, null, null]).map(
+      s => (s && s.startsWith("item:")) ? s : null
+    );
+    saveClientCharacter(client);
+    send(client, { type: "talentUpdate", talentPoints: p.talentPoints, talents: p.talents, abilityBar: p.abilityBar });
+    broadcastSnapshot();
+  }
+
   if (message.type === "setAbilitySlot") {
     const p = client.player;
     if (!p) return;

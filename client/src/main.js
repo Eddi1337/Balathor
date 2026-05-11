@@ -1830,6 +1830,10 @@ function wireUi() {
   bagsClose.addEventListener("click", () => setActiveGameWindow(null));
   talentClose.addEventListener("click", () => setActiveGameWindow(null));
 
+  document.querySelector("#talentResetBtn")?.addEventListener("click", () => {
+    send({ type: "resetTalents" });
+  });
+
   shopClose?.addEventListener("click", () => {
     closeShop();
   });
@@ -2013,6 +2017,7 @@ function wireUi() {
   if (buyHousePanel) makeDraggable(buyHousePanel);
   if (companionOfferPanel) makeDraggable(companionOfferPanel);
   makeDraggable(talentPanel);
+  if (tradePanel) makeDraggable(tradePanel);
 
   // Delegated dragstart for ability slots (avoids listener accumulation across renders)
   abilitySlotsEl.addEventListener("dragstart", (e) => {
@@ -2164,6 +2169,9 @@ function wireUi() {
       return;
     }
     if (tryPickupClickedGroundItem(event)) {
+      return;
+    }
+    if (tryFountainClickInteract(event)) {
       return;
     }
     if (tryRoadsideBenchClickInteract(event)) {
@@ -2431,6 +2439,50 @@ function wireUi() {
     send({ type: "tradeSetSlot", partnerId: state.tradePartnerId, slot: si, invSlot });
     state.tradeDragInvSlot = null;
   });
+
+  tradeYourSlots?.addEventListener("click", (e) => {
+    const slotEl = e.target.closest(".trade-slot");
+    if (!slotEl || !state.tradePartnerId) return;
+    const si = Number(slotEl.dataset.tradeSlot);
+    if (!Number.isInteger(si)) return;
+    const picker = document.querySelector("#tradePicker");
+    if (!picker) return;
+    if (slotEl.classList.contains("filled")) {
+      send({ type: "tradeSetSlot", partnerId: state.tradePartnerId, slot: si, invSlot: null });
+      picker.classList.add("hidden");
+      return;
+    }
+    // Show item picker
+    picker.replaceChildren();
+    const items = (state.inventory || []).map((item, idx) => ({ item, idx })).filter(({ item }) => Boolean(item));
+    if (!items.length) {
+      const empty = document.createElement("div");
+      empty.className = "trade-picker-empty";
+      empty.textContent = "Bag is empty";
+      picker.appendChild(empty);
+    } else {
+      for (const { item, idx } of items) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "trade-picker-item";
+        btn.textContent = item.name;
+        btn.addEventListener("click", () => {
+          send({ type: "tradeSetSlot", partnerId: state.tradePartnerId, slot: si, invSlot: idx });
+          picker.classList.add("hidden");
+        });
+        picker.appendChild(btn);
+      }
+    }
+    picker.classList.toggle("hidden", picker.classList.contains("hidden") === false && picker._forSlot === si);
+    picker.classList.remove("hidden");
+    picker._forSlot = si;
+  });
+
+  document.addEventListener("pointerdown", (e) => {
+    if (!e.target.closest("#tradeYourSlots") && !e.target.closest("#tradePicker")) {
+      document.querySelector("#tradePicker")?.classList.add("hidden");
+    }
+  }, true);
 
   wireMobileControls();
 }
@@ -3290,6 +3342,25 @@ function tryInteractClickedFixture(event) {
 }
 
 /** Prefer sitting when the pointer clearly hits an upright roadside bench */
+function tryFountainClickInteract(event) {
+  const world = screenEventToWorld(event);
+  const self = state.players.get(state.selfId);
+  if (!self) return false;
+
+  for (const f of state.roadsides.values()) {
+    if (f.kind !== "fountain") continue;
+    const rfW = Math.max(1, Math.floor(Number(f.footprintW) || 1));
+    const rfH = Math.max(1, Math.floor(Number(f.footprintH) || 1));
+    const ax = f.x + rfW / 2;
+    const ay = f.y + rfH / 2;
+    if (Math.hypot(world.x - ax, world.y - ay) > 2.35) continue;
+    if (Math.hypot(self.x - ax, self.y - ay) > 4.5) continue;
+    sendInteract({ x: ax, y: ay });
+    return true;
+  }
+  return false;
+}
+
 function tryRoadsideBenchClickInteract(event) {
   const world = screenEventToWorld(event);
   const self = state.players.get(state.selfId);
@@ -4233,9 +4304,32 @@ function drawSpellIcon(iconCanvas, spellId, unlocked) {
     c.fillRect(12, 6, 4, 16);
     c.fillRect(6, 12, 16, 4);
     c.beginPath(); c.ellipse(14, 14, 10, 10, 0, 0, Math.PI * 2); c.stroke();
-  } else if (["cone", "wrath", "melee", "shield"].includes(cfg.kind)) {
+  } else if (cfg.kind === "cone" || cfg.kind === "melee") {
     c.beginPath(); c.arc(10, 18, 15, -1.2, 0.15); c.stroke();
     c.beginPath(); c.moveTo(9, 20); c.lineTo(22, 7); c.stroke();
+  } else if (cfg.kind === "sword") {
+    c.lineWidth = 2.5;
+    c.beginPath(); c.moveTo(8, 22); c.lineTo(21, 7); c.stroke(); // blade
+    c.lineWidth = 2;
+    c.beginPath(); c.moveTo(5, 17); c.lineTo(15, 10); c.stroke(); // crossguard
+    c.beginPath(); c.arc(7, 23, 2.5, 0, Math.PI * 2); c.fill(); // pommel
+  } else if (cfg.kind === "shield") {
+    c.beginPath();
+    c.moveTo(14, 4); c.lineTo(22, 9); c.lineTo(22, 17); c.lineTo(14, 24); c.lineTo(6, 17); c.lineTo(6, 9); c.closePath();
+    c.stroke();
+    c.lineWidth = 1.5;
+    c.beginPath(); c.moveTo(14, 5); c.lineTo(14, 23); c.stroke();
+    c.beginPath(); c.moveTo(7, 13); c.lineTo(21, 13); c.stroke();
+  } else if (cfg.kind === "wrath") {
+    c.lineWidth = 1.5;
+    for (let i = 0; i < 8; i++) {
+      const a = i * Math.PI / 4 - Math.PI / 8;
+      c.beginPath();
+      c.moveTo(14 + Math.cos(a) * 5, 14 + Math.sin(a) * 5);
+      c.lineTo(14 + Math.cos(a) * 12, 14 + Math.sin(a) * 12);
+      c.stroke();
+    }
+    c.beginPath(); c.arc(14, 14, 3, 0, Math.PI * 2); c.fill();
   } else if (["storm", "time", "smoke"].includes(cfg.kind)) {
     c.beginPath(); c.arc(12, 14, 6, 0, Math.PI * 1.5); c.stroke();
     c.beginPath(); c.arc(17, 14, 6, Math.PI, Math.PI * 2.5); c.stroke();
@@ -4284,7 +4378,7 @@ const SPELL_ANIMATION_CONFIG = {
   shield_bash: { kind: "shield", color: "#8899aa", accent: "#d7e4ef", ttl: 620 },
   divine_shield: { kind: "barrier", color: "#ffe066", accent: "#ffffff", ttl: 1100 },
   fortify: { kind: "fortify", color: "#aabbcc", accent: "#edf3f7", ttl: 1000 },
-  holy_strike: { kind: "melee", color: "#ffee88", accent: "#ffffff", ttl: 620 },
+  holy_strike: { kind: "sword", color: "#ffee88", accent: "#ffffff", ttl: 620 },
   consecration: { kind: "ground", color: "#ffd700", accent: "#ffee88", ttl: 5000 },
   divine_wrath: { kind: "wrath", color: "#ffcc44", accent: "#ffffff", ttl: 980 },
   healing_aura: { kind: "heal", color: "#66ff88", accent: "#d8ffd8", ttl: 1100 },
@@ -6715,6 +6809,7 @@ function drawTalentSpellFx() {
       case "fortify":
         drawFortify(sx, sy, pct, cfg);
         break;
+      case "sword":
       case "melee":
         drawHolyStrike(sx, sy, angle, pct, cfg);
         break;
