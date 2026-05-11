@@ -75,11 +75,14 @@ const {
   STARGATE_LANDING
 } = require("./sciFiStationLayout.js");
 
+/** Hub tile for sci-fi stargate — ring road near plaza tree, southeast arc (north gates use y ≈ -76). */
+const STARGATE_HUB_TILE = Object.freeze({ x: 8, y: 4 });
+
 const SCI_FI_STARGATE_PORTAL = Object.freeze({
   id: "portal_stargate",
   name: "Stargate",
-  x: 0,
-  y: -178,
+  x: STARGATE_HUB_TILE.x,
+  y: STARGATE_HUB_TILE.y,
   targetX: STARGATE_LANDING.x,
   targetY: STARGATE_LANDING.y,
   color: "#67f0ff",
@@ -585,11 +588,11 @@ const PORTALS = [
   { id: "portal_oasis", name: "Oasis Gate",  x:  46, y: -76, targetX: 600, targetY: 522, color: "#f2c45f" },
   { id: "portal_frost", name: "Frost Gate",   x: -46, y: -76, targetX: -600, targetY: -458, color: "#9ee7ff" },
   { id: "portal_ember", name: "Ember Gate",   x:   0, y: -76, targetX: 580, targetY: -503, color: "#ff7a45" },
-  { id: "portal_stargate", name: "Stargate",   x:   0, y: -178, targetX: STARGATE_LANDING.x, targetY: STARGATE_LANDING.y, color: "#67f0ff", style: "stargate" },
+  { id: "portal_stargate", name: "Stargate",   x: STARGATE_HUB_TILE.x, y: STARGATE_HUB_TILE.y, targetX: STARGATE_LANDING.x, targetY: STARGATE_LANDING.y, color: "#67f0ff", style: "stargate" },
   { id: "portal_hub_oasis", name: "Oasis Gate", x: 600, y: 522, targetX: 46, targetY: -76, color: "#f2c45f" },
   { id: "portal_hub_frost", name: "Frost Gate", x: -600, y: -458, targetX: -46, targetY: -76, color: "#9ee7ff" },
   { id: "portal_hub_ember", name: "Ember Gate", x: 580, y: -503, targetX: 0, targetY: -76, color: "#ff7a45" },
-  { id: "portal_stargate_return", name: "Stargate", x: STARGATE_LANDING.x, y: STARGATE_LANDING.y, targetX: 0, targetY: -178, color: "#67f0ff", style: "stargate" },
+  { id: "portal_stargate_return", name: "Stargate", x: STARGATE_LANDING.x, y: STARGATE_LANDING.y, targetX: STARGATE_HUB_TILE.x, targetY: STARGATE_HUB_TILE.y, color: "#67f0ff", style: "stargate" },
 ];
 
 /** Stone disk under portals (tile-space, portal at integer lattice point). */
