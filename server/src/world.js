@@ -66,62 +66,30 @@ const SCI_FI_SECTOR = Object.freeze({
   yMin: -560,
   yMax: 560
 });
+const {
+  SCI_FI_STATIONS,
+  SCI_FI_STATION_FEATURES,
+  SCI_FI_DOCK_PORTS,
+  SCI_FI_LANES,
+  sciFiDockPortForPlayerId: layoutDockPortForPlayerId,
+  STARGATE_LANDING
+} = require("./sciFiStationLayout.js");
+
 const SCI_FI_STARGATE_PORTAL = Object.freeze({
   id: "portal_stargate",
   name: "Stargate",
   x: 0,
   y: -178,
-  targetX: 1824,
-  targetY: 0,
+  targetX: STARGATE_LANDING.x,
+  targetY: STARGATE_LANDING.y,
   color: "#67f0ff",
   style: "stargate"
 });
-const SCI_FI_STATIONS = Object.freeze([
-  { id: "station_nova_dock", name: "Nova Station", x: 1828, y: 0, w: 70, h: 42, kind: "spawn" },
-  { id: "station_orbit_arc", name: "Orbit Arc", x: 1982, y: -156, w: 20, h: 14, kind: "orbital" },
-  { id: "station_helios_spire", name: "Helios Spire", x: 1980, y: 156, w: 20, h: 14, kind: "orbital" },
-  { id: "station_lumen_hub", name: "Lumen Hub", x: 1696, y: 120, w: 18, h: 12, kind: "trade" },
-  { id: "station_gate_link", name: "Gate Link", x: 1648, y: 0, w: 14, h: 10, kind: "gate" }
-]);
-const SCI_FI_STATION_FEATURES = Object.freeze([
-  { id: "station_nova_bridge", name: "Bridge", x: 1822, y: -18, w: 8, h: 8, kind: "command" },
-  { id: "station_nova_core", name: "Core", x: 1822, y: -8, w: 8, h: 8, kind: "core" },
-  { id: "station_nova_market", name: "Market Hall", x: 1810, y: -8, w: 8, h: 8, kind: "shop-bay", shopType: "trade" },
-  { id: "station_nova_medbay", name: "Medbay", x: 1834, y: -8, w: 8, h: 8, kind: "shop-bay", shopType: "trade" },
-  { id: "station_nova_quarters", name: "Crew Quarters", x: 1810, y: 4, w: 8, h: 8, kind: "quarters" },
-  { id: "station_nova_reactor", name: "Reactor", x: 1834, y: 4, w: 8, h: 8, kind: "reactor" },
-  { id: "station_nova_hangar", name: "Hangar", x: 1794, y: -4, w: 10, h: 14, kind: "ship-bay" },
-  { id: "station_nova_dock_hall", name: "Dock Hall", x: 1852, y: -10, w: 14, h: 22, kind: "docks" },
-  { id: "station_nova_ship_shop", name: "Dockyard", x: 1852, y: 8, w: 8, h: 8, kind: "ship-shop", shopType: "ship" },
-  { id: "station_nova_ship_console", name: "Ship Console", x: 1854, y: -4, w: 6, h: 4, kind: "ship-console" },
-  { id: "station_nova_dock_port_a", name: "Port A", x: 1858, y: -10, w: 5, h: 5, kind: "ship-port" },
-  { id: "station_nova_dock_port_b", name: "Port B", x: 1858, y: -3, w: 5, h: 5, kind: "ship-port" },
-  { id: "station_nova_dock_port_c", name: "Port C", x: 1858, y: 4, w: 5, h: 5, kind: "ship-port" },
-  { id: "station_nova_dock_port_d", name: "Port D", x: 1858, y: 11, w: 5, h: 5, kind: "ship-port" },
-  { id: "station_nova_spine", name: "Spine", x: 1818, y: -2, w: 10, h: 4, kind: "corridor" },
-  { id: "station_nova_cross", name: "Cross Passage", x: 1818, y: 10, w: 10, h: 4, kind: "corridor" },
-  { id: "station_nova_lift", name: "Lift Shaft", x: 1816, y: -14, w: 4, h: 18, kind: "corridor" },
-  { id: "station_nova_hangar_link", name: "Hangar Link", x: 1806, y: -2, w: 6, h: 4, kind: "corridor" },
-  { id: "station_nova_dock_link", name: "Dock Link", x: 1840, y: -2, w: 6, h: 4, kind: "corridor" }
-]);
-const SCI_FI_DOCK_PORTS = Object.freeze([
-  { id: "dock_a", x: 1861, y: -9 },
-  { id: "dock_b", x: 1861, y: -2 },
-  { id: "dock_c", x: 1861, y: 5 },
-  { id: "dock_d", x: 1861, y: 12 }
-]);
 const SCI_FI_PLANETS = Object.freeze([
   { id: "planet_aurelia", name: "Aurelia", x: 2142, y: -382, radius: 74, seed: 8128, type: "lush" },
   { id: "planet_icefall", name: "Icefall", x: 2214, y: 180, radius: 64, seed: 9181, type: "ice" },
   { id: "planet_rust", name: "Rust", x: 2050, y: 416, radius: 58, seed: 10201, type: "desert" }
 ]);
-const SCI_FI_LANES = Object.freeze([
-  { id: "lane_nova_orbit", from: "station_nova_dock", to: "station_orbit_arc" },
-  { id: "lane_nova_helios", from: "station_nova_dock", to: "station_helios_spire" },
-  { id: "lane_nova_lumen", from: "station_nova_dock", to: "station_lumen_hub" },
-  { id: "lane_nova_gate", from: "station_nova_dock", to: "station_gate_link" }
-]);
-
 const { computeHubDistrict, HUB_CLEARING_RADIUS: HUB_TOWN_GRASS_RADIUS } = require("./hubRoundTown.js");
 /** Walled procedural hub + arterial sets (paths never overlap building rects). */
 const _hubDistrict = computeHubDistrict();
@@ -152,12 +120,23 @@ function sciFiStationFeatureById(id) {
 }
 
 function sciFiDockPortForPlayerId(playerId) {
-  const seed = String(playerId || "station").length > 0 ? String(playerId || "station") : "station";
-  let h = 0;
-  for (let i = 0; i < seed.length; i += 1) {
-    h = Math.imul(h ^ seed.charCodeAt(i), 2654435761) >>> 0;
+  return layoutDockPortForPlayerId(playerId);
+}
+
+function findNearestSciFiDockPort(px, py, maxDist = 12) {
+  const md = maxDist * maxDist;
+  let best = null;
+  let bestD = md;
+  for (const p of SCI_FI_DOCK_PORTS) {
+    const dx = px - p.x;
+    const dy = py - p.y;
+    const d = dx * dx + dy * dy;
+    if (d < bestD) {
+      bestD = d;
+      best = p;
+    }
   }
-  return SCI_FI_DOCK_PORTS[h % SCI_FI_DOCK_PORTS.length];
+  return best;
 }
 
 function sciFiThemeForPoint(x, y) {
@@ -184,6 +163,10 @@ function sciFiPlanetAt(x, y) {
     }
   }
   return null;
+}
+
+function sciFiPlanetById(id) {
+  return SCI_FI_PLANETS.find((p) => p.id === id) || null;
 }
 
 function sciFiPlanetSurfaceTile(planet, x, y) {
@@ -273,6 +256,17 @@ function sciFiStationTileForFeature(feature, x, y) {
     return lx === Math.floor(fw / 2) ? TILE.ENERGY : TILE.METAL;
   }
 
+  if (feature.kind === "station-core") {
+    const cx = Math.floor(fw / 2);
+    const cy = Math.floor(fh / 2);
+    const md = Math.abs(lx - cx) + Math.abs(ly - cy);
+    if (edge) return TILE.HULL;
+    if (md <= 2) return TILE.ENERGY;
+    if (md <= 5) return TILE.WINDOW;
+    if ((lx + ly) % 2 === 0) return TILE.ENERGY;
+    return TILE.METAL;
+  }
+
   if (feature.kind === "reactor") {
     if (edge) return TILE.HULL;
     if (lx === Math.floor(fw / 2) || ly === Math.floor(fh / 2)) return TILE.ENERGY;
@@ -332,8 +326,8 @@ function getSciFiObjectsInChunk(cx, cy) {
   }
 
   for (const lane of SCI_FI_LANES) {
-    const from = sciFiStationById(lane.from);
-    const to = sciFiStationById(lane.to);
+    const from = sciFiStationById(lane.from) || sciFiPlanetById(lane.from);
+    const to = sciFiStationById(lane.to) || sciFiPlanetById(lane.to);
     if (!from || !to) {
       continue;
     }
@@ -591,11 +585,11 @@ const PORTALS = [
   { id: "portal_oasis", name: "Oasis Gate",  x:  46, y: -76, targetX: 600, targetY: 522, color: "#f2c45f" },
   { id: "portal_frost", name: "Frost Gate",   x: -46, y: -76, targetX: -600, targetY: -458, color: "#9ee7ff" },
   { id: "portal_ember", name: "Ember Gate",   x:   0, y: -76, targetX: 580, targetY: -503, color: "#ff7a45" },
-  { id: "portal_stargate", name: "Stargate",   x:   0, y: -178, targetX: 1824, targetY: 0, color: "#67f0ff", style: "stargate" },
+  { id: "portal_stargate", name: "Stargate",   x:   0, y: -178, targetX: STARGATE_LANDING.x, targetY: STARGATE_LANDING.y, color: "#67f0ff", style: "stargate" },
   { id: "portal_hub_oasis", name: "Oasis Gate", x: 600, y: 522, targetX: 46, targetY: -76, color: "#f2c45f" },
   { id: "portal_hub_frost", name: "Frost Gate", x: -600, y: -458, targetX: -46, targetY: -76, color: "#9ee7ff" },
   { id: "portal_hub_ember", name: "Ember Gate", x: 580, y: -503, targetX: 0, targetY: -76, color: "#ff7a45" },
-  { id: "portal_stargate_return", name: "Stargate", x: 1824, y: 0, targetX: 0, targetY: -178, color: "#67f0ff", style: "stargate" },
+  { id: "portal_stargate_return", name: "Stargate", x: STARGATE_LANDING.x, y: STARGATE_LANDING.y, targetX: 0, targetY: -178, color: "#67f0ff", style: "stargate" },
 ];
 
 /** Stone disk under portals (tile-space, portal at integer lattice point). */
@@ -1499,7 +1493,10 @@ function getDoorTransitionAt(x, y) {
 function getShopFixtureAt(x, y) {
   if (isSciFiSector(x, y)) {
     for (const feature of SCI_FI_STATION_FEATURES) {
-      if (feature.shopType !== "ship" && feature.shopType !== "trade") {
+      if (feature.kind !== "shop-bay" && feature.kind !== "ship-shop") {
+        continue;
+      }
+      if (!feature.shopType) {
         continue;
       }
       const halfW = Math.max(1, Math.floor(feature.w / 2));
@@ -1511,9 +1508,9 @@ function getShopFixtureAt(x, y) {
         return {
           id: feature.id,
           name: feature.name,
-          buildingName: "Nova Dock",
+          buildingName: "Ringforge Station",
           isPub: false,
-          shopType: feature.shopType || "trade",
+          shopType: feature.shopType,
           x: feature.x,
           y: feature.y
         };
@@ -2139,6 +2136,8 @@ module.exports = {
   getDoorTransitionAt,
   getShopFixtureAt,
   sciFiDockPortForPlayerId,
+  findNearestSciFiDockPort,
+  STARGATE_LANDING,
   getPortalAt,
   hash2,
   isInsideBuilding,

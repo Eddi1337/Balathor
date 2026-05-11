@@ -324,6 +324,9 @@ function displayItemName(item) {
   if (item.type === "ship") {
     return item.name || "Dock Skiff";
   }
+  if (item.type === "ship_upgrade") {
+    return item.name || "Ship upgrade";
+  }
   return item.name || "Item";
 }
 
@@ -343,6 +346,9 @@ function displayItemIconClass(item) {
     return "exo-armor";
   }
   if (item.type === "ship") {
+    return "ship";
+  }
+  if (item.type === "ship_upgrade") {
     return "ship";
   }
   return item.icon || item.type || "generic";
@@ -4995,8 +5001,14 @@ function renderShop() {
   const gold = Number.isFinite(state.shop.gold) ? state.shop.gold : state.gold;
   shopTitle.textContent =
     state.shop.shopType === "ship"
-      ? `${state.shop.buildingName || state.shop.name} Dockyard`
-      : state.shop.isPub && state.shop.buildingName
+      ? `${state.shop.buildingName || state.shop.name} — Shipworks`
+      : state.shop.shopType === "arms"
+        ? `${state.shop.buildingName || state.shop.name} — Armoury`
+        : state.shop.shopType === "stims"
+          ? `${state.shop.buildingName || state.shop.name} — Clinic`
+          : state.shop.shopType === "parts"
+            ? `${state.shop.buildingName || state.shop.name} — Parts`
+            : state.shop.isPub && state.shop.buildingName
         ? `${state.shop.buildingName} Taproom`
         : state.shop.buildingName
           ? `${state.shop.buildingName} Shelf`
@@ -5775,6 +5787,8 @@ function drawSpaceObjects() {
       drawShipLaneObject(obj, halfW, halfH);
     } else if (obj.kind === "corridor") {
       drawCorridorObject(obj, sx, sy);
+    } else if (obj.kind === "station-core") {
+      drawStationCoreObject(obj, sx, sy);
     } else if (obj.kind === "core" || obj.kind === "command" || obj.kind === "quarters" || obj.kind === "reactor" || obj.kind === "docks") {
       drawStationRoomObject(obj, sx, sy);
     } else if (obj.kind === "ship-bay") {
@@ -5892,16 +5906,35 @@ function drawShipBayObject(obj, sx, sy) {
   ctx.restore();
 }
 
-function drawShipVehicleObject(obj, sx, sy, boarded = false) {
+function drawShipVehicleObject(obj, sx, sy, boarded = false, facing = 0, thrust = false) {
   const color = obj?.color || "#67f0ff";
   const w = 64;
   const h = 36;
-  const x = sx - w / 2;
-  const y = sy - h / 2;
   ctx.save();
+  ctx.translate(sx, sy);
+  ctx.rotate(Number.isFinite(facing) ? facing : 0);
+  const x = -w / 2;
+  const y = -h / 2;
   if (boarded) {
     ctx.shadowColor = color;
     ctx.shadowBlur = 10;
+  }
+  if (thrust && boarded) {
+    const flick = 0.55 + Math.sin(performance.now() / 45) * 0.25;
+    ctx.fillStyle = `rgba(255, 160, 80, ${flick})`;
+    ctx.beginPath();
+    ctx.moveTo(x - 4, y + h * 0.55);
+    ctx.lineTo(x - 18 - flick * 10, y + h * 0.5);
+    ctx.lineTo(x - 4, y + h * 0.42);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = `rgba(120, 200, 255, ${flick * 0.5})`;
+    ctx.beginPath();
+    ctx.moveTo(x - 2, y + h * 0.55);
+    ctx.lineTo(x - 12 - flick * 6, y + h * 0.5);
+    ctx.lineTo(x - 2, y + h * 0.44);
+    ctx.closePath();
+    ctx.fill();
   }
   drawEllipseShadow(x - 6, y + h * 0.84, w + 12, 10, 0.22);
   ctx.fillStyle = "rgba(18, 30, 48, 0.95)";
@@ -5925,13 +5958,15 @@ function drawShipVehicleObject(obj, sx, sy, boarded = false) {
   ctx.stroke();
   ctx.restore();
   ctx.save();
+  ctx.translate(sx, sy);
   ctx.font = "bold 10px ui-sans-serif, system-ui";
   ctx.textAlign = "center";
   ctx.lineWidth = 3;
   ctx.strokeStyle = "rgba(4,8,16,0.9)";
   ctx.fillStyle = color;
-  ctx.strokeText(obj?.name || "Ship", sx, y - 6);
-  ctx.fillText(obj?.name || "Ship", sx, y - 6);
+  const nameY = -h / 2 - 6;
+  ctx.strokeText(obj?.name || "Ship", 0, nameY);
+  ctx.fillText(obj?.name || "Ship", 0, nameY);
   ctx.restore();
 }
 
@@ -5942,7 +5977,7 @@ function drawStationObject(obj, sx, sy) {
   const y = sy - h / 2;
   ctx.save();
   drawEllipseShadow(x - 8, y + h * 0.68, w + 16, 10, 0.26);
-  if (obj.id === "station_nova_dock") {
+  if (obj.id === "station_ringforge" || obj.id === "station_nova_dock") {
     drawRusticStationCluster(x, y, w, h);
   } else if (obj.kind === "core" || obj.kind === "command" || obj.kind === "quarters" || obj.kind === "reactor" || obj.kind === "docks") {
     drawStationRoomObject(obj, sx, sy);
@@ -5958,6 +5993,29 @@ function drawStationObject(obj, sx, sy) {
   ctx.fillStyle = "#d2f6ff";
   ctx.strokeText(obj.name || "Station", sx, y - 6);
   ctx.fillText(obj.name || "Station", sx, y - 6);
+  ctx.restore();
+}
+
+function drawStationCoreObject(obj, sx, sy) {
+  const w = Math.max(10, Number(obj.w || 14)) * TILE_SIZE;
+  const h = Math.max(10, Number(obj.h || 14)) * TILE_SIZE;
+  const x = sx - w / 2;
+  const y = sy - h / 2;
+  const pulse = 0.55 + Math.sin(performance.now() / 380) * 0.22;
+  ctx.save();
+  const g = ctx.createRadialGradient(sx, sy, 4, sx, sy, Math.max(w, h) * 0.55);
+  g.addColorStop(0, `rgba(180, 255, 255, ${0.45 + pulse * 0.35})`);
+  g.addColorStop(0.35, "rgba(80, 200, 255, 0.22)");
+  g.addColorStop(1, "rgba(4, 12, 28, 0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(x - 8, y - 8, w + 16, h + 16);
+  ctx.fillStyle = "rgba(12, 22, 40, 0.92)";
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = `rgba(103, 240, 255, ${0.55 + pulse * 0.35})`;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
+  ctx.fillStyle = `rgba(103, 240, 255, ${0.25 + pulse * 0.2})`;
+  ctx.fillRect(x + w * 0.35, y + h * 0.35, w * 0.3, h * 0.3);
   ctx.restore();
 }
 
@@ -6435,7 +6493,15 @@ function drawPlayers() {
     if (isMob) {
       drawMob(entity, sx, sy);
     } else if (entity.ship?.boarded) {
-      drawShipVehicleObject(entity.ship, sx, sy, true);
+      const thrustOn = entity.id === state.selfId && state.input.up;
+      drawShipVehicleObject(
+        entity.ship,
+        sx,
+        sy,
+        true,
+        Number.isFinite(entity.facing) ? entity.facing : 0,
+        Boolean(entity.moving || thrustOn)
+      );
     } else {
       const restingBench = isNpc ? isNpcRestingOnBench(entity) : false;
       if (entity.ship && isSciFiWorld()) {
@@ -7863,7 +7929,25 @@ function drawProjectileFx(fx, sx, sy, pct, halfW, halfH) {
   ctx.translate(px, py);
   ctx.rotate(angle);
 
-  if (fx.projectileKind === "fireball") {
+  if (fx.projectileKind === "laser_bolt") {
+    ctx.globalAlpha = Math.max(0, 1 - pct * 0.25);
+    ctx.strokeStyle = "#67f0ff";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(-18, 0);
+    ctx.lineTo(18, 0);
+    ctx.stroke();
+    ctx.strokeStyle = "#dffaff";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-14, 0);
+    ctx.lineTo(16, 0);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(103,240,255,0.9)";
+    ctx.beginPath();
+    ctx.arc(10, 0, 3, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (fx.projectileKind === "fireball") {
     const glow = ctx.createRadialGradient(0, 0, 1, 0, 0, 18);
     glow.addColorStop(0, "rgba(255, 209, 102, 0.95)");
     glow.addColorStop(0.45, "rgba(255, 122, 69, 0.72)");

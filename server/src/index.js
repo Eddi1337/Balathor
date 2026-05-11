@@ -24,7 +24,9 @@ const {
   PRIMARY_HUB_MOBS_CLEAR_RADIUS,
   isTooCloseToAnyPortal,
   HUB_TOWN_GRASS_RADIUS,
-  sciFiDockPortForPlayerId
+  sciFiDockPortForPlayerId,
+  findNearestSciFiDockPort,
+  STARGATE_LANDING
 } = require("./world");
 const {
   updateNpcs,
@@ -92,6 +94,7 @@ const STARTING_GOLD = 120;
 const SHIP_BUY_PRICE = 850;
 const SHIP_SPEED = 9.75;
 const SHIP_DOCK_RADIUS = 4.25;
+const SHIP_TURN_SPEED = 2.65;
 const MAX_GROUND_ITEMS = 140;
 const TRADER_INTERACT_RADIUS = 8;
 const MOB_AGGRO_RADIUS = 7.5;
@@ -920,25 +923,32 @@ function serializeShip(ship) {
     name: typeof ship.name === "string" ? ship.name : "Nova Skiff",
     color: typeof ship.color === "string" ? ship.color : "#67f0ff",
     boarded: Boolean(ship.boarded),
-    dockX: clampNumber(ship.dockX, -10000, 10000, 1824),
-    dockY: clampNumber(ship.dockY, -10000, 10000, 0),
-    dockStationId: typeof ship.dockStationId === "string" ? ship.dockStationId : "station_nova_dock",
+    dockX: clampNumber(ship.dockX, -10000, 10000, STARGATE_LANDING.x),
+    dockY: clampNumber(ship.dockY, -10000, 10000, STARGATE_LANDING.y),
+    dockStationId: typeof ship.dockStationId === "string" ? ship.dockStationId : "station_ringforge",
     dockPortId: typeof ship.dockPortId === "string" ? ship.dockPortId.slice(0, 48) : null,
-    speed: clampNumber(ship.speed, 0, 1000, SHIP_SPEED)
+    speed: clampNumber(ship.speed, 0, 1000, SHIP_SPEED),
+    laserTier: clampInteger(ship.laserTier ?? 1, 1, 5),
+    thrustTier: clampInteger(ship.thrustTier ?? 1, 1, 5)
   };
 }
 
 function createStarterShip() {
+  const dp =
+    findNearestSciFiDockPort(STARGATE_LANDING.x, STARGATE_LANDING.y, 120) ||
+    sciFiDockPortForPlayerId("starter");
   return {
     templateId: "starter_ship",
     name: "Nova Skiff",
     color: "#67f0ff",
     boarded: false,
-    dockX: 1824,
-    dockY: 0,
-    dockStationId: "station_nova_dock",
-    dockPortId: null,
-    speed: SHIP_SPEED
+    dockX: dp.x,
+    dockY: dp.y,
+    dockStationId: "station_ringforge",
+    dockPortId: dp.id,
+    speed: SHIP_SPEED,
+    laserTier: 1,
+    thrustTier: 1
   };
 }
 
@@ -951,11 +961,13 @@ function sanitizeShip(ship) {
     name: typeof ship.name === "string" ? ship.name.slice(0, 48) : "Nova Skiff",
     color: typeof ship.color === "string" ? ship.color.slice(0, 22) : "#67f0ff",
     boarded: Boolean(ship.boarded),
-    dockX: clampNumber(ship.dockX, -10000, 10000, 1824),
-    dockY: clampNumber(ship.dockY, -10000, 10000, 0),
-    dockStationId: typeof ship.dockStationId === "string" ? ship.dockStationId.slice(0, 48) : "station_nova_dock",
+    dockX: clampNumber(ship.dockX, -10000, 10000, STARGATE_LANDING.x),
+    dockY: clampNumber(ship.dockY, -10000, 10000, STARGATE_LANDING.y),
+    dockStationId: typeof ship.dockStationId === "string" ? ship.dockStationId.slice(0, 48) : "station_ringforge",
     dockPortId: typeof ship.dockPortId === "string" ? ship.dockPortId.slice(0, 48) : null,
-    speed: clampNumber(ship.speed, 0, 1000, SHIP_SPEED)
+    speed: clampNumber(ship.speed, 0, 1000, SHIP_SPEED),
+    laserTier: clampInteger(ship.laserTier ?? 1, 1, 5),
+    thrustTier: clampInteger(ship.thrustTier ?? 1, 1, 5)
   };
 }
 
@@ -972,6 +984,35 @@ function getPlayerDockPort(player) {
     x: port.x,
     y: port.y
   };
+}
+
+function getPartsCatalog() {
+  return [
+    {
+      templateId: "part_emitter_focus",
+      type: "ship_upgrade",
+      name: "Emitter focus (+laser tier)",
+      price: 140,
+      rarity: "rare",
+      upgrade: "laser"
+    },
+    {
+      templateId: "part_vector_coils",
+      type: "ship_upgrade",
+      name: "Vector coils (+thrust tier)",
+      price: 130,
+      rarity: "rare",
+      upgrade: "thrust"
+    },
+    {
+      templateId: "part_injector_tune",
+      type: "ship_upgrade",
+      name: "Injector tuning (+speed)",
+      price: 160,
+      rarity: "uncommon",
+      upgrade: "speed"
+    }
+  ];
 }
 
 function getShipCatalog() {
@@ -1347,33 +1388,60 @@ function simulate() {
     }
 
     const input = client.input;
-    let dx = Number(input.right) - Number(input.left);
-    let dy = Number(input.down) - Number(input.up);
-    const length = Math.hypot(dx, dy);
+    const doorAccountKey = client.account?.key || "";
+    const shipPilot =
+      Boolean(client.player.ship?.boarded) && getWorldThemeAt(client.player.x, client.player.y) === "sci-fi";
 
-    if (length > 0) {
+    if (shipPilot) {
       client.player._stillAccumulator = 0;
-      dx /= length;
-      dy /= length;
-
-      const speed = getPlayerSpeed(client.player);
-      const nextX = client.player.x + dx * speed * dt;
-      const nextY = client.player.y + dy * speed * dt;
-
-      const doorAccountKey = client.account?.key || "";
-      const shipMode = Boolean(client.player.ship?.boarded);
-      if (shipMode || (!isBlockedCircle(nextX, client.player.y) && !isDoorLockedForPlayer(nextX, client.player.y, doorAccountKey))) {
+      const turn = (Number(input.right) - Number(input.left)) * SHIP_TURN_SPEED * dt;
+      client.player.facing = normalizeAngle(Number(client.player.facing || 0) + turn);
+      const thrust = Number(input.up) ? 1 : 0;
+      const brakes = Number(input.down) ? 1 : 0;
+      const sp = getPlayerSpeed(client.player);
+      let vx = Math.cos(client.player.facing) * thrust * sp * dt;
+      let vy = Math.sin(client.player.facing) * thrust * sp * dt;
+      if (brakes) {
+        vx *= -0.42;
+        vy *= -0.42;
+      }
+      const nextX = client.player.x + vx;
+      const nextY = client.player.y + vy;
+      if (!isBlockedCircle(nextX, client.player.y) && !isDoorLockedForPlayer(nextX, client.player.y, doorAccountKey)) {
         client.player.x = nextX;
       }
-      if (shipMode || (!isBlockedCircle(client.player.x, nextY) && !isDoorLockedForPlayer(client.player.x, nextY, doorAccountKey))) {
+      if (!isBlockedCircle(client.player.x, nextY) && !isDoorLockedForPlayer(client.player.x, nextY, doorAccountKey)) {
         client.player.y = nextY;
       }
-
-      client.player.facing = Math.atan2(dy, dx);
-      client.player.moving = true;
+      client.player.moving = Boolean(thrust) || Math.abs(turn) > 0.0001;
     } else {
-      client.player.moving = false;
-      client.player._stillAccumulator = (client.player._stillAccumulator || 0) + dt;
+      let dx = Number(input.right) - Number(input.left);
+      let dy = Number(input.down) - Number(input.up);
+      const length = Math.hypot(dx, dy);
+
+      if (length > 0) {
+        client.player._stillAccumulator = 0;
+        dx /= length;
+        dy /= length;
+
+        const speed = getPlayerSpeed(client.player);
+        const nextX = client.player.x + dx * speed * dt;
+        const nextY = client.player.y + dy * speed * dt;
+
+        const shipMode = Boolean(client.player.ship?.boarded);
+        if (shipMode || (!isBlockedCircle(nextX, client.player.y) && !isDoorLockedForPlayer(nextX, client.player.y, doorAccountKey))) {
+          client.player.x = nextX;
+        }
+        if (shipMode || (!isBlockedCircle(client.player.x, nextY) && !isDoorLockedForPlayer(client.player.x, nextY, doorAccountKey))) {
+          client.player.y = nextY;
+        }
+
+        client.player.facing = Math.atan2(dy, dx);
+        client.player.moving = true;
+      } else {
+        client.player.moving = false;
+        client.player._stillAccumulator = (client.player._stillAccumulator || 0) + dt;
+      }
     }
 
     handleDoorTravel(client);
@@ -2557,22 +2625,24 @@ function resolveShipLaunchPort(player, message = {}) {
     return null;
   }
 
-  const port = getPlayerDockPort(player);
+  const tx = Number(message.x);
+  const ty = Number(message.y);
+  const aimX = Number.isFinite(tx) ? tx : player.x;
+  const aimY = Number.isFinite(ty) ? ty : player.y;
+  const port = findNearestSciFiDockPort(aimX, aimY, 14);
   if (!port) {
     return null;
   }
 
-  const tx = Number(message.x);
-  const ty = Number(message.y);
   if (Number.isFinite(tx) && Number.isFinite(ty)) {
     const clickDist = Math.hypot(tx - port.x, ty - port.y);
-    if (clickDist > 1.6) {
+    if (clickDist > 8.5) {
       return null;
     }
   }
 
   const dist = Math.hypot(player.x - port.x, player.y - port.y);
-  if (dist > SHIP_DOCK_RADIUS + 1.2) {
+  if (dist > SHIP_DOCK_RADIUS + 5) {
     return null;
   }
 
@@ -2638,7 +2708,7 @@ function handleShipLaunchInteract(client, message = {}) {
   client.player.ship.boarded = false;
   client.player.ship.dockX = port.x;
   client.player.ship.dockY = port.y;
-  client.player.ship.dockStationId = "station_nova_dock";
+  client.player.ship.dockStationId = "station_ringforge";
   client.player.ship.dockPortId = port.id;
   client.player.x = port.x;
   client.player.y = port.y;
@@ -3056,7 +3126,9 @@ function applyDerivedPlayerStats(player) {
 
 function getPlayerSpeed(player) {
   if (player.ship?.boarded) {
-    return Number(player.ship.speed) || SHIP_SPEED;
+    const base = Number(player.ship.speed) || SHIP_SPEED;
+    const tt = Math.min(5, Math.max(1, Math.floor(Number(player.ship.thrustTier) || 1)));
+    return base + (tt - 1) * 0.55;
   }
   return PLAYER_SPEED + player.stats.speed * STAT_POINT_SPEED + getEquipmentStats(player).speed;
 }
@@ -3219,6 +3291,19 @@ function processConsecrationZones(now) {
 }
 
 function getActiveLoadout(player) {
+  if (player.ship?.boarded && getWorldThemeAt(player.x, player.y) === "sci-fi") {
+    const lt = Math.min(5, Math.max(1, Math.floor(Number(player.ship.laserTier) || 1)));
+    return {
+      weapon: "ship_laser",
+      kind: "projectile",
+      projectileKind: "laser_bolt",
+      cooldownMs: Math.max(150, 400 - lt * 48),
+      range: 7.2 + lt * 2.2,
+      arc: 0,
+      damage: 6 + lt * 3
+    };
+  }
+
   const weapon = player.equipment?.weapon;
   if (!weapon) {
     return {
@@ -4104,6 +4189,17 @@ function getShopStock(shop) {
   if (shop?.shopType === "ship") {
     return getShipCatalog();
   }
+  if (shop?.shopType === "arms") {
+    const arms = itemDatabase.filter((it) => it && (it.type === "weapon" || it.type === "armor"));
+    return arms.slice(0, 14);
+  }
+  if (shop?.shopType === "stims") {
+    const pots = itemDatabase.filter((it) => it && it.type === "potion");
+    return pots.slice(0, 12);
+  }
+  if (shop?.shopType === "parts") {
+    return getPartsCatalog();
+  }
   if (shop?.isPub) {
     return [...PUB_BAR_STOCK_TEMPLATES];
   }
@@ -4122,6 +4218,16 @@ function getShopStock(shop) {
 }
 
 function publicShopItem(template) {
+  if (template?.type === "ship_upgrade") {
+    return {
+      templateId: template.templateId,
+      type: "ship_upgrade",
+      name: template.name,
+      price: Number(template.price) || 0,
+      rarity: template.rarity || "uncommon",
+      upgrade: template.upgrade || "speed"
+    };
+  }
   if (template?.type === "ship") {
     return {
       templateId: template.templateId,
@@ -4188,6 +4294,44 @@ function handleShopBuy(client, message) {
     return;
   }
 
+  if (template.type === "ship_upgrade") {
+    if (!client.player.ship) {
+      send(client, { type: "serverMessage", message: "shop_not_nearby" });
+      return;
+    }
+    const price = Number(template.price) || 0;
+    if ((client.player.gold || 0) < price) {
+      send(client, { type: "serverMessage", message: "not_enough_gold" });
+      sendShopWindow(client, shop);
+      return;
+    }
+    const up = String(template.upgrade || "");
+    const sh = client.player.ship;
+    if (up === "laser" && (sh.laserTier || 1) >= 5) {
+      send(client, { type: "serverMessage", message: "shop_item_missing" });
+      sendShopWindow(client, shop);
+      return;
+    }
+    if (up === "thrust" && (sh.thrustTier || 1) >= 5) {
+      send(client, { type: "serverMessage", message: "shop_item_missing" });
+      sendShopWindow(client, shop);
+      return;
+    }
+    client.player.gold = Math.max(0, (client.player.gold || 0) - price);
+    if (up === "laser") {
+      sh.laserTier = Math.min(5, (sh.laserTier || 1) + 1);
+    } else if (up === "thrust") {
+      sh.thrustTier = Math.min(5, (sh.thrustTier || 1) + 1);
+    } else if (up === "speed") {
+      sh.speed = Math.min(24, (Number(sh.speed) || SHIP_SPEED) + 0.65);
+    }
+    saveClientCharacter(client);
+    send(client, { type: "serverMessage", message: "item_bought", itemName: template.name });
+    sendShopWindow(client, shop);
+    broadcastSnapshot();
+    return;
+  }
+
   if (template.type === "ship") {
     const shipPrice = Number(template.price || template.value || SHIP_BUY_PRICE);
     if ((client.player.gold || 0) < shipPrice) {
@@ -4202,17 +4346,20 @@ function handleShopBuy(client, message) {
     }
 
     client.player.gold = Math.max(0, (client.player.gold || 0) - shipPrice);
-    const dockPort = getPlayerDockPort(client.player);
+    const dockPort =
+      findNearestSciFiDockPort(client.player.x, client.player.y, 80) || getPlayerDockPort(client.player);
     client.player.ship = sanitizeShip({
       templateId: template.shipTemplateId || template.templateId,
       name: template.shipName || template.name,
       color: template.shipColor || template.color,
       boarded: false,
-      dockX: dockPort?.x ?? 1824,
-      dockY: dockPort?.y ?? 0,
-      dockStationId: "station_nova_dock",
+      dockX: dockPort?.x ?? STARGATE_LANDING.x,
+      dockY: dockPort?.y ?? STARGATE_LANDING.y,
+      dockStationId: "station_ringforge",
       dockPortId: dockPort?.id || null,
-      speed: Number(template.stats?.speed) || SHIP_SPEED
+      speed: Number(template.stats?.speed) || SHIP_SPEED,
+      laserTier: 1,
+      thrustTier: 1
     }) || createStarterShip();
     saveClientCharacter(client);
     send(client, { type: "serverMessage", message: "ship_bought", itemName: client.player.ship.name });
