@@ -25,6 +25,23 @@ body {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+body.theme-sci-fi {
+  --bg: #040816;
+  --panel: rgba(9, 16, 29, 0.92);
+  --panel-edge: rgba(103, 240, 255, 0.28);
+  --text: #e8fbff;
+  --muted: #9cc3d8;
+  --accent: #67f0ff;
+  --danger: #ff7b95;
+  --control: #122033;
+}
+
+body.theme-sci-fi #game {
+  background:
+    radial-gradient(circle at 50% 20%, rgba(103, 240, 255, 0.08), transparent 38%),
+    linear-gradient(180deg, #02101d 0%, #030814 55%, #01030a 100%);
+}
+
 button,
 input {
   font: inherit;
@@ -36,6 +53,44 @@ input {
   height: 100vh;
   image-rendering: pixelated;
   background: #132118;
+}
+
+body.theme-sci-fi .panel,
+body.theme-sci-fi .game-window,
+body.theme-sci-fi .chat,
+body.theme-sci-fi .progression,
+body.theme-sci-fi .ability-bar,
+body.theme-sci-fi .menu-panel {
+  box-shadow:
+    0 0 0 1px rgba(103, 240, 255, 0.18) inset,
+    0 18px 56px rgba(0, 0, 0, 0.55),
+    0 0 32px rgba(103, 240, 255, 0.08);
+}
+
+body.theme-sci-fi .window-head,
+body.theme-sci-fi .progression-head,
+body.theme-sci-fi .chat-head {
+  background: linear-gradient(180deg, rgba(18, 32, 51, 0.98) 0%, rgba(8, 16, 29, 0.98) 100%);
+  border-color: rgba(103, 240, 255, 0.2);
+}
+
+body.theme-sci-fi .segment.selected,
+body.theme-sci-fi .swatch.selected,
+body.theme-sci-fi .connect,
+body.theme-sci-fi .play,
+body.theme-sci-fi .chat-send,
+body.theme-sci-fi .progression-toggle,
+body.theme-sci-fi .window-close,
+body.theme-sci-fi .ability-bar-toggle,
+body.theme-sci-fi .menu-apply {
+  border-color: rgba(103, 240, 255, 0.4);
+  box-shadow: 0 0 0 1px rgba(103, 240, 255, 0.12) inset;
+}
+
+body.theme-sci-fi .mark {
+  background:
+    linear-gradient(90deg, transparent 0 22%, #67f0ff 22% 78%, transparent 78%),
+    linear-gradient(transparent 0 20%, #8aa8ff 20% 80%, transparent 80%);
 }
 
 .panel {

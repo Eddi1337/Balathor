@@ -14,6 +14,7 @@ const {
   getShopFixtureAt,
   hash2,
   isBlockedCircle,
+  getWorldThemeAt,
   spawnPoint,
   southDoorAnchorWorldX,
   southDoorWorldXs,
@@ -1407,6 +1408,7 @@ function handleHouseHomeTreeTeleport(client, message = {}) {
     portalId: "house_return",
     name: "Plaza",
     color: "#6ecf8d",
+    theme: getWorldThemeAt(client.player.x, client.player.y),
     x: client.player.x,
     y: client.player.y
   });
@@ -1528,6 +1530,8 @@ function handlePortalTravel(client) {
     portalId: portal.id,
     name: portal.name,
     color: portal.color,
+    style: portal.style || "arch",
+    theme: getWorldThemeAt(client.player.x, client.player.y),
     x: client.player.x,
     y: client.player.y
   });
@@ -2075,6 +2079,7 @@ function joinWorld(client, message, savedCharacter = null) {
     snapshotRate: SNAPSHOT_RATE,
     tileSize: 32,
     chunkSize: CHUNK_SIZE,
+    theme: getWorldThemeAt(spawn.x, spawn.y),
     spawn
   });
 
@@ -2232,6 +2237,7 @@ function handleHomeTeleport(client) {
     type: "teleport",
     portalId: "home",
     name: dest.name,
+    theme: getWorldThemeAt(client.player.x, client.player.y),
     x: client.player.x,
     y: client.player.y
   });

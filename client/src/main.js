@@ -122,6 +122,7 @@ const chatFriendsPane = document.querySelector("#chatFriendsPane");
 let safeZoneTooltipPinTimer = null;
 
 const TILE_SIZE = 32;
+const SCI_FI_THEME = "sci-fi";
 
 function southDoorTilesWideBuilding(building) {
   const iw = Math.max(3, Math.floor(Number(building?.w)));
@@ -335,10 +336,12 @@ const state = {
   levelUpFx: [],
   portalTransition: null,
   teleportGuardUntil: 0,
+  worldTheme: "fantasy",
   chunks: new Map(),
   portals: new Map(),
   buildings: new Map(),
   roadsides: new Map(),
+  spaceObjects: new Map(),
   benchSitUntil: 0,
   /** Server sends seatBench until local movement clears the pose */
   benchSeatIndefinite: false,
@@ -521,6 +524,42 @@ const tilePalette = {
   [TILE.HOME_TREE]: ["#315f45", "#2f7a4e", "#6c4b2e"]
 };
 
+const sciFiTilePalette = {
+  [TILE.GRASS]: ["#2c4b5c", "#5f8ba3", "#183544"],
+  [TILE.DARK_GRASS]: ["#203847", "#4c7386", "#13242f"],
+  [TILE.TREE]: ["#315f45", "#2f7a4e", "#6c4b2e"],
+  [TILE.WATER]: ["#13374d", "#1f7ea7", "#0c2230"],
+  [TILE.STONE]: ["#5f7082", "#a8bacf", "#37485a"],
+  [TILE.PATH]: ["#273744", "#5f8394", "#182530"],
+  [TILE.FLOWERS]: ["#2c4b5c", "#f8d86a", "#7cc7ff"],
+  [TILE.WALL]: ["#2d3440", "#61738a", "#141923"],
+  [TILE.FLOOR]: ["#394657", "#7c93ab", "#1b2430"],
+  [TILE.DOOR]: ["#1b2733", "#67f0ff", "#0d1218"],
+  [TILE.SAND]: ["#3d5563", "#9ed1ea", "#223240"],
+  [TILE.SNOW]: ["#d5eef8", "#f7fbff", "#9eb9c8"],
+  [TILE.LAVA]: ["#4a1b20", "#e0582c", "#ffd06a"],
+  [TILE.PORTAL]: ["#10182a", "#67f0ff", "#e48cff"],
+  [TILE.CARPET]: ["#223447", "#5f8394", "#101922"],
+  [TILE.BED]: ["#415c78", "#8fb8d8", "#223240"],
+  [TILE.TABLE]: ["#2f4558", "#6e8aa0", "#17212c"],
+  [TILE.SHELF]: ["#32465a", "#98c4da", "#141c26"],
+  [TILE.FIREPLACE]: ["#3a2820", "#e05010", "#ffa040"],
+  [TILE.CHAIR]: ["#35495c", "#7d9ab1", "#171f28"],
+  [TILE.CHEST]: ["#2f3d4d", "#7ec8ff", "#d4af37"],
+  [TILE.HOME_TREE]: ["#315f45", "#2f7a4e", "#6c4b2e"],
+  [TILE.VOID]: ["#050916", "#0b1226", "#03050c"],
+  [TILE.METAL]: ["#4b5a6d", "#9fb8cf", "#263243"],
+  [TILE.WALKWAY]: ["#314152", "#7dcfff", "#1a2430"],
+  [TILE.HULL]: ["#233041", "#637a93", "#111721"],
+  [TILE.WINDOW]: ["#09131f", "#67f0ff", "#d8fbff"],
+  [TILE.ENERGY]: ["#103a40", "#67f0ff", "#e8ffff"]
+};
+
+function getTileColors(tile, theme = state.worldTheme) {
+  const themePalette = theme === SCI_FI_THEME ? sciFiTilePalette : tilePalette;
+  return themePalette[tile] || themePalette[TILE.GRASS];
+}
+
 resize();
 wireUi();
 start();
@@ -696,6 +735,7 @@ function handleServerMessage(message) {
     state.joined = true;
     state._reconnectAttempt = 0;
     clearTimeout(state._reconnectTimer);
+    setWorldTheme(message.theme);
     if (typeof message.tickRate === "number") {
       state.debugTickRate = message.tickRate;
     }
@@ -720,6 +760,7 @@ function handleServerMessage(message) {
   }
 
   if (message.type === "teleport") {
+    setWorldTheme(message.theme);
     if (message.portalId === "home") {
       state.pendingHomeTeleportUntil = 0;
     }
@@ -783,6 +824,7 @@ function handleServerMessage(message) {
     indexChunkPortals(message);
     indexChunkBuildings(message);
     indexChunkRoadsides(message);
+    indexChunkSpaceObjects(message);
     state.requestedChunks.delete(key);
     return;
   }
@@ -812,6 +854,7 @@ function handleServerMessage(message) {
     state.chests = message.chests || [];
     state.groundItems = message.groundItems || [];
     updateSelfInventory();
+    syncWorldThemeFromSelf();
     if (state.activeWindow === "equipment") renderEquipment();
     if (state.activeWindow === "talent") renderTalentPanel();
     renderBags();
@@ -3722,6 +3765,7 @@ function clearWorldState() {
   state.portals.clear();
   state.buildings.clear();
   state.roadsides.clear();
+  state.spaceObjects.clear();
   state.requestedChunks.clear();
   state.population = 0;
   state.hoverTooltipText = "";
@@ -3740,6 +3784,7 @@ function clearWorldState() {
   playerContextMenu?.classList.add("hidden");
   npcContextMenu?.classList.add("hidden");
   state.fountainToss = null;
+  setWorldTheme("fantasy");
 }
 
 function sendAttack() {
@@ -3823,6 +3868,29 @@ function indexChunkRoadsides(chunk) {
   for (const feat of chunk.roadsides || []) {
     if (feat && feat.id) {
       state.roadsides.set(String(feat.id), feat);
+    }
+  }
+}
+
+function indexChunkSpaceObjects(chunk) {
+  const minX = chunk.cx * CHUNK_SIZE;
+  const minY = chunk.cy * CHUNK_SIZE;
+  const maxX = minX + CHUNK_SIZE;
+  const maxY = minY + CHUNK_SIZE;
+
+  for (const [id, obj] of [...state.spaceObjects.entries()]) {
+    const spanX = Math.max(1, Number(obj.w ?? obj.radius ?? 1) * 2);
+    const spanY = Math.max(1, Number(obj.h ?? obj.radius ?? 1) * 2);
+    const ox = Number(obj.x);
+    const oy = Number(obj.y);
+    if (ox - spanX / 2 < maxX && ox + spanX / 2 > minX && oy - spanY / 2 < maxY && oy + spanY / 2 > minY) {
+      state.spaceObjects.delete(id);
+    }
+  }
+
+  for (const obj of chunk.spaceObjects || []) {
+    if (obj && obj.id) {
+      state.spaceObjects.set(String(obj.id), obj);
     }
   }
 }
@@ -4906,7 +4974,7 @@ function draw() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   /** Solid fill so zoomed-out letterboxing matches the game frame (no “inner screen” seam). */
-  ctx.fillStyle = "#132118";
+  ctx.fillStyle = state.worldTheme === SCI_FI_THEME ? "#02050d" : "#132118";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   if (!state.joined) {
@@ -5242,11 +5310,212 @@ function drawWorld() {
   const maxTileX = (maxChunkX + 1) * CHUNK_SIZE + 1;
   const minTileY = minChunkY * CHUNK_SIZE - 1;
   const maxTileY = (maxChunkY + 1) * CHUNK_SIZE + 1;
+  if (state.worldTheme === SCI_FI_THEME) {
+    drawSpaceBackdrop(minChunkX, maxChunkX, minChunkY, maxChunkY);
+  }
   drawWorldAssets(minTileX, maxTileX, minTileY, maxTileY);
+  drawSpaceObjects();
   drawWorldLoot();
   drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY);
   drawRoadsideFeatures(minTileX, maxTileX, minTileY, maxTileY);
   drawTraderCaravans(minTileX, maxTileX, minTileY, maxTileY);
+}
+
+function drawSpaceBackdrop(minChunkX, maxChunkX, minChunkY, maxChunkY, fillBackground = false) {
+  if (fillBackground) {
+    const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    grad.addColorStop(0, "#02050d");
+    grad.addColorStop(0.45, "#08101f");
+    grad.addColorStop(1, "#03050a");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+
+  const zoom = state.zoom || 1;
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const minTileX = minChunkX * CHUNK_SIZE - 6;
+  const maxTileX = (maxChunkX + 1) * CHUNK_SIZE + 6;
+  const minTileY = minChunkY * CHUNK_SIZE - 6;
+  const maxTileY = (maxChunkY + 1) * CHUNK_SIZE + 6;
+
+  for (let y = minTileY; y <= maxTileY; y += 1) {
+    for (let x = minTileX; x <= maxTileX; x += 1) {
+      const wx = x * TILE_SIZE - state.camera.x + halfW;
+      const wy = y * TILE_SIZE - state.camera.y + halfH;
+      const star = hash2(x, y, 9901);
+      if (star < 0.975) {
+        continue;
+      }
+      const size = star > 0.995 ? 2 : 1;
+      ctx.fillStyle = star > 0.995 ? "rgba(120,240,255,0.95)" : "rgba(240,248,255,0.72)";
+      ctx.fillRect(wx, wy, size, size);
+    }
+  }
+
+  const haze = ctx.createRadialGradient(halfW, halfH, 0, halfW, halfH, Math.max(canvas.width, canvas.height) * (0.32 + zoom * 0.06));
+  haze.addColorStop(0, "rgba(99, 175, 255, 0.10)");
+  haze.addColorStop(0.55, "rgba(8, 12, 24, 0.04)");
+  haze.addColorStop(1, "rgba(0, 0, 0, 0)");
+  ctx.fillStyle = haze;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+function drawSpaceObjects() {
+  if (state.worldTheme !== SCI_FI_THEME) {
+    return;
+  }
+
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const items = [...state.spaceObjects.values()].sort((a, b) => {
+    const ak = a.kind || a.type || "";
+    const bk = b.kind || b.type || "";
+    return ak.localeCompare(bk);
+  });
+
+  for (const obj of items) {
+    if (!obj || !Number.isFinite(obj.x) || !Number.isFinite(obj.y)) {
+      continue;
+    }
+    const sx = obj.x * TILE_SIZE - state.camera.x + halfW;
+    const sy = obj.y * TILE_SIZE - state.camera.y + halfH;
+    if (obj.kind === "planet" || obj.type === "planet") {
+      drawPlanetObject(obj, sx, sy);
+    } else if (obj.kind === "lane" || obj.type === "lane") {
+      drawShipLaneObject(obj, halfW, halfH);
+    } else {
+      drawStationObject(obj, sx, sy);
+    }
+  }
+}
+
+function drawStationObject(obj, sx, sy) {
+  const w = Math.max(12, Number(obj.w || 16)) * TILE_SIZE;
+  const h = Math.max(10, Number(obj.h || 12)) * TILE_SIZE;
+  const x = sx - w / 2;
+  const y = sy - h / 2;
+  ctx.save();
+  drawEllipseShadow(x - 8, y + h * 0.68, w + 16, 10, 0.26);
+  ctx.fillStyle = "#233141";
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = "#5e738b";
+  ctx.fillRect(x + 6, y + 6, w - 12, h - 12);
+  ctx.fillStyle = "#0d1823";
+  ctx.fillRect(x + 10, y + 10, w - 20, h - 20);
+  ctx.fillStyle = "#67f0ff";
+  ctx.fillRect(x + 8, y + h / 2 - 2, w - 16, 4);
+  ctx.fillStyle = "#17222f";
+  ctx.fillRect(x + w * 0.43, y - 12, w * 0.14, 12);
+  ctx.fillStyle = "#9edfff";
+  ctx.fillRect(x + w * 0.43 + 1, y - 22, w * 0.12, 10);
+  ctx.fillStyle = "rgba(103,240,255,0.18)";
+  ctx.fillRect(x + 12, y + 12, w - 24, h - 24);
+  ctx.restore();
+  ctx.save();
+  ctx.font = "bold 11px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.strokeStyle = "rgba(4,8,16,0.85)";
+  ctx.lineWidth = 3;
+  ctx.fillStyle = "#d2f6ff";
+  ctx.strokeText(obj.name || "Station", sx, y - 6);
+  ctx.fillText(obj.name || "Station", sx, y - 6);
+  ctx.restore();
+}
+
+function drawPlanetObject(obj, sx, sy) {
+  const radius = Math.max(20, Number(obj.radius || 48)) * TILE_SIZE;
+  const gradient = ctx.createRadialGradient(sx - radius * 0.28, sy - radius * 0.34, radius * 0.14, sx, sy, radius);
+  if ((obj.type || "").toLowerCase() === "ice") {
+    gradient.addColorStop(0, "#f8fdff");
+    gradient.addColorStop(0.52, "#9fd8ff");
+    gradient.addColorStop(1, "#335a7d");
+  } else if ((obj.type || "").toLowerCase() === "desert") {
+    gradient.addColorStop(0, "#ffe0a6");
+    gradient.addColorStop(0.52, "#d3a15b");
+    gradient.addColorStop(1, "#7c4e2c");
+  } else {
+    gradient.addColorStop(0, "#daf7b0");
+    gradient.addColorStop(0.45, "#7ecf8d");
+    gradient.addColorStop(1, "#244d3b");
+  }
+
+  ctx.save();
+  drawEllipseShadow(sx - radius, sy + radius * 0.78, radius * 2, 16, 0.3);
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(sx, sy, radius - 2, 0, Math.PI * 2);
+  ctx.clip();
+  for (let i = -4; i <= 4; i += 1) {
+    const bandY = sy - radius * 0.75 + (i + 4) * (radius * 0.16);
+    ctx.fillStyle = i % 2 === 0 ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.08)";
+    ctx.fillRect(sx - radius, bandY, radius * 2, radius * 0.09);
+  }
+  for (let i = 0; i < 10; i += 1) {
+    const px = sx - radius * 0.7 + hash2(i, obj.seed || 1, 1001) * radius * 1.4;
+    const py = sy - radius * 0.7 + hash2(i, obj.seed || 1, 1002) * radius * 1.4;
+    ctx.fillStyle = "rgba(255,255,255,0.10)";
+    ctx.fillRect(px, py, 5, 2);
+  }
+  ctx.restore();
+  ctx.strokeStyle = "rgba(255,255,255,0.22)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+  ctx.save();
+  ctx.font = "bold 11px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.strokeStyle = "rgba(4,8,16,0.85)";
+  ctx.lineWidth = 3;
+  ctx.fillStyle = "#d2f6ff";
+  ctx.strokeText(obj.name || "Planet", sx, sy + radius + 16);
+  ctx.fillText(obj.name || "Planet", sx, sy + radius + 16);
+  ctx.restore();
+}
+
+function drawShipLaneObject(obj, halfW, halfH) {
+  const from = obj.from;
+  const to = obj.to;
+  if (!from || !to) {
+    return;
+  }
+  const fx = from.x * TILE_SIZE - state.camera.x + halfW;
+  const fy = from.y * TILE_SIZE - state.camera.y + halfH;
+  const tx = to.x * TILE_SIZE - state.camera.x + halfW;
+  const ty = to.y * TILE_SIZE - state.camera.y + halfH;
+  const now = performance.now() / 1000;
+  const travel = (Math.sin(now * 0.24 + hash2(from.x, to.y, 1003) * Math.PI * 2) + 1) / 2;
+  const shipX = fx + (tx - fx) * travel;
+  const shipY = fy + (ty - fy) * travel;
+
+  ctx.save();
+  ctx.strokeStyle = "rgba(103,240,255,0.18)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(fx, fy);
+  ctx.lineTo(tx, ty);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(103,240,255,0.45)";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(fx, fy);
+  ctx.lineTo(tx, ty);
+  ctx.stroke();
+  ctx.fillStyle = "#dffaff";
+  ctx.beginPath();
+  ctx.arc(shipX, shipY, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#67f0ff";
+  ctx.beginPath();
+  ctx.arc(shipX, shipY, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 /** Building whose inner floor contains this world point (matches cutaway / interior rules). */
@@ -5303,7 +5572,7 @@ function drawTile(tile, sx, sy, tx, ty) {
     return;
   }
 
-  const colors = tilePalette[tile] || tilePalette[TILE.GRASS];
+  const colors = getTileColors(tile);
   ctx.fillStyle = colors[0];
   ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
 
@@ -5321,7 +5590,7 @@ function drawTile(tile, sx, sy, tx, ty) {
   }
 
   if (tile === TILE.FLOWERS) {
-    drawGroundPatch(TILE.GRASS, sx, sy, tx, ty, tilePalette[TILE.GRASS]);
+    drawGroundPatch(TILE.GRASS, sx, sy, tx, ty, getTileColors(TILE.GRASS));
     drawFlowerPatch(sx, sy, tx, ty);
     return;
   }
@@ -5381,7 +5650,7 @@ function drawTile(tile, sx, sy, tx, ty) {
   }
 
   if (tile === TILE.PORTAL) {
-    drawGroundPatch(TILE.STONE, sx, sy, tx, ty, tilePalette[TILE.STONE]);
+    drawGroundPatch(TILE.STONE, sx, sy, tx, ty, getTileColors(TILE.STONE));
     return;
   }
 }
@@ -7223,7 +7492,7 @@ function scatterPixels(sx, sy, tx, ty, color, count, size) {
 }
 
 function drawInteriorTile(tile, sx, sy, tx, ty) {
-  const colors = tilePalette[tile] || tilePalette[TILE.FLOOR];
+  const colors = getTileColors(tile);
 
   if (tile === TILE.WALL) {
     ctx.fillStyle = "#2b2630";
@@ -7501,7 +7770,7 @@ function drawWater(sx, sy, tx, ty, colors) {
 }
 
 function drawCoveredBuildingGround(sx, sy, tx, ty) {
-  const colors = tilePalette[TILE.GRASS];
+  const colors = getTileColors(TILE.GRASS);
   ctx.fillStyle = colors[0];
   ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
   scatterPixels(sx, sy, tx, ty, colors[1], 2, 2);
@@ -7549,6 +7818,22 @@ function drawWorldAssets(minTileX, maxTileX, minTileY, maxTileY) {
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
 
+  if (state.worldTheme === SCI_FI_THEME) {
+    for (let ty = minTileY; ty <= maxTileY; ty += 1) {
+      for (let tx = minTileX; tx <= maxTileX; tx += 1) {
+        const tile = getTile(tx, ty);
+        const sx = Math.floor(tx * TILE_SIZE - state.camera.x + halfW);
+        const sy = Math.floor(ty * TILE_SIZE - state.camera.y + halfH);
+        if ((tile === TILE.METAL || tile === TILE.WALKWAY) && hash2(tx, ty, 801) > 0.96) {
+          drawSciFiPanelLight(sx, sy, tx, ty);
+        } else if (tile === TILE.ENERGY && hash2(tx, ty, 802) > 0.7) {
+          drawSciFiBeacon(sx, sy, tx, ty);
+        }
+      }
+    }
+    return;
+  }
+
   for (let ty = minTileY; ty <= maxTileY; ty += 1) {
     for (let tx = minTileX; tx <= maxTileX; tx += 1) {
       const tile = getTile(tx, ty);
@@ -7571,6 +7856,28 @@ function drawWorldAssets(minTileX, maxTileX, minTileY, maxTileY) {
       }
     }
   }
+}
+
+function drawSciFiPanelLight(sx, sy, tx, ty) {
+  const flicker = 0.4 + hash2(tx, ty, 803) * 0.6;
+  ctx.fillStyle = "rgba(103,240,255,0.18)";
+  ctx.fillRect(sx + 11, sy + 7, 10, 4);
+  ctx.fillStyle = `rgba(103,240,255,${0.2 + flicker * 0.35})`;
+  ctx.fillRect(sx + 14, sy + 12, 4, 8);
+  ctx.fillStyle = "rgba(190,245,255,0.25)";
+  ctx.fillRect(sx + 8, sy + 5, 2, 2);
+}
+
+function drawSciFiBeacon(sx, sy, tx, ty) {
+  const pulse = 0.5 + Math.sin(performance.now() / 300 + hash2(tx, ty, 804) * Math.PI * 2) * 0.5;
+  ctx.save();
+  ctx.fillStyle = "rgba(103,240,255,0.14)";
+  ctx.fillRect(sx + 8, sy + 8, 16, 12);
+  ctx.fillStyle = `rgba(103,240,255,${0.35 + pulse * 0.35})`;
+  ctx.fillRect(sx + 14, sy + 3, 4, 20);
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.fillRect(sx + 15, sy + 5, 2, 8);
+  ctx.restore();
 }
 
 function drawTownPlanter(sx, sy, tx, ty) {
@@ -7645,6 +7952,9 @@ function drawCenterTreehouse(sx, sy) {
 }
 
 function drawTreeCanopies() {
+  if (state.worldTheme === SCI_FI_THEME) {
+    return;
+  }
   const zoom = state.zoom || 1;
   const screenHalfW = canvas.width / 2;
   const screenHalfH = canvas.height / 2;
@@ -8859,6 +9169,11 @@ function drawPortal(sx, sy, tx, ty) {
   const portal = getPortalAtTile(tx, ty);
   if (!portal) return;
 
+  if (portal.style === "stargate") {
+    drawStargatePortal(sx, sy, tx, ty, portal);
+    return;
+  }
+
   const time = performance.now() / 1000;
   const color = portal.color || "#75f0ff";
   const T = TILE_SIZE;
@@ -8973,12 +9288,84 @@ function drawPortal(sx, sy, tx, ty) {
   ctx.fillText(portal.name, cx, baseY + 18);
 }
 
-function drawPortalEventHorizon(cx, cy, r, portal, time) {
+function drawStargatePortal(sx, sy, tx, ty, portal) {
+  const time = performance.now() / 1000;
+  const color = portal.color || "#67f0ff";
+  const T = TILE_SIZE;
+  const cx = sx + T * 0.5;
+  const cy = sy + T * 0.5;
+  const outerR = T * 1.75;
+  const innerR = T * 1.18;
+  const pulse = 0.5 + Math.sin(time * 2.8) * 0.5;
+
+  drawEllipseShadow(cx - outerR, cy + outerR * 0.66, outerR * 2, 18, 0.4);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
+  ctx.clip();
+  drawPortalEventHorizon(cx, cy, innerR, portal, time, true);
+  ctx.restore();
+
+  ctx.save();
+  ctx.strokeStyle = "#1a2434";
+  ctx.lineWidth = 16;
+  ctx.beginPath();
+  ctx.arc(cx, cy, outerR - 2, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = "#415369";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(cx, cy, outerR - 2, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  ctx.globalAlpha = 0.7 + pulse * 0.2;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 12;
+  ctx.beginPath();
+  ctx.arc(cx, cy, outerR - 6, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx, cy, innerR + 8, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.save();
+  ctx.fillStyle = "#dffaff";
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 8;
+  for (let i = 0; i < 12; i += 1) {
+    const a = time * 0.7 + (i / 12) * Math.PI * 2;
+    const r = outerR - 7 + Math.sin(time * 3 + i) * 1.5;
+    ctx.fillRect(cx + Math.cos(a) * r - 1, cy + Math.sin(a) * r - 1, 2, 2);
+  }
+  ctx.restore();
+
+  ctx.save();
+  ctx.font = "bold 11px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(8,12,18,0.85)";
+  ctx.fillStyle = color;
+  ctx.strokeText(portal.name, cx, cy + outerR + 18);
+  ctx.fillText(portal.name, cx, cy + outerR + 18);
+  ctx.restore();
+}
+
+function drawPortalEventHorizon(cx, cy, r, portal, time, stargate = false) {
   // Deep arcane void
   const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-  grad.addColorStop(0, "#0a0420");
-  grad.addColorStop(0.55, "#0e0828");
-  grad.addColorStop(1, "#18103a");
+  if (stargate) {
+    grad.addColorStop(0, "#061520");
+    grad.addColorStop(0.45, "#0b3142");
+    grad.addColorStop(1, "#050b12");
+  } else {
+    grad.addColorStop(0, "#0a0420");
+    grad.addColorStop(0.55, "#0e0828");
+    grad.addColorStop(1, "#18103a");
+  }
   ctx.fillStyle = grad;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
@@ -9001,7 +9388,7 @@ function drawPortalEventHorizon(cx, cy, r, portal, time) {
         const tile = portal.preview.tiles[py * size + px];
         const waveX = Math.sin(time * 1.6 + py * 0.4 + px * 0.2) * 3 * (0.3 + dist);
         const waveY = Math.cos(time * 1.2 + px * 0.3 + py * 0.25) * 2.5 * (0.3 + dist);
-        drawPortalPreviewTile(tile, ox + px * cellW + waveX, oy + py * cellH + waveY, cellW + 1, cellH + 1, px, py, time);
+        drawPortalPreviewTile(tile, ox + px * cellW + waveX, oy + py * cellH + waveY, cellW + 1, cellH + 1, px, py, time, portal?.previewTheme);
       }
     }
   }
@@ -9025,55 +9412,74 @@ function drawPortalEventHorizon(cx, cy, r, portal, time) {
   }
   ctx.globalAlpha = 1;
 
-  // Rotating spiral arms
-  ctx.save();
-  for (let arm = 0; arm < 2; arm += 1) {
-    ctx.beginPath();
-    const armOffset = arm * Math.PI;
-    for (let step = 0; step <= 40; step += 1) {
-      const t = step / 40;
-      const angle = time * 0.9 + armOffset + t * Math.PI * 3.5;
-      const sr = t * r * 0.88;
-      const spx = cx + Math.cos(angle) * sr;
-      const spy = cy + Math.sin(angle) * sr;
-      if (step === 0) ctx.moveTo(spx, spy);
-      else ctx.lineTo(spx, spy);
+  if (stargate) {
+    ctx.save();
+    ctx.strokeStyle = `rgba(${rgb}, 0.42)`;
+    ctx.lineWidth = 3;
+    for (let ring = 0; ring < 3; ring += 1) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * (0.38 + ring * 0.18), 0, Math.PI * 2);
+      ctx.stroke();
     }
-    ctx.strokeStyle = `rgba(${rgb}, 0.25)`;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-  }
-  ctx.restore();
+    for (let spokes = 0; spokes < 10; spokes += 1) {
+      const a = time * 0.7 + (spokes / 10) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * r * 0.18, cy + Math.sin(a) * r * 0.18);
+      ctx.lineTo(cx + Math.cos(a) * r * 0.88, cy + Math.sin(a) * r * 0.88);
+      ctx.stroke();
+    }
+    ctx.restore();
+  } else {
+    // Rotating spiral arms
+    ctx.save();
+    for (let arm = 0; arm < 2; arm += 1) {
+      ctx.beginPath();
+      const armOffset = arm * Math.PI;
+      for (let step = 0; step <= 40; step += 1) {
+        const t = step / 40;
+        const angle = time * 0.9 + armOffset + t * Math.PI * 3.5;
+        const sr = t * r * 0.88;
+        const spx = cx + Math.cos(angle) * sr;
+        const spy = cy + Math.sin(angle) * sr;
+        if (step === 0) ctx.moveTo(spx, spy);
+        else ctx.lineTo(spx, spy);
+      }
+      ctx.strokeStyle = `rgba(${rgb}, 0.25)`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    ctx.restore();
 
-  // Central arcane glow
-  const coreGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 0.45);
-  coreGrad.addColorStop(0, `rgba(255, 255, 255, 0.18)`);
-  coreGrad.addColorStop(0.5, `rgba(${rgb}, 0.12)`);
-  coreGrad.addColorStop(1, `rgba(${rgb}, 0)`);
-  ctx.fillStyle = coreGrad;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r * 0.45, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Floating arcane motes
-  for (let i = 0; i < 6; i += 1) {
-    const moteAngle = time * 0.5 + i * (Math.PI / 3);
-    const moteR = r * 0.2 + Math.sin(time * 1.4 + i * 1.1) * r * 0.3;
-    const mx = cx + Math.cos(moteAngle) * moteR;
-    const my = cy + Math.sin(moteAngle) * moteR;
-    const brightness = 0.5 + Math.sin(time * 2.5 + i * 0.9) * 0.4;
-    ctx.shadowColor = `rgba(${rgb}, 0.9)`;
-    ctx.shadowBlur = 6;
-    ctx.fillStyle = `rgba(255,255,255,${brightness * 0.7})`;
+    // Central arcane glow
+    const coreGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 0.45);
+    coreGrad.addColorStop(0, `rgba(255, 255, 255, 0.18)`);
+    coreGrad.addColorStop(0.5, `rgba(${rgb}, 0.12)`);
+    coreGrad.addColorStop(1, `rgba(${rgb}, 0)`);
+    ctx.fillStyle = coreGrad;
     ctx.beginPath();
-    ctx.arc(mx, my, 2, 0, Math.PI * 2);
+    ctx.arc(cx, cy, r * 0.45, 0, Math.PI * 2);
     ctx.fill();
+
+    // Floating arcane motes
+    for (let i = 0; i < 6; i += 1) {
+      const moteAngle = time * 0.5 + i * (Math.PI / 3);
+      const moteR = r * 0.2 + Math.sin(time * 1.4 + i * 1.1) * r * 0.3;
+      const mx = cx + Math.cos(moteAngle) * moteR;
+      const my = cy + Math.sin(moteAngle) * moteR;
+      const brightness = 0.5 + Math.sin(time * 2.5 + i * 0.9) * 0.4;
+      ctx.shadowColor = `rgba(${rgb}, 0.9)`;
+      ctx.shadowBlur = 6;
+      ctx.fillStyle = `rgba(255,255,255,${brightness * 0.7})`;
+      ctx.beginPath();
+      ctx.arc(mx, my, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
   }
-  ctx.shadowBlur = 0;
 }
 
-function drawPortalPreviewTile(tile, x, y, w, h, px, py, time) {
-  const colors = tilePalette[tile] || tilePalette[TILE.GRASS];
+function drawPortalPreviewTile(tile, x, y, w, h, px, py, time, theme = state.worldTheme) {
+  const colors = getTileColors(tile, theme);
   ctx.fillStyle = colors[0];
   ctx.fillRect(x, y, w, h);
 
@@ -9392,4 +9798,32 @@ function makeDraggable(panel) {
 
 function setStatus(text) {
   statusEl.textContent = text;
+}
+
+function setWorldTheme(theme) {
+  const next = theme === SCI_FI_THEME ? SCI_FI_THEME : "fantasy";
+  if (state.worldTheme === next) {
+    return;
+  }
+  state.worldTheme = next;
+  document.body.classList.toggle("theme-sci-fi", next === SCI_FI_THEME);
+  if (next === SCI_FI_THEME) {
+    document.body.classList.remove("theme-fantasy");
+  } else {
+    document.body.classList.add("theme-fantasy");
+  }
+  chunkCanvasCache.clear();
+}
+
+function syncWorldThemeFromSelf() {
+  const self = state.players.get(state.selfId);
+  if (!self) {
+    return;
+  }
+  const cx = Math.floor(self.x / CHUNK_SIZE);
+  const cy = Math.floor(self.y / CHUNK_SIZE);
+  const chunk = state.chunks.get(chunkKey(cx, cy));
+  if (chunk?.theme) {
+    setWorldTheme(chunk.theme);
+  }
 }

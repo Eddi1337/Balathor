@@ -24,7 +24,13 @@ const TILE = {
   /** Player-owned home storage (single tile, top-right interior). */
   CHEST: 20,
   /** Compact home-teleport tree (single tile, top-left interior). */
-  HOME_TREE: 21
+  HOME_TREE: 21,
+  VOID: 22,
+  METAL: 23,
+  WALKWAY: 24,
+  HULL: 25,
+  WINDOW: 26,
+  ENERGY: 27
 };
 
 const BLOCKED_TILES = new Set([
@@ -37,7 +43,10 @@ const BLOCKED_TILES = new Set([
   TILE.FIREPLACE,
   TILE.CHAIR,
   TILE.CHEST,
-  TILE.HOME_TREE
+  TILE.HOME_TREE,
+  TILE.VOID,
+  TILE.HULL,
+  TILE.WINDOW
 ]);
 const PORTAL_RADIUS = 1.6;
 const DOOR_RADIUS = 0.52;
@@ -50,6 +59,41 @@ const PROCEDURAL_INTERIOR_GRID_OFFSET = 512;
 /** Hub plaza only (tree / fountain circle). Combat allowed beyond this in the village ring. */
 const STARTING_AREA = { x: 0, y: 0, radius: 26 };
 const START_SPAWN = { x: 0, y: 0 };
+const SCI_FI_THEME = "sci-fi";
+const SCI_FI_SECTOR = Object.freeze({
+  xMin: 1500,
+  xMax: 2340,
+  yMin: -560,
+  yMax: 560
+});
+const SCI_FI_STARGATE_PORTAL = Object.freeze({
+  id: "portal_stargate",
+  name: "Stargate",
+  x: 0,
+  y: -178,
+  targetX: 1824,
+  targetY: 0,
+  color: "#67f0ff",
+  style: "stargate"
+});
+const SCI_FI_STATIONS = Object.freeze([
+  { id: "station_nova_dock", name: "Nova Dock", x: 1824, y: 0, w: 30, h: 18, kind: "spawn" },
+  { id: "station_orbit_arc", name: "Orbit Arc", x: 1982, y: -156, w: 20, h: 14, kind: "orbital" },
+  { id: "station_helios_spire", name: "Helios Spire", x: 1980, y: 156, w: 20, h: 14, kind: "orbital" },
+  { id: "station_lumen_hub", name: "Lumen Hub", x: 1696, y: 120, w: 18, h: 12, kind: "trade" },
+  { id: "station_gate_link", name: "Gate Link", x: 1648, y: 0, w: 14, h: 10, kind: "gate" }
+]);
+const SCI_FI_PLANETS = Object.freeze([
+  { id: "planet_aurelia", name: "Aurelia", x: 2142, y: -382, radius: 74, seed: 8128, type: "lush" },
+  { id: "planet_icefall", name: "Icefall", x: 2214, y: 180, radius: 64, seed: 9181, type: "ice" },
+  { id: "planet_rust", name: "Rust", x: 2050, y: 416, radius: 58, seed: 10201, type: "desert" }
+]);
+const SCI_FI_LANES = Object.freeze([
+  { id: "lane_nova_orbit", from: "station_nova_dock", to: "station_orbit_arc" },
+  { id: "lane_nova_helios", from: "station_nova_dock", to: "station_helios_spire" },
+  { id: "lane_nova_lumen", from: "station_nova_dock", to: "station_lumen_hub" },
+  { id: "lane_nova_gate", from: "station_nova_dock", to: "station_gate_link" }
+]);
 
 const { computeHubDistrict, HUB_CLEARING_RADIUS: HUB_TOWN_GRASS_RADIUS } = require("./hubRoundTown.js");
 /** Walled procedural hub + arterial sets (paths never overlap building rects). */
@@ -66,6 +110,118 @@ function hash2(x, y, seed = 1337) {
   h = (h ^ (h >>> 13)) >>> 0;
   h = Math.imul(h, 1274126177) >>> 0;
   return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+}
+
+function isSciFiSector(x, y) {
+  return x >= SCI_FI_SECTOR.xMin && x <= SCI_FI_SECTOR.xMax && y >= SCI_FI_SECTOR.yMin && y <= SCI_FI_SECTOR.yMax;
+}
+
+function sciFiStationById(id) {
+  return SCI_FI_STATIONS.find((station) => station.id === id) || null;
+}
+
+function sciFiThemeForPoint(x, y) {
+  return isSciFiSector(x, y) ? SCI_FI_THEME : "fantasy";
+}
+
+function sciFiStationAt(x, y) {
+  for (const station of SCI_FI_STATIONS) {
+    const halfW = Math.floor(station.w / 2);
+    const halfH = Math.floor(station.h / 2);
+    if (x >= station.x - halfW && x <= station.x + halfW && y >= station.y - halfH && y <= station.y + halfH) {
+      return station;
+    }
+  }
+  return null;
+}
+
+function sciFiPlanetAt(x, y) {
+  for (const planet of SCI_FI_PLANETS) {
+    const dx = x - planet.x;
+    const dy = y - planet.y;
+    if (dx * dx + dy * dy <= planet.radius * planet.radius) {
+      return planet;
+    }
+  }
+  return null;
+}
+
+function sciFiPlanetSurfaceTile(planet, x, y) {
+  const detail = hash2(x, y, planet.seed);
+  const band = hash2(x + planet.seed, y - planet.seed, planet.seed + 11);
+  if (planet.type === "lush") {
+    if (detail > 0.94) return TILE.STONE;
+    if (band > 0.76) return TILE.FLOWERS;
+    return band > 0.42 ? TILE.GRASS : TILE.DARK_GRASS;
+  }
+  if (planet.type === "ice") {
+    if (detail > 0.94) return TILE.STONE;
+    if (band > 0.62) return TILE.SNOW;
+    return TILE.GRASS;
+  }
+  if (planet.type === "desert") {
+    if (detail > 0.93) return TILE.STONE;
+    if (band > 0.82) return TILE.SAND;
+    return TILE.DARK_GRASS;
+  }
+  if (detail > 0.95) return TILE.STONE;
+  return TILE.GRASS;
+}
+
+function sciFiObjectTouchesChunk(obj, startX, startY, endX, endY) {
+  const spanX = Math.max(1, Number(obj.w ?? obj.radius ?? 1) * 2);
+  const spanY = Math.max(1, Number(obj.h ?? obj.radius ?? 1) * 2);
+  const minX = Number(obj.x) - spanX / 2;
+  const minY = Number(obj.y) - spanY / 2;
+  const maxX = Number(obj.x) + spanX / 2;
+  const maxY = Number(obj.y) + spanY / 2;
+  return minX < endX && maxX > startX && minY < endY && maxY > startY;
+}
+
+function getSciFiObjectsInChunk(cx, cy) {
+  const startX = cx * CHUNK_SIZE;
+  const startY = cy * CHUNK_SIZE;
+  const endX = startX + CHUNK_SIZE;
+  const endY = startY + CHUNK_SIZE;
+  const out = [];
+
+  for (const station of SCI_FI_STATIONS) {
+    const obj = { ...station, kind: "station" };
+    if (sciFiObjectTouchesChunk(obj, startX, startY, endX, endY)) {
+      out.push(obj);
+    }
+  }
+
+  for (const planet of SCI_FI_PLANETS) {
+    const obj = { ...planet, kind: "planet" };
+    if (sciFiObjectTouchesChunk(obj, startX, startY, endX, endY)) {
+      out.push(obj);
+    }
+  }
+
+  for (const lane of SCI_FI_LANES) {
+    const from = sciFiStationById(lane.from);
+    const to = sciFiStationById(lane.to);
+    if (!from || !to) {
+      continue;
+    }
+    const minX = Math.min(from.x, to.x) - 2;
+    const minY = Math.min(from.y, to.y) - 2;
+    const maxX = Math.max(from.x, to.x) + 2;
+    const maxY = Math.max(from.y, to.y) + 2;
+    if (minX < endX && maxX > startX && minY < endY && maxY > startY) {
+      out.push({
+        id: lane.id,
+        kind: "lane",
+        type: "lane",
+        from,
+        to,
+        color: "#72d7ff"
+      });
+    }
+  }
+
+  return out;
 }
 
 /** Distant realms connected by portals — not part of walled hub authoring. */
@@ -296,9 +452,11 @@ const PORTALS = [
   { id: "portal_oasis", name: "Oasis Gate",  x:  46, y: -76, targetX: 600, targetY: 522, color: "#f2c45f" },
   { id: "portal_frost", name: "Frost Gate",   x: -46, y: -76, targetX: -600, targetY: -458, color: "#9ee7ff" },
   { id: "portal_ember", name: "Ember Gate",   x:   0, y: -76, targetX: 580, targetY: -503, color: "#ff7a45" },
+  { id: "portal_stargate", name: "Stargate",   x:   0, y: -178, targetX: 1824, targetY: 0, color: "#67f0ff", style: "stargate" },
   { id: "portal_hub_oasis", name: "Oasis Gate", x: 600, y: 522, targetX: 46, targetY: -76, color: "#f2c45f" },
   { id: "portal_hub_frost", name: "Frost Gate", x: -600, y: -458, targetX: -46, targetY: -76, color: "#9ee7ff" },
   { id: "portal_hub_ember", name: "Ember Gate", x: 580, y: -503, targetX: 0, targetY: -76, color: "#ff7a45" },
+  { id: "portal_stargate_return", name: "Stargate", x: 1824, y: 0, targetX: 0, targetY: -178, color: "#67f0ff", style: "stargate" },
 ];
 
 /** Stone disk under portals (tile-space, portal at integer lattice point). */
@@ -1294,7 +1452,23 @@ function lerp(a, b, t) {
   return a + (b - a) * t;
 }
 
+function getWorldThemeAt(x, y) {
+  return sciFiThemeForPoint(x, y);
+}
+
 function getBiome(x, y) {
+  if (isSciFiSector(x, y)) {
+    const station = sciFiStationAt(x, y);
+    if (station) {
+      return station.kind === "spawn" ? "station_spawn" : "station";
+    }
+    const planet = sciFiPlanetAt(x, y);
+    if (planet) {
+      return planet.type || "planet";
+    }
+    return "space";
+  }
+
   // Deep biome cores checked first — portal-destination territories
   if (x > 350 && y > 265) return "desert";
   if (x < -350 && y < -265) return "frost";
@@ -1352,6 +1526,58 @@ function generateExteriorTile(x, y) {
   const buildingTile = getBuildingTile(x, y);
   if (buildingTile !== null) {
     return buildingTile;
+  }
+
+  if (isSciFiSector(x, y)) {
+    const station = sciFiStationAt(x, y);
+    if (station) {
+      const dx = x - station.x;
+      const dy = y - station.y;
+      const dist = Math.hypot(dx, dy);
+      const shell = Math.max(station.w, station.h) / 2;
+      if (station.kind === "spawn" && dist < shell * 0.28) {
+        return TILE.ENERGY;
+      }
+      if (Math.abs(dx) <= 1 || Math.abs(dy) <= 1) {
+        return TILE.WALKWAY;
+      }
+      if (Math.abs(dx) === Math.floor(station.w / 2) || Math.abs(dy) === Math.floor(station.h / 2)) {
+        return TILE.HULL;
+      }
+      if (dist > shell * 0.72 && dist < shell * 0.92) {
+        return TILE.WINDOW;
+      }
+      return TILE.METAL;
+    }
+
+    const planet = sciFiPlanetAt(x, y);
+    if (planet) {
+      const localX = x - planet.x;
+      const localY = y - planet.y;
+      const dist = Math.hypot(localX, localY);
+      if (dist > planet.radius - 3) {
+        return TILE.HULL;
+      }
+      if (dist > planet.radius - 8 && hash2(x, y, planet.seed + 19) > 0.74) {
+        return TILE.WALKWAY;
+      }
+      return sciFiPlanetSurfaceTile(planet, x, y);
+    }
+
+    const laneDistSq = SCI_FI_LANES.reduce((best, lane) => {
+      const from = sciFiStationById(lane.from);
+      const to = sciFiStationById(lane.to);
+      if (!from || !to) {
+        return best;
+      }
+      const d = distPointToSegmentSq(x + 0.5, y + 0.5, from.x + 0.5, from.y + 0.5, to.x + 0.5, to.y + 0.5);
+      return Math.min(best, d);
+    }, Number.POSITIVE_INFINITY);
+    if (laneDistSq < 4.1 * 4.1) {
+      return laneDistSq < 1.6 * 1.6 ? TILE.ENERGY : TILE.WALKWAY;
+    }
+
+    return TILE.VOID;
   }
 
   const tiGrid = Math.floor(x);
@@ -1550,6 +1776,7 @@ function generateChunk(cx, cy) {
   const tiles = [];
   const startX = cx * CHUNK_SIZE;
   const startY = cy * CHUNK_SIZE;
+  const theme = getWorldThemeAt(startX + CHUNK_SIZE / 2, startY + CHUNK_SIZE / 2);
 
   for (let y = 0; y < CHUNK_SIZE; y += 1) {
     for (let x = 0; x < CHUNK_SIZE; x += 1) {
@@ -1561,10 +1788,12 @@ function generateChunk(cx, cy) {
     cx,
     cy,
     size: CHUNK_SIZE,
+    theme,
     tiles,
     portals: getPortalsInChunk(cx, cy),
     buildings: getBuildingsInChunk(cx, cy),
-    roadsides: getRoadsideFeaturesInChunk(cx, cy)
+    roadsides: getRoadsideFeaturesInChunk(cx, cy),
+    spaceObjects: theme === SCI_FI_THEME ? getSciFiObjectsInChunk(cx, cy) : []
   };
 }
 
@@ -1643,6 +1872,8 @@ function getPortalsInChunk(cx, cy) {
       targetX: portal.targetX,
       targetY: portal.targetY,
       color: portal.color,
+      style: portal.style || "arch",
+      previewTheme: getWorldThemeAt(portal.targetX, portal.targetY),
       preview: generatePortalPreview(portal.targetX, portal.targetY + 1, 7)
     }));
 }
@@ -1712,6 +1943,7 @@ module.exports = {
   generateChunk,
   generateTile,
   getBiome,
+  getWorldThemeAt,
   canAttackAt,
   getDoorTransitionAt,
   getShopFixtureAt,
@@ -1736,5 +1968,6 @@ module.exports = {
   isTooCloseToAnyPortal,
   HUB_NAV_PATH_KEYS,
   HUB_ROADSIDE_FEATURES,
-  HUB_TOWN_GRASS_RADIUS
+  HUB_TOWN_GRASS_RADIUS,
+  SCI_FI_THEME
 };
