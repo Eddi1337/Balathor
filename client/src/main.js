@@ -4597,7 +4597,7 @@ function tryOpenTraderAtClick(worldX, worldY) {
   const self = state.players.get(state.selfId);
   if (!self) return false;
   for (const npc of state.npcs.values()) {
-    if (!npc.isTrader) continue;
+    if (!npc.isTrader || npc.wandersToPlayer) continue;
     const nx = Number.isFinite(npc.renderX) ? npc.renderX : npc.x;
     const ny = Number.isFinite(npc.renderY) ? npc.renderY : npc.y;
     if (Math.hypot(nx - worldX, ny - worldY) > TRADER_CLICK_HIT_RADIUS) continue;
