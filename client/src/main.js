@@ -222,7 +222,30 @@ const TALENT_TREES = {
 };
 const PRODUCTION_SERVER_URL = "wss://balathor.edmundmurphy.com/ws";
 const SERVER_URL_STORAGE_KEY = "balathor.serverUrl";
-const DEBUG_HUD_STORAGE_KEY = "balathor.debugHud";
+const DEBUG_HUD_STORAGE_KEY  = "balathor.debugHud";
+const SAVED_CREDS_COOKIE     = "balathor_creds";
+const RECONNECT_DELAYS_MS    = [3000, 5000, 10000, 15000, 30000];
+
+function setSavedCreds(username, password) {
+  const val = encodeURIComponent(username) + ":" + encodeURIComponent(password);
+  const exp = new Date(Date.now() + 30 * 864e5).toUTCString();
+  document.cookie = `${SAVED_CREDS_COOKIE}=${val};expires=${exp};path=/;SameSite=Strict`;
+}
+
+function getSavedCreds() {
+  const m = document.cookie.match(/(?:^|;\s*)balathor_creds=([^;]*)/);
+  if (!m) return null;
+  const sep = m[1].indexOf(":");
+  if (sep === -1) return null;
+  return {
+    username: decodeURIComponent(m[1].slice(0, sep)),
+    password: decodeURIComponent(m[1].slice(sep + 1))
+  };
+}
+
+function clearSavedCreds() {
+  document.cookie = `${SAVED_CREDS_COOKIE}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+}
 const TILE = {
   GRASS: 0,
   TREE: 1,
@@ -285,6 +308,8 @@ const state = {
   config: null,
   connected: false,
   joined: false,
+  _reconnectAttempt: 0,
+  _reconnectTimer: null,
   selfId: null,
   selectedClass: "ranger",
   torsoStyle: "tunic",
@@ -554,12 +579,25 @@ function connect(url) {
 
   socket.addEventListener("open", () => {
     state.connected = true;
+    state._reconnectAttempt = 0;
+    clearTimeout(state._reconnectTimer);
     localStorage.setItem(SERVER_URL_STORAGE_KEY, normalizedUrl);
-    setStatus("Connected");
-    bootPanel.classList.remove("hidden");
-    accountForm.classList.remove("hidden");
-    form.classList.add("hidden");
-    usernameInput.focus();
+
+    const saved = getSavedCreds();
+    if (saved) {
+      usernameInput.value = saved.username;
+      passwordInput.value = saved.password;
+      setStatus("Logging in");
+      loginButton.disabled = true;
+      createAccountButton.disabled = true;
+      send({ type: "auth", action: "login", username: saved.username, password: saved.password });
+    } else {
+      setStatus("Connected");
+      bootPanel.classList.remove("hidden");
+      accountForm.classList.remove("hidden");
+      form.classList.add("hidden");
+      usernameInput.focus();
+    }
   });
 
   socket.addEventListener("message", (event) => {
@@ -573,12 +611,28 @@ function connect(url) {
       return;
     }
     state.connected = false;
-    resetToConnection(state.joined ? "Realm connection closed" : "Unable to connect");
+    const wasJoined = state.joined;
+    resetToConnection(wasJoined ? "Realm connection closed" : "Unable to connect");
+    scheduleReconnect(wasJoined);
   });
 
   socket.addEventListener("error", () => {
     setStatus("Connection failed");
   });
+}
+
+function scheduleReconnect(wasJoined) {
+  clearTimeout(state._reconnectTimer);
+  const attempt = state._reconnectAttempt;
+  const delay = RECONNECT_DELAYS_MS[Math.min(attempt, RECONNECT_DELAYS_MS.length - 1)];
+  state._reconnectAttempt = attempt + 1;
+  const secs = Math.round(delay / 1000);
+  setStatus(`${wasJoined ? "Realm connection closed" : "Unable to connect"} — retrying in ${secs}s`);
+  state._reconnectTimer = setTimeout(() => {
+    if (!state.connected && state.activeServerUrl) {
+      connect(state.activeServerUrl);
+    }
+  }, delay);
 }
 
 function handleServerMessage(message) {
@@ -610,8 +664,15 @@ function handleServerMessage(message) {
     if (!message.ok) {
       state.authenticated = false;
       setStatus(authErrorText(message.message));
+      // Show the form so the player can correct their credentials manually
+      bootPanel.classList.remove("hidden");
+      accountForm.classList.remove("hidden");
+      form.classList.add("hidden");
+      usernameInput.focus();
       return;
     }
+    // Save credentials to cookie on every successful login
+    setSavedCreds(usernameInput.value, passwordInput.value);
     state.authenticated = true;
     accountForm.classList.add("hidden");
     if (!message.hasCharacter) {
@@ -628,6 +689,8 @@ function handleServerMessage(message) {
   if (message.type === "welcome") {
     state.selfId = message.selfId;
     state.joined = true;
+    state._reconnectAttempt = 0;
+    clearTimeout(state._reconnectTimer);
     if (typeof message.tickRate === "number") {
       state.debugTickRate = message.tickRate;
     }
@@ -3670,6 +3733,8 @@ function changeServer(url) {
   state.joined = false;
   state.selfId = null;
   state.authenticated = false;
+  state._reconnectAttempt = 0;
+  clearTimeout(state._reconnectTimer);
   connect(normalizedUrl);
 }
 
