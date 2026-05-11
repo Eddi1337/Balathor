@@ -433,6 +433,12 @@ function drawDebugHud() {
     return;
   }
 
+  const self = state.players.get(state.selfId);
+  const posLabel = self
+    ? `Map: ${Math.round(self.renderX)}, ${Math.round(self.renderY)} (chunk ${Math.floor(self.renderX / CHUNK_SIZE)}, ${Math.floor(self.renderY / CHUNK_SIZE)})`
+    : "Map: —";
+  const themeLabel = state.worldTheme === SCI_FI_THEME ? "Realm: sci-fi" : "Realm: fantasy";
+
   const simLabel =
     typeof state.debugServerSimHz === "number" && Number.isFinite(state.debugServerSimHz)
       ? `${state.debugServerSimHz.toFixed(1)} Hz`
@@ -459,7 +465,9 @@ function drawDebugHud() {
     `Sim rate (srv): ${simLabel}${targetSim}`,
     `Snapshots (srv): ${snapLabel}`,
     `RTT: ${rtt}`,
-    `Server tick: ${tickLabel}`
+    `Server tick: ${tickLabel}`,
+    posLabel,
+    themeLabel
   ];
 
   ctx.save();
