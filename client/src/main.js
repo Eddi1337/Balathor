@@ -6365,11 +6365,7 @@ function drawTile(tile, sx, sy, tx, ty) {
     return;
   }
 
-  if (
-    isSciFiWorld() &&
-    globalThis.TechDungeonSprites &&
-    TechDungeonSprites.drawTile(ctx, tile, sx, sy, tx, ty)
-  ) {
+  if (isSciFiWorld() && globalThis.TechDungeonSprites && TechDungeonSprites.drawSciFiStationTile(ctx, tile, sx, sy, tx, ty)) {
     return;
   }
 

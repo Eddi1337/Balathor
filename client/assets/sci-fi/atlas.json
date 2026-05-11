@@ -1,16 +1,16 @@
 {
-  "about": "Replace tileset.png with your sheet from Pupkin Tech Dungeon (itch). Edit byId: each key is a server tile id; values are [column,row] cells in the sheet (32x32 by default).",
-  "source": "https://trevor-pupkin.itch.io/tech-dungeon-roguelite",
-  "image": "tileset.png",
+  "about": "Dithart's Free Sci-fi Tileset (32×32, 8 columns). See Ditharts_Free_Scifi_Tileset_LICENSE.txt. Tile ids match server TILE enum.",
+  "source": "Assets/Ditharts_Free_Scifi_Tileset_v01",
+  "image": "ditharts_tileset.png",
   "cellW": 32,
   "cellH": 32,
   "salt": 17711,
   "byId": {
-    "22": [[0, 0]],
-    "23": [[1, 0], [2, 0], [3, 0]],
-    "24": [[4, 0], [5, 0], [6, 0]],
-    "25": [[7, 0], [8, 0]],
-    "26": [[9, 0]],
-    "27": [[10, 0], [11, 0]]
+    "22": [[0, 0], [1, 0], [2, 0], [3, 0]],
+    "23": [[0, 14], [1, 14], [2, 14], [7, 13]],
+    "24": [[7, 5], [0, 5], [1, 5], [0, 6]],
+    "25": [[7, 1], [7, 2], [7, 3], [3, 3]],
+    "26": [[5, 4], [6, 5], [4, 4]],
+    "27": [[0, 11], [1, 11], [0, 10], [2, 11]]
   }
 }
