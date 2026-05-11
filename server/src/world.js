@@ -77,6 +77,9 @@ const {
 
 /** Hub tile for sci-fi stargate — ring road near plaza tree, southeast arc (north gates use y ≈ -76). */
 const STARGATE_HUB_TILE = Object.freeze({ x: 8, y: 4 });
+/** Brown path disk + eight-way spokes under the hub stargate (tile units from portal cell). */
+const STARGATE_HUB_PATH_DISK_R = 4.35;
+const STARGATE_HUB_PATH_SPOKE_MAX = 9;
 
 const SCI_FI_STARGATE_PORTAL = Object.freeze({
   id: "portal_stargate",
@@ -598,6 +601,23 @@ const PORTALS = [
 /** Stone disk under portals (tile-space, portal at integer lattice point). */
 const PORTAL_CLEAR_STONE_RADIUS = 10;
 const PORTAL_CAMP_CLEAR_RADIUS = 10;
+
+function isNearHubStargatePortalClearance(ti, tj) {
+  const dx = ti - STARGATE_HUB_TILE.x;
+  const dy = tj - STARGATE_HUB_TILE.y;
+  return dx * dx + dy * dy <= PORTAL_CLEAR_STONE_RADIUS * PORTAL_CLEAR_STONE_RADIUS;
+}
+
+/** Path tiles: compact disk at the gate plus straight lines in all eight directions. */
+function isStargateHubPathPlaza(ti, tj) {
+  const vx = ti - STARGATE_HUB_TILE.x;
+  const vy = tj - STARGATE_HUB_TILE.y;
+  const r = Math.hypot(vx, vy);
+  if (r <= STARGATE_HUB_PATH_DISK_R + 1e-9) return true;
+  if (r > STARGATE_HUB_PATH_SPOKE_MAX + 1e-9) return false;
+  if (vx === 0 || vy === 0) return true;
+  return vx === vy || vx === -vy;
+}
 /** Wild mobs (camps, roamers, critters) stay outside the starter walled town apron. */
 const PRIMARY_HUB_MOBS_CLEAR_RADIUS = HUB_TOWN_GRASS_RADIUS + 48;
 
@@ -984,7 +1004,9 @@ function getProceduralSettlementTile(x, y) {
 // ---------------------------------------------------------------------------
 
 function getEnemyCampTile(x, y) {
-  if (isPortalCourtyardStoneTile(Math.floor(x), Math.floor(y))) {
+  const tix = Math.floor(x);
+  const tiy = Math.floor(y);
+  if (isNearHubStargatePortalClearance(tix, tiy) || isPortalCourtyardStoneTile(tix, tiy)) {
     return null;
   }
 
@@ -1779,6 +1801,12 @@ function generateExteriorTile(x, y) {
   // Landmark big tree: 3×3 cluster at the very centre of the plaza.
   if (ax <= 1 && ay <= 1) {
     return TILE.TREE;
+  }
+
+  // Hub stargate: brown path rosette (disk + eight-way spokes), not the shared portal stone apron.
+  if (isNearHubStargatePortalClearance(tiGrid, tjGrid)) {
+    if (isStargateHubPathPlaza(tiGrid, tjGrid)) return TILE.PATH;
+    return TILE.DARK_GRASS;
   }
 
   /** Keep portal courtyards on stone ahead of PATH layers (hub paths & cross avenues). */
