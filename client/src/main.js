@@ -296,6 +296,117 @@ function rarityIconColor(rarity) {
   return RARITY_ICON_COLORS[rarity] || RARITY_ICON_COLORS.common;
 }
 
+function isSciFiWorld() {
+  return state.worldTheme === SCI_FI_THEME;
+}
+
+function displayItemName(item) {
+  if (!item) {
+    return "Item";
+  }
+  if (!isSciFiWorld()) {
+    return item.name || "Item";
+  }
+  if (item.type === "weapon") {
+    if (item.weaponKind === "sword") return item.name?.includes("☆") ? item.name : "Lightsaber";
+    if (item.weaponKind === "bow") return "Blaster Carbine";
+    if (item.weaponKind === "staff") return "Laser Rifle";
+  }
+  if (item.type === "armor") {
+    return "Exo Armor";
+  }
+  if (item.type === "ring") {
+    return "Phase Ring";
+  }
+  if (item.type === "potion") {
+    return "Stim Capsule";
+  }
+  if (item.type === "ship") {
+    return item.name || "Dock Skiff";
+  }
+  return item.name || "Item";
+}
+
+function displayItemIconClass(item) {
+  if (!item) {
+    return "generic";
+  }
+  if (!isSciFiWorld()) {
+    return item.icon || item.type || "generic";
+  }
+  if (item.type === "weapon") {
+    if (item.weaponKind === "sword") return "lightsaber";
+    if (item.weaponKind === "bow") return "blaster";
+    if (item.weaponKind === "staff") return "laser-rifle";
+  }
+  if (item.type === "armor") {
+    return "exo-armor";
+  }
+  if (item.type === "ship") {
+    return "ship";
+  }
+  return item.icon || item.type || "generic";
+}
+
+function displayTalentInfo(spell, classId) {
+  if (!spell) {
+    return { name: "Talent", desc: "" };
+  }
+  if (!isSciFiWorld()) {
+    return spell;
+  }
+
+  const sciFiTrees = {
+    mage: {
+      fireball: { name: "Plasma Burst", desc: "Launch a hot plasma shot at enemies" },
+      fire_nova: { name: "Flare Ring", desc: "Detonate a ring of thermal sparks around you" },
+      inferno: { name: "Fusion Beam", desc: "Channel a searing beam across a cone" },
+      ice_shard: { name: "Cryo Dart", desc: "Piercing cryo shot that slows targets" },
+      frost_barrier: { name: "Shield Matrix", desc: "Project a barrier that absorbs damage" },
+      blizzard: { name: "Ion Storm", desc: "Blanket an area in crackling ion fire" },
+      arcane_bolt: { name: "Photon Bolt", desc: "Fast-moving bolt of pure energy" },
+      mana_shield: { name: "Flux Shield", desc: "Convert damage into shield drain" },
+      time_warp: { name: "Phase Warp", desc: "Slow nearby enemies through a phase pulse" }
+    },
+    knight: {
+      shield_bash: { name: "Aegis Strike", desc: "Stagger foes with a charged shield hit" },
+      divine_shield: { name: "Barrier Dome", desc: "Brief invincibility field" },
+      fortify: { name: "Reinforce", desc: "Massively boost armour temporarily" },
+      holy_strike: { name: "Pulse Slash", desc: "High-energy close-range strike" },
+      consecration: { name: "Overcharge Field", desc: "Area field that harms foes and restores allies" },
+      divine_wrath: { name: "Nova Smite", desc: "Smite enemies in a wide arc" },
+      healing_aura: { name: "Repair Aura", desc: "Regenerate HP over time" },
+      lay_on_hands: { name: "Emergency Patch", desc: "Large instant self-repair" },
+      battle_cry: { name: "Command Burst", desc: "Boost speed and strength briefly" }
+    },
+    ranger: {
+      precise_shot: { name: "Rail Shot", desc: "High-damage single rail shot" },
+      piercing_arrow: { name: "Piercing Pulse", desc: "Energy shot that passes through enemies" },
+      rain_of_arrows: { name: "Drone Barrage", desc: "Barrage of targeting drones over an area" },
+      caltrops: { name: "Mag Mines", desc: "Deploy mines that slow enemies" },
+      evasion: { name: "Afterimage", desc: "Briefly become hard to hit" },
+      camouflage: { name: "Signal Ghost", desc: "Vanish from enemies temporarily" },
+      multishot: { name: "Tri-Shot", desc: "Fire three energy darts simultaneously" },
+      smoke_bomb: { name: "Ion Smoke", desc: "Disorient nearby enemies" },
+      volley: { name: "Pulse Volley", desc: "Rapid burst of shots" }
+    }
+  };
+
+  return sciFiTrees[classId]?.[spell.id] || spell;
+}
+
+function displayTalentTreeName(classId, treeName) {
+  if (!isSciFiWorld()) {
+    return treeName;
+  }
+  const map = {
+    mage: { Fire: "Plasma", Frost: "Cryo", Arcane: "Quantum" },
+    knight: { Protection: "Aegis", Retribution: "Nova", Recovery: "Support" },
+    ranger: { Marksmanship: "Rail", Survival: "Recon", Trickery: "Ghost" }
+  };
+  return map[classId]?.[treeName] || treeName;
+}
+
 const kenneyRpgBase = new Image();
 kenneyRpgBase.src = "./assets/kenney-rpg-base.png";
 const KENNEY_TILE_SIZE = 64;
@@ -327,6 +438,7 @@ const state = {
   groundItems: [],
   inventory: Array(10).fill(null),
   equipment: { weapon: null, body: null, ring1: null, ring2: null },
+  ship: null,
   gold: 0,
   shop: null,
   speechBubbles: new Map(),
@@ -393,7 +505,11 @@ const state = {
   houseChestSlots: null,
   houseChestBuildingKey: null,
   /** Until this time (performance.now()), self draws home-teleport hand cast */
-  pendingHomeTeleportUntil: 0
+  pendingHomeTeleportUntil: 0,
+  /** Full-screen blackout after choosing “make rumpi pumpi” with your partner at home */
+  intimateBlackoutUntil: 0,
+  /** After waking, keep the companion posed in bed for a short beat */
+  morningAfterCompanionBedUntil: 0
 };
 
 const SPEECH_BUBBLE_MS = 5200;
@@ -884,6 +1000,7 @@ function handleServerMessage(message) {
       name: message.name || "Trader Shelf",
       buildingName: message.buildingName || "",
       isPub: !!message.isPub,
+      shopType: message.shopType || "trade",
       x: message.x,
       y: message.y,
       gold: Number.isFinite(message.gold) ? message.gold : state.gold,
@@ -923,6 +1040,15 @@ function handleServerMessage(message) {
 
   if (message.type === "chat") {
     appendChat(message);
+    return;
+  }
+
+  if (message.type === "houseCompanionChat") {
+    const name = typeof message.name === "string" ? message.name : "Companion";
+    const text = typeof message.text === "string" ? message.text : "";
+    if (text) {
+      appendChat({ kind: "npc", name, text });
+    }
     return;
   }
 
@@ -1036,6 +1162,14 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: `Bought ${message.itemName}` });
     } else if (message.message === "shop_sold") {
       appendChat({ kind: "system", name: "Realm", text: `Sold ${message.itemName}` });
+    } else if (message.message === "ship_bought") {
+      appendChat({ kind: "system", name: "Realm", text: `Bought ship ${message.itemName}` });
+    } else if (message.message === "ship_boarded") {
+      appendChat({ kind: "system", name: "Realm", text: `Boarded ${message.shipName || "your ship"}` });
+    } else if (message.message === "ship_docked") {
+      appendChat({ kind: "system", name: "Realm", text: `Docked ${message.shipName || "your ship"}` });
+    } else if (message.message === "ship_already_owned") {
+      appendChat({ kind: "system", name: "Realm", text: "You already own a ship." });
     } else if (message.message === "item_sold_out") {
       appendChat({ kind: "system", name: "Realm", text: "Item is sold out" });
     } else if (message.message === "item_bought") {
@@ -1052,6 +1186,17 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: `Not enough gold (needs ${Number(message.price) || 0}g)` });
     } else if (message.message === "companion_unavailable") {
       appendChat({ kind: "system", name: "Realm", text: "That person's path has already changed." });
+    } else if (message.message === "house_companion_bad") {
+      state.intimateBlackoutUntil = 0;
+      appendChat({ kind: "system", name: "Realm", text: "You can only do that with your partner inside your home." });
+    } else if (message.message === "companion_left_home") {
+      appendChat({
+        kind: "system",
+        name: "Realm",
+        text: "They pack a small bundle, kiss your cheek once, and slip out the door. Your hearth is yours alone again."
+      });
+    } else if (message.message === "companion_intimate_ok") {
+      state.morningAfterCompanionBedUntil = performance.now() + 42000;
     } else if (message.message === "friend_added") {
       appendChat({
         kind: "system",
@@ -1212,11 +1357,13 @@ function updateSelfInventory() {
   if (!self) {
     state.inventory = Array(10).fill(null);
     state.equipment = { weapon: null, body: null, ring1: null, ring2: null };
+    state.ship = null;
     state.gold = 0;
     return;
   }
   state.inventory = Array.isArray(self.inventory) ? self.inventory : Array(10).fill(null);
   state.equipment = self.equipment || { weapon: null, body: null, ring1: null, ring2: null };
+  state.ship = self.ship || null;
   state.gold = Number.isFinite(self.gold) ? self.gold : state.gold;
   if (state.shop?.open) {
     state.shop.gold = state.gold;
@@ -1494,6 +1641,7 @@ function tryOpenPlayerContextMenuFromCanvas(event, worldX, worldY) {
 
 const NPC_CTX_HIT_RADIUS = 1.8;
 const NPC_CTX_PLAYER_RADIUS = 9;
+const HOUSE_COMPANION_CTX_HIT_RADIUS = 1.45;
 
 function hideNpcContextMenu() {
   state.npcContext = null;
@@ -1571,6 +1719,31 @@ function positionNpcContextMenu(worldX, worldY) {
 
 function tickNpcContextMenuPosition() {
   if (!state.npcContext) return;
+  if (state.npcContext.kind === "house_companion") {
+    const self = state.players.get(state.selfId);
+    if (!self?.houseCompanion || !self.homeBuildingKey) {
+      hideNpcContextMenu();
+      return;
+    }
+    const building = [...state.buildings.values()].find((b) => `${b.x},${b.y}` === self.homeBuildingKey);
+    if (!building) {
+      hideNpcContextMenu();
+      return;
+    }
+    const px = Number.isFinite(self.renderX) ? self.renderX : self.x;
+    const py = Number.isFinite(self.renderY) ? self.renderY : self.y;
+    if (!worldPointInsideBuildingInterior(px, py, building, 0.55)) {
+      hideNpcContextMenu();
+      return;
+    }
+    const lay = resolveHouseCompanionPhantomLayout(self, building);
+    if (!lay) {
+      hideNpcContextMenu();
+      return;
+    }
+    positionNpcContextMenu(lay.wx, lay.wy);
+    return;
+  }
   const npc = state.npcs.get(state.npcContext.npcId);
   if (!npc) { hideNpcContextMenu(); return; }
   const self = state.players.get(state.selfId);
@@ -1584,6 +1757,60 @@ function tickNpcContextMenuPosition() {
     return;
   }
   positionNpcContextMenu(nx, ny);
+}
+
+function showHouseCompanionContextMenu(companionName) {
+  const self = state.players.get(state.selfId);
+  if (!self?.houseCompanion || !self.homeBuildingKey) return;
+  const building = [...state.buildings.values()].find((b) => `${b.x},${b.y}` === self.homeBuildingKey);
+  if (!building) return;
+  const px = Number.isFinite(self.renderX) ? self.renderX : self.x;
+  const py = Number.isFinite(self.renderY) ? self.renderY : self.y;
+  if (!worldPointInsideBuildingInterior(px, py, building, 0.55)) return;
+  const lay = resolveHouseCompanionPhantomLayout(self, building);
+  if (!lay) return;
+
+  state.npcContext = { npcId: "__house_companion__", kind: "house_companion" };
+  if (npcContextMenuName) npcContextMenuName.textContent = companionName || "Partner";
+  if (npcContextMenuButtons) {
+    npcContextMenuButtons.replaceChildren();
+    const chatBtn = document.createElement("button");
+    chatBtn.dataset.npcAction = "hc_chat";
+    chatBtn.textContent = "Chat";
+    const breakBtn = document.createElement("button");
+    breakBtn.dataset.npcAction = "hc_breakup";
+    breakBtn.textContent = "Break up";
+    breakBtn.className = "npc-ctx-shoo";
+    const rpBtn = document.createElement("button");
+    rpBtn.dataset.npcAction = "hc_intimate";
+    rpBtn.textContent = "Make rumpi pumpi";
+    npcContextMenuButtons.append(chatBtn, rpBtn, breakBtn);
+  }
+  positionNpcContextMenu(lay.wx, lay.wy);
+  npcContextMenu?.classList.remove("hidden");
+}
+
+function tryOpenHouseCompanionMenu(event, worldX, worldY) {
+  const self = state.players.get(state.selfId);
+  if (!self?.houseCompanion || !self.homeBuildingKey) return false;
+  const playerBuilding = getPlayerBuilding();
+  if (!playerBuilding) return false;
+  if (`${playerBuilding.x},${playerBuilding.y}` !== self.homeBuildingKey) return false;
+  if (playerBuilding.isPub) return false;
+  const typ = playerBuilding.type || "house";
+  if (!(typ === "house" || typ === "big_house")) return false;
+
+  const lay = resolveHouseCompanionPhantomLayout(self, playerBuilding);
+  if (!lay) return false;
+  const d = Math.hypot(lay.wx - worldX, lay.wy - worldY);
+  if (d > HOUSE_COMPANION_CTX_HIT_RADIUS) return false;
+
+  event.preventDefault();
+  event.stopPropagation();
+  hidePlayerContextMenu();
+  const nm = typeof self.houseCompanion.name === "string" ? self.houseCompanion.name : "Partner";
+  showHouseCompanionContextMenu(nm);
+  return true;
 }
 
 function tryOpenNpcContextMenuFromCanvas(event, worldX, worldY) {
@@ -2256,6 +2483,9 @@ function wireUi() {
     if (tryClickHouseHomeTree(world.x, world.y)) {
       return;
     }
+    if (tryOpenHouseCompanionMenu(event, world.x, world.y)) {
+      return;
+    }
     if (tryOpenNpcContextMenuFromCanvas(event, world.x, world.y)) {
       return;
     }
@@ -2282,8 +2512,20 @@ function wireUi() {
   npcContextMenu?.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-npc-action]");
     if (!btn || !state.npcContext) return;
-    const { npcId } = state.npcContext;
     const act = btn.dataset.npcAction;
+    if (state.npcContext.kind === "house_companion") {
+      hideNpcContextMenu();
+      if (act === "hc_chat") {
+        send({ type: "houseCompanionAction", action: "chat" });
+      } else if (act === "hc_breakup") {
+        send({ type: "houseCompanionAction", action: "breakup" });
+      } else if (act === "hc_intimate") {
+        state.intimateBlackoutUntil = performance.now() + 3200;
+        send({ type: "houseCompanionAction", action: "intimate" });
+      }
+      return;
+    }
+    const { npcId } = state.npcContext;
     hideNpcContextMenu();
     if (act === "shoo") {
       send({ type: "shoo_npc", npcId });
@@ -2531,7 +2773,7 @@ function wireUi() {
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "trade-picker-item";
-        btn.textContent = item.name;
+        btn.textContent = displayItemName(item);
         btn.addEventListener("click", () => {
           send({ type: "tradeSetSlot", partnerId: state.tradePartnerId, slot: si, invSlot: idx });
           picker.classList.add("hidden");
@@ -3232,6 +3474,66 @@ function homeCompanionAmbientMode(npcId, homeKey) {
   return "flirt";
 }
 
+/**
+ * World-space pose for the homestead phantom partner (must match draw).
+ * @returns {{ wx: number, wy: number, facing: number, poseExtras: Record<string, unknown>, mode: string, hc: object } | null}
+ */
+function resolveHouseCompanionPhantomLayout(self, building) {
+  if (!self?.houseCompanion || building?.isPub) {
+    return null;
+  }
+  if (!self.homeBuildingKey || `${building.x},${building.y}` !== self.homeBuildingKey) {
+    return null;
+  }
+  const typ = building.type || "house";
+  if (!(typ === "house" || typ === "big_house")) {
+    return null;
+  }
+  const hc = self.houseCompanion;
+  const npcId = typeof hc.npcId === "string" ? hc.npcId : "companion";
+  let mode = homeCompanionAmbientMode(npcId, self.homeBuildingKey);
+  if ((state.morningAfterCompanionBedUntil || 0) > performance.now()) {
+    mode = "bed";
+  }
+  const anchors = residentialPhantomCompanionAnchors(building);
+
+  let wx;
+  let wy;
+  let facing = Math.PI / 2;
+  /** @type {Record<string, unknown>} */
+  let poseExtras = {};
+
+  if (mode === "bed") {
+    wx = anchors.bed.wx;
+    wy = anchors.bed.wy;
+    poseExtras = { lyingBed: true };
+  } else if (mode === "eat") {
+    wx = anchors.dine.wx;
+    wy = anchors.dine.wy;
+    facing = anchors.dine.facing;
+    poseExtras = { restingBench: true };
+  } else {
+    const px = Number.isFinite(self.renderX) ? self.renderX : self.x;
+    const py = Number.isFinite(self.renderY) ? self.renderY : self.y;
+    const hx = anchors.flirtStand.wx;
+    const hy = anchors.flirtStand.wy;
+    const ang = Math.atan2(py - hy, px - hx);
+    const pull = Math.min(2.05, Math.hypot(px - hx, py - hy) * 0.32 + 0.92);
+    const rawX = px - Math.cos(ang) * pull;
+    const rawY = py - Math.sin(ang) * pull;
+    const cl = clampWorldToBuildingInterior(rawX, rawY, building);
+    wx = cl.x;
+    wy = cl.y;
+    facing = Math.atan2(py - wy, px - wx);
+    poseExtras = {
+      ambientLine: hashHomeCompanionPhrase(npcId, self.homeBuildingKey),
+      companionReachOut: true
+    };
+  }
+
+  return { wx, wy, facing, poseExtras, mode, hc };
+}
+
 /** Floor line at bottom of tile cell (wx,wy) for interior props */
 function interiorFloorAnchorFromWorld(wx, wy, halfW, halfH) {
   const ix = Math.floor(wx);
@@ -3761,6 +4063,7 @@ function clearWorldState() {
   state.groundItems = [];
   state.inventory = Array(10).fill(null);
   state.equipment = { weapon: null, body: null, ring1: null, ring2: null };
+  state.ship = null;
   state.gold = 0;
   closeShop();
   closeBuyHousePanel();
@@ -3778,6 +4081,8 @@ function clearWorldState() {
   state.population = 0;
   state.hoverTooltipText = "";
   state.pubPassoutUntil = 0;
+  state.intimateBlackoutUntil = 0;
+  state.morningAfterCompanionBedUntil = 0;
   state.benchSitUntil = 0;
   state.benchSeatIndefinite = false;
   state.friends = [];
@@ -4135,7 +4440,7 @@ function makeEquipSlotEl(slot, label) {
 
   const nameEl = document.createElement("span");
   nameEl.className = "slot-name";
-  nameEl.textContent = item ? item.name : "Empty";
+  nameEl.textContent = item ? displayItemName(item) : "Empty";
 
   cell.append(lbl, nameEl);
 
@@ -4202,7 +4507,7 @@ function renderTalentTree(self) {
 
     const title = document.createElement("h3");
     title.className = "talent-tree-title";
-    title.textContent = tree.name;
+    title.textContent = displayTalentTreeName(classId, tree.name);
 
     const spellsEl = document.createElement("div");
     spellsEl.className = "talent-tree-spells";
@@ -4224,13 +4529,14 @@ function renderTalentTree(self) {
       ic.width = 28; ic.height = 28;
       drawSpellIcon(ic, spell.id, unlocked);
 
+      const spellView = displayTalentInfo(spell, classId);
       const nameEl = document.createElement("div");
       nameEl.className = "talent-node-name";
-      nameEl.textContent = spell.name;
+      nameEl.textContent = spellView.name;
 
       const desc = document.createElement("div");
       desc.className = "talent-node-desc";
-      desc.textContent = spell.desc;
+      desc.textContent = spellView.desc;
 
       node.append(tierLabel, ic, nameEl, desc);
 
@@ -4288,7 +4594,8 @@ function renderCharTalentMini(self) {
     const node = document.createElement("div");
     const onBar = barSlots.includes(spell.id);
     node.className = `char-talent-mini-node${onBar ? " on-bar" : ""}`;
-    node.title = `${spell.name} — ${spell.desc}${onBar ? " (on ability bar)" : ""}`;
+    const spellView = displayTalentInfo(spell, classId);
+    node.title = `${spellView.name} — ${spellView.desc}${onBar ? " (on ability bar)" : ""}`;
     const ic = document.createElement("canvas");
     ic.width = 28;
     ic.height = 28;
@@ -4296,7 +4603,7 @@ function renderCharTalentMini(self) {
     drawSpellIcon(ic, spell.id, true);
     const lbl = document.createElement("span");
     lbl.className = "char-talent-mini-name";
-    lbl.textContent = spell.name;
+    lbl.textContent = spellView.name;
     node.append(ic, lbl);
     charTalentMiniEl.append(node);
   }
@@ -4524,7 +4831,7 @@ function renderBags() {
     });
 
     const name = document.createElement("strong");
-    name.textContent = item.name;
+    name.textContent = displayItemName(item);
 
     const stats = document.createElement("span");
     stats.className = "item-stats";
@@ -4576,7 +4883,7 @@ function renderHouseChestPanel() {
       return;
     }
     const name = document.createElement("strong");
-    name.textContent = item.name;
+    name.textContent = displayItemName(item);
     const stats = document.createElement("span");
     stats.className = "item-stats";
     stats.textContent = formatItemStats(item);
@@ -4616,11 +4923,13 @@ function renderShop() {
 
   const gold = Number.isFinite(state.shop.gold) ? state.shop.gold : state.gold;
   shopTitle.textContent =
-    state.shop.isPub && state.shop.buildingName
-      ? `${state.shop.buildingName} Taproom`
-      : state.shop.buildingName
-        ? `${state.shop.buildingName} Shelf`
-        : state.shop.name;
+    state.shop.shopType === "ship"
+      ? `${state.shop.buildingName || state.shop.name} Dockyard`
+      : state.shop.isPub && state.shop.buildingName
+        ? `${state.shop.buildingName} Taproom`
+        : state.shop.buildingName
+          ? `${state.shop.buildingName} Shelf`
+          : state.shop.name;
   shopGold.textContent = `${gold || 0} gold`;
   shopBuyList.replaceChildren();
   shopSellList.replaceChildren();
@@ -4667,7 +4976,7 @@ function createShopRow(item, priceText, actionText) {
   const row = document.createElement("div");
   row.className = `shop-row ${item.rarity || "common"}`;
   const name = document.createElement("strong");
-  name.textContent = item.name;
+  name.textContent = displayItemName(item);
   const stats = document.createElement("span");
   stats.className = "item-stats";
   stats.textContent = [formatItemStats(item), priceText].filter(Boolean).join(" · ");
@@ -4716,14 +5025,14 @@ function renderNearbyLoot() {
   }
   for (const ground of nearbyItems) {
     const row = document.createElement("strong");
-    row.textContent = ground.item?.name || "Loot";
+    row.textContent = displayItemName(ground.item) || "Loot";
     nearbyLoot.append(row);
   }
 }
 
 function createItemIcon(item) {
   const icon = document.createElement("span");
-  icon.className = `item-icon ${item.icon || item.type}`;
+  icon.className = `item-icon ${displayItemIconClass(item)}`;
   icon.style.setProperty("--item-color", rarityIconColor(item.rarity));
   return icon;
 }
@@ -4815,7 +5124,7 @@ function renderTraderStock() {
     const info = document.createElement("div");
     info.className = "trader-item-info";
     const name = document.createElement("strong");
-    name.textContent = entry.item.name;
+    name.textContent = displayItemName(entry.item);
     const stats = document.createElement("span");
     stats.className = "item-stats";
     stats.textContent = formatItemStats(entry.item);
@@ -4862,7 +5171,7 @@ function renderTraderSellSlots() {
     }
     const icon = createItemIcon(item);
     const name = document.createElement("strong");
-    name.textContent = item.name;
+    name.textContent = displayItemName(item);
     const stats = document.createElement("span");
     stats.className = "item-stats";
     stats.textContent = formatItemStats(item);
@@ -5012,6 +5321,7 @@ function draw() {
   ctx.restore();
   drawPortalTransitionOverlay();
   drawPubPassoutOverlay();
+  drawIntimateBlackoutOverlay();
   drawWorldHoverTooltip();
   if (state.menuOpen) {
     syncMenuSessionInfo();
@@ -5392,10 +5702,127 @@ function drawSpaceObjects() {
       drawPlanetObject(obj, sx, sy);
     } else if (obj.kind === "lane" || obj.type === "lane") {
       drawShipLaneObject(obj, halfW, halfH);
+    } else if (obj.kind === "corridor") {
+      drawCorridorObject(obj, sx, sy);
+    } else if (obj.kind === "ship-bay") {
+      drawShipBayObject(obj, sx, sy);
+    } else if (obj.kind === "shop-bay" || obj.kind === "ship-shop") {
+      drawShopBayObject(obj, sx, sy);
     } else {
       drawStationObject(obj, sx, sy);
     }
   }
+}
+
+function drawCorridorObject(obj, sx, sy) {
+  const w = Math.max(4, Number(obj.w || 8)) * TILE_SIZE;
+  const h = Math.max(3, Number(obj.h || 4)) * TILE_SIZE;
+  const x = sx - w / 2;
+  const y = sy - h / 2;
+  ctx.save();
+  ctx.fillStyle = "rgba(17, 32, 54, 0.95)";
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = "rgba(103, 240, 255, 0.16)";
+  ctx.fillRect(x + 4, y + h * 0.2, w - 8, h * 0.6);
+  ctx.fillStyle = "rgba(255,255,255,0.08)";
+  for (let i = 0; i < Math.max(3, Math.round(w / 42)); i += 1) {
+    const px = x + 10 + i * (w - 20) / Math.max(1, Math.round(w / 42));
+    ctx.fillRect(px, y + 4, 4, h - 8);
+  }
+  ctx.strokeStyle = "rgba(103,240,255,0.25)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+  ctx.restore();
+}
+
+function drawShopBayObject(obj, sx, sy) {
+  const w = Math.max(4, Number(obj.w || 6)) * TILE_SIZE;
+  const h = Math.max(3, Number(obj.h || 4)) * TILE_SIZE;
+  const x = sx - w / 2;
+  const y = sy - h / 2;
+  ctx.save();
+  ctx.fillStyle = "rgba(15, 23, 39, 0.96)";
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = "rgba(103, 240, 255, 0.14)";
+  ctx.fillRect(x + 3, y + 3, w - 6, h - 6);
+  ctx.fillStyle = "rgba(255, 216, 102, 0.85)";
+  ctx.fillRect(x + 6, y + h - 8, w - 12, 3);
+  ctx.fillStyle = "rgba(255,255,255,0.82)";
+  ctx.fillRect(x + w * 0.2, y + 8, w * 0.6, 4);
+  ctx.strokeStyle = "rgba(103,240,255,0.4)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+  ctx.restore();
+}
+
+function drawShipBayObject(obj, sx, sy) {
+  const w = Math.max(6, Number(obj.w || 8)) * TILE_SIZE;
+  const h = Math.max(4, Number(obj.h || 5)) * TILE_SIZE;
+  const x = sx - w / 2;
+  const y = sy - h / 2;
+  ctx.save();
+  ctx.fillStyle = "rgba(10, 14, 24, 0.95)";
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = "rgba(103, 240, 255, 0.12)";
+  ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
+  drawEllipseShadow(x + w * 0.48 - 6, y + h * 0.78, w * 0.36, 10, 0.2);
+  ctx.fillStyle = "#e9fbff";
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.2, y + h * 0.65);
+  ctx.lineTo(x + w * 0.54, y + h * 0.35);
+  ctx.lineTo(x + w * 0.8, y + h * 0.47);
+  ctx.lineTo(x + w * 0.72, y + h * 0.7);
+  ctx.lineTo(x + w * 0.36, y + h * 0.78);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "rgba(103,240,255,0.9)";
+  ctx.fillRect(x + w * 0.48, y + h * 0.38, 5, h * 0.22);
+  ctx.fillStyle = "rgba(103,240,255,0.3)";
+  ctx.fillRect(x + w * 0.22, y + h * 0.58, w * 0.5, 4);
+  ctx.restore();
+}
+
+function drawShipVehicleObject(obj, sx, sy, boarded = false) {
+  const color = obj?.color || "#67f0ff";
+  const w = 64;
+  const h = 36;
+  const x = sx - w / 2;
+  const y = sy - h / 2;
+  ctx.save();
+  if (boarded) {
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 10;
+  }
+  drawEllipseShadow(x - 6, y + h * 0.84, w + 12, 10, 0.22);
+  ctx.fillStyle = "rgba(18, 30, 48, 0.95)";
+  ctx.beginPath();
+  ctx.moveTo(x + 6, y + h * 0.68);
+  ctx.lineTo(x + 16, y + 12);
+  ctx.lineTo(x + w * 0.6, y + 7);
+  ctx.lineTo(x + w - 4, y + h * 0.52);
+  ctx.lineTo(x + w * 0.7, y + h - 4);
+  ctx.lineTo(x + 18, y + h - 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.fillRect(x + 18, y + 12, 18, 11);
+  ctx.fillStyle = "rgba(255,255,255,0.75)";
+  ctx.fillRect(x + 24, y + 15, 6, 4);
+  ctx.fillStyle = "rgba(103,240,255,0.25)";
+  ctx.fillRect(x + 8, y + 19, w - 16, 4);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.restore();
+  ctx.save();
+  ctx.font = "bold 10px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(4,8,16,0.9)";
+  ctx.fillStyle = color;
+  ctx.strokeText(obj?.name || "Ship", sx, y - 6);
+  ctx.fillText(obj?.name || "Ship", sx, y - 6);
+  ctx.restore();
 }
 
 function drawStationObject(obj, sx, sy) {
@@ -5716,8 +6143,19 @@ function drawPlayers() {
     const sy = Math.floor(entity.renderY * TILE_SIZE - state.camera.y + halfH);
     if (isMob) {
       drawMob(entity, sx, sy);
+    } else if (entity.ship?.boarded) {
+      drawShipVehicleObject(entity.ship, sx, sy, true);
     } else {
       const restingBench = isNpc ? isNpcRestingOnBench(entity) : false;
+      if (entity.ship && isSciFiWorld()) {
+        const dockX = Number.isFinite(entity.ship.dockX) ? entity.ship.dockX : entity.x;
+        const dockY = Number.isFinite(entity.ship.dockY) ? entity.ship.dockY : entity.y;
+        const dockSx = Math.floor(dockX * TILE_SIZE - state.camera.x + halfW);
+        const dockSy = Math.floor(dockY * TILE_SIZE - state.camera.y + halfH);
+        if (Math.abs(dockSx - sx) < canvas.width && Math.abs(dockSy - sy) < canvas.height) {
+          drawShipVehicleObject(entity.ship, dockSx, dockSy, false);
+        }
+      }
       drawCharacter(entity, sx, sy, isNpc, { restingBench });
     }
   }
@@ -5788,11 +6226,82 @@ function drawItemIcon(item, x, y) {
     return;
   }
 
+  if (item?.type === "ship") {
+    ctx.fillStyle = "#132131";
+    ctx.beginPath();
+    ctx.moveTo(x - 9, y + 4);
+    ctx.lineTo(x - 1, y - 8);
+    ctx.lineTo(x + 9, y - 4);
+    ctx.lineTo(x + 5, y + 7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.fillRect(x - 1, y - 6, 8, 5);
+    ctx.fillStyle = "rgba(255,255,255,0.72)";
+    ctx.fillRect(x + 2, y - 4, 3, 2);
+    ctx.fillStyle = "rgba(103,240,255,0.35)";
+    ctx.fillRect(x - 8, y + 1, 16, 2);
+    ctx.restore();
+    return;
+  }
+
+  if (isSciFiWorld() && item?.type === "weapon") {
+    if (item.weaponKind === "sword") {
+      ctx.fillStyle = color;
+      ctx.fillRect(x - 1, y - 10, 3, 18);
+      ctx.fillStyle = "#eafcff";
+      ctx.fillRect(x, y - 14, 2, 16);
+      ctx.fillStyle = "rgba(103,240,255,0.8)";
+      ctx.fillRect(x - 6, y - 2, 12, 2);
+      ctx.restore();
+      return;
+    }
+    if (item.weaponKind === "bow") {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(x - 1, y - 1, 9, -0.9, 0.9);
+      ctx.stroke();
+      ctx.fillStyle = "#eafcff";
+      ctx.fillRect(x + 1, y - 9, 10, 3);
+      ctx.fillStyle = "rgba(103,240,255,0.8)";
+      ctx.fillRect(x + 6, y - 6, 4, 10);
+      ctx.restore();
+      return;
+    }
+    if (item.weaponKind === "staff") {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(x, y + 8);
+      ctx.lineTo(x, y - 10);
+      ctx.stroke();
+      ctx.fillStyle = "#dffaff";
+      ctx.fillRect(x - 4, y - 10, 8, 4);
+      ctx.fillStyle = "rgba(103,240,255,0.8)";
+      ctx.fillRect(x - 6, y - 2, 12, 2);
+      ctx.restore();
+      return;
+    }
+  }
+
   if (item?.type === "armor") {
     const vstyle = item.visual?.torsoStyle || item.torsoStyle || "";
     const nm     = (item.name || "").toLowerCase();
     const isHeavy = vstyle === "armor"  || nm.includes("chestplate") || nm.includes("plate");
     const isRobe  = vstyle === "robe"   || nm.includes("robe");
+
+    if (isSciFiWorld()) {
+      ctx.fillStyle = color;
+      ctx.fillRect(x - 7, y - 9, 14, 12);
+      ctx.fillStyle = "rgba(103,240,255,0.25)";
+      ctx.fillRect(x - 7, y - 9, 14, 3);
+      ctx.fillRect(x - 7, y + 1, 14, 2);
+      ctx.fillStyle = "rgba(255,255,255,0.5)";
+      ctx.fillRect(x - 2, y - 6, 4, 10);
+      ctx.restore();
+      return;
+    }
 
     if (vstyle === "ascendant") {
       ctx.fillStyle = color;
@@ -6321,6 +6830,72 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
   }
 
   const ks = eqS / 3;
+
+  if (isSciFiWorld()) {
+    if (weaponKind === "staff") {
+      ctx.strokeStyle = ornateWeapon ? accent : "#9edfff";
+      ctx.lineWidth = 5 * Math.min(ks, 1.2);
+      ctx.beginPath();
+      ctx.moveTo(lHandX - dirX * (8 * ks), lHandY - (8 + dirY * 8) * ks);
+      ctx.lineTo(rHandX + dirX * (14 * ks), rHandY + (6 + dirY * 14) * ks);
+      ctx.stroke();
+      ctx.fillStyle = ornateWeapon ? accent : "#67f0ff";
+      ctx.fillRect(Math.round(rHandX + dirX * (10 * ks)), Math.round(rHandY + dirY * (10 * ks) - 2), 18 * ks, 5 * ks);
+      ctx.fillStyle = "#effcff";
+      ctx.fillRect(Math.round(rHandX + dirX * (22 * ks)), Math.round(rHandY + dirY * (22 * ks) - 4), 6 * ks, 9 * ks);
+      ctx.fillStyle = accent;
+      ctx.fillRect(Math.round(rHandX + dirX * (28 * ks)), Math.round(rHandY + dirY * (28 * ks) - 3), 3 * ks, 7 * ks);
+      if (isLegendary || isAscendant) {
+        ctx.restore();
+      }
+      ctx.restore();
+      return;
+    }
+
+    if (weaponKind === "sword") {
+      ctx.strokeStyle = ornateWeapon ? accent : "#67f0ff";
+      ctx.lineWidth = style === "heavy" ? 8 : 6 * Math.min(ks, 1.25);
+      ctx.beginPath();
+      ctx.moveTo(rHandX, rHandY);
+      ctx.lineTo(rHandX + dirX * (30 * ks), rHandY + dirY * (30 * ks));
+      ctx.stroke();
+      ctx.strokeStyle = "#eafcff";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(rHandX - sideX * (4 * ks), rHandY - sideY * (4 * ks));
+      ctx.lineTo(rHandX + sideX * (4 * ks), rHandY + sideY * (4 * ks));
+      ctx.stroke();
+      ctx.fillStyle = accent;
+      ctx.fillRect(lHandX - 2 * ks, lHandY - 10 * ks, 4 * ks, 16 * ks);
+      ctx.fillStyle = "rgba(255,255,255,0.65)";
+      ctx.fillRect(rHandX + dirX * (12 * ks), rHandY + dirY * (12 * ks) - 2, 16 * ks, 4 * ks);
+      if (isLegendary || isAscendant) {
+        ctx.restore();
+      }
+      ctx.restore();
+      return;
+    }
+
+    if (weaponKind === "bow") {
+      ctx.strokeStyle = ornateWeapon ? accent : "#a0d8ff";
+      ctx.lineWidth = 5 * Math.min(ks, 1.2);
+      ctx.beginPath();
+      ctx.moveTo(lHandX - dirX * (12 * ks), lHandY - (12 + dirY * 12) * ks);
+      ctx.quadraticCurveTo(
+        lHandX + sideX * (9 * ks),
+        lHandY + sideY * (9 * ks),
+        lHandX + dirX * (12 * ks),
+        lHandY + (6 + dirY * 12) * ks
+      );
+      ctx.stroke();
+      ctx.fillStyle = "#dffaff";
+      ctx.fillRect(Math.round(rHandX + dirX * (10 * ks)), Math.round(rHandY + dirY * (10 * ks) - 2), 18 * ks, 5 * ks);
+      ctx.fillStyle = accent;
+      ctx.fillRect(Math.round(rHandX + dirX * (22 * ks)), Math.round(rHandY + dirY * (22 * ks) - 3), 5 * ks, 7 * ks);
+      ctx.restore();
+      return;
+    }
+  }
 
   if (weaponKind === "staff") {
     // Straight vertical shaft with body; orb centered on shaft top — whole column sways subtly with gait.
@@ -8152,59 +8727,18 @@ function drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY) {
 
 function drawOwnedHouseInteriorCompanion(building, roofless, halfW, halfH) {
   const self = state.players.get(state.selfId);
-  const hc = self?.houseCompanion;
-  if (!roofless || !hc || building?.isPub) {
+  if (!roofless || !self?.houseCompanion || building?.isPub) {
     return;
   }
-  if (!self.homeBuildingKey || `${building.x},${building.y}` !== self.homeBuildingKey) {
+  const lay = resolveHouseCompanionPhantomLayout(self, building);
+  if (!lay) {
     return;
   }
-
-  const typ = building.type || "house";
-  if (!(typ === "house" || typ === "big_house")) {
-    return;
-  }
-
-  const npcId = typeof hc.npcId === "string" ? hc.npcId : "companion";
-  const mode = homeCompanionAmbientMode(npcId, self.homeBuildingKey);
-  const anchors = residentialPhantomCompanionAnchors(building);
-
-  let wx;
-  let wy;
-  let facing = Math.PI / 2;
-  /** @type {Record<string, unknown>} */
-  let poseExtras = {};
-
-  if (mode === "bed") {
-    wx = anchors.bed.wx;
-    wy = anchors.bed.wy;
-    poseExtras = { lyingBed: true };
-  } else if (mode === "eat") {
-    wx = anchors.dine.wx;
-    wy = anchors.dine.wy;
-    facing = anchors.dine.facing;
-    poseExtras = { restingBench: true };
-  } else {
-    const px = Number.isFinite(self.renderX) ? self.renderX : self.x;
-    const py = Number.isFinite(self.renderY) ? self.renderY : self.y;
-    const hx = anchors.flirtStand.wx;
-    const hy = anchors.flirtStand.wy;
-    const ang = Math.atan2(py - hy, px - hx);
-    const pull = Math.min(2.05, Math.hypot(px - hx, py - hy) * 0.32 + 0.92);
-    const rawX = px - Math.cos(ang) * pull;
-    const rawY = py - Math.sin(ang) * pull;
-    const cl = clampWorldToBuildingInterior(rawX, rawY, building);
-    wx = cl.x;
-    wy = cl.y;
-    facing = Math.atan2(py - wy, px - wx);
-    poseExtras = {
-      ambientLine: hashHomeCompanionPhrase(npcId, self.homeBuildingKey),
-      companionReachOut: true
-    };
-  }
+  const { wx, wy, facing, poseExtras, mode, hc } = lay;
 
   const anchor = interiorFloorAnchorFromWorld(wx, wy, halfW, halfH);
   const groundBump = mode === "bed" ? 4 : mode === "eat" ? 6 : 9;
+  const npcId = typeof hc.npcId === "string" ? hc.npcId : "companion";
   const ent = {
     id: `_house_companion_${npcId}`,
     name: hc.name || "Companion",
@@ -8231,6 +8765,20 @@ function drawOwnedHouseInteriorCompanion(building, roofless, halfW, halfH) {
         })
   };
   drawCharacter(ent, anchor.cx, anchor.groundY + groundBump, true, poseExtras);
+}
+
+function drawIntimateBlackoutOverlay() {
+  if (!state.joined || !(state.intimateBlackoutUntil > 0)) {
+    return;
+  }
+  const now = performance.now();
+  if (now >= state.intimateBlackoutUntil) {
+    state.intimateBlackoutUntil = 0;
+    return;
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
 function drawTower(building, sx, sy, w, h) {

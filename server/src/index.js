@@ -32,6 +32,8 @@ const {
   getTraderDefinitions,
   syncSoldCompanionIdsFromAccounts,
   registerCompanionSold,
+  unregisterCompanionSold,
+  pickHouseCompanionComplimentLine,
   getCompanionNpcTemplate,
   pickPubDreamGirlfriendNpcId,
   syncNpcHubHomesFromBuildings
@@ -86,6 +88,9 @@ const INVENTORY_SIZE = 10;
 const INTERACT_RADIUS = 1.8;
 const SHOP_INTERACT_RADIUS = 1.75;
 const STARTING_GOLD = 120;
+const SHIP_BUY_PRICE = 850;
+const SHIP_SPEED = 9.75;
+const SHIP_DOCK_RADIUS = 4.25;
 const MAX_GROUND_ITEMS = 140;
 const TRADER_INTERACT_RADIUS = 8;
 const MOB_AGGRO_RADIUS = 7.5;
@@ -903,8 +908,84 @@ function serializePlayer(player) {
     ...(player.houseCompanion && typeof player.houseCompanion === "object"
       ? { houseCompanion: player.houseCompanion }
       : {}),
-    ...(player.flirtFollowNpcId ? { flirtFollowNpcId: player.flirtFollowNpcId } : {})
+    ...(player.flirtFollowNpcId ? { flirtFollowNpcId: player.flirtFollowNpcId } : {}),
+    ...(player.ship && typeof player.ship === "object" ? { ship: serializeShip(player.ship) } : {})
   };
+}
+
+function serializeShip(ship) {
+  return {
+    templateId: typeof ship.templateId === "string" ? ship.templateId : "starter_ship",
+    name: typeof ship.name === "string" ? ship.name : "Nova Skiff",
+    color: typeof ship.color === "string" ? ship.color : "#67f0ff",
+    boarded: Boolean(ship.boarded),
+    dockX: clampNumber(ship.dockX, -10000, 10000, 1824),
+    dockY: clampNumber(ship.dockY, -10000, 10000, 0),
+    dockStationId: typeof ship.dockStationId === "string" ? ship.dockStationId : "station_nova_dock",
+    speed: clampNumber(ship.speed, 0, 1000, SHIP_SPEED)
+  };
+}
+
+function createStarterShip() {
+  return {
+    templateId: "starter_ship",
+    name: "Nova Skiff",
+    color: "#67f0ff",
+    boarded: false,
+    dockX: 1824,
+    dockY: 0,
+    dockStationId: "station_nova_dock",
+    speed: SHIP_SPEED
+  };
+}
+
+function sanitizeShip(ship) {
+  if (!ship || typeof ship !== "object") {
+    return null;
+  }
+  return {
+    templateId: typeof ship.templateId === "string" ? ship.templateId.slice(0, 48) : "starter_ship",
+    name: typeof ship.name === "string" ? ship.name.slice(0, 48) : "Nova Skiff",
+    color: typeof ship.color === "string" ? ship.color.slice(0, 22) : "#67f0ff",
+    boarded: Boolean(ship.boarded),
+    dockX: clampNumber(ship.dockX, -10000, 10000, 1824),
+    dockY: clampNumber(ship.dockY, -10000, 10000, 0),
+    dockStationId: typeof ship.dockStationId === "string" ? ship.dockStationId.slice(0, 48) : "station_nova_dock",
+    speed: clampNumber(ship.speed, 0, 1000, SHIP_SPEED)
+  };
+}
+
+function getShipCatalog() {
+  return [
+    {
+      templateId: "dock_skiff",
+      type: "ship",
+      name: "Dock Skiff",
+      icon: "ship",
+      rarity: "rare",
+      color: "#67f0ff",
+      value: SHIP_BUY_PRICE,
+      price: SHIP_BUY_PRICE,
+      shipTemplateId: "dock_skiff",
+      shipName: "Dock Skiff",
+      shipColor: "#67f0ff",
+      stats: { speed: 14 }
+    },
+    {
+      templateId: "station_runner",
+      type: "ship",
+      name: "Station Runner",
+      icon: "ship",
+      rarity: "epic",
+      color: "#9edfff",
+      value: 1200,
+      price: 1200,
+      shipTemplateId: "station_runner",
+      shipName: "Station Runner",
+      shipColor: "#9edfff",
+      stats: { speed: 16 }
+    }
+  ];
 }
 
 function sanitizeHomeBuildingKey(raw) {
@@ -1261,10 +1342,11 @@ function simulate() {
       const nextY = client.player.y + dy * speed * dt;
 
       const doorAccountKey = client.account?.key || "";
-      if (!isBlockedCircle(nextX, client.player.y) && !isDoorLockedForPlayer(nextX, client.player.y, doorAccountKey)) {
+      const shipMode = Boolean(client.player.ship?.boarded);
+      if (shipMode || (!isBlockedCircle(nextX, client.player.y) && !isDoorLockedForPlayer(nextX, client.player.y, doorAccountKey))) {
         client.player.x = nextX;
       }
-      if (!isBlockedCircle(client.player.x, nextY) && !isDoorLockedForPlayer(client.player.x, nextY, doorAccountKey)) {
+      if (shipMode || (!isBlockedCircle(client.player.x, nextY) && !isDoorLockedForPlayer(client.player.x, nextY, doorAccountKey))) {
         client.player.y = nextY;
       }
 
@@ -1508,6 +1590,80 @@ function handleHouseChestAction(client, message) {
   }
 }
 
+/** Player inside their owned homestead (house / big_house) with a live-in companion. */
+function sanitizePlayerHouseCompanionSession(client) {
+  const p = client.player;
+  if (!p || !client.account) {
+    return null;
+  }
+  const rawKey = typeof p.homeBuildingKey === "string" ? p.homeBuildingKey : null;
+  const key = rawKey ? sanitizeHomeBuildingKey(rawKey) : null;
+  if (!key || !p.houseCompanion) {
+    return null;
+  }
+  const ownership = ownedBuildings.get(key);
+  if (!ownership || ownership.ownerAccountKey !== client.account.key) {
+    return null;
+  }
+  const building = BUILDING_LIST.find((b) => `${b.x},${b.y}` === key);
+  if (!building || building.isPub) {
+    return null;
+  }
+  const typ = building.type || "house";
+  if (typ !== "house" && typ !== "big_house") {
+    return null;
+  }
+  if (!playerInsideOwnedHouseInterior(p, building)) {
+    return null;
+  }
+  return { p, building, key, hc: p.houseCompanion };
+}
+
+function residentialBedWakeWorldPos(building) {
+  const bh = Math.max(1, building.h | 0);
+  return {
+    x: building.x + 2.18,
+    y: building.y + (bh - 2) + 0.48
+  };
+}
+
+function handleHouseCompanionAction(client, message) {
+  const ctx = sanitizePlayerHouseCompanionSession(client);
+  if (!ctx) {
+    send(client, { type: "serverMessage", message: "house_companion_bad" });
+    return;
+  }
+  const act = typeof message.action === "string" ? message.action.trim() : "";
+  if (act === "chat") {
+    const line = pickHouseCompanionComplimentLine(ctx.hc);
+    const nm = typeof ctx.hc.name === "string" ? ctx.hc.name : "Companion";
+    send(client, { type: "houseCompanionChat", name: nm, text: line });
+    return;
+  }
+  if (act === "breakup") {
+    const npcId = typeof ctx.hc.npcId === "string" ? ctx.hc.npcId : null;
+    ctx.p.houseCompanion = null;
+    if (npcId) {
+      unregisterCompanionSold(npcId);
+    }
+    saveClientCharacter(client);
+    broadcastSnapshot();
+    send(client, { type: "serverMessage", message: "companion_left_home" });
+    return;
+  }
+  if (act === "intimate") {
+    const pos = residentialBedWakeWorldPos(ctx.building);
+    ctx.p.x = pos.x;
+    ctx.p.y = pos.y;
+    ctx.p.moving = false;
+    client.input = normalizeInput();
+    broadcastSnapshot();
+    send(client, { type: "serverMessage", message: "companion_intimate_ok" });
+    return;
+  }
+  send(client, { type: "serverMessage", message: "house_companion_bad" });
+}
+
 function handlePortalTravel(client) {
   const now = Date.now();
   if (now - client.lastPortalAt < PORTAL_COOLDOWN_MS) {
@@ -1523,6 +1679,9 @@ function handlePortalTravel(client) {
   client.player.x = portal.targetX;
   client.player.y = portal.targetY + 3.2;
   client.player.moving = false;
+  if (client.player.ship && getWorldThemeAt(client.player.x, client.player.y) !== "sci-fi") {
+    client.player.ship.boarded = false;
+  }
   client.input = normalizeInput();
 
   send(client, {
@@ -1647,6 +1806,11 @@ function handleMessage(client, raw) {
 
   if (message.type === "houseChestAction") {
     handleHouseChestAction(client, message);
+    return;
+  }
+
+  if (message.type === "houseCompanionAction") {
+    handleHouseCompanionAction(client, message);
     return;
   }
 
@@ -2037,6 +2201,7 @@ function joinWorld(client, message, savedCharacter = null) {
       torsoColor,
       weaponColor
     }),
+    ship: sanitizeShip(savedCharacter?.ship),
     talentPoints: initialTalentPoints(savedCharacter, isMod),
     talents: savedCharacter?.talents || {},
     abilityBar: Array.isArray(savedCharacter?.abilityBar)
@@ -2346,8 +2511,80 @@ function resolveInteractRoadside(player, message = {}) {
   return findRoadsideFeatureNear(player.x, player.y, 2.05);
 }
 
+function resolveShipBoarding(player) {
+  const ship = player?.ship;
+  if (!ship) {
+    return null;
+  }
+
+  const dockX = Number(ship.dockX);
+  const dockY = Number(ship.dockY);
+  if (!Number.isFinite(dockX) || !Number.isFinite(dockY)) {
+    return null;
+  }
+
+  const dist = Math.hypot(player.x - dockX, player.y - dockY);
+  return {
+    ship,
+    dockX,
+    dockY,
+    canBoard: !ship.boarded && dist <= SHIP_DOCK_RADIUS,
+    canDock: ship.boarded && dist <= SHIP_DOCK_RADIUS
+  };
+}
+
+function handleShipInteract(client) {
+  if (!client.player?.ship) {
+    return false;
+  }
+
+  const ctx = resolveShipBoarding(client.player);
+  if (!ctx) {
+    return false;
+  }
+
+  if (ctx.canBoard) {
+    client.player.ship.boarded = true;
+    client.player.ship.dockX = ctx.dockX;
+    client.player.ship.dockY = ctx.dockY;
+    client.player.x = ctx.dockX;
+    client.player.y = ctx.dockY;
+    client.player.facing = 0;
+    client.player.moving = false;
+    client.player._stillAccumulator = 0;
+    saveClientCharacter(client);
+    send(client, {
+      type: "serverMessage",
+      message: "ship_boarded",
+      shipName: client.player.ship.name
+    });
+    broadcastSnapshot();
+    return true;
+  }
+
+  if (ctx.canDock) {
+    client.player.ship.boarded = false;
+    client.player.ship.dockX = client.player.x;
+    client.player.ship.dockY = client.player.y;
+    saveClientCharacter(client);
+    send(client, {
+      type: "serverMessage",
+      message: "ship_docked",
+      shipName: client.player.ship.name
+    });
+    broadcastSnapshot();
+    return true;
+  }
+
+  return false;
+}
+
 function handleInteract(client, message = {}) {
   if (!client.player) {
+    return;
+  }
+
+  if (handleShipInteract(client)) {
     return;
   }
 
@@ -2738,6 +2975,9 @@ function applyDerivedPlayerStats(player) {
 }
 
 function getPlayerSpeed(player) {
+  if (player.ship?.boarded) {
+    return Number(player.ship.speed) || SHIP_SPEED;
+  }
   return PLAYER_SPEED + player.stats.speed * STAT_POINT_SPEED + getEquipmentStats(player).speed;
 }
 
@@ -3205,6 +3445,7 @@ function broadcastSnapshot() {
       gold: p.gold,
       inventory: p.inventory,
       equipment: p.equipment,
+      ship: p.ship ? serializeShip(p.ship) : null,
       talentPoints: p.talentPoints || 0,
       talents: p.talents || {},
       abilityBar: p.abilityBar || [null, null, null, null, null],
@@ -3780,6 +4021,9 @@ function nearestShopFixture(player, message = {}) {
 }
 
 function getShopStock(shop) {
+  if (shop?.shopType === "ship") {
+    return getShipCatalog();
+  }
   if (shop?.isPub) {
     return [...PUB_BAR_STOCK_TEMPLATES];
   }
@@ -3798,6 +4042,22 @@ function getShopStock(shop) {
 }
 
 function publicShopItem(template) {
+  if (template?.type === "ship") {
+    return {
+      templateId: template.templateId,
+      type: "ship",
+      name: template.name,
+      icon: template.icon || "ship",
+      rarity: template.rarity || "rare",
+      color: template.color || "#67f0ff",
+      stats: template.stats || {},
+      value: template.value || template.price || SHIP_BUY_PRICE,
+      price: template.price || template.value || SHIP_BUY_PRICE,
+      shipTemplateId: template.shipTemplateId || template.templateId,
+      shipName: template.shipName || template.name,
+      shipColor: template.shipColor || template.color || "#67f0ff"
+    };
+  }
   return {
     templateId: template.templateId,
     type: template.type,
@@ -3822,6 +4082,7 @@ function sendShopWindow(client, shop) {
     name: shop.name,
     buildingName: shop.buildingName,
     isPub: !!shop.isPub,
+    shopType: shop.shopType || "trade",
     x: shop.x,
     y: shop.y,
     gold: client.player?.gold || 0,
@@ -3844,6 +4105,37 @@ function handleShopBuy(client, message) {
   const template = getShopStock(shop).find((item) => item.templateId === templateId);
   if (!template) {
     send(client, { type: "serverMessage", message: "shop_item_missing" });
+    return;
+  }
+
+  if (template.type === "ship") {
+    const shipPrice = Number(template.price || template.value || SHIP_BUY_PRICE);
+    if ((client.player.gold || 0) < shipPrice) {
+      send(client, { type: "serverMessage", message: "not_enough_gold" });
+      sendShopWindow(client, shop);
+      return;
+    }
+    if (client.player.ship && client.player.ship.templateId !== "starter_ship") {
+      send(client, { type: "serverMessage", message: "ship_already_owned" });
+      sendShopWindow(client, shop);
+      return;
+    }
+
+    client.player.gold = Math.max(0, (client.player.gold || 0) - shipPrice);
+    client.player.ship = sanitizeShip({
+      templateId: template.shipTemplateId || template.templateId,
+      name: template.shipName || template.name,
+      color: template.shipColor || template.color,
+      boarded: false,
+      dockX: 1824,
+      dockY: 0,
+      dockStationId: "station_nova_dock",
+      speed: Number(template.stats?.speed) || SHIP_SPEED
+    }) || createStarterShip();
+    saveClientCharacter(client);
+    send(client, { type: "serverMessage", message: "ship_bought", itemName: client.player.ship.name });
+    sendShopWindow(client, shop);
+    broadcastSnapshot();
     return;
   }
 
@@ -4350,6 +4642,9 @@ function respawnPlayer(player) {
   player.x = spawn.x;
   player.y = spawn.y;
   player.moving = false;
+  if (player.ship) {
+    player.ship.boarded = false;
+  }
 }
 
 function getMobSnapshot(viewBounds) {

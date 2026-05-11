@@ -780,6 +780,23 @@ const FLIRT_BF_LINES = Object.freeze([
   "My mother always said I had poor timing. She'd be proud today.",
 ]);
 
+/** Warm lines when chatting with a partner who lives in your house (private to you). */
+const HOME_COMPLIMENT_GF = Object.freeze([
+  "With you under this roof? The whole realm feels warmer.",
+  "You're stubborn, brave, and ridiculous — and I still grin when the door opens.",
+  "I saved a spot by the kettle. Figured you'd march in the moment I gave up waiting.",
+  "Talk to me forever. Your voice still feels like coming home, even when you're two feet away.",
+  "If courage had a face, I'd rather look at yours than any portrait in a hall."
+]);
+
+const HOME_COMPLIMENT_BF = Object.freeze([
+  "Every time you walk through that door you remind me why I stayed.",
+  "Still got that stubborn jaw — means you never quit. I noticed.",
+  "Sit with me a minute. The world's loud; you're the quiet part I like.",
+  "You carry the road in your shoulders and softness in your eyes — unfair combo.",
+  "I'd follow you out again tomorrow. Tonight I'm just glad you're here."
+]);
+
 const ROMANCE_FEMALE_GIVEN = Object.freeze([
   "Aelithra", "Seraphina", "Morwyn", "Thalindra", "Caelindra", "Elara", "Sylvetra", "Nyssara",
   "Velithra", "Drusilla", "Isolde", "Lyralei", "Vexia", "Orianna", "Selene", "Melisandra",
@@ -1609,6 +1626,25 @@ function registerCompanionSold(npcId) {
   }
 }
 
+function unregisterCompanionSold(npcId) {
+  if (typeof npcId === "string") {
+    soldCompanionNpcIds.delete(npcId.slice(0, 96));
+  }
+}
+
+function pickHouseCompanionComplimentLine(hc) {
+  if (!hc || typeof hc !== "object") {
+    return "You belong here — with me.";
+  }
+  const id = typeof hc.npcId === "string" ? hc.npcId : "c";
+  let h = 0;
+  for (let i = 0; i < id.length; i += 1) {
+    h = (Math.imul(31, h) + id.charCodeAt(i)) >>> 0;
+  }
+  const lines = hc.bondTag === "bf" ? HOME_COMPLIMENT_BF : HOME_COMPLIMENT_GF;
+  return lines[h % lines.length] || lines[0];
+}
+
 function getNpcBuddy(npc) {
   if (!npc?._meetPeerId) {
     return null;
@@ -2399,6 +2435,8 @@ module.exports = {
   syncNpcHubHomesFromBuildings,
   syncSoldCompanionIdsFromAccounts,
   registerCompanionSold,
+  unregisterCompanionSold,
+  pickHouseCompanionComplimentLine,
   getCompanionNpcTemplate,
   pickPubDreamGirlfriendNpcId
 };

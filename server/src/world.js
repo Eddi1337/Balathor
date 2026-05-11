@@ -83,6 +83,14 @@ const SCI_FI_STATIONS = Object.freeze([
   { id: "station_lumen_hub", name: "Lumen Hub", x: 1696, y: 120, w: 18, h: 12, kind: "trade" },
   { id: "station_gate_link", name: "Gate Link", x: 1648, y: 0, w: 14, h: 10, kind: "gate" }
 ]);
+const SCI_FI_STATION_FEATURES = Object.freeze([
+  { id: "station_nova_spine", name: "Central Spine", x: 1824, y: 0, w: 42, h: 4, kind: "corridor" },
+  { id: "station_nova_market", name: "Market Hall", x: 1840, y: 10, w: 18, h: 4, kind: "corridor" },
+  { id: "station_nova_lift", name: "Lift Shaft", x: 1808, y: 0, w: 4, h: 22, kind: "corridor" },
+  { id: "station_nova_ship_bay", name: "Ship Bay", x: 1840, y: -10, w: 8, h: 6, kind: "ship-bay" },
+  { id: "station_nova_ship_shop", name: "Dockyard", x: 1804, y: 12, w: 7, h: 5, kind: "ship-shop", shopType: "ship" },
+  { id: "station_nova_commissary", name: "Commissary", x: 1838, y: -16, w: 6, h: 5, kind: "shop-bay", shopType: "trade" }
+]);
 const SCI_FI_PLANETS = Object.freeze([
   { id: "planet_aurelia", name: "Aurelia", x: 2142, y: -382, radius: 74, seed: 8128, type: "lush" },
   { id: "planet_icefall", name: "Icefall", x: 2214, y: 180, radius: 64, seed: 9181, type: "ice" },
@@ -187,6 +195,13 @@ function getSciFiObjectsInChunk(cx, cy) {
 
   for (const station of SCI_FI_STATIONS) {
     const obj = { ...station, kind: "station" };
+    if (sciFiObjectTouchesChunk(obj, startX, startY, endX, endY)) {
+      out.push(obj);
+    }
+  }
+
+  for (const feature of SCI_FI_STATION_FEATURES) {
+    const obj = { ...feature };
     if (sciFiObjectTouchesChunk(obj, startX, startY, endX, endY)) {
       out.push(obj);
     }
@@ -1335,6 +1350,27 @@ function getDoorTransitionAt(x, y) {
 }
 
 function getShopFixtureAt(x, y) {
+  if (isSciFiSector(x, y)) {
+    for (const feature of SCI_FI_STATION_FEATURES) {
+      if (feature.shopType !== "ship" && feature.shopType !== "trade") {
+        continue;
+      }
+      const halfW = Math.max(1, Math.floor(feature.w / 2));
+      const halfH = Math.max(1, Math.floor(feature.h / 2));
+      if (x >= feature.x - halfW - 0.9 && x <= feature.x + halfW + 0.9 && y >= feature.y - halfH - 0.9 && y <= feature.y + halfH + 0.9) {
+        return {
+          id: feature.id,
+          name: feature.name,
+          buildingName: "Nova Dock",
+          isPub: false,
+          shopType: feature.shopType || "trade",
+          x: feature.x,
+          y: feature.y
+        };
+      }
+    }
+  }
+
   for (const interior of getCandidateInteriorsNear(x)) {
     const b = interior.building;
     if (Math.abs(x - (interior.x + interior.w / 2)) > interior.w + 2 || Math.abs(y - (interior.y + interior.h / 2)) > interior.h + 2) {
@@ -1353,6 +1389,7 @@ function getShopFixtureAt(x, y) {
             name: b.isPub ? "Taproom" : "Trader Shelf",
             buildingName: b.name,
             isPub: !!b.isPub,
+            shopType: b.isPub ? "pub" : "trade",
             x: wx + 0.5,
             y: wy + 0.5
           };
@@ -1378,6 +1415,7 @@ function getShopFixtureAt(x, y) {
               name: b.isPub ? "Taproom" : "Trader Shelf",
               buildingName: b.name,
               isPub: !!b.isPub,
+              shopType: b.isPub ? "pub" : "trade",
               x: sx + 0.5,
               y: sy + 0.5
             };
