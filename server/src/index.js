@@ -2497,6 +2497,39 @@ function handleHomeTeleport(client) {
   broadcastSnapshot();
 }
 
+function handleSciFiTeleport(client) {
+  if (!client.player) {
+    return;
+  }
+
+  const now = Date.now();
+  if (now - (client.lastSciFiAt || 0) < HOME_COOLDOWN_MS) {
+    return;
+  }
+
+  const port = getPlayerDockPort(client.player);
+  if (!port) {
+    return;
+  }
+
+  client.lastSciFiAt = now;
+  client.player.x = port.x;
+  client.player.y = port.y;
+  client.player.moving = false;
+  client.input = normalizeInput();
+
+  send(client, {
+    type: "teleport",
+    portalId: "sci_command",
+    name: "Ringforge Station",
+    theme: getWorldThemeAt(client.player.x, client.player.y),
+    x: client.player.x,
+    y: client.player.y
+  });
+  streamChunks(client, nearbyChunks(client.player.x, client.player.y, 3));
+  broadcastSnapshot();
+}
+
 function handleSpendStat(client, message) {
   if (!client.player) {
     return;
@@ -3388,6 +3421,16 @@ function findAttackTarget(client, loadout) {
 function handleChat(client, message) {
   if (!client.player) {
     send(client, { type: "serverMessage", message: "join_before_chat" });
+    return;
+  }
+
+  const rawText = typeof message.text === "string" ? message.text.trim().toLowerCase() : "";
+  if (rawText === "/sci") {
+    handleSciFiTeleport(client);
+    return;
+  }
+  if (rawText === "/home") {
+    handleHomeTeleport(client);
     return;
   }
 
