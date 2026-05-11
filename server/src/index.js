@@ -1086,6 +1086,26 @@ function computePlayerViewUnionBounds(tileMargin) {
   return { minX, maxX, minY, maxY };
 }
 
+/**
+ * Per-player view rectangles — one entry per logged-in player, no union.
+ * Mob simulation uses this so distant players don't inflate the active zone
+ * to cover the entire map between them.
+ */
+function computePlayerViewBoundsArray(tileMargin) {
+  const result = [];
+  for (const client of clients.values()) {
+    if (!client.player) continue;
+    const view = client.view || defaultViewForPlayer(client.player);
+    result.push({
+      minX: view.x - view.halfW - tileMargin,
+      maxX: view.x + view.halfW + tileMargin,
+      minY: view.y - view.halfH - tileMargin,
+      maxY: view.y + view.halfH + tileMargin,
+    });
+  }
+  return result;
+}
+
 function computeNpcActivationBounds() {
   const half = Math.ceil(Number(HUB_TOWN_GRASS_RADIUS) || 132) + NPC_HUB_AI_PAD_TILES;
   const hubAlways = { minX: -half, maxX: half, minY: -half, maxY: half };
@@ -1121,6 +1141,14 @@ function mobShouldSimulate(mob, activityBounds) {
     mob.y >= activityBounds.minY - pad &&
     mob.y <= activityBounds.maxY + pad
   );
+}
+
+/** True if the mob should simulate for at least one player's view region. */
+function mobShouldSimulateAny(mob, boundsArray) {
+  for (const b of boundsArray) {
+    if (mobShouldSimulate(mob, b)) return true;
+  }
+  return false;
 }
 
 function simulate() {
@@ -1191,7 +1219,7 @@ function simulate() {
       }
     }
   });
-  updateMobs(dt, computePlayerViewUnionBounds(CHAT_VIEW_MARGIN_TILES + MOB_ACTIVITY_MARGIN_TILES));
+  updateMobs(dt, computePlayerViewBoundsArray(CHAT_VIEW_MARGIN_TILES + MOB_ACTIVITY_MARGIN_TILES));
 
   processConsecrationZones(Date.now());
 
@@ -2963,6 +2991,27 @@ function nearbyChunks(x, y, radius) {
   return chunks;
 }
 
+/** Queue of {client, cx, cy, key} for chunks that need first-time generation off the hot tick path. */
+const chunkGenQueue = [];
+let chunkGenScheduled = false;
+
+function drainChunkGenQueue() {
+  chunkGenScheduled = false;
+  // Process up to 6 uncached chunks per drain so we don't starve I/O
+  const batch = chunkGenQueue.splice(0, 6);
+  for (const { client, cx, cy, key } of batch) {
+    if (!client.socket || client.socket.destroyed) continue; // disconnected
+    if (!chunkCache.has(key)) {
+      chunkCache.set(key, generateChunk(cx, cy));
+    }
+    send(client, { type: "chunk", ...chunkCache.get(key) });
+  }
+  if (chunkGenQueue.length > 0) {
+    chunkGenScheduled = true;
+    setImmediate(drainChunkGenQueue);
+  }
+}
+
 function streamChunks(client, chunks) {
   if (!Array.isArray(chunks)) {
     return;
@@ -2977,14 +3026,17 @@ function streamChunks(client, chunks) {
     const cy = clampInteger(item[1], -4096, 4096);
     const key = `${cx},${cy}`;
 
-    if (!chunkCache.has(key)) {
-      chunkCache.set(key, generateChunk(cx, cy));
+    if (chunkCache.has(key)) {
+      // Already cached — send immediately, no tick cost
+      send(client, { type: "chunk", ...chunkCache.get(key) });
+    } else {
+      // First-time generation is expensive; defer off the tick path
+      chunkGenQueue.push({ client, cx, cy, key });
+      if (!chunkGenScheduled) {
+        chunkGenScheduled = true;
+        setImmediate(drainChunkGenQueue);
+      }
     }
-
-    send(client, {
-      type: "chunk",
-      ...chunkCache.get(key)
-    });
   }
 }
 
@@ -4071,7 +4123,7 @@ function findOpenMobHome(x, y, fallbackX, fallbackY) {
   return { x: fallbackX, y: fallbackY };
 }
 
-function updateMobs(dt, activityBounds) {
+function updateMobs(dt, boundsArray) {
   const now = Date.now();
 
   for (const mob of mobs) {
@@ -4085,7 +4137,7 @@ function updateMobs(dt, activityBounds) {
       continue;
     }
 
-    if (!mobShouldSimulate(mob, activityBounds)) {
+    if (!mobShouldSimulateAny(mob, boundsArray)) {
       continue;
     }
 
