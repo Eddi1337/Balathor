@@ -75,8 +75,8 @@ const {
   STARGATE_LANDING
 } = require("./sciFiStationLayout.js");
 
-/** Hub tile for sci-fi stargate — ring road near plaza tree, southeast arc (north gates use y ≈ -76). */
-const STARGATE_HUB_TILE = Object.freeze({ x: 8, y: 4 });
+/** Hub tile for sci-fi stargate — ~8 tiles east of plaza tree on the E–W cross road + ring (north gates use y ≈ -76). */
+const STARGATE_HUB_TILE = Object.freeze({ x: 8, y: 0 });
 /** Brown path disk + eight-way spokes under the hub stargate (tile units from portal cell). */
 const STARGATE_HUB_PATH_DISK_R = 4.35;
 const STARGATE_HUB_PATH_SPOKE_MAX = 9;
@@ -111,6 +111,14 @@ function hash2(x, y, seed = 1337) {
   h = (h ^ (h >>> 13)) >>> 0;
   h = Math.imul(h, 1274126177) >>> 0;
   return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+}
+
+/** Same grass mix as the inner plaza clearing around the landmark tree (hash2 seed 44). */
+function hubPlazaLawnGrassTile(x, y) {
+  const r = hash2(x, y, 44);
+  if (r > 0.78) return TILE.FLOWERS;
+  if (r > 0.52) return TILE.DARK_GRASS;
+  return TILE.GRASS;
 }
 
 function isSciFiSector(x, y) {
@@ -1806,7 +1814,7 @@ function generateExteriorTile(x, y) {
   // Hub stargate: brown path rosette (disk + eight-way spokes), not the shared portal stone apron.
   if (isNearHubStargatePortalClearance(tiGrid, tjGrid)) {
     if (isStargateHubPathPlaza(tiGrid, tjGrid)) return TILE.PATH;
-    return TILE.DARK_GRASS;
+    return hubPlazaLawnGrassTile(x, y);
   }
 
   /** Keep portal courtyards on stone ahead of PATH layers (hub paths & cross avenues). */
@@ -1870,10 +1878,7 @@ function generateExteriorTile(x, y) {
 
   // Inner clearing around the landmark tree — scattered flowers and dark grass.
   if (dist < 7) {
-    const r = hash2(x, y, 44);
-    if (r > 0.78) return TILE.FLOWERS;
-    if (r > 0.52) return TILE.DARK_GRASS;
-    return TILE.GRASS;
+    return hubPlazaLawnGrassTile(x, y);
   }
 
   const campTile = getEnemyCampTile(x, y);
