@@ -703,8 +703,13 @@ requestAnimationFrame(frame);
 setInterval(sendInput, 33);
 
 async function start() {
+  globalThis.__balathorClearChunkCache = () => chunkCanvasCache.clear();
   if (globalThis.TechDungeonSprites) {
-    TechDungeonSprites.load().catch(() => {});
+    void TechDungeonSprites.load().then((ok) => {
+      if (ok) {
+        chunkCanvasCache.clear();
+      }
+    });
   }
   setStatus("Loading realm config");
   state.config = await loadConfig();
@@ -6365,7 +6370,12 @@ function drawTile(tile, sx, sy, tx, ty) {
     return;
   }
 
-  if (isSciFiWorld() && globalThis.TechDungeonSprites && TechDungeonSprites.drawSciFiStationTile(ctx, tile, sx, sy, tx, ty)) {
+  if (
+    globalThis.TechDungeonSprites &&
+    tile >= TILE.VOID &&
+    tile <= TILE.ENERGY &&
+    TechDungeonSprites.drawSciFiStationTile(ctx, tile, sx, sy, tx, ty)
+  ) {
     return;
   }
 

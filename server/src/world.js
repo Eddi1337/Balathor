@@ -75,11 +75,11 @@ const {
   STARGATE_LANDING
 } = require("./sciFiStationLayout.js");
 
-/** Hub tile for sci-fi stargate — ~8 tiles east of plaza tree on the E–W cross road + ring (north gates use y ≈ -76). */
-const STARGATE_HUB_TILE = Object.freeze({ x: 8, y: 0 });
+/** Hub stargate — east plaza spine, clear of tree; on E–W cross (|y|≤1) for road continuity. */
+const STARGATE_HUB_TILE = Object.freeze({ x: 20, y: 0 });
 /** Brown path disk + eight-way spokes under the hub stargate (tile units from portal cell). */
-const STARGATE_HUB_PATH_DISK_R = 4.35;
-const STARGATE_HUB_PATH_SPOKE_MAX = 9;
+const STARGATE_HUB_PATH_DISK_R = 3.6;
+const STARGATE_HUB_PATH_SPOKE_MAX = 14;
 
 const SCI_FI_STARGATE_PORTAL = Object.freeze({
   id: "portal_stargate",
@@ -264,6 +264,17 @@ function sciFiStationTileForFeature(feature, x, y) {
     return TILE.ENERGY;
   }
 
+  if (feature.kind === "station-plaza") {
+    const cx = Math.floor(fw / 2);
+    const cy = Math.floor(fh / 2);
+    const md = Math.abs(lx - cx) + Math.abs(ly - cy);
+    if (edge) return TILE.WALKWAY;
+    if (md <= 1) return TILE.ENERGY;
+    if (md <= 3) return TILE.METAL;
+    if ((lx + ly) % 2 === 0) return TILE.WINDOW;
+    return TILE.METAL;
+  }
+
   if (feature.kind === "ship-shop" || feature.kind === "shop-bay") {
     if (edge) return TILE.HULL;
     if (ly === 1 || ly === fh - 2) return TILE.WALKWAY;
@@ -304,7 +315,13 @@ function sciFiStationTileForFeature(feature, x, y) {
   }
 
   if (feature.kind === "corridor") {
-    return ly === Math.floor(fh / 2) ? TILE.WALKWAY : TILE.METAL;
+    if (edge) return TILE.HULL;
+    if (fw >= fh) {
+      if (Math.abs(ly - Math.floor(fh / 2)) <= 1) return TILE.WALKWAY;
+      return TILE.METAL;
+    }
+    if (Math.abs(lx - Math.floor(fw / 2)) <= 1) return TILE.WALKWAY;
+    return TILE.METAL;
   }
 
   if (edge) return TILE.HULL;
@@ -1754,13 +1771,19 @@ function generateExteriorTile(x, y) {
 
     const station = sciFiStationAt(x, y);
     if (station) {
-      const dx = Math.abs(x - station.x);
-      const dy = Math.abs(y - station.y);
+      const dxs = x - station.x;
+      const dys = y - station.y;
       const shellX = Math.floor(station.w / 2);
       const shellY = Math.floor(station.h / 2);
-      if (dx >= shellX - 1 || dy >= shellY - 1) {
+      const adx = Math.abs(dxs);
+      const ady = Math.abs(dys);
+      if (adx >= shellX - 1 || ady >= shellY - 1) {
         return TILE.HULL;
       }
+      if (adx <= 1 && ady < shellY - 10) return TILE.WALKWAY;
+      if (ady <= 1 && adx < shellX - 10) return TILE.WALKWAY;
+      if (((adx + ady) | 0) % 5 === 0) return TILE.WINDOW;
+      if (hash2(x, y, 8811) > 0.86) return TILE.WALKWAY;
       return TILE.METAL;
     }
 

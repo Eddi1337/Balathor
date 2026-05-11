@@ -38,7 +38,7 @@
 
   async function load() {
     if (loadStarted) {
-      return;
+      return Boolean(image && atlas);
     }
     loadStarted = true;
     let data = null;
@@ -48,10 +48,10 @@
         data = await res.json();
       }
     } catch {
-      return;
+      return false;
     }
     if (!data || typeof data.image !== "string") {
-      return;
+      return false;
     }
     const rel = data.image.replace(/^\.?\//, "");
     const url = `./assets/sci-fi/${rel}`;
@@ -64,7 +64,12 @@
     if (img.naturalWidth > 0 && data.byId && typeof data.byId === "object") {
       image = img;
       atlas = data;
+      if (typeof globalThis.__balathorClearChunkCache === "function") {
+        globalThis.__balathorClearChunkCache();
+      }
+      return true;
     }
+    return false;
   }
 
   function drawBitmapTile(ctx, tile, sx, sy, tx, ty) {
