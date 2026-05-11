@@ -1620,6 +1620,8 @@ function handleMessage(client, raw) {
     const npc = getNpcById(String(message.npcId || "").slice(0, 64));
     if (npc) {
       npc._shooedUntil = Date.now() + 45000;
+      npc._engagedAt = null;
+      npc._givenUpUntil = null;
       npc._targetX = npc.homeX;
       npc._targetY = npc.homeY;
     }

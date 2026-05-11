@@ -1886,14 +1886,56 @@ function playerAttractionScore(player) {
   return 1 + levelBonus + armorBonus;
 }
 
+const APPROACH_ORBIT_RADIUS = 2.0;
+const APPROACH_GIVE_UP_MS = 20000;
+const APPROACH_COOLDOWN_MS = 45000;
+
+/**
+ * Picks a position on the orbit circle around (tx, ty) for this NPC that
+ * avoids clustering with other approaching NPCs. Each NPC has a seed-derived
+ * preferred slot (1 of 8 at 45° intervals); if that slot is taken the NPC
+ * tries adjacent slots until one is clear (min 1.4 tiles from neighbours).
+ */
+function orbitSlotPosition(npc, tx, ty) {
+  const seed = npcIdHashSeed(npc.id);
+  const preferredSlot = seed % 8;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const slot = (preferredSlot + attempt) % 8;
+    const angle = slot * (Math.PI / 4);
+    const cx = tx + Math.cos(angle) * APPROACH_ORBIT_RADIUS;
+    const cy = ty + Math.sin(angle) * APPROACH_ORBIT_RADIUS;
+    let clear = true;
+    for (const n of npcs) {
+      if (n === npc) continue;
+      if (!n.wandersToFlirt && !n.wandersToPlayer) continue;
+      if (Math.hypot(n.x - cx, n.y - cy) < 1.4) { clear = false; break; }
+    }
+    if (clear) return { angle, cx, cy };
+  }
+  // All slots occupied — keep preferred slot anyway
+  const angle = preferredSlot * (Math.PI / 4);
+  return { angle, cx: tx + Math.cos(angle) * APPROACH_ORBIT_RADIUS, cy: ty + Math.sin(angle) * APPROACH_ORBIT_RADIUS };
+}
+
+/** Shared give-up / return-home logic used by both approach functions. */
+function approachGiveUp(npc, now) {
+  npc._engagedAt = null;
+  npc._givenUpUntil = now + APPROACH_COOLDOWN_MS;
+  npc._targetX = npc.homeX;
+  npc._targetY = npc.homeY;
+  invalidateNpcHubRoadPath(npc);
+}
+
 /**
  * Flirt-walker NPC approaches the most attractive player within range.
  * Range and pickiness both scale with playerAttractionScore.
+ * NPCs orbit around the player rather than stacking, and give up after 20 s.
  * @returns {boolean} true if the NPC is steering toward a player this tick
  */
 function applyFlirtApproach(npc, companionCtx, onChat, now) {
   if (!npc.wandersToFlirt || !companionCtx?.allPlayers) return false;
-  if ((npc._shooedUntil || 0) > now) {
+  if ((npc._shooedUntil || 0) > now || (npc._givenUpUntil || 0) > now) {
+    npc._engagedAt = null;
     npc._targetX = npc.homeX;
     npc._targetY = npc.homeY;
     invalidateNpcHubRoadPath(npc);
@@ -1901,7 +1943,6 @@ function applyFlirtApproach(npc, companionCtx, onChat, now) {
   }
   if (npc._meetPeerId) return false;
 
-  // Per-NPC pickiness threshold derived from its id: 1–5
   const threshold = (npcIdHashSeed(npc.id) % 5) + 1;
 
   let best = null;
@@ -1915,16 +1956,37 @@ function applyFlirtApproach(npc, companionCtx, onChat, now) {
     if (score > bestScore) { bestScore = score; best = p; }
   }
 
-  if (!best) return false;
+  if (!best) {
+    npc._engagedAt = null;
+    return false;
+  }
 
   const dx = best.x - npc.x;
   const dy = best.y - npc.y;
   const dist = Math.hypot(dx, dy);
 
+  // Start engagement timer once within talking range
+  if (dist < 3.0 && !npc._engagedAt) npc._engagedAt = now;
+  if (npc._engagedAt && now - npc._engagedAt > APPROACH_GIVE_UP_MS) {
+    approachGiveUp(npc, now);
+    return false;
+  }
+
   if (dist > 2.2) {
-    const angle = Math.atan2(dy, dx);
-    npc._targetX = best.x - Math.cos(angle) * 1.8;
-    npc._targetY = best.y - Math.sin(angle) * 1.8;
+    let tx, ty;
+    if (dist > 5) {
+      // Still far — head straight toward player
+      const angle = Math.atan2(dy, dx);
+      tx = best.x - Math.cos(angle) * APPROACH_ORBIT_RADIUS;
+      ty = best.y - Math.sin(angle) * APPROACH_ORBIT_RADIUS;
+    } else {
+      // Close — arc toward NPC's unique orbit slot to avoid stacking
+      const slot = orbitSlotPosition(npc, best.x, best.y);
+      tx = slot.cx;
+      ty = slot.cy;
+    }
+    npc._targetX = tx;
+    npc._targetY = ty;
     invalidateNpcHubRoadPath(npc);
   }
 
@@ -1939,12 +2001,13 @@ function applyFlirtApproach(npc, companionCtx, onChat, now) {
 
 /**
  * Wandering hawker NPC approaches the nearest player within 28 tiles.
+ * Orbits the player to avoid stacking; gives up after 20 s close contact.
  * @returns {boolean} true if hawker AI steered the NPC this tick
  */
 function applyHawkerApproach(npc, companionCtx, onChat, now) {
   if (!npc.wandersToPlayer || !companionCtx?.allPlayers) return false;
-  if ((npc._shooedUntil || 0) > now) {
-    // Shooed — walk home
+  if ((npc._shooedUntil || 0) > now || (npc._givenUpUntil || 0) > now) {
+    npc._engagedAt = null;
     npc._targetX = npc.homeX;
     npc._targetY = npc.homeY;
     invalidateNpcHubRoadPath(npc);
@@ -1954,21 +2017,39 @@ function applyHawkerApproach(npc, companionCtx, onChat, now) {
   let best = null;
   let bestDsq = 28 * 28;
   for (const { player: p } of companionCtx.allPlayers) {
-    const dx = npc.x - p.x;
-    const dy = npc.y - p.y;
-    const dsq = dx * dx + dy * dy;
+    const ddx = npc.x - p.x;
+    const ddy = npc.y - p.y;
+    const dsq = ddx * ddx + ddy * ddy;
     if (dsq < bestDsq) { bestDsq = dsq; best = p; }
   }
-  if (!best) return false;
+  if (!best) {
+    npc._engagedAt = null;
+    return false;
+  }
 
-  // Approach to within 2 tiles
   const dx = best.x - npc.x;
   const dy = best.y - npc.y;
   const dist = Math.hypot(dx, dy);
+
+  if (dist < 3.0 && !npc._engagedAt) npc._engagedAt = now;
+  if (npc._engagedAt && now - npc._engagedAt > APPROACH_GIVE_UP_MS) {
+    approachGiveUp(npc, now);
+    return false;
+  }
+
   if (dist > 2.2) {
-    const angle = Math.atan2(dy, dx);
-    npc._targetX = best.x - Math.cos(angle) * 1.8;
-    npc._targetY = best.y - Math.sin(angle) * 1.8;
+    let tx, ty;
+    if (dist > 5) {
+      const angle = Math.atan2(dy, dx);
+      tx = best.x - Math.cos(angle) * APPROACH_ORBIT_RADIUS;
+      ty = best.y - Math.sin(angle) * APPROACH_ORBIT_RADIUS;
+    } else {
+      const slot = orbitSlotPosition(npc, best.x, best.y);
+      tx = slot.cx;
+      ty = slot.cy;
+    }
+    npc._targetX = tx;
+    npc._targetY = ty;
     invalidateNpcHubRoadPath(npc);
   }
 
