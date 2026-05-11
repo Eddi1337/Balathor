@@ -7,3 +7,4 @@ client/desktop/app/
 *.log
 server/data/
 client/assets/*-source.png
+*Zone.Identifier
