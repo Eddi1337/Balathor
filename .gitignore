@@ -11,3 +11,4 @@ client/assets/*-source.png
 client/assets/sci-fi/tileset.png
 client/assets/sci-fi/*.zip
 *Zone.Identifier
+**/__MACOSX/
