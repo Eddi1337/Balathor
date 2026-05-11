@@ -101,6 +101,9 @@ const partyPanel = document.querySelector("#partyPanel");
 const partyMembersEl = document.querySelector("#partyMembers");
 const partyPanelMin = document.querySelector("#partyPanelMin");
 const playerContextMenu = document.querySelector("#playerContextMenu");
+const npcContextMenu = document.querySelector("#npcContextMenu");
+const npcContextMenuName = document.querySelector("#npcContextMenuName");
+const npcContextMenuButtons = document.querySelector("#npcContextMenuButtons");
 const friendsWindow = document.querySelector("#friendsWindow");
 const friendsWindowList = document.querySelector("#friendsWindowList");
 const friendsWindowClose = document.querySelector("#friendsWindowClose");
@@ -342,6 +345,7 @@ const state = {
   party: null,
   chatSubTab: "messages",
   playerContextMenu: null,
+  npcContext: null,
   tradePartnerId: null,
   tradeDragInvSlot: null,
   friendsWindowOpen: false,
@@ -1429,6 +1433,114 @@ function tryOpenPlayerContextMenuFromCanvas(event, worldX, worldY) {
   return true;
 }
 
+const NPC_CTX_HIT_RADIUS = 1.8;
+const NPC_CTX_PLAYER_RADIUS = 9;
+
+function hideNpcContextMenu() {
+  state.npcContext = null;
+  npcContextMenu?.classList.add("hidden");
+}
+
+function showNpcContextMenu(npc) {
+  const self = state.players.get(state.selfId);
+  if (!self) return;
+  const nx = Number.isFinite(npc.renderX) ? npc.renderX : npc.x;
+  const ny = Number.isFinite(npc.renderY) ? npc.renderY : npc.y;
+  const sx = Number.isFinite(self.renderX) ? self.renderX : self.x;
+  const sy = Number.isFinite(self.renderY) ? self.renderY : self.y;
+  if (Math.hypot(nx - sx, ny - sy) > NPC_CTX_PLAYER_RADIUS) return;
+
+  const kind = npc.bondTag ? "romance" : npc.wandersToPlayer ? "hawker" : "comment";
+  state.npcContext = { npcId: npc.id, kind };
+
+  if (npcContextMenuName) npcContextMenuName.textContent = npc.name || "";
+  if (npcContextMenuButtons) {
+    npcContextMenuButtons.replaceChildren();
+    if (kind === "romance") {
+      const buyBtn = document.createElement("button");
+      buyBtn.dataset.npcAction = "buy_companion";
+      buyBtn.textContent = npc.bondTag === "bf" ? "Pursue him" : "Pursue her";
+      const shooBtn = document.createElement("button");
+      shooBtn.dataset.npcAction = "shoo";
+      shooBtn.className = "npc-ctx-shoo";
+      shooBtn.textContent = "Shoo";
+      npcContextMenuButtons.append(buyBtn, shooBtn);
+    } else if (kind === "hawker") {
+      const shopBtn = document.createElement("button");
+      shopBtn.dataset.npcAction = "shop";
+      shopBtn.textContent = "Buy";
+      const shooBtn = document.createElement("button");
+      shooBtn.dataset.npcAction = "shoo";
+      shooBtn.className = "npc-ctx-shoo";
+      shooBtn.textContent = "Shoo";
+      npcContextMenuButtons.append(shopBtn, shooBtn);
+    } else {
+      const shooBtn = document.createElement("button");
+      shooBtn.dataset.npcAction = "shoo";
+      shooBtn.className = "npc-ctx-shoo";
+      shooBtn.textContent = "Shoo";
+      npcContextMenuButtons.append(shooBtn);
+    }
+  }
+
+  positionNpcContextMenu(nx, ny);
+  npcContextMenu?.classList.remove("hidden");
+}
+
+function positionNpcContextMenu(worldX, worldY) {
+  if (!npcContextMenu) return;
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const cssScale = canvas.clientWidth / canvas.width;
+  const screenX = ((worldX * TILE_SIZE - state.camera.x + halfW) * cssScale);
+  const screenY = ((worldY * TILE_SIZE - state.camera.y + halfH) * cssScale) - 58;
+  const rect = canvas.getBoundingClientRect();
+  npcContextMenu.style.left = `${rect.left + screenX}px`;
+  npcContextMenu.style.top = `${Math.max(rect.top + 4, rect.top + screenY)}px`;
+}
+
+function tickNpcContextMenuPosition() {
+  if (!state.npcContext) return;
+  const npc = state.npcs.get(state.npcContext.npcId);
+  if (!npc) { hideNpcContextMenu(); return; }
+  const self = state.players.get(state.selfId);
+  if (!self) { hideNpcContextMenu(); return; }
+  const nx = Number.isFinite(npc.renderX) ? npc.renderX : npc.x;
+  const ny = Number.isFinite(npc.renderY) ? npc.renderY : npc.y;
+  const sx = Number.isFinite(self.renderX) ? self.renderX : self.x;
+  const sy = Number.isFinite(self.renderY) ? self.renderY : self.y;
+  if (Math.hypot(nx - sx, ny - sy) > NPC_CTX_PLAYER_RADIUS + 1) {
+    hideNpcContextMenu();
+    return;
+  }
+  positionNpcContextMenu(nx, ny);
+}
+
+function tryOpenNpcContextMenuFromCanvas(event, worldX, worldY) {
+  const self = state.players.get(state.selfId);
+  if (!self) return false;
+  const sx = Number.isFinite(self.renderX) ? self.renderX : self.x;
+  const sy = Number.isFinite(self.renderY) ? self.renderY : self.y;
+  let best = null;
+  let bestDist = NPC_CTX_HIT_RADIUS;
+  for (const npc of state.npcs.values()) {
+    if (npc.isTrader && !npc.wandersToPlayer) continue;
+    const nx = Number.isFinite(npc.renderX) ? npc.renderX : npc.x;
+    const ny = Number.isFinite(npc.renderY) ? npc.renderY : npc.y;
+    const d = Math.hypot(nx - worldX, ny - worldY);
+    if (d > bestDist) continue;
+    if (Math.hypot(nx - sx, ny - sy) > NPC_CTX_PLAYER_RADIUS) continue;
+    bestDist = d;
+    best = npc;
+  }
+  if (!best) return false;
+  event.preventDefault();
+  event.stopPropagation();
+  hidePlayerContextMenu();
+  showNpcContextMenu(best);
+  return true;
+}
+
 function renderFriendsInto(el) {
   if (!el) return;
   el.replaceChildren();
@@ -2065,6 +2177,9 @@ function wireUi() {
     if (tryClickHouseHomeTree(world.x, world.y)) {
       return;
     }
+    if (tryOpenNpcContextMenuFromCanvas(event, world.x, world.y)) {
+      return;
+    }
     if (tryOpenPlayerContextMenuFromCanvas(event, world.x, world.y)) {
       return;
     }
@@ -2077,6 +2192,27 @@ function wireUi() {
     if (!state.playerContextMenu) return;
     if (e.target.closest("#playerContextMenu")) return;
     hidePlayerContextMenu();
+  });
+
+  document.addEventListener("pointerdown", (e) => {
+    if (!state.npcContext) return;
+    if (e.target.closest("#npcContextMenu")) return;
+    hideNpcContextMenu();
+  });
+
+  npcContextMenu?.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-npc-action]");
+    if (!btn || !state.npcContext) return;
+    const { npcId } = state.npcContext;
+    const act = btn.dataset.npcAction;
+    hideNpcContextMenu();
+    if (act === "shoo") {
+      send({ type: "shoo_npc", npcId });
+    } else if (act === "shop") {
+      send({ type: "traderOpen", npcId });
+    } else if (act === "buy_companion") {
+      send({ type: "companionApproach", npcId });
+    }
   });
 
   // track latest pointer world position for keyboard/mobile attacks
@@ -2096,6 +2232,7 @@ function wireUi() {
     if (event.key === "Escape") {
       event.preventDefault();
       hidePlayerContextMenu();
+      hideNpcContextMenu();
       if (state.joined && state.pendingCompanionInvite) {
         closeCompanionInvitePanel();
         return;
@@ -3500,12 +3637,14 @@ function clearWorldState() {
   state.friends = [];
   state.party = null;
   state.playerContextMenu = null;
+  state.npcContext = null;
   state.tradePartnerId = null;
   state.friendsWindowOpen = false;
   partyPanel?.classList.add("hidden");
   friendsWindow?.classList.add("hidden");
   tradePanel?.classList.add("hidden");
   playerContextMenu?.classList.add("hidden");
+  npcContextMenu?.classList.add("hidden");
   state.fountainToss = null;
 }
 
@@ -3748,6 +3887,7 @@ function frame(now) {
   updateSmoothPlayers(dt);
   updateCamera(dt);
   checkWindowAutoClose();
+  tickNpcContextMenuPosition();
   draw();
   requestAnimationFrame(frame);
 }

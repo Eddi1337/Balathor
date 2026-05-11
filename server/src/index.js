@@ -1166,9 +1166,12 @@ function simulate() {
   }
 
   const companionAiTargets = [];
+  const allNpcPlayers = [];
   for (const c of clients.values()) {
     const p = c.player;
-    if (!p?.homeBuildingKey || p.houseCompanion) continue;
+    if (!p) continue;
+    allNpcPlayers.push({ player: p, client: c });
+    if (!p.homeBuildingKey || p.houseCompanion) continue;
     const own = ownedBuildings.get(String(p.homeBuildingKey));
     if (!own || !c.account || own.ownerAccountKey !== c.account.key) continue;
     companionAiTargets.push({
@@ -1180,6 +1183,7 @@ function simulate() {
 
   updateNpcs(dt, pushChat, computeNpcActivationBounds(), {
     targets: companionAiTargets,
+    allPlayers: allNpcPlayers,
     tryOffer(npc, buddyRow) {
       if (buddyRow?.client) {
         sendCompanionPurchaseOffer(npc, buddyRow.client, Date.now());
@@ -1609,6 +1613,28 @@ function handleMessage(client, raw) {
 
   if (message.type === "traderOpen") {
     handleTraderOpen(client, message);
+    return;
+  }
+
+  if (message.type === "shoo_npc") {
+    const npc = getNpcById(String(message.npcId || "").slice(0, 64));
+    if (npc) {
+      npc._shooedUntil = Date.now() + 45000;
+      npc._targetX = npc.homeX;
+      npc._targetY = npc.homeY;
+    }
+    return;
+  }
+
+  if (message.type === "companionApproach") {
+    const npc = getNpcById(String(message.npcId || "").slice(0, 64));
+    if (npc && npc.bondTag && client.player) {
+      const p = client.player;
+      const dx = npc.x - p.x, dy = npc.y - p.y;
+      if (dx * dx + dy * dy < 144) {
+        sendCompanionPurchaseOffer(npc, client, Date.now());
+      }
+    }
     return;
   }
 

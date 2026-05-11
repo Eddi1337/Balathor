@@ -695,6 +695,38 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
     }
   }
 
+  /** Small park clusters in the four inter-spoke quadrants */
+  const PARK_CENTERS = [
+    { cx: 32, cy: -42 },
+    { cx: 42, cy:  32 },
+    { cx: -42, cy:  32 },
+    { cx: -32, cy: -42 }
+  ];
+  const PARK_R = 5;
+  for (const pk of PARK_CENTERS) {
+    for (let dy = -PARK_R; dy <= PARK_R; dy += 1) {
+      for (let dx = -PARK_R; dx <= PARK_R; dx += 1) {
+        if (dx * dx + dy * dy > PARK_R * PARK_R) continue;
+        const tx = pk.cx + dx;
+        const ty = pk.cy + dy;
+        if (plazaTree(tx, ty)) continue;
+        if (nearListedPortal(tx, ty, 120)) continue;
+        if (isPath(tx, ty) || wallKeys.has(`${tx},${ty}`)) continue;
+        if (buildingBlock(tx, ty)) continue;
+        if (isUsed(tx, ty)) continue;
+        const r = hz(tx, ty, 3344);
+        const dist = Math.hypot(dx, dy);
+        let kind;
+        if (dist < 1.5)      kind = "small_tree";
+        else if (r < 0.22)   kind = "small_tree";
+        else if (r < 0.42)   kind = "bench";
+        else continue; // ~58 % stays open grass
+        stampUsed(tx, ty);
+        list.push({ id: `hub_park_${tx}_${ty}`, x: tx, y: ty, kind, facing: 0 });
+      }
+    }
+  }
+
   return Object.freeze(list);
 }
 

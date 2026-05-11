@@ -295,7 +295,7 @@ const HUB_MARKET_BROWSE_WAYPOINTS = [];
 const CHAT_INTERVAL_MIN = 28000;
 const CHAT_INTERVAL_MAX = 70000;
 
-const HUB_POPULATION_TARGET = 200;
+const HUB_POPULATION_TARGET = 100;
 const CLASSES_ROT = ["knight", "ranger", "mage"];
 
 /** Cached tile centres for procedural hub walkers */
@@ -716,6 +716,28 @@ const MINGLE_DIALOGUE_POOL = Object.freeze([
   "They paved another spoke — marvellous dust.",
 ]);
 
+const HAWKER_APPROACH_LINES = Object.freeze([
+  "Psst — finest wares this side of the ring road.",
+  "Adventurer! A moment of your time?",
+  "You look like someone who appreciates quality.",
+  "Special price, just for passing trade.",
+  "Quick browse won't cost you a coin.",
+  "That armour's seen some miles — I've got just the thing.",
+  "Between us? My rival charges double.",
+  "Hot off the cart — interested?",
+]);
+
+const APPROACH_COMMENT_LINES = Object.freeze([
+  "Nice gear — bet it cost a fortune.",
+  "You look like you've seen a fight or two.",
+  "Heading into the wilds? Watch the east road.",
+  "Is that enchanted? Shimmers a bit in the light.",
+  "I wouldn't take that weapon south of the wall, myself.",
+  "Heard anything from the ruins lately?",
+  "You've got the look of someone who knows what they're doing.",
+  "Stay sharp out there — beasties don't care about your reputation.",
+]);
+
 const SEEK_GF_CHAT = Object.freeze([
   "Your boots pause like someone's planning shelves.",
   "Three quiet seconds beside you and I'd risk a rhyme.",
@@ -809,7 +831,7 @@ function romanceCourtAggressiveFromId(idStr) {
   if (typeof idStr !== "string") {
     return false;
   }
-  return (npcIdHashSeed(idStr) % 100) < 20;
+  return (npcIdHashSeed(idStr) % 100) < 70;
 }
 
 function buildHydratedHubNpcExtras() {
@@ -845,6 +867,31 @@ function buildHydratedHubNpcExtras() {
         "Browse slow; I pack faster than I chatter.",
         "Need thread, ink, luck? Mixed bag today.",
       ]
+    });
+  }
+
+  /** Wandering hawkers — mobile traders who approach nearby players to sell wares. */
+  const HAWKER_SPECS = [
+    { id: "hub_hawk_0", name: "Wandering Merchant",  primary: "#5a3e28", accent: "#e8c86a", hx: 18, hy: -18 },
+    { id: "hub_hawk_1", name: "Travelling Peddler",  primary: "#3a4a2e", accent: "#d4b06a", hx: -18, hy: 18 },
+    { id: "hub_hawk_2", name: "Roving Trader",       primary: "#4a2e3a", accent: "#c8a050", hx: 20, hy: 20 },
+    { id: "hub_hawk_3", name: "Wandering Chapman",   primary: "#2e3a4a", accent: "#b8c8e8", hx: -20, hy: -20 },
+    { id: "hub_hawk_4", name: "Drifting Tinker",     primary: "#3a3a2e", accent: "#f0d080", hx: 30, hy: -5 },
+    { id: "hub_hawk_5", name: "Itinerant Dealer",    primary: "#2e4a3a", accent: "#90c890", hx: -30, hy: 5 },
+  ];
+  for (const hs of HAWKER_SPECS) {
+    out.push({
+      id: hs.id,
+      name: hs.name,
+      classId: "ranger",
+      primary: hs.primary,
+      accent: hs.accent,
+      homeX: hs.hx,
+      homeY: hs.hy,
+      patrolRadius: 6,
+      isTrader: true,
+      wandersToPlayer: true,
+      dialogue: [...HAWKER_APPROACH_LINES]
     });
   }
 
@@ -1701,6 +1748,9 @@ function applyCompanionCourt(npc, companionCtx, onChat, now) {
   if (!companionCtx || typeof npc.companionPrice !== "number" || soldCompanionNpcIds.has(npc.id)) {
     return false;
   }
+  if ((npc._shooedUntil || 0) > now) {
+    return false;
+  }
   if (!npc.courtAggressive) {
     return false;
   }
@@ -1774,6 +1824,50 @@ function applyCompanionCourt(npc, companionCtx, onChat, now) {
   return true;
 }
 
+/**
+ * Wandering hawker NPC approaches the nearest player within 28 tiles.
+ * @returns {boolean} true if hawker AI steered the NPC this tick
+ */
+function applyHawkerApproach(npc, companionCtx, onChat, now) {
+  if (!npc.wandersToPlayer || !companionCtx?.allPlayers) return false;
+  if ((npc._shooedUntil || 0) > now) {
+    // Shooed — walk home
+    npc._targetX = npc.homeX;
+    npc._targetY = npc.homeY;
+    invalidateNpcHubRoadPath(npc);
+    return false;
+  }
+
+  let best = null;
+  let bestDsq = 28 * 28;
+  for (const { player: p } of companionCtx.allPlayers) {
+    const dx = npc.x - p.x;
+    const dy = npc.y - p.y;
+    const dsq = dx * dx + dy * dy;
+    if (dsq < bestDsq) { bestDsq = dsq; best = p; }
+  }
+  if (!best) return false;
+
+  // Approach to within 2 tiles
+  const dx = best.x - npc.x;
+  const dy = best.y - npc.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist > 2.2) {
+    const angle = Math.atan2(dy, dx);
+    npc._targetX = best.x - Math.cos(angle) * 1.8;
+    npc._targetY = best.y - Math.sin(angle) * 1.8;
+    invalidateNpcHubRoadPath(npc);
+  }
+
+  if (dist < 2.5 && now - (npc._hawkLineAt || 0) > 9000) {
+    npc._hawkLineAt = now;
+    const line = npc.dialogue[Math.floor(Math.random() * npc.dialogue.length)];
+    onChat({ kind: "npc", fromId: npc.id, name: npc.name, text: line, x: npc.x, y: npc.y });
+  }
+
+  return dist > 1.6;
+}
+
 function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
   if (!activationBounds) {
     return;
@@ -1814,7 +1908,9 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
 
     const inMeetTalk = tickNpcMeeting(npc, now, dt, onChat);
     let courtSteers = false;
-    if (companionCtx && typeof npc.companionPrice === "number") {
+    if (npc.wandersToPlayer) {
+      courtSteers = applyHawkerApproach(npc, companionCtx, onChat, now);
+    } else if (companionCtx && typeof npc.companionPrice === "number") {
       courtSteers = applyCompanionCourt(npc, companionCtx, onChat, now);
     }
 
@@ -2031,7 +2127,8 @@ function getNpcSnapshot() {
       isTrader: npc.isTrader || false,
       ...(npc.bondTag ? { bondTag: npc.bondTag } : {}),
       ...(npc.longHair ? { longHair: true } : {}),
-      ...(npc.romanceSilhouette ? { romanceSilhouette: npc.romanceSilhouette } : {})
+      ...(npc.romanceSilhouette ? { romanceSilhouette: npc.romanceSilhouette } : {}),
+      ...(npc.wandersToPlayer ? { wandersToPlayer: true } : {})
     }));
 }
 
