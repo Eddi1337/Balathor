@@ -5943,61 +5943,11 @@ function drawStationObject(obj, sx, sy) {
   ctx.save();
   drawEllipseShadow(x - 8, y + h * 0.68, w + 16, 10, 0.26);
   if (obj.id === "station_nova_dock") {
-    const cx = x + w / 2;
-    const cy = y + h / 2;
-    const ringR = Math.min(w, h) * 0.32;
-    ctx.fillStyle = "#182330";
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, w * 0.34, h * 0.28, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#394a61";
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, w * 0.28, h * 0.22, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#0a1018";
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, w * 0.18, h * 0.14, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(103,240,255,0.34)";
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, w * 0.34, h * 0.28, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.fillStyle = "rgba(103,240,255,0.12)";
-    ctx.fillRect(cx - ringR, cy - 4, ringR * 2, 8);
-    ctx.fillRect(cx - 4, cy - ringR, 8, ringR * 2);
-    ctx.fillStyle = "#5e738b";
-    ctx.fillRect(cx - 18, y + 3, 36, 10);
-    ctx.fillRect(cx - 18, y + h - 13, 36, 10);
-    ctx.fillRect(x + 3, cy - 18, 10, 36);
-    ctx.fillRect(x + w - 13, cy - 18, 10, 36);
-    ctx.fillStyle = "rgba(103,240,255,0.24)";
-    ctx.fillRect(cx - 26, cy - 2, 52, 4);
-    ctx.fillRect(cx - 2, cy - 26, 4, 52);
-    ctx.fillStyle = "#67f0ff";
-    ctx.fillRect(cx - 2, cy - 2, 4, 4);
-    ctx.fillStyle = "#9edfff";
-    ctx.fillRect(cx - 6, y + 6, 12, 4);
-    ctx.fillRect(cx - 6, y + h - 10, 12, 4);
-    ctx.fillRect(x + 6, cy - 2, 4, 4);
-    ctx.fillRect(x + w - 10, cy - 2, 4, 4);
+    drawRusticStationCluster(x, y, w, h);
   } else if (obj.kind === "core" || obj.kind === "command" || obj.kind === "quarters" || obj.kind === "reactor" || obj.kind === "docks") {
     drawStationRoomObject(obj, sx, sy);
   } else {
-    ctx.fillStyle = "#233141";
-    ctx.fillRect(x, y, w, h);
-    ctx.fillStyle = "#5e738b";
-    ctx.fillRect(x + 6, y + 6, w - 12, h - 12);
-    ctx.fillStyle = "#0d1823";
-    ctx.fillRect(x + 10, y + 10, w - 20, h - 20);
-    ctx.fillStyle = "#67f0ff";
-    ctx.fillRect(x + 8, y + h / 2 - 2, w - 16, 4);
-    ctx.fillStyle = "#17222f";
-    ctx.fillRect(x + w * 0.43, y - 12, w * 0.14, 12);
-    ctx.fillStyle = "#9edfff";
-    ctx.fillRect(x + w * 0.43 + 1, y - 22, w * 0.12, 10);
-    ctx.fillStyle = "rgba(103,240,255,0.18)";
-    ctx.fillRect(x + 12, y + 12, w - 24, h - 24);
+    drawRusticStationCluster(x, y, w, h);
   }
   ctx.restore();
   ctx.save();
@@ -6019,23 +5969,23 @@ function drawStationRoomObject(obj, sx, sy) {
   const kind = obj.kind || "core";
   const palette =
     kind === "reactor"
-      ? { base: "#19212f", mid: "#31445e", glow: "#67f0ff", edge: "#7fe9ff" }
+      ? { base: "#51412e", mid: "#826846", glow: "#ffcf7a", edge: "#f4dca6" }
       : kind === "quarters"
-        ? { base: "#20283a", mid: "#41516d", glow: "#dffaff", edge: "#c7f4ff" }
+        ? { base: "#5b4630", mid: "#8a6a45", glow: "#f8e3b0", edge: "#f2d9a0" }
         : kind === "command"
-          ? { base: "#162133", mid: "#324a63", glow: "#9edfff", edge: "#ffffff" }
+          ? { base: "#433728", mid: "#6d5639", glow: "#ffd98b", edge: "#fff1ca" }
           : kind === "docks"
-            ? { base: "#101725", mid: "#24344b", glow: "#67f0ff", edge: "#f4fbff" }
+            ? { base: "#4a3929", mid: "#7a5a3b", glow: "#ffd27a", edge: "#f3e1bf" }
             : kind === "core"
-              ? { base: "#182232", mid: "#2f425a", glow: "#67f0ff", edge: "#e6fbff" }
-              : { base: "#1d2636", mid: "#394a63", glow: "#67f0ff", edge: "#f4fbff" };
+              ? { base: "#4a3926", mid: "#78603f", glow: "#ffcd79", edge: "#f5e1b0" }
+              : { base: "#4f3b2a", mid: "#7a5a3a", glow: "#ffd27a", edge: "#f2ddbf" };
   ctx.save();
   drawEllipseShadow(x - 8, y + h * 0.72, w + 16, 10, 0.18);
   ctx.fillStyle = palette.base;
   ctx.fillRect(x, y, w, h);
   ctx.fillStyle = palette.mid;
   ctx.fillRect(x + 6, y + 6, w - 12, h - 12);
-  ctx.fillStyle = "rgba(103,240,255,0.10)";
+  ctx.fillStyle = "rgba(255,224,170,0.12)";
   ctx.fillRect(x + 10, y + 10, w - 20, h - 20);
   ctx.fillStyle = palette.glow;
   ctx.fillRect(x + 8, y + h / 2 - 2, w - 16, 4);
@@ -6046,21 +5996,27 @@ function drawStationRoomObject(obj, sx, sy) {
   ctx.fillRect(x + 4, y + h - 8, 4, 4);
   ctx.fillRect(x + w - 8, y + h - 8, 4, 4);
   if (kind === "reactor") {
-    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    drawBarrelCluster(x + 8, y + 10, 2, 2, 1.2);
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
     ctx.fillRect(x + w / 2 - 10, y + h / 2 - 10, 20, 20);
   } else if (kind === "quarters") {
-    ctx.fillStyle = "rgba(255,255,255,0.16)";
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
     ctx.fillRect(x + 12, y + 10, 10, 6);
     ctx.fillRect(x + w - 22, y + h - 16, 10, 6);
+    drawBarrelCluster(x + 12, y + h - 22, 1, 1, 1);
   } else if (kind === "command") {
     ctx.fillStyle = "rgba(255,255,255,0.24)";
     ctx.fillRect(x + w / 2 - 12, y + 4, 24, 8);
+    ctx.fillStyle = "rgba(190,140,70,0.85)";
+    ctx.fillRect(x + 10, y + h - 16, 16, 6);
   } else if (kind === "docks") {
     ctx.fillStyle = "rgba(255,255,255,0.14)";
     ctx.fillRect(x + 8, y + 8, w - 16, 4);
     ctx.fillRect(x + 8, y + h - 12, w - 16, 4);
+    drawBarrelCluster(x + 12, y + 12, 2, 1, 0.95);
+    drawBarrelCluster(x + w - 28, y + h - 28, 2, 1, 0.95);
   }
-  ctx.strokeStyle = "rgba(103,240,255,0.32)";
+  ctx.strokeStyle = "rgba(255,224,170,0.34)";
   ctx.lineWidth = 2;
   ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
   ctx.restore();
@@ -6073,18 +6029,19 @@ function drawShipConsoleObject(obj, sx, sy) {
   const y = sy - h / 2;
   ctx.save();
   drawEllipseShadow(x - 4, y + h * 0.82, w + 8, 10, 0.18);
-  ctx.fillStyle = "#111a27";
+  ctx.fillStyle = "#4d3926";
   ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = "#24344d";
+  ctx.fillStyle = "#7a5a3a";
   ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
-  ctx.fillStyle = "#67f0ff";
+  ctx.fillStyle = "#ffd27a";
   ctx.fillRect(x + 8, y + 8, w - 16, 4);
   ctx.fillRect(x + w / 2 - 2, y + 8, 4, h - 16);
   ctx.fillStyle = "rgba(255,255,255,0.5)";
   ctx.fillRect(x + 10, y + 10, 6, 6);
-  ctx.fillStyle = "rgba(103,240,255,0.28)";
+  ctx.fillStyle = "rgba(255,224,170,0.28)";
   ctx.fillRect(x + 6, y + h - 10, w - 12, 4);
-  ctx.strokeStyle = "rgba(103,240,255,0.44)";
+  drawBarrelCluster(x + 6, y + 6, 1, 1, 0.9);
+  ctx.strokeStyle = "rgba(255,224,170,0.44)";
   ctx.lineWidth = 2;
   ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
   ctx.restore();
@@ -6097,25 +6054,99 @@ function drawDockPortObject(obj, sx, sy) {
   const y = sy - h / 2;
   ctx.save();
   drawEllipseShadow(x - 2, y + h * 0.84, w + 4, 8, 0.14);
-  ctx.fillStyle = "#0c121d";
+  ctx.fillStyle = "#392a1c";
   ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = "#1e2d41";
+  ctx.fillStyle = "#745337";
   ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
-  ctx.fillStyle = "#67f0ff";
+  ctx.fillStyle = "#ffd27a";
   ctx.fillRect(x + 8, y + 8, w - 16, 4);
   ctx.fillStyle = "rgba(255,255,255,0.2)";
   ctx.fillRect(x + 8, y + h / 2 - 2, w - 16, 4);
-  ctx.fillStyle = "#dffaff";
+  ctx.fillStyle = "#f4e1bd";
   ctx.fillRect(x + w / 2 - 5, y + 12, 10, h - 24);
   ctx.fillStyle = "rgba(255,255,255,0.55)";
   ctx.fillRect(x + 12, y + 10, 5, 5);
   ctx.fillRect(x + w - 17, y + 10, 5, 5);
-  ctx.fillStyle = "rgba(103,240,255,0.22)";
+  ctx.fillStyle = "rgba(255,224,170,0.22)";
   ctx.fillRect(x + 6, y + h - 10, w - 12, 4);
-  ctx.strokeStyle = "rgba(103,240,255,0.42)";
+  drawBarrelCluster(x + 2, y + 2, 1, 1, 0.9);
+  ctx.strokeStyle = "rgba(255,224,170,0.42)";
   ctx.lineWidth = 2;
   ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
   ctx.restore();
+}
+
+function drawRusticStationCluster(x, y, w, h) {
+  const cell = Math.min(w, h) / 5;
+  ctx.save();
+  ctx.fillStyle = "#392717";
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = "#5d4126";
+  ctx.fillRect(x + 6, y + 6, w - 12, h - 12);
+  const rooms = [
+    [x + 10, y + 10, cell * 1.45, cell * 1.45],
+    [x + w * 0.38, y + 10, cell * 1.55, cell * 1.45],
+    [x + w - cell * 2.2, y + 10, cell * 1.45, cell * 1.45],
+    [x + 10, y + h * 0.42, cell * 1.55, cell * 1.55],
+    [x + w * 0.37, y + h * 0.42, cell * 1.65, cell * 1.55],
+    [x + w - cell * 2.2, y + h * 0.42, cell * 1.45, cell * 1.55],
+    [x + 10, y + h - cell * 1.95, cell * 1.55, cell * 1.45],
+    [x + w * 0.39, y + h - cell * 1.95, cell * 1.6, cell * 1.45],
+    [x + w - cell * 2.2, y + h - cell * 1.95, cell * 1.45, cell * 1.45]
+  ];
+  for (const [rx, ry, rw, rh] of rooms) {
+    ctx.fillStyle = "#6d5033";
+    ctx.fillRect(rx, ry, rw, rh);
+    ctx.fillStyle = "#8b6948";
+    ctx.fillRect(rx + 4, ry + 4, rw - 8, rh - 8);
+    ctx.fillStyle = "rgba(255,224,170,0.18)";
+    ctx.fillRect(rx + 8, ry + 8, rw - 16, rh - 16);
+    ctx.strokeStyle = "rgba(255,224,170,0.22)";
+    ctx.strokeRect(rx + 1, ry + 1, rw - 2, rh - 2);
+    drawBarrelCluster(rx + 10, ry + 10, 1, 1, 0.7);
+  }
+  const corridors = [
+    [x + w * 0.33, y + h * 0.28, w * 0.34, 10],
+    [x + w * 0.33, y + h * 0.58, w * 0.34, 10],
+    [x + w * 0.28, y + h * 0.28, 10, h * 0.34],
+    [x + w * 0.58, y + h * 0.28, 10, h * 0.34]
+  ];
+  ctx.fillStyle = "#4e3824";
+  for (const [cx, cy, cw, ch] of corridors) {
+    ctx.fillRect(cx, cy, cw, ch);
+    ctx.fillStyle = "#7f5c3a";
+    ctx.fillRect(cx + 2, cy + 2, cw - 4, ch - 4);
+    ctx.fillStyle = "rgba(255,224,170,0.14)";
+    ctx.fillRect(cx + 4, cy + 4, Math.max(2, cw - 8), Math.max(2, ch - 8));
+    ctx.fillStyle = "#4e3824";
+  }
+  ctx.fillStyle = "rgba(255,224,170,0.3)";
+  ctx.fillRect(x + 18, y + h / 2 - 3, w - 36, 6);
+  ctx.fillRect(x + w / 2 - 3, y + 18, 6, h - 36);
+  ctx.strokeStyle = "rgba(255,224,170,0.34)";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
+  ctx.restore();
+}
+
+function drawBarrelCluster(x, y, cols = 1, rows = 1, scale = 1) {
+  const bw = Math.max(6, Math.round(6 * scale));
+  const bh = Math.max(10, Math.round(10 * scale));
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      const bx = x + col * (bw + 2);
+      const by = y + row * (bh + 1);
+      ctx.fillStyle = "#6d4528";
+      ctx.fillRect(bx, by, bw, bh);
+      ctx.fillStyle = "#9d6a3d";
+      ctx.fillRect(bx + 1, by + 1, bw - 2, 2);
+      ctx.fillRect(bx + 1, by + bh - 3, bw - 2, 2);
+      ctx.fillStyle = "#3b2414";
+      ctx.fillRect(bx + Math.floor(bw / 2) - 1, by, 2, bh);
+      ctx.fillStyle = "rgba(255,255,255,0.18)";
+      ctx.fillRect(bx + 2, by + 2, 2, 3);
+    }
+  }
 }
 
 function drawPlanetObject(obj, sx, sy) {

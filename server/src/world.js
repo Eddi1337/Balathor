@@ -84,31 +84,31 @@ const SCI_FI_STATIONS = Object.freeze([
   { id: "station_gate_link", name: "Gate Link", x: 1648, y: 0, w: 14, h: 10, kind: "gate" }
 ]);
 const SCI_FI_STATION_FEATURES = Object.freeze([
-  { id: "station_nova_bridge", name: "Bridge", x: 1824, y: -18, w: 10, h: 6, kind: "command" },
-  { id: "station_nova_core", name: "Core", x: 1824, y: -8, w: 10, h: 8, kind: "core" },
-  { id: "station_nova_market", name: "Market Hall", x: 1810, y: -8, w: 10, h: 8, kind: "shop-bay", shopType: "trade" },
-  { id: "station_nova_medbay", name: "Medbay", x: 1838, y: -8, w: 10, h: 8, kind: "shop-bay", shopType: "trade" },
-  { id: "station_nova_quarters", name: "Crew Quarters", x: 1810, y: 4, w: 10, h: 8, kind: "quarters" },
-  { id: "station_nova_reactor", name: "Reactor", x: 1838, y: 4, w: 10, h: 8, kind: "reactor" },
-  { id: "station_nova_hangar", name: "Hangar", x: 1794, y: -4, w: 12, h: 16, kind: "ship-bay" },
-  { id: "station_nova_dock_hall", name: "Dock Hall", x: 1850, y: -12, w: 18, h: 26, kind: "docks" },
-  { id: "station_nova_ship_shop", name: "Dockyard", x: 1852, y: 6, w: 8, h: 5, kind: "ship-shop", shopType: "ship" },
+  { id: "station_nova_bridge", name: "Bridge", x: 1822, y: -18, w: 8, h: 8, kind: "command" },
+  { id: "station_nova_core", name: "Core", x: 1822, y: -8, w: 8, h: 8, kind: "core" },
+  { id: "station_nova_market", name: "Market Hall", x: 1810, y: -8, w: 8, h: 8, kind: "shop-bay", shopType: "trade" },
+  { id: "station_nova_medbay", name: "Medbay", x: 1834, y: -8, w: 8, h: 8, kind: "shop-bay", shopType: "trade" },
+  { id: "station_nova_quarters", name: "Crew Quarters", x: 1810, y: 4, w: 8, h: 8, kind: "quarters" },
+  { id: "station_nova_reactor", name: "Reactor", x: 1834, y: 4, w: 8, h: 8, kind: "reactor" },
+  { id: "station_nova_hangar", name: "Hangar", x: 1794, y: -4, w: 10, h: 14, kind: "ship-bay" },
+  { id: "station_nova_dock_hall", name: "Dock Hall", x: 1852, y: -10, w: 14, h: 22, kind: "docks" },
+  { id: "station_nova_ship_shop", name: "Dockyard", x: 1852, y: 8, w: 8, h: 8, kind: "ship-shop", shopType: "ship" },
   { id: "station_nova_ship_console", name: "Ship Console", x: 1854, y: -4, w: 6, h: 4, kind: "ship-console" },
-  { id: "station_nova_dock_port_a", name: "Port A", x: 1858, y: -10, w: 6, h: 4, kind: "ship-port" },
-  { id: "station_nova_dock_port_b", name: "Port B", x: 1858, y: -2, w: 6, h: 4, kind: "ship-port" },
-  { id: "station_nova_dock_port_c", name: "Port C", x: 1858, y: 6, w: 6, h: 4, kind: "ship-port" },
-  { id: "station_nova_dock_port_d", name: "Port D", x: 1858, y: 14, w: 6, h: 4, kind: "ship-port" },
-  { id: "station_nova_spine", name: "Spine", x: 1820, y: -2, w: 12, h: 8, kind: "corridor" },
-  { id: "station_nova_cross", name: "Cross Passage", x: 1820, y: 10, w: 12, h: 4, kind: "corridor" },
-  { id: "station_nova_lift", name: "Lift Shaft", x: 1817, y: -14, w: 4, h: 22, kind: "corridor" },
-  { id: "station_nova_hangar_link", name: "Hangar Link", x: 1806, y: -2, w: 8, h: 4, kind: "corridor" },
-  { id: "station_nova_dock_link", name: "Dock Link", x: 1842, y: -2, w: 8, h: 4, kind: "corridor" }
+  { id: "station_nova_dock_port_a", name: "Port A", x: 1858, y: -10, w: 5, h: 5, kind: "ship-port" },
+  { id: "station_nova_dock_port_b", name: "Port B", x: 1858, y: -3, w: 5, h: 5, kind: "ship-port" },
+  { id: "station_nova_dock_port_c", name: "Port C", x: 1858, y: 4, w: 5, h: 5, kind: "ship-port" },
+  { id: "station_nova_dock_port_d", name: "Port D", x: 1858, y: 11, w: 5, h: 5, kind: "ship-port" },
+  { id: "station_nova_spine", name: "Spine", x: 1818, y: -2, w: 10, h: 4, kind: "corridor" },
+  { id: "station_nova_cross", name: "Cross Passage", x: 1818, y: 10, w: 10, h: 4, kind: "corridor" },
+  { id: "station_nova_lift", name: "Lift Shaft", x: 1816, y: -14, w: 4, h: 18, kind: "corridor" },
+  { id: "station_nova_hangar_link", name: "Hangar Link", x: 1806, y: -2, w: 6, h: 4, kind: "corridor" },
+  { id: "station_nova_dock_link", name: "Dock Link", x: 1840, y: -2, w: 6, h: 4, kind: "corridor" }
 ]);
 const SCI_FI_DOCK_PORTS = Object.freeze([
   { id: "dock_a", x: 1861, y: -9 },
-  { id: "dock_b", x: 1861, y: -1 },
-  { id: "dock_c", x: 1861, y: 7 },
-  { id: "dock_d", x: 1861, y: 15 }
+  { id: "dock_b", x: 1861, y: -2 },
+  { id: "dock_c", x: 1861, y: 5 },
+  { id: "dock_d", x: 1861, y: 12 }
 ]);
 const SCI_FI_PLANETS = Object.freeze([
   { id: "planet_aurelia", name: "Aurelia", x: 2142, y: -382, radius: 74, seed: 8128, type: "lush" },
@@ -221,10 +221,12 @@ function sciFiObjectTouchesChunk(obj, startX, startY, endX, endY) {
 function sciFiFeatureTouchesChunk(feature, startX, startY, endX, endY) {
   const fw = Math.max(1, Number(feature.w || 1));
   const fh = Math.max(1, Number(feature.h || 1));
-  const minX = feature.x;
-  const minY = feature.y;
-  const maxX = feature.x + fw;
-  const maxY = feature.y + fh;
+  const halfW = Math.floor(fw / 2);
+  const halfH = Math.floor(fh / 2);
+  const minX = feature.x - halfW;
+  const minY = feature.y - halfH;
+  const maxX = minX + fw;
+  const maxY = minY + fh;
   return minX < endX && maxX > startX && minY < endY && maxY > startY;
 }
 
@@ -232,7 +234,11 @@ function sciFiStationFeatureAt(x, y) {
   for (const feature of SCI_FI_STATION_FEATURES) {
     const fw = Math.max(1, Number(feature.w || 1));
     const fh = Math.max(1, Number(feature.h || 1));
-    if (x >= feature.x && x < feature.x + fw && y >= feature.y && y < feature.y + fh) {
+    const halfW = Math.floor(fw / 2);
+    const halfH = Math.floor(fh / 2);
+    const minX = feature.x - halfW;
+    const minY = feature.y - halfH;
+    if (x >= minX && x < minX + fw && y >= minY && y < minY + fh) {
       return feature;
     }
   }
@@ -242,8 +248,10 @@ function sciFiStationFeatureAt(x, y) {
 function sciFiStationTileForFeature(feature, x, y) {
   const fw = Math.max(1, Number(feature.w || 1));
   const fh = Math.max(1, Number(feature.h || 1));
-  const lx = x - feature.x;
-  const ly = y - feature.y;
+  const minX = feature.x - Math.floor(fw / 2);
+  const minY = feature.y - Math.floor(fh / 2);
+  const lx = x - minX;
+  const ly = y - minY;
   const edge = lx === 0 || ly === 0 || lx === fw - 1 || ly === fh - 1;
 
   if (feature.kind === "ship-port") {
@@ -1723,7 +1731,7 @@ function generateExteriorTile(x, y) {
       if (dx >= shellX - 1 || dy >= shellY - 1) {
         return TILE.HULL;
       }
-      return TILE.VOID;
+      return TILE.METAL;
     }
 
     const planet = sciFiPlanetAt(x, y);
