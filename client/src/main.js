@@ -1489,14 +1489,20 @@ function showNpcContextMenu(npc) {
 
 function positionNpcContextMenu(worldX, worldY) {
   if (!npcContextMenu) return;
+  const zoom = state.zoom || 1;
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
   const cssScale = canvas.clientWidth / canvas.width;
-  const screenX = ((worldX * TILE_SIZE - state.camera.x + halfW) * cssScale);
-  const screenY = ((worldY * TILE_SIZE - state.camera.y + halfH) * cssScale) - 58;
+  const screenX = ((worldX * TILE_SIZE - state.camera.x) * zoom + halfW) * cssScale;
+  const screenY = ((worldY * TILE_SIZE - state.camera.y) * zoom + halfH) * cssScale;
   const rect = canvas.getBoundingClientRect();
-  npcContextMenu.style.left = `${rect.left + screenX}px`;
-  npcContextMenu.style.top = `${Math.max(rect.top + 4, rect.top + screenY)}px`;
+  const absX = rect.left + screenX;
+  const absY = rect.top + screenY - 64;
+  const menuW = npcContextMenu.offsetWidth || 140;
+  const clampedX = Math.max(menuW / 2 + 4, Math.min(window.innerWidth - menuW / 2 - 4, absX));
+  const clampedY = Math.max(rect.top + 4, Math.min(window.innerHeight - 80, absY));
+  npcContextMenu.style.left = `${clampedX}px`;
+  npcContextMenu.style.top = `${clampedY}px`;
 }
 
 function tickNpcContextMenuPosition() {
@@ -1524,7 +1530,8 @@ function tryOpenNpcContextMenuFromCanvas(event, worldX, worldY) {
   let best = null;
   let bestDist = NPC_CTX_HIT_RADIUS;
   for (const npc of state.npcs.values()) {
-    if (npc.isTrader && !npc.wandersToPlayer) continue;
+    // Only NPCs that actively approach the player are clickable.
+    if (!npc.wandersToPlayer && !npc.bondTag) continue;
     const nx = Number.isFinite(npc.renderX) ? npc.renderX : npc.x;
     const ny = Number.isFinite(npc.renderY) ? npc.renderY : npc.y;
     const d = Math.hypot(nx - worldX, ny - worldY);
