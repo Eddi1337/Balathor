@@ -1407,7 +1407,7 @@ function handlePortalTravel(client) {
 
   client.lastPortalAt = now;
   client.player.x = portal.targetX;
-  client.player.y = portal.targetY + 1.2;
+  client.player.y = portal.targetY + 3.2;
   client.player.moving = false;
   client.input = normalizeInput();
 

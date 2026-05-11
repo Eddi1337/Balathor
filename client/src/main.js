@@ -8846,41 +8846,6 @@ function drawLighting() {
   ctx.restore();
 }
 
-function drawPortalPedestal(cx, cy, gateR, color) {
-  const baseY = cy + gateR - 8;
-  const steps = [
-    { w: gateR * 2 + 64, h: 18 },
-    { w: gateR * 2 + 40, h: 15 },
-    { w: gateR * 2 + 18, h: 12 },
-  ];
-  let stepY = baseY;
-  for (let i = 0; i < steps.length; i++) {
-    const step = steps[i];
-    const half = step.w / 2;
-    // Shadow bottom
-    ctx.fillStyle = "#0e0804";
-    ctx.fillRect(cx - half, stepY + step.h - 4, step.w, 4);
-    // Main stone
-    ctx.fillStyle = i === 0 ? "#2a1e10" : i === 1 ? "#332414" : "#3c2a18";
-    ctx.fillRect(cx - half, stepY, step.w, step.h - 4);
-    // Top highlight edge
-    ctx.fillStyle = "#5a4020";
-    ctx.fillRect(cx - half, stepY, step.w, 3);
-    // Side highlight
-    ctx.fillStyle = "#4a3018";
-    ctx.fillRect(cx - half, stepY + 3, 3, step.h - 7);
-    ctx.fillRect(cx + half - 3, stepY + 3, 3, step.h - 7);
-    // Portal color tint on top step
-    if (i === steps.length - 1) {
-      ctx.fillStyle = color;
-      ctx.globalAlpha = 0.12;
-      ctx.fillRect(cx - half + 3, stepY + 3, step.w - 6, step.h - 7);
-      ctx.globalAlpha = 1;
-    }
-    stepY += step.h;
-  }
-}
-
 function drawPortal(sx, sy, tx, ty) {
   const portal = getPortalAtTile(tx, ty);
   if (!portal) return;
@@ -8888,141 +8853,115 @@ function drawPortal(sx, sy, tx, ty) {
   const time = performance.now() / 1000;
   const color = portal.color || "#75f0ff";
   const T = TILE_SIZE;
-  const cx = sx + T + T / 2;
-  const cy = sy + T;
-  const gateR = T * 2.0;
-  const pulse = 0.5 + Math.sin(time * 3) * 0.5;
+  const pulse = 0.5 + Math.sin(time * 2.4) * 0.5;
 
-  drawPortalPedestal(cx, cy, gateR, color);
-  drawEllipseShadow(cx - gateR - 4, cy + gateR + 2, gateR * 2 + 8, 16, 0.5);
+  // Arch geometry — centred on the portal tile, rising above it
+  const cx = sx + T * 0.5;
+  const baseY = sy + T * 0.88;
+  const openW = T * 0.62;       // half-width of the opening
+  const openH = T * 1.48;       // full height of opening (rect + semicap)
+  const capR = openW;            // radius of the semicircular top cap
+  const rectH = openH - capR;   // height of the rectangular body
+  const capCY = baseY - rectH - capR; // centre of the arch cap circle
+  const pillarW = 7;
 
+  drawEllipseShadow(cx, baseY + 4, openW * 2.4, 10, 0.5);
+
+  // Clip to arch shape and draw the glowing interior
   ctx.save();
   ctx.beginPath();
-  ctx.arc(cx, cy, gateR - 10, 0, Math.PI * 2);
+  ctx.moveTo(cx - openW, baseY);
+  ctx.lineTo(cx - openW, capCY);
+  ctx.arc(cx, capCY, capR, Math.PI, 0, false);
+  ctx.lineTo(cx + openW, baseY);
+  ctx.closePath();
   ctx.clip();
-  drawPortalEventHorizon(cx, cy, gateR - 10, portal, time);
+  drawPortalEventHorizon(cx, baseY - openH * 0.52, capR * 1.1, portal, time);
   ctx.restore();
 
-  drawStargateRing(cx, cy, gateR, color, time, pulse);
+  // --- Stone arch frame ---
 
-  ctx.font = "bold 13px ui-sans-serif, system-ui";
-  ctx.textAlign = "center";
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = "rgba(8,12,18,0.85)";
-  ctx.fillStyle = color;
-  ctx.strokeText(portal.name, cx, cy + gateR + 20);
-  ctx.fillText(portal.name, cx, cy + gateR + 20);
-}
+  // Small base slab
+  const slabW = openW * 2 + pillarW * 2 + 8;
+  ctx.fillStyle = "#251808";
+  ctx.fillRect(cx - slabW / 2, baseY, slabW, 6);
+  ctx.fillStyle = "#3a2412";
+  ctx.fillRect(cx - slabW / 2, baseY, slabW, 3);
 
-function drawStargateRing(cx, cy, r, color, time, pulse) {
+  // Pillars
+  for (const side of [-1, 1]) {
+    const px = side === -1 ? cx - openW - pillarW : cx + openW;
+    const pillarH = rectH + 4;
+    const py = baseY - pillarH;
+    // Body
+    ctx.fillStyle = "#2e1e0e";
+    ctx.fillRect(px, py, pillarW, pillarH);
+    // Highlight
+    ctx.fillStyle = "#4a3018";
+    ctx.fillRect(px, py, 2, pillarH);
+    ctx.fillStyle = "#1a0e06";
+    ctx.fillRect(px + pillarW - 2, py, 2, pillarH);
+    // Cap
+    ctx.fillStyle = "#3c2814";
+    ctx.fillRect(px - 2, py, pillarW + 4, 5);
+    // Rune glyph
+    ctx.save();
+    ctx.globalAlpha = 0.35 + pulse * 0.45;
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 4 + pulse * 4;
+    const ry = py + pillarH * 0.42;
+    ctx.fillRect(px + 2, ry, pillarW - 4, 2);
+    ctx.fillRect(px + Math.floor(pillarW / 2) - 1, ry - 5, 2, 10);
+    ctx.restore();
+  }
+
+  // Arch top — thick stone arc drawn as a filled ring segment
   ctx.save();
-  // Outer magical aura
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 28 + pulse * 16;
-  ctx.strokeStyle = "#0e0a06";
-  ctx.lineWidth = 26;
+  ctx.strokeStyle = "#2e1e0e";
+  ctx.lineWidth = pillarW * 2 + 2;
   ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.arc(cx, capCY, capR + pillarW, Math.PI, 0, false);
   ctx.stroke();
-  ctx.shadowBlur = 0;
-
-  // Stone body layers
-  ctx.strokeStyle = "#3a2a18";
-  ctx.lineWidth = 22;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.stroke();
-
-  ctx.strokeStyle = "#4e3820";
-  ctx.lineWidth = 14;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.stroke();
-
-  ctx.strokeStyle = "#5e4830";
-  ctx.lineWidth = 6;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.stroke();
-
-  // Carved grooves
-  ctx.strokeStyle = "#1a100a";
+  // Outer shadow edge
+  ctx.strokeStyle = "#1a0e06";
   ctx.lineWidth = 3;
   ctx.beginPath();
-  ctx.arc(cx, cy, r + 11, 0, Math.PI * 2);
+  ctx.arc(cx, capCY, capR + pillarW * 2, Math.PI, 0, false);
   ctx.stroke();
+  // Inner highlight edge
+  ctx.strokeStyle = "#4a3018";
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(cx, cy, r - 11, 0, Math.PI * 2);
+  ctx.arc(cx, capCY, capR + pillarW - 1, Math.PI, 0, false);
   ctx.stroke();
+  ctx.restore();
 
-  // Inner color glow rim
+  // Glowing inner rim around the entire arch opening
+  ctx.save();
   ctx.strokeStyle = color;
-  ctx.lineWidth = 3;
-  ctx.globalAlpha = 0.5 + pulse * 0.5;
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = 0.38 + pulse * 0.38;
   ctx.shadowColor = color;
-  ctx.shadowBlur = 10;
+  ctx.shadowBlur = 7 + pulse * 6;
   ctx.beginPath();
-  ctx.arc(cx, cy, r - 11, 0, Math.PI * 2);
+  ctx.moveTo(cx - openW, baseY);
+  ctx.lineTo(cx - openW, capCY);
+  ctx.arc(cx, capCY, capR, Math.PI, 0, false);
+  ctx.lineTo(cx + openW, baseY);
   ctx.stroke();
   ctx.globalAlpha = 1;
   ctx.shadowBlur = 0;
   ctx.restore();
 
-  // Arcane gem stones at 8 equidistant points
-  const numGems = 8;
-  for (let i = 0; i < numGems; i += 1) {
-    const angle = (Math.PI * 2 * i) / numGems - Math.PI / 2;
-    const gx = cx + Math.cos(angle) * r;
-    const gy = cy + Math.sin(angle) * r;
-    const litPhase = Math.sin(time * 1.6 + i * 0.8);
-    const lit = litPhase > 0;
-    const glowStr = Math.max(0, litPhase);
-
-    ctx.save();
-    ctx.translate(gx, gy);
-    const gs = i % 2 === 0 ? 7 : 5;
-    ctx.beginPath();
-    ctx.moveTo(0, -gs);
-    ctx.lineTo(gs * 0.65, 0);
-    ctx.lineTo(0, gs);
-    ctx.lineTo(-gs * 0.65, 0);
-    ctx.closePath();
-    ctx.fillStyle = lit ? color : "#251a10";
-    ctx.shadowColor = color;
-    ctx.shadowBlur = lit ? 8 + glowStr * 10 : 0;
-    ctx.fill();
-    ctx.strokeStyle = "#0a0806";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  // Crystal clusters at cardinal points (N, E, S, W)
-  const cardinalAngles = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2];
-  for (const baseAngle of cardinalAngles) {
-    const kx = cx + Math.cos(baseAngle) * (r + 9);
-    const ky = cy + Math.sin(baseAngle) * (r + 9);
-    ctx.save();
-    ctx.translate(kx, ky);
-    ctx.rotate(baseAngle + Math.PI / 2);
-    for (let c = -1; c <= 1; c += 1) {
-      const cLen = c === 0 ? 12 : 7;
-      const cOff = c * 5;
-      ctx.fillStyle = color;
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 5 + pulse * 9;
-      ctx.globalAlpha = 0.65 + pulse * 0.35;
-      ctx.beginPath();
-      ctx.moveTo(cOff, -cLen);
-      ctx.lineTo(cOff + 3, 0);
-      ctx.lineTo(cOff - 3, 0);
-      ctx.closePath();
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-    ctx.shadowBlur = 0;
-    ctx.restore();
-  }
+  // Portal name
+  ctx.font = "bold 11px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(8,12,18,0.85)";
+  ctx.fillStyle = color;
+  ctx.strokeText(portal.name, cx, baseY + 18);
+  ctx.fillText(portal.name, cx, baseY + 18);
 }
 
 function drawPortalEventHorizon(cx, cy, r, portal, time) {
