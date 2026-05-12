@@ -123,6 +123,8 @@ let safeZoneTooltipPinTimer = null;
 
 const TILE_SIZE = 32;
 const SCI_FI_THEME = "sci-fi";
+/** Hub landmark tree trunk — same origin as server/src/world.js START_SPAWN. */
+const START_SPAWN = Object.freeze({ x: 0, y: 0 });
 
 const CHAT_COMMANDS = [
   { cmd: "/sci",    desc: "Teleport to Ringforge Station" },
@@ -340,6 +342,104 @@ const TILE = {
   WINDOW: 26,
   ENERGY: 27
 };
+
+/** Matches server/src/world.js BLOCKED_TILES — used only for local movement prediction. */
+const CLIENT_BLOCKED_TILES = new Set([
+  TILE.WATER,
+  TILE.WALL,
+  TILE.LAVA,
+  TILE.BED,
+  TILE.TABLE,
+  TILE.SHELF,
+  TILE.FIREPLACE,
+  TILE.CHAIR,
+  TILE.CHEST,
+  TILE.HOME_TREE,
+  TILE.VOID,
+  TILE.HULL,
+  TILE.WINDOW
+]);
+
+/** Mirrors server/src/world.js isBlockedCircle default. */
+const PLAYER_COLLISION_RADIUS = 0.28;
+
+/** Mirrors server/src/world.js landmark spawn tree trunk AABB (tile-relative). */
+const LANDMARK_SPAWN_TREE_TRUNK_BOUNDS = Object.freeze({
+  minX: -0.14,
+  maxX: 1.1,
+  minY: 2.48,
+  maxY: 3.62
+});
+
+/** Mirrors server/src/world.js circleIntersectsAxisRect */
+function circleIntersectsAxisRect(cx, cy, cr, minX, minY, maxX, maxY) {
+  const qx = Math.max(minX, Math.min(cx, maxX));
+  const qy = Math.max(minY, Math.min(cy, maxY));
+  const dx = cx - qx;
+  const dy = cy - qy;
+  return dx * dx + dy * dy < cr * cr;
+}
+
+function clientLandmarkSpawnTreeTrunkBlocked(worldX, worldY, radius = PLAYER_COLLISION_RADIUS) {
+  const lx = worldX - START_SPAWN.x;
+  const ly = worldY - START_SPAWN.y;
+  const { minX, maxX, minY, maxY } = LANDMARK_SPAWN_TREE_TRUNK_BOUNDS;
+  return circleIntersectsAxisRect(lx, ly, radius, minX, minY, maxX, maxY);
+}
+
+function clientMovementSampleChunksReady(wx, wy, radius) {
+  const points = [
+    [wx - radius, wy - radius],
+    [wx + radius, wy - radius],
+    [wx - radius, wy + radius],
+    [wx + radius, wy + radius]
+  ];
+  for (const [px, py] of points) {
+    const tx = Math.floor(px);
+    const ty = Math.floor(py);
+    const cx = Math.floor(tx / CHUNK_SIZE);
+    const cy = Math.floor(ty / CHUNK_SIZE);
+    if (!state.chunks.has(chunkKey(cx, cy))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Mirrors server/src/world.js isBlockedCircle using local chunk tiles. */
+function clientIsBlockedCircle(wx, wy, radius = PLAYER_COLLISION_RADIUS) {
+  if (clientLandmarkSpawnTreeTrunkBlocked(wx, wy, radius)) {
+    return true;
+  }
+  if (!clientMovementSampleChunksReady(wx, wy, radius)) {
+    return false;
+  }
+  const points = [
+    [wx - radius, wy - radius],
+    [wx + radius, wy - radius],
+    [wx - radius, wy + radius],
+    [wx + radius, wy + radius]
+  ];
+  return points.some(([px, py]) => CLIENT_BLOCKED_TILES.has(getTile(Math.floor(px), Math.floor(py))));
+}
+
+/** Mirrors server/src/index.js on-foot movement: X axis first, then Y with updated X. */
+function clientTryFootMove(rx, ry, stepX, stepY) {
+  const nextX = rx + stepX;
+  const nextY = ry + stepY;
+  let x = rx;
+  let y = ry;
+  if (!clientIsBlockedCircle(nextX, ry)) {
+    x = nextX;
+  }
+  if (!clientIsBlockedCircle(x, nextY)) {
+    y = nextY;
+  }
+  if (x !== rx || y !== ry) {
+    return { x, y, moved: true };
+  }
+  return { x: rx, y: ry, moved: false };
+}
 
 /** Mirrors server/src/index.js getBuildingPrice */
 const BUILDING_TYPE_PRICES = { hut: 200, treehouse: 350, house: 500, big_house: 900, castle: 2000 };
@@ -1663,8 +1763,24 @@ function predictLocalPlayer(player, dt) {
   dx /= length;
   dy /= length;
   const speed = Number.isFinite(player.moveSpeed) ? player.moveSpeed : CLIENT_PLAYER_SPEED;
-  player.renderX += dx * speed * dt;
-  player.renderY += dy * speed * dt;
+  const stepX = dx * speed * dt;
+  const stepY = dy * speed * dt;
+
+  if (player.ship?.boarded) {
+    player.renderX += stepX;
+    player.renderY += stepY;
+    player.facing = Math.atan2(dy, dx);
+    player.renderMoving = true;
+    return true;
+  }
+
+  const moved = clientTryFootMove(player.renderX, player.renderY, stepX, stepY);
+  if (!moved.moved) {
+    player.renderMoving = false;
+    return false;
+  }
+  player.renderX = moved.x;
+  player.renderY = moved.y;
   player.facing = Math.atan2(dy, dx);
   player.renderMoving = true;
   return true;
