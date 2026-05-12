@@ -45,8 +45,7 @@ const BLOCKED_TILES = new Set([
   TILE.CHEST,
   TILE.HOME_TREE,
   TILE.VOID,
-  TILE.HULL,
-  TILE.WINDOW
+  TILE.HULL
 ]);
 const PORTAL_RADIUS = 1.6;
 const DOOR_RADIUS = 0.52;
@@ -265,20 +264,23 @@ function sciFiStationTileForFeature(feature, x, y) {
   }
 
   if (feature.kind === "station-plaza") {
+    if (edge) return TILE.WALKWAY;
     const cx = Math.floor(fw / 2);
     const cy = Math.floor(fh / 2);
-    const md = Math.abs(lx - cx) + Math.abs(ly - cy);
-    if (edge) return TILE.WALKWAY;
-    if (md <= 1) return TILE.ENERGY;
-    if (md <= 3) return TILE.METAL;
-    if ((lx + ly) % 2 === 0) return TILE.WINDOW;
+    const ring = Math.max(Math.abs(lx - cx), Math.abs(ly - cy));
+    if (ring <= 1) return TILE.ENERGY;
+    if (ring <= 3) return TILE.WALKWAY;
+    if (ring <= 5) return ((lx + ly) & 1) === 0 ? TILE.METAL : TILE.WINDOW;
     return TILE.METAL;
   }
 
   if (feature.kind === "ship-shop" || feature.kind === "shop-bay") {
     if (edge) return TILE.HULL;
-    if (ly === 1 || ly === fh - 2) return TILE.WALKWAY;
-    return lx === Math.floor(fw / 2) ? TILE.ENERGY : TILE.METAL;
+    const cx = Math.floor(fw / 2);
+    const cy = Math.floor(fh / 2);
+    if (Math.abs(lx - cx) <= 1 || Math.abs(ly - cy) <= 1) return TILE.WALKWAY;
+    if (Math.abs(lx - cx) === 2 || Math.abs(ly - cy) === 2) return TILE.ENERGY;
+    return ((lx + ly) & 1) === 0 ? TILE.METAL : TILE.WINDOW;
   }
 
   if (feature.kind === "station-core") {
@@ -317,10 +319,14 @@ function sciFiStationTileForFeature(feature, x, y) {
   if (feature.kind === "corridor") {
     if (edge) return TILE.HULL;
     if (fw >= fh) {
-      if (Math.abs(ly - Math.floor(fh / 2)) <= 1) return TILE.WALKWAY;
+      const mid = Math.floor(fh / 2);
+      if (Math.abs(ly - mid) <= 1) return TILE.WALKWAY;
+      if (Math.abs(ly - mid) === 2) return TILE.ENERGY;
       return TILE.METAL;
     }
-    if (Math.abs(lx - Math.floor(fw / 2)) <= 1) return TILE.WALKWAY;
+    const mid = Math.floor(fw / 2);
+    if (Math.abs(lx - mid) <= 1) return TILE.WALKWAY;
+    if (Math.abs(lx - mid) === 2) return TILE.ENERGY;
     return TILE.METAL;
   }
 
@@ -1771,18 +1777,22 @@ function generateExteriorTile(x, y) {
 
     const station = sciFiStationAt(x, y);
     if (station) {
-      const dxs = x - station.x;
-      const dys = y - station.y;
-      const shellX = Math.floor(station.w / 2);
-      const shellY = Math.floor(station.h / 2);
-      const adx = Math.abs(dxs);
-      const ady = Math.abs(dys);
-      if (adx >= shellX - 1 || ady >= shellY - 1) {
+      const dx = x - station.x;
+      const dy = y - station.y;
+      const adx = Math.abs(dx);
+      const ady = Math.abs(dy);
+      const shellX = Math.max(1, Math.floor(station.w / 2) - 1);
+      const shellY = Math.max(1, Math.floor(station.h / 2) - 1);
+      const nx = adx / shellX;
+      const ny = ady / shellY;
+      const ring = Math.max(nx, ny);
+      if (nx >= 1 || ny >= 1) {
         return TILE.HULL;
       }
-      if (adx <= 1 && ady < shellY - 10) return TILE.WALKWAY;
-      if (ady <= 1 && adx < shellX - 10) return TILE.WALKWAY;
-      if (((adx + ady) | 0) % 5 === 0) return TILE.WINDOW;
+      if (ring > 0.84) return TILE.WALKWAY;
+      if (ring > 0.64) return ((x + y) & 3) === 0 ? TILE.WINDOW : TILE.METAL;
+      if (adx <= 1 || ady <= 1) return TILE.ENERGY;
+      if (adx <= 3 && ady <= 3) return TILE.METAL;
       if (hash2(x, y, 8811) > 0.86) return TILE.WALKWAY;
       return TILE.METAL;
     }

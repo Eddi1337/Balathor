@@ -6281,23 +6281,23 @@ function drawStationRoomObject(obj, sx, sy) {
   const kind = obj.kind || "core";
   const palette =
     kind === "reactor"
-      ? { base: "#51412e", mid: "#826846", glow: "#ffcf7a", edge: "#f4dca6" }
+      ? { base: "#16222f", mid: "#2f4256", glow: "#67f0ff", edge: "#d9fbff" }
       : kind === "quarters"
-        ? { base: "#5b4630", mid: "#8a6a45", glow: "#f8e3b0", edge: "#f2d9a0" }
+        ? { base: "#1c2835", mid: "#304559", glow: "#7ec8ff", edge: "#d9eefb" }
         : kind === "command"
-          ? { base: "#433728", mid: "#6d5639", glow: "#ffd98b", edge: "#fff1ca" }
+          ? { base: "#15202b", mid: "#2d4156", glow: "#67f0ff", edge: "#f0fbff" }
           : kind === "docks"
-            ? { base: "#4a3929", mid: "#7a5a3b", glow: "#ffd27a", edge: "#f3e1bf" }
+            ? { base: "#17222f", mid: "#2c4054", glow: "#ffd27a", edge: "#f3f8ff" }
             : kind === "core"
-              ? { base: "#4a3926", mid: "#78603f", glow: "#ffcd79", edge: "#f5e1b0" }
-              : { base: "#4f3b2a", mid: "#7a5a3a", glow: "#ffd27a", edge: "#f2ddbf" };
+              ? { base: "#121c27", mid: "#2f4254", glow: "#67f0ff", edge: "#d0f7ff" }
+              : { base: "#16202c", mid: "#304255", glow: "#67f0ff", edge: "#d0f7ff" };
   ctx.save();
   drawEllipseShadow(x - 8, y + h * 0.72, w + 16, 10, 0.18);
   ctx.fillStyle = palette.base;
   ctx.fillRect(x, y, w, h);
   ctx.fillStyle = palette.mid;
   ctx.fillRect(x + 6, y + 6, w - 12, h - 12);
-  ctx.fillStyle = "rgba(255,224,170,0.12)";
+  ctx.fillStyle = "rgba(103,240,255,0.12)";
   ctx.fillRect(x + 10, y + 10, w - 20, h - 20);
   ctx.fillStyle = palette.glow;
   ctx.fillRect(x + 8, y + h / 2 - 2, w - 16, 4);
@@ -6308,27 +6308,31 @@ function drawStationRoomObject(obj, sx, sy) {
   ctx.fillRect(x + 4, y + h - 8, 4, 4);
   ctx.fillRect(x + w - 8, y + h - 8, 4, 4);
   if (kind === "reactor") {
-    drawBarrelCluster(x + 8, y + 10, 2, 2, 1.2);
-    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.fillStyle = "rgba(103,240,255,0.18)";
     ctx.fillRect(x + w / 2 - 10, y + h / 2 - 10, 20, 20);
+    ctx.fillStyle = "rgba(255,255,255,0.14)";
+    ctx.fillRect(x + 10, y + 10, 6, 6);
+    ctx.fillRect(x + w - 16, y + h - 16, 6, 6);
   } else if (kind === "quarters") {
     ctx.fillStyle = "rgba(255,255,255,0.18)";
     ctx.fillRect(x + 12, y + 10, 10, 6);
     ctx.fillRect(x + w - 22, y + h - 16, 10, 6);
-    drawBarrelCluster(x + 12, y + h - 22, 1, 1, 1);
+    ctx.fillStyle = "rgba(103,240,255,0.18)";
+    ctx.fillRect(x + 12, y + h - 22, 12, 4);
   } else if (kind === "command") {
     ctx.fillStyle = "rgba(255,255,255,0.24)";
     ctx.fillRect(x + w / 2 - 12, y + 4, 24, 8);
-    ctx.fillStyle = "rgba(190,140,70,0.85)";
+    ctx.fillStyle = "rgba(103,240,255,0.85)";
     ctx.fillRect(x + 10, y + h - 16, 16, 6);
   } else if (kind === "docks") {
-    ctx.fillStyle = "rgba(255,255,255,0.14)";
+    ctx.fillStyle = "rgba(103,240,255,0.14)";
     ctx.fillRect(x + 8, y + 8, w - 16, 4);
     ctx.fillRect(x + 8, y + h - 12, w - 16, 4);
-    drawBarrelCluster(x + 12, y + 12, 2, 1, 0.95);
-    drawBarrelCluster(x + w - 28, y + h - 28, 2, 1, 0.95);
+    ctx.fillStyle = "rgba(255,255,255,0.16)";
+    ctx.fillRect(x + 12, y + 12, 12, 6);
+    ctx.fillRect(x + w - 24, y + h - 24, 12, 6);
   }
-  ctx.strokeStyle = "rgba(255,224,170,0.34)";
+  ctx.strokeStyle = "rgba(103,240,255,0.34)";
   ctx.lineWidth = 2;
   ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
   ctx.restore();
@@ -6341,19 +6345,20 @@ function drawShipConsoleObject(obj, sx, sy) {
   const y = sy - h / 2;
   ctx.save();
   drawEllipseShadow(x - 4, y + h * 0.82, w + 8, 10, 0.18);
-  ctx.fillStyle = "#4d3926";
+  ctx.fillStyle = "#17222f";
   ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = "#7a5a3a";
+  ctx.fillStyle = "#304255";
   ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
-  ctx.fillStyle = "#ffd27a";
+  ctx.fillStyle = "#67f0ff";
   ctx.fillRect(x + 8, y + 8, w - 16, 4);
   ctx.fillRect(x + w / 2 - 2, y + 8, 4, h - 16);
   ctx.fillStyle = "rgba(255,255,255,0.5)";
   ctx.fillRect(x + 10, y + 10, 6, 6);
-  ctx.fillStyle = "rgba(255,224,170,0.28)";
+  ctx.fillStyle = "rgba(103,240,255,0.22)";
   ctx.fillRect(x + 6, y + h - 10, w - 12, 4);
-  drawBarrelCluster(x + 6, y + 6, 1, 1, 0.9);
-  ctx.strokeStyle = "rgba(255,224,170,0.44)";
+  ctx.fillStyle = "rgba(255,255,255,0.16)";
+  ctx.fillRect(x + 6, y + 6, 4, 4);
+  ctx.strokeStyle = "rgba(103,240,255,0.44)";
   ctx.lineWidth = 2;
   ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
   ctx.restore();
@@ -6366,23 +6371,22 @@ function drawDockPortObject(obj, sx, sy) {
   const y = sy - h / 2;
   ctx.save();
   drawEllipseShadow(x - 2, y + h * 0.84, w + 4, 8, 0.14);
-  ctx.fillStyle = "#392a1c";
+  ctx.fillStyle = "#121b27";
   ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = "#745337";
+  ctx.fillStyle = "#2f4256";
   ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
-  ctx.fillStyle = "#ffd27a";
+  ctx.fillStyle = "#67f0ff";
   ctx.fillRect(x + 8, y + 8, w - 16, 4);
   ctx.fillStyle = "rgba(255,255,255,0.2)";
   ctx.fillRect(x + 8, y + h / 2 - 2, w - 16, 4);
-  ctx.fillStyle = "#f4e1bd";
+  ctx.fillStyle = "#d9fbff";
   ctx.fillRect(x + w / 2 - 5, y + 12, 10, h - 24);
   ctx.fillStyle = "rgba(255,255,255,0.55)";
   ctx.fillRect(x + 12, y + 10, 5, 5);
   ctx.fillRect(x + w - 17, y + 10, 5, 5);
-  ctx.fillStyle = "rgba(255,224,170,0.22)";
+  ctx.fillStyle = "rgba(103,240,255,0.22)";
   ctx.fillRect(x + 6, y + h - 10, w - 12, 4);
-  drawBarrelCluster(x + 2, y + 2, 1, 1, 0.9);
-  ctx.strokeStyle = "rgba(255,224,170,0.42)";
+  ctx.strokeStyle = "rgba(103,240,255,0.42)";
   ctx.lineWidth = 2;
   ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
   ctx.restore();
@@ -6391,9 +6395,9 @@ function drawDockPortObject(obj, sx, sy) {
 function drawRusticStationCluster(x, y, w, h) {
   const cell = Math.min(w, h) / 5;
   ctx.save();
-  ctx.fillStyle = "#392717";
+  ctx.fillStyle = "#101924";
   ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = "#5d4126";
+  ctx.fillStyle = "#223447";
   ctx.fillRect(x + 6, y + 6, w - 12, h - 12);
   const rooms = [
     [x + 10, y + 10, cell * 1.45, cell * 1.45],
@@ -6407,15 +6411,17 @@ function drawRusticStationCluster(x, y, w, h) {
     [x + w - cell * 2.2, y + h - cell * 1.95, cell * 1.45, cell * 1.45]
   ];
   for (const [rx, ry, rw, rh] of rooms) {
-    ctx.fillStyle = "#6d5033";
+    ctx.fillStyle = "#2f4256";
     ctx.fillRect(rx, ry, rw, rh);
-    ctx.fillStyle = "#8b6948";
+    ctx.fillStyle = "#5f8394";
     ctx.fillRect(rx + 4, ry + 4, rw - 8, rh - 8);
-    ctx.fillStyle = "rgba(255,224,170,0.18)";
+    ctx.fillStyle = "rgba(103,240,255,0.12)";
     ctx.fillRect(rx + 8, ry + 8, rw - 16, rh - 16);
-    ctx.strokeStyle = "rgba(255,224,170,0.22)";
+    ctx.strokeStyle = "rgba(103,240,255,0.24)";
     ctx.strokeRect(rx + 1, ry + 1, rw - 2, rh - 2);
-    drawBarrelCluster(rx + 10, ry + 10, 1, 1, 0.7);
+    ctx.fillStyle = "rgba(255,255,255,0.18)";
+    ctx.fillRect(rx + 8, ry + 8, 4, 4);
+    ctx.fillRect(rx + rw - 12, ry + rh - 12, 4, 4);
   }
   const corridors = [
     [x + w * 0.33, y + h * 0.28, w * 0.34, 10],
@@ -6423,19 +6429,19 @@ function drawRusticStationCluster(x, y, w, h) {
     [x + w * 0.28, y + h * 0.28, 10, h * 0.34],
     [x + w * 0.58, y + h * 0.28, 10, h * 0.34]
   ];
-  ctx.fillStyle = "#4e3824";
+  ctx.fillStyle = "#1a2430";
   for (const [cx, cy, cw, ch] of corridors) {
     ctx.fillRect(cx, cy, cw, ch);
-    ctx.fillStyle = "#7f5c3a";
+    ctx.fillStyle = "#314152";
     ctx.fillRect(cx + 2, cy + 2, cw - 4, ch - 4);
-    ctx.fillStyle = "rgba(255,224,170,0.14)";
+    ctx.fillStyle = "rgba(103,240,255,0.18)";
     ctx.fillRect(cx + 4, cy + 4, Math.max(2, cw - 8), Math.max(2, ch - 8));
-    ctx.fillStyle = "#4e3824";
+    ctx.fillStyle = "#1a2430";
   }
-  ctx.fillStyle = "rgba(255,224,170,0.3)";
+  ctx.fillStyle = "rgba(103,240,255,0.26)";
   ctx.fillRect(x + 18, y + h / 2 - 3, w - 36, 6);
   ctx.fillRect(x + w / 2 - 3, y + 18, 6, h - 36);
-  ctx.strokeStyle = "rgba(255,224,170,0.34)";
+  ctx.strokeStyle = "rgba(103,240,255,0.34)";
   ctx.lineWidth = 3;
   ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
   ctx.restore();

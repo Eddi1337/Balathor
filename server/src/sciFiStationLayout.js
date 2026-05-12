@@ -1,7 +1,7 @@
 "use strict";
 
 /**
- * Ringforge — orbital station (sci-fi sector). Layout v2: offset fusion core, cross concourse, plaza hub.
+ * Ringforge — orbital station (sci-fi sector). Layout v3: glass atrium, ring concourse, offset fusion core.
  * `node tools/generateSciFiStation.mjs`
  */
 
@@ -46,102 +46,122 @@ const SCI_FI_DOCK_PORTS = buildDockPorts();
 function buildStationFeatures() {
   const out = [];
 
-  /* First-match wins — list smaller hubs before concourse arms that sweep through them. */
+  /* First-match wins — center rooms first, then the concourse strips that connect them. */
   out.push({
     id: "rf_plaza",
-    name: "Transit Plaza",
+    name: "Transit Atrium",
     x: CX,
     y: CY,
-    w: 13,
-    h: 13,
+    w: 19,
+    h: 19,
     kind: "station-plaza"
+  });
+
+  out.push({
+    id: "rf_command_ring",
+    name: "Command Ring",
+    x: CX,
+    y: CY - 30,
+    w: 15,
+    h: 11,
+    kind: "command"
+  });
+
+  out.push({
+    id: "rf_crew_quarters",
+    name: "Crew Commons",
+    x: CX,
+    y: CY + 30,
+    w: 15,
+    h: 11,
+    kind: "quarters"
   });
 
   out.push({
     id: "rf_fusion_core",
     name: "Fusion Core",
     x: CX + 26,
-    y: CY - 12,
+    y: CY - 10,
     w: 16,
     h: 16,
     kind: "station-core"
   });
 
   out.push({
-    id: "rf_shop_ships",
+    id: "rf_shipworks",
     name: "Orbital Shipworks",
     x: CX - 44,
-    y: CY - 38,
-    w: 14,
+    y: CY - 24,
+    w: 16,
     h: 14,
     kind: "shop-bay",
     shopType: "ship"
   });
   out.push({
-    id: "rf_shop_arms",
+    id: "rf_armoury",
     name: "Armoury Annex",
     x: CX + 44,
-    y: CY - 38,
-    w: 14,
+    y: CY - 24,
+    w: 16,
     h: 14,
     kind: "shop-bay",
     shopType: "arms"
   });
   out.push({
-    id: "rf_shop_stims",
+    id: "rf_synthesis",
     name: "Synthesis Clinic",
     x: CX + 44,
-    y: CY + 38,
-    w: 14,
+    y: CY + 24,
+    w: 16,
     h: 14,
     kind: "shop-bay",
     shopType: "stims"
   });
   out.push({
-    id: "rf_shop_parts",
+    id: "rf_spindle_parts",
     name: "Spindle Parts",
     x: CX - 44,
-    y: CY + 38,
-    w: 14,
+    y: CY + 24,
+    w: 16,
     h: 14,
     kind: "shop-bay",
     shopType: "parts"
   });
 
   out.push({
-    id: "rf_conc_w",
+    id: "rf_concourse_w",
     name: "Concourse W",
-    x: CX - 22,
+    x: CX - 24,
     y: CY,
-    w: 28,
+    w: 30,
     h: 7,
     kind: "corridor"
   });
   out.push({
-    id: "rf_conc_e",
+    id: "rf_concourse_e",
     name: "Concourse E",
-    x: CX + 22,
+    x: CX + 24,
     y: CY,
-    w: 28,
+    w: 30,
     h: 7,
     kind: "corridor"
   });
   out.push({
-    id: "rf_conc_n",
+    id: "rf_concourse_n",
     name: "Concourse N",
     x: CX,
-    y: CY - 22,
+    y: CY - 24,
     w: 7,
-    h: 28,
+    h: 30,
     kind: "corridor"
   });
   out.push({
-    id: "rf_conc_s",
+    id: "rf_concourse_s",
     name: "Concourse S",
     x: CX,
-    y: CY + 22,
+    y: CY + 24,
     w: 7,
-    h: 28,
+    h: 30,
     kind: "corridor"
   });
 
