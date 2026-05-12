@@ -251,14 +251,14 @@ function sciFiStationTileForFeature(feature, x, y) {
   const edge = lx === 0 || ly === 0 || lx === fw - 1 || ly === fh - 1;
 
   if (feature.kind === "ship-port") {
-    if (edge) return TILE.HULL;
+    if (edge) return TILE.METAL;
     if (Math.abs(lx - Math.floor(fw / 2)) <= 1) return TILE.ENERGY;
     if (ly === Math.floor(fh / 2)) return TILE.WALKWAY;
     return TILE.METAL;
   }
 
   if (feature.kind === "ship-console") {
-    if (edge) return TILE.HULL;
+    if (edge) return TILE.METAL;
     if (lx === 1 || ly === 1 || lx === fw - 2 || ly === fh - 2) return TILE.WALKWAY;
     return TILE.ENERGY;
   }
@@ -275,7 +275,7 @@ function sciFiStationTileForFeature(feature, x, y) {
   }
 
   if (feature.kind === "ship-shop" || feature.kind === "shop-bay") {
-    if (edge) return TILE.HULL;
+    if (edge) return TILE.METAL;
     const cx = Math.floor(fw / 2);
     const cy = Math.floor(fh / 2);
     if (Math.abs(lx - cx) <= 1 || Math.abs(ly - cy) <= 1) return TILE.WALKWAY;
@@ -287,7 +287,7 @@ function sciFiStationTileForFeature(feature, x, y) {
     const cx = Math.floor(fw / 2);
     const cy = Math.floor(fh / 2);
     const md = Math.abs(lx - cx) + Math.abs(ly - cy);
-    if (edge) return TILE.HULL;
+    if (edge) return TILE.METAL;
     if (md <= 2) return TILE.ENERGY;
     if (md <= 5) return TILE.WINDOW;
     if ((lx + ly) % 2 === 0) return TILE.ENERGY;
@@ -301,23 +301,23 @@ function sciFiStationTileForFeature(feature, x, y) {
   }
 
   if (feature.kind === "quarters") {
-    if (edge) return TILE.HULL;
+    if (edge) return TILE.METAL;
     return (lx + ly) % 3 === 0 ? TILE.WALKWAY : TILE.METAL;
   }
 
   if (feature.kind === "core" || feature.kind === "command") {
-    if (edge) return TILE.HULL;
+    if (edge) return TILE.METAL;
     return lx === Math.floor(fw / 2) || ly === Math.floor(fh / 2) ? TILE.WALKWAY : TILE.METAL;
   }
 
   if (feature.kind === "ship-bay") {
-    if (edge) return TILE.HULL;
+    if (edge) return TILE.METAL;
     if (lx === 1 || ly === 1 || lx === fw - 2 || ly === fh - 2) return TILE.WALKWAY;
     return ly === Math.floor(fh / 2) ? TILE.ENERGY : TILE.METAL;
   }
 
   if (feature.kind === "corridor") {
-    if (edge) return TILE.HULL;
+    if (edge) return TILE.METAL;
     if (fw >= fh) {
       const mid = Math.floor(fh / 2);
       if (Math.abs(ly - mid) <= 1) return TILE.WALKWAY;
@@ -1787,7 +1787,7 @@ function generateExteriorTile(x, y) {
       const ny = ady / shellY;
       const ring = Math.max(nx, ny);
       if (nx >= 1 || ny >= 1) {
-        return TILE.HULL;
+        return TILE.METAL;
       }
       if (ring > 0.84) return TILE.WALKWAY;
       if (ring > 0.64) return ((x + y) & 3) === 0 ? TILE.WINDOW : TILE.METAL;

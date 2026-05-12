@@ -6232,11 +6232,11 @@ function drawStationObject(obj, sx, sy) {
   ctx.save();
   drawEllipseShadow(x - 8, y + h * 0.68, w + 16, 10, 0.26);
   if (obj.id === "station_ringforge" || obj.id === "station_nova_dock") {
-    drawRusticStationCluster(x, y, w, h);
+    drawSciFiStationCluster(x, y, w, h);
   } else if (obj.kind === "core" || obj.kind === "command" || obj.kind === "quarters" || obj.kind === "reactor" || obj.kind === "docks") {
     drawStationRoomObject(obj, sx, sy);
   } else {
-    drawRusticStationCluster(x, y, w, h);
+    drawSciFiStationCluster(x, y, w, h);
   }
   ctx.restore();
   ctx.save();
@@ -6247,6 +6247,67 @@ function drawStationObject(obj, sx, sy) {
   ctx.fillStyle = "#d2f6ff";
   ctx.strokeText(obj.name || "Station", sx, y - 6);
   ctx.fillText(obj.name || "Station", sx, y - 6);
+  ctx.restore();
+}
+
+function drawSciFiStationCluster(x, y, w, h) {
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const ringR = Math.min(w, h) * 0.28;
+  ctx.save();
+  ctx.fillStyle = "#0f1723";
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = "#1c2a39";
+  ctx.fillRect(x + 6, y + 6, w - 12, h - 12);
+  ctx.fillStyle = "rgba(103,240,255,0.08)";
+  ctx.fillRect(x + 10, y + 10, w - 20, h - 20);
+  ctx.fillStyle = "#243548";
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, ringR * 1.45, ringR, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(103,240,255,0.42)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, ringR * 1.45, ringR, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = "#67f0ff";
+  ctx.fillRect(cx - 6, cy - 6, 12, 12);
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.fillRect(cx - 2, cy - 2, 4, 4);
+
+  const arms = [
+    [cx - 4, y + 8, 8, ringR + 6],
+    [cx - 4, cy + ringR - 2, 8, h - (cy + ringR - 2) - 8],
+    [x + 8, cy - 4, ringR + 10, 8],
+    [cx + ringR - 2, cy - 4, w - (cx + ringR - 2) - 8, 8]
+  ];
+  ctx.fillStyle = "#314152";
+  for (const [ax, ay, aw, ah] of arms) {
+    ctx.fillRect(ax, ay, aw, ah);
+    ctx.fillStyle = "#5f8394";
+    ctx.fillRect(ax + 2, ay + 2, Math.max(2, aw - 4), Math.max(2, ah - 4));
+    ctx.fillStyle = "rgba(103,240,255,0.22)";
+    ctx.fillRect(ax + 4, ay + 4, Math.max(1, aw - 8), Math.max(1, ah - 8));
+    ctx.fillStyle = "#314152";
+  }
+
+  const pods = [
+    [x + 8, y + 8, w * 0.2, h * 0.2],
+    [x + w - w * 0.2 - 8, y + 8, w * 0.2, h * 0.2],
+    [x + 8, y + h - h * 0.2 - 8, w * 0.2, h * 0.2],
+    [x + w - w * 0.2 - 8, y + h - h * 0.2 - 8, w * 0.2, h * 0.2]
+  ];
+  ctx.fillStyle = "#2b4054";
+  for (const [px, py, pw, ph] of pods) {
+    ctx.fillRect(px, py, pw, ph);
+    ctx.fillStyle = "rgba(103,240,255,0.12)";
+    ctx.fillRect(px + 4, py + 4, Math.max(2, pw - 8), Math.max(2, ph - 8));
+    ctx.fillStyle = "#2b4054";
+  }
+
+  ctx.strokeStyle = "rgba(103,240,255,0.24)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
   ctx.restore();
 }
 
