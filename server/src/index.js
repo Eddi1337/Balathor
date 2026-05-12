@@ -2629,7 +2629,7 @@ function handleSciFiTeleport(client) {
   send(client, {
     type: "teleport",
     portalId: "sci_command",
-    name: "Ringforge Station",
+    name: "Orbital Square",
     theme: getWorldThemeAt(client.player.x, client.player.y),
     x: client.player.x,
     y: client.player.y

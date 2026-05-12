@@ -1564,7 +1564,7 @@ function getShopFixtureAt(x, y) {
         return {
           id: feature.id,
           name: feature.name,
-          buildingName: "Ringforge Station",
+          buildingName: "Orbital Square",
           isPub: false,
           shopType: feature.shopType,
           x: feature.x,
@@ -1777,24 +1777,15 @@ function generateExteriorTile(x, y) {
 
     const station = sciFiStationAt(x, y);
     if (station) {
-      const dx = x - station.x;
-      const dy = y - station.y;
-      const adx = Math.abs(dx);
-      const ady = Math.abs(dy);
-      const shellX = Math.max(1, Math.floor(station.w / 2) - 1);
-      const shellY = Math.max(1, Math.floor(station.h / 2) - 1);
-      const nx = adx / shellX;
-      const ny = ady / shellY;
-      const ring = Math.max(nx, ny);
-      if (nx >= 1 || ny >= 1) {
-        return TILE.METAL;
-      }
-      if (ring > 0.84) return TILE.WALKWAY;
-      if (ring > 0.64) return ((x + y) & 3) === 0 ? TILE.WINDOW : TILE.METAL;
-      if (adx <= 1 || ady <= 1) return TILE.ENERGY;
-      if (adx <= 3 && ady <= 3) return TILE.METAL;
-      if (hash2(x, y, 8811) > 0.86) return TILE.WALKWAY;
-      return TILE.METAL;
+      const dx = Math.abs(x - station.x);
+      const dy = Math.abs(y - station.y);
+      const edge = Math.max(dx, dy);
+      const shell = Math.max(1, Math.floor(Math.min(station.w, station.h) / 2) - 1);
+      if (edge >= shell - 1) return TILE.WINDOW;
+      if (edge >= shell - 3) return TILE.WALKWAY;
+      if (edge >= shell - 7) return TILE.METAL;
+      if (edge <= 2) return TILE.ENERGY;
+      return ((x + y) & 1) === 0 ? TILE.METAL : TILE.WALKWAY;
     }
 
     const planet = sciFiPlanetAt(x, y);

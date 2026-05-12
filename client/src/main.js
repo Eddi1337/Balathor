@@ -127,7 +127,7 @@ const SCI_FI_THEME = "sci-fi";
 const START_SPAWN = Object.freeze({ x: 0, y: 0 });
 
 const CHAT_COMMANDS = [
-  { cmd: "/sci",    desc: "Teleport to Ringforge Station" },
+  { cmd: "/sci",    desc: "Teleport to the orbital square" },
   { cmd: "/stuck",  desc: "Teleport to spawn if stuck" },
   { cmd: "/home",   desc: "Teleport to your house" },
   { cmd: "/dance",  kind: "dance", desc: "Do a little dance" },
@@ -6232,11 +6232,11 @@ function drawStationObject(obj, sx, sy) {
   ctx.save();
   drawEllipseShadow(x - 8, y + h * 0.68, w + 16, 10, 0.26);
   if (obj.id === "station_ringforge" || obj.id === "station_nova_dock") {
-    drawSciFiStationCluster(x, y, w, h);
+    drawSpaceStationSquare(x, y, w, h);
   } else if (obj.kind === "core" || obj.kind === "command" || obj.kind === "quarters" || obj.kind === "reactor" || obj.kind === "docks") {
     drawStationRoomObject(obj, sx, sy);
   } else {
-    drawSciFiStationCluster(x, y, w, h);
+    drawSpaceStationSquare(x, y, w, h);
   }
   ctx.restore();
   ctx.save();
@@ -6250,64 +6250,44 @@ function drawStationObject(obj, sx, sy) {
   ctx.restore();
 }
 
-function drawSciFiStationCluster(x, y, w, h) {
+function drawSpaceStationSquare(x, y, w, h) {
   const cx = x + w / 2;
   const cy = y + h / 2;
-  const ringR = Math.min(w, h) * 0.28;
   ctx.save();
-  ctx.fillStyle = "#0f1723";
+  ctx.fillStyle = "#09111b";
   ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = "#1c2a39";
-  ctx.fillRect(x + 6, y + 6, w - 12, h - 12);
+  ctx.fillStyle = "#182635";
+  ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
   ctx.fillStyle = "rgba(103,240,255,0.08)";
   ctx.fillRect(x + 10, y + 10, w - 20, h - 20);
-  ctx.fillStyle = "#243548";
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, ringR * 1.45, ringR, 0, 0, Math.PI * 2);
-  ctx.fill();
   ctx.strokeStyle = "rgba(103,240,255,0.42)";
   ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, ringR * 1.45, ringR, 0, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.fillStyle = "#67f0ff";
-  ctx.fillRect(cx - 6, cy - 6, 12, 12);
-  ctx.fillStyle = "rgba(255,255,255,0.5)";
-  ctx.fillRect(cx - 2, cy - 2, 4, 4);
-
-  const arms = [
-    [cx - 4, y + 8, 8, ringR + 6],
-    [cx - 4, cy + ringR - 2, 8, h - (cy + ringR - 2) - 8],
-    [x + 8, cy - 4, ringR + 10, 8],
-    [cx + ringR - 2, cy - 4, w - (cx + ringR - 2) - 8, 8]
-  ];
-  ctx.fillStyle = "#314152";
-  for (const [ax, ay, aw, ah] of arms) {
-    ctx.fillRect(ax, ay, aw, ah);
-    ctx.fillStyle = "#5f8394";
-    ctx.fillRect(ax + 2, ay + 2, Math.max(2, aw - 4), Math.max(2, ah - 4));
-    ctx.fillStyle = "rgba(103,240,255,0.22)";
-    ctx.fillRect(ax + 4, ay + 4, Math.max(1, aw - 8), Math.max(1, ah - 8));
-    ctx.fillStyle = "#314152";
-  }
-
-  const pods = [
-    [x + 8, y + 8, w * 0.2, h * 0.2],
-    [x + w - w * 0.2 - 8, y + 8, w * 0.2, h * 0.2],
-    [x + 8, y + h - h * 0.2 - 8, w * 0.2, h * 0.2],
-    [x + w - w * 0.2 - 8, y + h - h * 0.2 - 8, w * 0.2, h * 0.2]
-  ];
-  ctx.fillStyle = "#2b4054";
-  for (const [px, py, pw, ph] of pods) {
-    ctx.fillRect(px, py, pw, ph);
-    ctx.fillStyle = "rgba(103,240,255,0.12)";
-    ctx.fillRect(px + 4, py + 4, Math.max(2, pw - 8), Math.max(2, ph - 8));
-    ctx.fillStyle = "#2b4054";
-  }
-
-  ctx.strokeStyle = "rgba(103,240,255,0.24)";
-  ctx.lineWidth = 2;
   ctx.strokeRect(x + 2, y + 2, w - 4, h - 4);
+  ctx.strokeStyle = "rgba(255,255,255,0.12)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 5; i += 1) {
+    const px = x + 10 + i * ((w - 20) / 5);
+    ctx.beginPath();
+    ctx.moveTo(px, y + 10);
+    ctx.lineTo(px, y + h - 10);
+    ctx.stroke();
+  }
+  for (let i = 0; i < 5; i += 1) {
+    const py = y + 10 + i * ((h - 20) / 5);
+    ctx.beginPath();
+    ctx.moveTo(x + 10, py);
+    ctx.lineTo(x + w - 10, py);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#67f0ff";
+  ctx.fillRect(cx - 4, cy - 4, 8, 8);
+  ctx.fillStyle = "rgba(255,255,255,0.65)";
+  ctx.fillRect(cx - 1, cy - 1, 2, 2);
+  ctx.fillStyle = "rgba(103,240,255,0.16)";
+  ctx.fillRect(x + 6, y + 6, 10, 10);
+  ctx.fillRect(x + w - 16, y + 6, 10, 10);
+  ctx.fillRect(x + 6, y + h - 16, 10, 10);
+  ctx.fillRect(x + w - 16, y + h - 16, 10, 10);
   ctx.restore();
 }
 
