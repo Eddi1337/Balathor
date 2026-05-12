@@ -25,6 +25,7 @@ const nameInput = document.querySelector("#nameInput");
 const menuServerLabel = document.querySelector("#menuServerLabel");
 const menuPopulation = document.querySelector("#menuPopulation");
 const menuPosition = document.querySelector("#menuPosition");
+const logoutButton = document.querySelector("#logoutButton");
 const progression = document.querySelector("#progression");
 const progressionToggle = document.querySelector("#progressionToggle");
 const hpFill = document.querySelector("#hpFill");
@@ -2608,6 +2609,10 @@ function wireUi() {
     closeMenu();
   });
 
+  logoutButton?.addEventListener("click", () => {
+    logout();
+  });
+
   chatForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const text = chatInput.value.trim();
@@ -4395,6 +4400,34 @@ function resetToConnection(message) {
   state.debugRttMs = null;
   state.debugServerSimHz = null;
   state.debugServerTick = null;
+}
+
+function logout() {
+  clearSavedCreds();
+  clearTimeout(state._reconnectTimer);
+  if (state.socket && state.socket.readyState !== WebSocket.CLOSED) {
+    state.ignoreNextClose = true;
+    state.socket.close();
+  }
+  state.socket = null;
+  clearWorldState();
+  state.connected = false;
+  state.joined = false;
+  state.selfId = null;
+  state.authenticated = false;
+  state.menuOpen = false;
+  menu.classList.add("hidden");
+  menu.setAttribute("aria-hidden", "true");
+  bootPanel.classList.remove("hidden");
+  accountForm.classList.remove("hidden");
+  form.classList.add("hidden");
+  usernameInput.value = "";
+  passwordInput.value = "";
+  loginButton.disabled = false;
+  createAccountButton.disabled = false;
+  playButton.disabled = false;
+  setStatus("Logged out");
+  usernameInput.focus();
 }
 
 function clearWorldState() {
