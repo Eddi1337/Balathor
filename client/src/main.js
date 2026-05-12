@@ -124,6 +124,74 @@ let safeZoneTooltipPinTimer = null;
 const TILE_SIZE = 32;
 const SCI_FI_THEME = "sci-fi";
 
+const CHAT_COMMANDS = [
+  { cmd: "/sci",    desc: "Teleport to Ringforge Station" },
+  { cmd: "/stuck",  desc: "Teleport to spawn if stuck" },
+  { cmd: "/home",   desc: "Teleport to your house" },
+  { cmd: "/dance",  kind: "dance", desc: "Do a little dance" },
+  { cmd: "/wave",   kind: "wave",  desc: "Wave to nearby players" },
+  { cmd: "/laugh",  kind: "laugh", desc: "Laugh out loud" },
+  { cmd: "/cry",    kind: "cry",   desc: "Cry dramatically" },
+  { cmd: "/cheer",  kind: "cheer", desc: "Cheer!" },
+  { cmd: "/bow",    kind: "bow",   desc: "Bow respectfully" },
+];
+
+let cmdPaletteActiveIdx = -1;
+let cmdPaletteFiltered = [];
+
+function updateCmdPalette() {
+  const palette = document.getElementById("cmdPalette");
+  if (!palette) return;
+  const val = chatInput?.value || "";
+  if (!val.startsWith("/")) {
+    palette.classList.add("hidden");
+    return;
+  }
+  const lower = val.toLowerCase();
+  cmdPaletteFiltered = CHAT_COMMANDS.filter((c) => c.cmd.startsWith(lower));
+  if (!cmdPaletteFiltered.length) {
+    palette.classList.add("hidden");
+    return;
+  }
+  cmdPaletteActiveIdx = Math.max(-1, Math.min(cmdPaletteActiveIdx, cmdPaletteFiltered.length - 1));
+  palette.innerHTML = cmdPaletteFiltered
+    .map((c, i) =>
+      `<div class="cmd-palette-item${i === cmdPaletteActiveIdx ? " active" : ""}" data-idx="${i}" role="option">` +
+      `<span class="cmd-palette-name">${c.cmd}</span>` +
+      `<span class="cmd-palette-desc">${c.desc}</span>` +
+      `</div>`
+    )
+    .join("");
+  palette.classList.remove("hidden");
+  palette.querySelectorAll(".cmd-palette-item").forEach((el) => {
+    el.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      const idx = Number(el.dataset.idx);
+      if (cmdPaletteFiltered[idx]) {
+        if (chatInput) chatInput.value = cmdPaletteFiltered[idx].cmd;
+        hideCmdPalette();
+        chatInput?.focus();
+      }
+    });
+  });
+}
+
+function hideCmdPalette() {
+  const palette = document.getElementById("cmdPalette");
+  if (palette) palette.classList.add("hidden");
+  cmdPaletteActiveIdx = -1;
+  cmdPaletteFiltered = [];
+}
+
+const EMOTE_LABELS = {
+  dance: "💃",
+  wave:  "👋",
+  laugh: "😂",
+  cry:   "😢",
+  cheer: "🎉",
+  bow:   "🙇",
+};
+
 function southDoorTilesWideBuilding(building) {
   const iw = Math.max(3, Math.floor(Number(building?.w)));
   return iw % 2 === 0 ? 2 : 1;
@@ -2438,11 +2506,71 @@ function wireUi() {
     if (!text) {
       return;
     }
+    hideCmdPalette();
+    if (text.startsWith("/")) {
+      const cmd = text.toLowerCase();
+      if (cmd === "/sci") {
+        send({ type: "sciFiTeleport" });
+        chatInput.value = "";
+        return;
+      }
+      if (cmd === "/stuck") {
+        send({ type: "home" });
+        chatInput.value = "";
+        return;
+      }
+      if (cmd === "/home") {
+        sendHome();
+        chatInput.value = "";
+        return;
+      }
+      const emoteKind = cmd.slice(1);
+      if (CHAT_COMMANDS.some((c) => c.kind === emoteKind)) {
+        send({ type: "emote", kind: emoteKind });
+        const self = state.players.get(state.selfId);
+        if (self) self.emote = emoteKind;
+        chatInput.value = "";
+        return;
+      }
+    }
     send({ type: "chat", text });
     chatInput.value = "";
   });
 
+  chatInput?.addEventListener("input", () => {
+    cmdPaletteActiveIdx = -1;
+    updateCmdPalette();
+  });
+
   chatInput?.addEventListener("keydown", (event) => {
+    const palette = document.getElementById("cmdPalette");
+    const paletteVisible = palette && !palette.classList.contains("hidden");
+
+    if (paletteVisible) {
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        cmdPaletteActiveIdx = Math.max(0, cmdPaletteActiveIdx - 1);
+        updateCmdPalette();
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        cmdPaletteActiveIdx = Math.min(cmdPaletteFiltered.length - 1, cmdPaletteActiveIdx + 1);
+        updateCmdPalette();
+        return;
+      }
+      if (event.key === "Tab") {
+        event.preventDefault();
+        const pick = cmdPaletteActiveIdx >= 0 ? cmdPaletteFiltered[cmdPaletteActiveIdx] : cmdPaletteFiltered[0];
+        if (pick) {
+          chatInput.value = pick.cmd;
+          cmdPaletteActiveIdx = -1;
+          updateCmdPalette();
+        }
+        return;
+      }
+    }
+
     if (!state.joined || event.key !== "Enter" || event.isComposing) {
       return;
     }
@@ -2451,6 +2579,10 @@ function wireUi() {
     }
     event.preventDefault();
     chatInput.blur();
+  });
+
+  chatInput?.addEventListener("blur", () => {
+    setTimeout(hideCmdPalette, 150);
   });
 
   chatToggle.addEventListener("click", () => {
@@ -5408,6 +5540,7 @@ function draw() {
   drawWorld();
   drawPortals();
   drawPlayers();
+  drawEmoteBubbles();
   drawFountainTossFx(halfW, halfH);
   drawTreeCanopies();
   drawCombatFx();
@@ -6541,6 +6674,48 @@ function drawPlayers() {
   }
 }
 
+function drawEmoteBubbles() {
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const now = performance.now() / 1000;
+
+  for (const entity of state.players.values()) {
+    if (!entity.emote) continue;
+    const label = EMOTE_LABELS[entity.emote];
+    if (!label) continue;
+
+    const rx = Number.isFinite(entity.renderX) ? entity.renderX : entity.x;
+    const ry = Number.isFinite(entity.renderY) ? entity.renderY : entity.y;
+    const sx = Math.floor(rx * TILE_SIZE - state.camera.x + halfW);
+    const sy = Math.floor(ry * TILE_SIZE - state.camera.y + halfH);
+
+    const bob = Math.sin(now * 3.5) * 2;
+    const bx = sx;
+    const by = sy - 46 + bob;
+
+    ctx.save();
+    ctx.font = "18px serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    const tw = ctx.measureText(label).width;
+    const padX = 6;
+    const padY = 4;
+    const bw = tw + padX * 2;
+    const bh = 26;
+
+    ctx.fillStyle = "rgba(12, 16, 26, 0.82)";
+    ctx.strokeStyle = "rgba(255,255,255,0.18)";
+    ctx.lineWidth = 1;
+    roundedRect(bx - bw / 2, by - bh / 2, bw, bh, 5);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillText(label, bx, by);
+    ctx.restore();
+  }
+}
+
 function drawWorldLoot() {
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
@@ -6841,10 +7016,14 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const sideX = -dirY;
   const sideY =  dirX;
 
-  const wf   = 2.6;
-  const sin1 = moving ? Math.sin(phase * wf) : 0;
-  const cos1 = moving ? Math.cos(phase * wf) : 0;
-  const bob  = moving ? Math.round(Math.abs(cos1) * 1.5 - 0.4) : 0;
+  const dancing = entity.emote === "dance";
+  const t = dancing ? performance.now() / 1000 : 0;
+
+  const wf   = dancing ? 4.0 : 2.6;
+  const sin1 = (moving || dancing) ? Math.sin(dancing ? t * wf : phase * wf) : 0;
+  const cos1 = (moving || dancing) ? Math.cos(dancing ? t * wf : phase * wf) : 0;
+  const rawBob  = (moving || dancing) ? Math.abs(cos1) * (dancing ? 4 : 1.5) - 0.4 : 0;
+  const bob  = dancing ? rawBob + Math.sin(t * 2.1) * 2 : Math.round(rawBob);
   const fx   = Math.round(dirX);
   const fy   = Math.round(dirY * 0.6);
 

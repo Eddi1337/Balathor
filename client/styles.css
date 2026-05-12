@@ -1053,6 +1053,44 @@ button:focus-visible {
   color: #e8d8ff;
 }
 
+.cmd-palette {
+  background: rgba(12, 16, 26, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 2px;
+}
+
+.cmd-palette.hidden {
+  display: none;
+}
+
+.cmd-palette-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.cmd-palette-item:hover,
+.cmd-palette-item.active {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.cmd-palette-name {
+  color: #7ec8f4;
+  font-weight: 700;
+  min-width: 72px;
+  font-size: 13px;
+}
+
+.cmd-palette-desc {
+  color: rgba(200, 210, 230, 0.7);
+}
+
 .chat-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 76px;

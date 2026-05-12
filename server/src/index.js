@@ -1886,6 +1886,16 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "sciFiTeleport") {
+    handleSciFiTeleport(client);
+    return;
+  }
+
+  if (message.type === "emote") {
+    handleEmote(client, message);
+    return;
+  }
+
   if (message.type === "houseHomeTree") {
     handleHouseHomeTreeTeleport(client, message);
     return;
@@ -2494,6 +2504,21 @@ function handleHomeTeleport(client) {
     y: client.player.y
   });
   streamChunks(client, nearbyChunks(client.player.x, client.player.y, 3));
+  broadcastSnapshot();
+}
+
+const EMOTE_KINDS = new Set(["dance", "wave", "laugh", "cry", "cheer", "bow"]);
+const EMOTE_DURATION_MS = 6000;
+const EMOTE_COOLDOWN_MS = 3000;
+
+function handleEmote(client, message) {
+  if (!client.player) return;
+  const kind = typeof message.kind === "string" ? message.kind.trim() : "";
+  if (!EMOTE_KINDS.has(kind)) return;
+  const now = Date.now();
+  if (now - (client.lastEmoteAt || 0) < EMOTE_COOLDOWN_MS) return;
+  client.lastEmoteAt = now;
+  client.player.emote = { kind, until: now + EMOTE_DURATION_MS };
   broadcastSnapshot();
 }
 
@@ -3662,7 +3687,8 @@ function broadcastSnapshot() {
       y: Number(p.y.toFixed(3)),
       facing: Number(p.facing.toFixed(3)),
       moving: p.moving,
-      isMod: p.isMod || false
+      isMod: p.isMod || false,
+      emote: (p.emote && p.emote.until > Date.now()) ? p.emote.kind : null
     };
     if (
       viewerId &&
