@@ -519,6 +519,19 @@ const POTION_KINDS = [
   { name: "Draught",       color: "#a55eea", healMin: 55, healMax: 85 },
 ];
 
+const ITEM_RARITIES = [
+  { id: "common",    label: "Common",    multiplier: 1    },
+  { id: "uncommon",  label: "Uncommon",  multiplier: 1.35 },
+  { id: "rare",      label: "Rare",      multiplier: 1.8  },
+  { id: "epic",      label: "Epic",      multiplier: 2.35 },
+  { id: "legendary", label: "Legendary", multiplier: 3.5  },
+];
+
+function itemRarity(seed) {
+  const r = hash2(seed, 11, 700);
+  return ITEM_RARITIES[r > 0.97 ? 4 : r > 0.85 ? 3 : r > 0.65 ? 2 : r > 0.35 ? 1 : 0];
+}
+
 /** Above legendary — unique visuals & combat perks via specialEffects (see getEquipmentSpecial). */
 const MYTHIC_ARTIFACT_TEMPLATES = [
   {
@@ -4045,19 +4058,6 @@ function createTraderStock(traderId, seed) {
     stock.push({ item, price: getBuyPrice(item) });
   }
   return stock;
-}
-
-const ITEM_RARITIES = [
-  { id: "common",    label: "Common",    multiplier: 1    },
-  { id: "uncommon",  label: "Uncommon",  multiplier: 1.35 },
-  { id: "rare",      label: "Rare",      multiplier: 1.8  },
-  { id: "epic",      label: "Epic",      multiplier: 2.35 },
-  { id: "legendary", label: "Legendary", multiplier: 3.5  },
-];
-
-function itemRarity(seed) {
-  const r = hash2(seed, 11, 700);
-  return ITEM_RARITIES[r > 0.97 ? 4 : r > 0.85 ? 3 : r > 0.65 ? 2 : r > 0.35 ? 1 : 0];
 }
 
 function createItemDatabase() {
