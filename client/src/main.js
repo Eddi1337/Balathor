@@ -6382,6 +6382,9 @@ function drawStationObject(obj, sx, sy) {
   const y = sy - h / 2;
   ctx.save();
   drawEllipseShadow(x - 8, y + h * 0.68, w + 16, 10, 0.26);
+  if (state.worldTheme === SCI_FI_THEME) {
+    drawStationVacuumBorder(x, y, w, h);
+  }
   if (obj.id === "station_ringforge" || obj.id === "station_nova_dock") {
     drawSpaceStationSquare(x, y, w, h);
   } else if (obj.kind === "core" || obj.kind === "command" || obj.kind === "quarters" || obj.kind === "reactor" || obj.kind === "docks") {
@@ -6398,6 +6401,58 @@ function drawStationObject(obj, sx, sy) {
   ctx.fillStyle = "#d2f6ff";
   ctx.strokeText(obj.name || "Station", sx, y - 6);
   ctx.fillText(obj.name || "Station", sx, y - 6);
+  ctx.restore();
+}
+
+function drawStationVacuumBorder(x, y, w, h) {
+  const pad = Math.max(18, Math.round(Math.min(w, h) * 0.18));
+  const bx = x - pad;
+  const by = y - pad;
+  const bw = w + pad * 2;
+  const bh = h + pad * 2;
+  const t = performance.now() / 1000;
+  ctx.save();
+  const outer = ctx.createRadialGradient(x + w / 2, y + h / 2, Math.min(w, h) * 0.22, x + w / 2, y + h / 2, Math.max(bw, bh) * 0.58);
+  outer.addColorStop(0, "rgba(2, 6, 14, 0)");
+  outer.addColorStop(0.7, "rgba(2, 6, 14, 0.18)");
+  outer.addColorStop(1, "rgba(2, 6, 14, 0.82)");
+  ctx.fillStyle = outer;
+  ctx.fillRect(bx, by, bw, bh);
+  ctx.fillStyle = "rgba(7, 12, 22, 0.5)";
+  ctx.fillRect(bx + 2, by + 2, bw - 4, bh - 4);
+
+  for (let i = 0; i < 18; i += 1) {
+    const rx = bx + ((hash2(Math.floor(x) + i * 11, Math.floor(y) - i * 7, 9123) * bw) | 0);
+    const ry = by + ((hash2(Math.floor(x) - i * 5, Math.floor(y) + i * 13, 9011) * bh) | 0);
+    const star = hash2(rx, ry, 7777 + i);
+    if (star < 0.72) {
+      continue;
+    }
+    const size = star > 0.96 ? 2 : 1;
+    ctx.fillStyle = star > 0.96 ? "rgba(145, 242, 255, 0.92)" : "rgba(230, 242, 255, 0.72)";
+    ctx.fillRect(rx, ry, size, size);
+  }
+
+  const nebula = ctx.createRadialGradient(x + w * 0.7, y + h * 0.32, 2, x + w * 0.7, y + h * 0.32, Math.max(w, h) * 0.72);
+  nebula.addColorStop(0, "rgba(103, 240, 255, 0.10)");
+  nebula.addColorStop(0.45, "rgba(69, 117, 188, 0.08)");
+  nebula.addColorStop(1, "rgba(0, 0, 0, 0)");
+  ctx.fillStyle = nebula;
+  ctx.fillRect(bx, by, bw, bh);
+
+  ctx.strokeStyle = "rgba(103, 240, 255, 0.14)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(bx + 1, by + 1, bw - 2, bh - 2);
+  ctx.strokeStyle = "rgba(255,255,255,0.06)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x - 2, y - 2, w + 4, h + 4);
+
+  const pulse = 0.2 + Math.sin(t * 2.5) * 0.05;
+  ctx.fillStyle = `rgba(103,240,255,${pulse})`;
+  ctx.fillRect(x - 1, y - 1, w + 2, 1);
+  ctx.fillRect(x - 1, y + h, w + 2, 1);
+  ctx.fillRect(x - 1, y - 1, 1, h + 2);
+  ctx.fillRect(x + w, y - 1, 1, h + 2);
   ctx.restore();
 }
 
