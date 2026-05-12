@@ -446,7 +446,77 @@ const ITEM_COLORS = [
   "#ff6b6b", "#ff9f43", "#ffd166", "#a8e673", "#26de81",
   "#45aaf2", "#a55eea", "#fd79a8", "#00cec9", "#6c5ce7",
   "#e17055", "#74b9ff", "#55efc4", "#fdcb6e", "#c8a0ff",
-  "#ff7675", "#00b894", "#e84393", "#0984e3", "#f39c12"
+  "#ff7675", "#00b894", "#e84393", "#0984e3", "#f39c12",
+  "#b2f7ef", "#f9c74f", "#90be6d", "#43aa8b", "#577590",
+  "#f94144", "#f3722c", "#f8961e", "#43bccd", "#e76f51",
+  "#9b5de5", "#f15bb5", "#fee440", "#00bbf9", "#00f5d4",
+  "#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#073b4c"
+];
+
+const WEAPON_KINDS = [
+  { name: "Sword",          wk: "sword", style: "classic",  dmgMin: 7,  dmgMax: 12 },
+  { name: "Bow",            wk: "bow",   style: "classic",  dmgMin: 6,  dmgMax: 10 },
+  { name: "Staff",          wk: "staff", style: "classic",  dmgMin: 5,  dmgMax: 9  },
+  { name: "Scimitar",       wk: "sword", style: "curved",   dmgMin: 8,  dmgMax: 13 },
+  { name: "Dagger",         wk: "sword", style: "dagger",   dmgMin: 5,  dmgMax: 8  },
+  { name: "Greatsword",     wk: "sword", style: "heavy",    dmgMin: 10, dmgMax: 15 },
+  { name: "Crossbow",       wk: "bow",   style: "heavy",    dmgMin: 8,  dmgMax: 13 },
+  { name: "Wand",           wk: "staff", style: "ornate",   dmgMin: 4,  dmgMax: 7  },
+  { name: "Spear",          wk: "sword", style: "spear",    dmgMin: 8,  dmgMax: 12 },
+  { name: "Mace",           wk: "sword", style: "mace",     dmgMin: 9,  dmgMax: 14 },
+  { name: "Rapier",         wk: "sword", style: "ornate",   dmgMin: 7,  dmgMax: 11 },
+  { name: "Longbow",        wk: "bow",   style: "heavy",    dmgMin: 9,  dmgMax: 14 },
+  { name: "Crystal Sword",  wk: "sword", style: "crystal",  dmgMin: 8,  dmgMax: 13 },
+  { name: "Shadow Blade",   wk: "sword", style: "dark",     dmgMin: 9,  dmgMax: 14 },
+  { name: "Frost Bow",      wk: "bow",   style: "frost",    dmgMin: 7,  dmgMax: 11 },
+  { name: "Flame Staff",    wk: "staff", style: "fire",     dmgMin: 7,  dmgMax: 12 },
+  { name: "Runic Axe",      wk: "sword", style: "runic",    dmgMin: 9,  dmgMax: 15 },
+  { name: "Spectral Blade", wk: "sword", style: "spectral", dmgMin: 8,  dmgMax: 13 },
+  { name: "Glaive",         wk: "sword", style: "spear",    dmgMin: 10, dmgMax: 16 },
+  { name: "Void Scepter",   wk: "staff", style: "dark",     dmgMin: 6,  dmgMax: 11 },
+];
+
+const ARMOR_KINDS = [
+  { name: "Jerkin",        style: "tunic",       hpMin: 8,  hpMax: 22, armMin: 1, armMax: 3 },
+  { name: "Chestplate",    style: "armor",       hpMin: 6,  hpMax: 18, armMin: 2, armMax: 5 },
+  { name: "Robe",          style: "robe",        hpMin: 12, hpMax: 28, armMin: 1, armMax: 2 },
+  { name: "Plate Armor",   style: "plate",       hpMin: 5,  hpMax: 14, armMin: 3, armMax: 6 },
+  { name: "Chainmail",     style: "chainmail",   hpMin: 8,  hpMax: 19, armMin: 2, armMax: 4 },
+  { name: "Leather Vest",  style: "leather",     hpMin: 10, hpMax: 23, armMin: 1, armMax: 3 },
+  { name: "Battle Cloak",  style: "cloak",       hpMin: 14, hpMax: 30, armMin: 1, armMax: 2 },
+  { name: "Scale Mail",    style: "scale",       hpMin: 7,  hpMax: 18, armMin: 2, armMax: 4 },
+  { name: "War Plate",     style: "battle",      hpMin: 5,  hpMax: 13, armMin: 3, armMax: 7 },
+  { name: "Cloth Wraps",   style: "cloth",       hpMin: 16, hpMax: 34, armMin: 0, armMax: 1 },
+  { name: "Shadow Weave",  style: "shadowweave", hpMin: 12, hpMax: 26, armMin: 1, armMax: 3 },
+  { name: "Iron Hauberk",  style: "chainmail",   hpMin: 7,  hpMax: 17, armMin: 2, armMax: 5 },
+  { name: "Void Shroud",   style: "shadowweave", hpMin: 11, hpMax: 24, armMin: 1, armMax: 3 },
+  { name: "Forest Cloak",  style: "cloak",       hpMin: 14, hpMax: 28, armMin: 1, armMax: 2 },
+  { name: "Crystal Vest",  style: "crystal",     hpMin: 9,  hpMax: 21, armMin: 2, armMax: 3 },
+  { name: "Flame Mantle",  style: "fire",        hpMin: 10, hpMax: 22, armMin: 1, armMax: 3 },
+  { name: "Frost Shell",   style: "frost",       hpMin: 8,  hpMax: 19, armMin: 2, armMax: 4 },
+  { name: "Runic Plate",   style: "runic",       hpMin: 6,  hpMax: 15, armMin: 3, armMax: 5 },
+  { name: "Battle Jerkin", style: "leather",     hpMin: 12, hpMax: 24, armMin: 1, armMax: 3 },
+  { name: "Mystic Robe",   style: "robe",        hpMin: 16, hpMax: 32, armMin: 1, armMax: 2 },
+];
+
+const RING_KINDS = [
+  { name: "Ring of Vigor",     stat: "health",   base: 8,    vscale: 2  },
+  { name: "Ring of Iron",      stat: "armour",   base: 1,    vscale: 18 },
+  { name: "Ring of Haste",     stat: "speed",    base: 0.18, vscale: 60 },
+  { name: "Ring of Force",     stat: "strength", base: 1,    vscale: 18 },
+  { name: "Ring of Endurance", stat: "health",   base: 12,   vscale: 2  },
+  { name: "Ring of Steel",     stat: "armour",   base: 2,    vscale: 18 },
+  { name: "Ring of Swiftness", stat: "speed",    base: 0.25, vscale: 60 },
+  { name: "Ring of Power",     stat: "strength", base: 2,    vscale: 18 },
+  { name: "Ring of Vitality",  stat: "health",   base: 16,   vscale: 2  },
+  { name: "Ring of the Titan", stat: "armour",   base: 3,    vscale: 18 },
+];
+
+const POTION_KINDS = [
+  { name: "Health Potion", color: "#f26d6d", healMin: 25, healMax: 50 },
+  { name: "Elixir",        color: "#ff9f43", healMin: 40, healMax: 70 },
+  { name: "Tonic",         color: "#26de81", healMin: 15, healMax: 35 },
+  { name: "Draught",       color: "#a55eea", healMin: 55, healMax: 85 },
 ];
 
 /** Above legendary — unique visuals & combat perks via specialEffects (see getEquipmentSpecial). */
@@ -3977,110 +4047,128 @@ function createTraderStock(traderId, seed) {
   return stock;
 }
 
-function createItemDatabase() {
-  const types = ["weapon", "armor", "ring", "potion"];
-  const rarities = [
-    { id: "common",    label: "Common",    multiplier: 1 },
-    { id: "uncommon",  label: "Uncommon",  multiplier: 1.35 },
-    { id: "rare",      label: "Rare",      multiplier: 1.8 },
-    { id: "epic",      label: "Epic",      multiplier: 2.35 },
-    { id: "legendary", label: "Legendary", multiplier: 3.5 },
-  ];
-  const result = [];
+const ITEM_RARITIES = [
+  { id: "common",    label: "Common",    multiplier: 1    },
+  { id: "uncommon",  label: "Uncommon",  multiplier: 1.35 },
+  { id: "rare",      label: "Rare",      multiplier: 1.8  },
+  { id: "epic",      label: "Epic",      multiplier: 2.35 },
+  { id: "legendary", label: "Legendary", multiplier: 3.5  },
+];
 
-  for (let i = 0; i < 120; i += 1) {
-    const type = types[i % types.length];
-    const r = hash2(i, 11, 700);
-    const rarityIdx = r > 0.97 ? 4 : r > 0.85 ? 3 : r > 0.65 ? 2 : r > 0.35 ? 1 : 0;
-    const rarity = rarities[rarityIdx];
-    result.push(createItemTemplate(type, rarity, i));
+function itemRarity(seed) {
+  const r = hash2(seed, 11, 700);
+  return ITEM_RARITIES[r > 0.97 ? 4 : r > 0.85 ? 3 : r > 0.65 ? 2 : r > 0.35 ? 1 : 0];
+}
+
+function createItemDatabase() {
+  const result = [];
+  let seed = 0;
+
+  for (const wk of WEAPON_KINDS) {
+    for (let j = 0; j < 10; j++) {
+      result.push(createWeaponEntry(wk, itemRarity(seed), seed));
+      seed++;
+    }
+  }
+  for (const ak of ARMOR_KINDS) {
+    for (let j = 0; j < 10; j++) {
+      result.push(createArmorEntry(ak, itemRarity(seed), seed));
+      seed++;
+    }
+  }
+  for (const rk of RING_KINDS) {
+    for (let j = 0; j < 6; j++) {
+      result.push(createRingEntry(rk, itemRarity(seed), seed));
+      seed++;
+    }
+  }
+  for (const pk of POTION_KINDS) {
+    for (let j = 0; j < 8; j++) {
+      result.push(createPotionEntry(pk, itemRarity(seed), seed));
+      seed++;
+    }
   }
 
   return [...result, ...MYTHIC_ARTIFACT_TEMPLATES];
 }
 
-function createItemTemplate(type, rarity, index) {
-  if (type === "weapon") {
-    const weaponKinds = ["Bow", "Staff", "Sword"];
-    const visualStyles = ["classic", "heavy", "ornate"];
-    const kind = weaponKinds[index % weaponKinds.length];
-    const weaponKind = kind.toLowerCase();
-    const damage = Math.round((4 + hash2(index, 2, 711) * 8) * rarity.multiplier);
-    const strength = hash2(index, 3, 712) > 0.68 ? Math.ceil(rarity.multiplier) : 0;
-    const itemColor = ITEM_COLORS[index % ITEM_COLORS.length];
-    const weaponVisualStyle = rarity.id === "legendary" ? "legendary" : visualStyles[index % visualStyles.length];
-    return {
-      templateId: `weapon_${index}`,
-      type,
-      name: rarity.id === "legendary" ? `⚜ ${kind} of Legend` : `${rarity.label} ${kind}`,
-      icon: weaponKind,
-      rarity: rarity.id,
-      color: itemColor,
-      weaponKind,
-      visual: {
-        weaponStyle: weaponVisualStyle,
-        weaponColor: itemColor
-      },
-      value: Math.round((28 + damage * 4 + strength * 12) * rarity.multiplier),
-      stats: { damage, strength }
-    };
-  }
-
-  if (type === "ring") {
-    const ringKinds = ["Ring of Vigor", "Ring of Iron", "Ring of Haste", "Ring of Force"];
-    const kind = ringKinds[index % ringKinds.length];
-    const statKey = ["health", "armour", "speed", "strength"][index % 4];
-    const base = statKey === "speed" ? 0.18 : statKey === "health" ? 8 : 1;
-    const value = statKey === "speed"
-      ? Number((base * rarity.multiplier).toFixed(2))
-      : Math.max(1, Math.round(base * rarity.multiplier));
-    return {
-      templateId: `ring_${index}`,
-      type,
-      name: rarity.id === "legendary" ? `⚜ ${kind} of Legend` : `${rarity.label} ${kind}`,
-      icon: "ring",
-      rarity: rarity.id,
-      color: ITEM_COLORS[index % ITEM_COLORS.length],
-      value: Math.round((32 + value * (statKey === "health" ? 2 : 18)) * rarity.multiplier),
-      stats: { [statKey]: value }
-    };
-  }
-
-  if (type === "armor") {
-    const armorKinds = ["Jerkin", "Chestplate", "Robe"];
-    const visualStyles = ["tunic", "armor", "robe"];
-    const kind = armorKinds[index % armorKinds.length];
-    const health = Math.round((8 + hash2(index, 4, 713) * 22) * rarity.multiplier);
-    const armour = Math.max(1, Math.round((1 + hash2(index, 5, 714) * 3) * rarity.multiplier));
-    const itemColor = ITEM_COLORS[index % ITEM_COLORS.length];
-    const armorVisualStyle = rarity.id === "legendary" ? "legendary" : visualStyles[index % visualStyles.length];
-    return {
-      templateId: `armor_${index}`,
-      type,
-      name: rarity.id === "legendary" ? `⚜ ${kind} of Legend` : `${rarity.label} ${kind}`,
-      icon: "armor",
-      rarity: rarity.id,
-      color: itemColor,
-      visual: {
-        torsoStyle: armorVisualStyle,
-        torsoColor: itemColor
-      },
-      value: Math.round((24 + health * 1.5 + armour * 14) * rarity.multiplier),
-      stats: { health, armour }
-    };
-  }
-
-  const healing = Math.round((30 + hash2(index, 6, 715) * 45) * rarity.multiplier);
+function createWeaponEntry(wk, rarity, seed) {
+  const dmg = Math.round((wk.dmgMin + hash2(seed, 2, 711) * (wk.dmgMax - wk.dmgMin)) * rarity.multiplier);
+  const str = hash2(seed, 3, 712) > 0.70 ? Math.ceil(rarity.multiplier) : 0;
+  const color = ITEM_COLORS[seed % ITEM_COLORS.length];
+  const visualStyle = rarity.id === "legendary" ? "legendary" : wk.style;
+  const name = rarity.id === "legendary" ? `⚜ ${wk.name} of Legend` : `${rarity.label} ${wk.name}`;
   return {
-    templateId: `potion_${index}`,
-    type,
-    name: `${rarity.label} Health Potion`,
+    templateId: `weapon_${seed}`,
+    type: "weapon",
+    name,
+    icon: wk.wk,
+    rarity: rarity.id,
+    color,
+    weaponKind: wk.wk,
+    visual: { weaponStyle: visualStyle, weaponColor: color },
+    value: Math.round((28 + dmg * 4 + str * 12) * rarity.multiplier),
+    stats: { damage: dmg, ...(str ? { strength: str } : {}) }
+  };
+}
+
+function createArmorEntry(ak, rarity, seed) {
+  const hp  = Math.round((ak.hpMin + hash2(seed, 4, 713) * (ak.hpMax - ak.hpMin)) * rarity.multiplier);
+  const arm = Math.max(ak.armMin, Math.round((ak.armMin + hash2(seed, 5, 714) * (ak.armMax - ak.armMin)) * rarity.multiplier));
+  const color = ITEM_COLORS[seed % ITEM_COLORS.length];
+  const visualStyle = rarity.id === "legendary" ? "legendary" : ak.style;
+  const name = rarity.id === "legendary" ? `⚜ ${ak.name} of Legend` : `${rarity.label} ${ak.name}`;
+  return {
+    templateId: `armor_${seed}`,
+    type: "armor",
+    name,
+    icon: "armor",
+    rarity: rarity.id,
+    color,
+    visual: { torsoStyle: visualStyle, torsoColor: color },
+    value: Math.round((24 + hp * 1.5 + arm * 14) * rarity.multiplier),
+    stats: { health: hp, armour: arm }
+  };
+}
+
+function createRingEntry(rk, rarity, seed) {
+  const isSpeed = rk.stat === "speed";
+  const val = isSpeed
+    ? Number((rk.base * rarity.multiplier).toFixed(2))
+    : Math.max(1, Math.round(rk.base * rarity.multiplier));
+  const name = rarity.id === "legendary" ? `⚜ ${rk.name} of Legend` : `${rarity.label} ${rk.name}`;
+  return {
+    templateId: `ring_${seed}`,
+    type: "ring",
+    name,
+    icon: "ring",
+    rarity: rarity.id,
+    color: ITEM_COLORS[seed % ITEM_COLORS.length],
+    value: Math.round((32 + val * rk.vscale) * rarity.multiplier),
+    stats: { [rk.stat]: val }
+  };
+}
+
+function createPotionEntry(pk, rarity, seed) {
+  const healing = Math.round((pk.healMin + hash2(seed, 6, 715) * (pk.healMax - pk.healMin)) * rarity.multiplier);
+  const name = rarity.id === "legendary" ? `⚜ ${pk.name} of Legend` : `${rarity.label} ${pk.name}`;
+  return {
+    templateId: `potion_${seed}`,
+    type: "potion",
+    name,
     icon: "potion",
     rarity: rarity.id,
-    color: "#f26d6d",
+    color: pk.color,
     value: Math.round((12 + healing * 0.8) * rarity.multiplier),
     stats: { healing }
   };
+}
+
+function createItemTemplate(type, rarity, index) {
+  if (type === "weapon") return createWeaponEntry(WEAPON_KINDS[index % WEAPON_KINDS.length], rarity, index + 9000);
+  if (type === "armor")  return createArmorEntry(ARMOR_KINDS[index % ARMOR_KINDS.length], rarity, index + 9000);
+  if (type === "ring")   return createRingEntry(RING_KINDS[index % RING_KINDS.length], rarity, index + 9000);
+  return createPotionEntry(POTION_KINDS[0], rarity, index + 9000);
 }
 
 function createChests() {
@@ -4260,11 +4348,20 @@ function getShopStock(shop) {
   }
   if (shop?.shopType === "arms") {
     const arms = itemDatabase.filter((it) => it && (it.type === "weapon" || it.type === "armor"));
-    return arms.slice(0, 14);
+    const seedX = Math.floor((shop.x || 0) * 10);
+    const seedY = Math.floor((shop.y || 0) * 10);
+    const picks = [];
+    const seen = new Set();
+    for (let i = 0; i < 40 && picks.length < 20; i++) {
+      const idx = Math.floor(hash2(seedX + i * 17, seedY - i * 11, 313) * arms.length);
+      const item = arms[idx];
+      if (item && !seen.has(item.templateId)) { seen.add(item.templateId); picks.push(item); }
+    }
+    return picks.length ? picks : arms.slice(0, 20);
   }
   if (shop?.shopType === "stims") {
     const pots = itemDatabase.filter((it) => it && it.type === "potion");
-    return pots.slice(0, 12);
+    return pots.slice(0, 16);
   }
   if (shop?.shopType === "parts") {
     return getPartsCatalog();
