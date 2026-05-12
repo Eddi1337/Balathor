@@ -283,6 +283,15 @@ function sciFiStationTileForFeature(feature, x, y) {
     return ((lx + ly) & 1) === 0 ? TILE.METAL : TILE.WINDOW;
   }
 
+  if (feature.kind === "sci-shop" || feature.kind === "station-kiosk") {
+    if (edge) return TILE.METAL;
+    const cx = Math.floor(fw / 2);
+    const cy = Math.floor(fh / 2);
+    if (Math.abs(lx - cx) <= 1 || Math.abs(ly - cy) <= 1) return TILE.WALKWAY;
+    if (Math.abs(lx - cx) === 2 || Math.abs(ly - cy) === 2) return TILE.ENERGY;
+    return ((lx + ly) & 1) === 0 ? TILE.METAL : TILE.WINDOW;
+  }
+
   if (feature.kind === "station-core") {
     const cx = Math.floor(fw / 2);
     const cy = Math.floor(fh / 2);
@@ -308,6 +317,20 @@ function sciFiStationTileForFeature(feature, x, y) {
   if (feature.kind === "core" || feature.kind === "command") {
     if (edge) return TILE.METAL;
     return lx === Math.floor(fw / 2) || ly === Math.floor(fh / 2) ? TILE.WALKWAY : TILE.METAL;
+  }
+
+  if (feature.kind === "station-module") {
+    if (edge) return TILE.METAL;
+    if (lx === 1 || ly === 1 || lx === fw - 2 || ly === fh - 2) return TILE.WALKWAY;
+    return ((lx + ly) & 1) === 0 ? TILE.ENERGY : TILE.METAL;
+  }
+
+  if (feature.kind === "cargo-crate" || feature.kind === "container-box" || feature.kind === "shipping-crate") {
+    if (edge) return TILE.METAL;
+    if (fw >= fh) {
+      return ly === Math.floor(fh / 2) ? TILE.WALKWAY : TILE.METAL;
+    }
+    return lx === Math.floor(fw / 2) ? TILE.WALKWAY : TILE.METAL;
   }
 
   if (feature.kind === "ship-bay") {
@@ -1557,7 +1580,7 @@ function getDoorTransitionAt(x, y) {
 function getShopFixtureAt(x, y) {
   if (isSciFiSector(x, y)) {
     for (const feature of SCI_FI_STATION_FEATURES) {
-      if (feature.kind !== "shop-bay" && feature.kind !== "ship-shop") {
+      if (feature.kind !== "shop-bay" && feature.kind !== "ship-shop" && feature.kind !== "sci-shop" && feature.kind !== "station-kiosk") {
         continue;
       }
       if (!feature.shopType) {

@@ -3865,14 +3865,14 @@ function refreshWorldHoverTooltip(event) {
     let bestStationObject = null;
     let bestStationDist = Infinity;
     for (const obj of state.spaceObjects.values()) {
-      if (!obj || (obj.kind !== "ship-port" && obj.kind !== "ship-console")) {
+      if (!obj || (obj.kind !== "ship-port" && obj.kind !== "ship-console" && obj.kind !== "sci-shop" && obj.kind !== "station-kiosk")) {
         continue;
       }
       const fw = Math.max(1, Math.floor(Number(obj.w || 1)));
       const fh = Math.max(1, Math.floor(Number(obj.h || 1)));
       const ax = obj.x + fw / 2;
       const ay = obj.y + fh / 2;
-      const reach = obj.kind === "ship-console" ? 1.6 : 1.8;
+      const reach = obj.kind === "ship-console" ? 1.6 : obj.kind === "ship-port" ? 1.8 : 1.9;
       const dist = Math.hypot(world.x - ax, world.y - ay);
       if (dist <= reach && dist < bestStationDist) {
         bestStationDist = dist;
@@ -3880,10 +3880,21 @@ function refreshWorldHoverTooltip(event) {
       }
     }
     if (bestStationObject) {
-      state.hoverTooltipText =
-        bestStationObject.kind === "ship-console"
-          ? "Ship console - call your ship"
-          : "Dock port - launch your ship";
+      if (bestStationObject.kind === "ship-console") {
+        state.hoverTooltipText = "Ship console - call your ship";
+      } else if (bestStationObject.kind === "ship-port") {
+        state.hoverTooltipText = "Dock port - launch your ship";
+      } else {
+        const labels = {
+          ship: "Shipyard kiosk",
+          arms: "Armory kiosk",
+          stims: "Medical kiosk",
+          parts: "Parts kiosk",
+          trade: "Bazaar kiosk",
+          pub: "Lounge kiosk"
+        };
+        state.hoverTooltipText = `${labels[bestStationObject.shopType] || "Station shop"} - open`;
+      }
       state.hoverTooltipSmall = true;
       return;
     }
@@ -4068,14 +4079,14 @@ function tryDockPortClickInteract(event) {
   let best = null;
   let bestDist = Infinity;
   for (const obj of state.spaceObjects.values()) {
-    if (!obj || (obj.kind !== "ship-port" && obj.kind !== "ship-console")) {
+    if (!obj || (obj.kind !== "ship-port" && obj.kind !== "ship-console" && obj.kind !== "sci-shop" && obj.kind !== "station-kiosk")) {
       continue;
     }
     const fw = Math.max(1, Math.floor(Number(obj.w || 1)));
     const fh = Math.max(1, Math.floor(Number(obj.h || 1)));
     const ax = obj.x + fw / 2;
     const ay = obj.y + fh / 2;
-    const clickReach = obj.kind === "ship-console" ? 1.55 : 1.85;
+    const clickReach = obj.kind === "ship-console" ? 1.55 : obj.kind === "ship-port" ? 1.85 : 1.9;
     const d = Math.hypot(world.x - ax, world.y - ay);
     if (d <= clickReach && d < bestDist) {
       bestDist = d;
@@ -5258,11 +5269,15 @@ function renderShop() {
       ? `${state.shop.buildingName || state.shop.name} — Shipworks`
       : state.shop.shopType === "arms"
         ? `${state.shop.buildingName || state.shop.name} — Armoury`
-        : state.shop.shopType === "stims"
-          ? `${state.shop.buildingName || state.shop.name} — Clinic`
-          : state.shop.shopType === "parts"
-            ? `${state.shop.buildingName || state.shop.name} — Parts`
-            : state.shop.isPub && state.shop.buildingName
+      : state.shop.shopType === "stims"
+        ? `${state.shop.buildingName || state.shop.name} — Clinic`
+      : state.shop.shopType === "parts"
+        ? `${state.shop.buildingName || state.shop.name} — Parts`
+      : state.shop.shopType === "trade"
+        ? `${state.shop.buildingName || state.shop.name} — Bazaar`
+        : state.shop.shopType === "pub"
+          ? `${state.shop.buildingName || state.shop.name} — Lounge`
+          : state.shop.isPub && state.shop.buildingName
         ? `${state.shop.buildingName} Taproom`
         : state.shop.buildingName
           ? `${state.shop.buildingName} Shelf`
@@ -6047,6 +6062,12 @@ function drawSpaceObjects() {
       drawStationRoomObject(obj, sx, sy);
     } else if (obj.kind === "ship-bay") {
       drawShipBayObject(obj, sx, sy);
+    } else if (obj.kind === "sci-shop") {
+      drawSciFiShopObject(obj, sx, sy);
+    } else if (obj.kind === "station-module" || obj.kind === "station-kiosk") {
+      drawStationModuleObject(obj, sx, sy);
+    } else if (obj.kind === "cargo-crate" || obj.kind === "shipping-crate" || obj.kind === "container-box") {
+      drawCargoCrateObject(obj, sx, sy);
     } else if (obj.kind === "shop-bay" || obj.kind === "ship-shop") {
       drawShopBayObject(obj, sx, sy);
     } else if (obj.kind === "ship-console") {
@@ -6157,6 +6178,136 @@ function drawShipBayObject(obj, sx, sy) {
   ctx.fillRect(x + w * 0.48, y + h * 0.38, 5, h * 0.22);
   ctx.fillStyle = "rgba(103,240,255,0.3)";
   ctx.fillRect(x + w * 0.22, y + h * 0.58, w * 0.5, 4);
+  ctx.restore();
+}
+
+function sciFiShopAccent(shopType) {
+  if (shopType === "ship") {
+    return { main: "#67f0ff", glow: "rgba(103,240,255,0.28)", sign: "#d7fbff" };
+  }
+  if (shopType === "arms") {
+    return { main: "#ff8f6b", glow: "rgba(255,143,107,0.24)", sign: "#fff0da" };
+  }
+  if (shopType === "stims") {
+    return { main: "#82ffbb", glow: "rgba(130,255,187,0.24)", sign: "#e8fff1" };
+  }
+  if (shopType === "parts") {
+    return { main: "#f7d86a", glow: "rgba(247,216,106,0.24)", sign: "#fff7cf" };
+  }
+  return { main: "#9fe7ff", glow: "rgba(159,231,255,0.22)", sign: "#e9fbff" };
+}
+
+function drawSciFiShopObject(obj, sx, sy) {
+  const w = Math.max(6, Number(obj.w || 8)) * TILE_SIZE;
+  const h = Math.max(4, Number(obj.h || 5)) * TILE_SIZE;
+  const x = sx - w / 2;
+  const y = sy - h / 2;
+  const accent = sciFiShopAccent(obj.shopType);
+  const t = performance.now() / 1000;
+  const pulse = 0.45 + Math.sin(t * 4 + sx * 0.01 + sy * 0.01) * 0.12;
+  ctx.save();
+  drawEllipseShadow(x - 4, y + h * 0.82, w + 8, 12, 0.26);
+  ctx.fillStyle = "rgba(8, 14, 24, 0.97)";
+  ctx.fillRect(x, y + 3, w, h - 3);
+  ctx.fillStyle = "rgba(26, 40, 56, 0.98)";
+  ctx.fillRect(x + 3, y + 7, w - 6, h - 10);
+  ctx.fillStyle = accent.glow;
+  ctx.fillRect(x + 5, y + 10, w - 10, h - 18);
+  ctx.fillStyle = "rgba(255,255,255,0.08)";
+  ctx.fillRect(x + 7, y + 8, w - 14, 4);
+  ctx.fillStyle = accent.main;
+  ctx.fillRect(x + w * 0.18, y + 5, w * 0.64, 5);
+  ctx.fillStyle = accent.sign;
+  ctx.fillRect(x + w * 0.22, y + 6, w * 0.56, 2);
+  ctx.fillStyle = "rgba(12, 18, 30, 0.92)";
+  ctx.beginPath();
+  ctx.moveTo(x + 2, y + h * 0.32);
+  ctx.lineTo(x + w * 0.14, y + 10);
+  ctx.lineTo(x + w * 0.88, y + 10);
+  ctx.lineTo(x + w - 2, y + h * 0.32);
+  ctx.lineTo(x + w - 8, y + h - 4);
+  ctx.lineTo(x + 8, y + h - 4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.12)";
+  ctx.fillRect(x + 9, y + 15, w - 18, 3);
+  ctx.fillStyle = "rgba(103,240,255,0.28)";
+  ctx.fillRect(x + 8, y + h - 10, w - 16, 3);
+  ctx.fillStyle = `rgba(255,255,255,${pulse})`;
+  ctx.fillRect(x + w * 0.47, y + h - 14, w * 0.06, 6);
+  ctx.strokeStyle = accent.main;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+  ctx.restore();
+}
+
+function drawStationModuleObject(obj, sx, sy) {
+  const w = Math.max(5, Number(obj.w || 6)) * TILE_SIZE;
+  const h = Math.max(4, Number(obj.h || 4)) * TILE_SIZE;
+  const x = sx - w / 2;
+  const y = sy - h / 2;
+  const accent = sciFiShopAccent(obj.shopType || "trade");
+  const t = performance.now() / 1000;
+  const pulse = 0.3 + Math.sin(t * 5 + sx * 0.008 + sy * 0.01) * 0.08;
+  ctx.save();
+  drawEllipseShadow(x - 3, y + h * 0.78, w + 6, 10, 0.22);
+  ctx.fillStyle = "rgba(10, 16, 26, 0.96)";
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = "rgba(27, 39, 54, 0.98)";
+  ctx.fillRect(x + 3, y + 3, w - 6, h - 6);
+  ctx.fillStyle = "rgba(255,255,255,0.08)";
+  ctx.fillRect(x + 6, y + 6, w - 12, 3);
+  ctx.fillStyle = accent.main;
+  ctx.fillRect(x + w * 0.18, y + h * 0.18, w * 0.64, 4);
+  ctx.fillStyle = accent.glow;
+  ctx.fillRect(x + 5, y + 10, w - 10, h - 18);
+  ctx.fillStyle = `rgba(255,255,255,${pulse})`;
+  ctx.fillRect(x + w * 0.42, y + h * 0.4, w * 0.16, h * 0.2);
+  ctx.strokeStyle = accent.main;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+  ctx.restore();
+}
+
+function drawCargoCrateObject(obj, sx, sy) {
+  const kind = obj.kind || "cargo-crate";
+  const w = Math.max(2, Number(obj.w || 2)) * TILE_SIZE;
+  const h = Math.max(2, Number(obj.h || 2)) * TILE_SIZE;
+  const x = sx - w / 2;
+  const y = sy - h / 2;
+  const t = performance.now() / 1000;
+  const pulse = 0.3 + Math.sin(t * 3.2 + sx * 0.01 + sy * 0.008) * 0.08;
+  const palette =
+    kind === "shipping-crate"
+      ? { base: "#24303d", edge: "#f1cf64", glow: "rgba(241,207,100,0.24)", stripe: "rgba(255,245,200,0.65)" }
+      : kind === "container-box"
+        ? { base: "#1c2a37", edge: "#67f0ff", glow: "rgba(103,240,255,0.2)", stripe: "rgba(215,251,255,0.58)" }
+        : { base: "#182430", edge: "#8cdcf5", glow: "rgba(140,220,245,0.18)", stripe: "rgba(255,255,255,0.5)" };
+  ctx.save();
+  drawEllipseShadow(x - 3, y + h * 0.84, w + 6, 8, 0.18);
+  ctx.fillStyle = palette.base;
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = "rgba(255,255,255,0.05)";
+  ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
+  ctx.fillStyle = palette.glow;
+  ctx.fillRect(x + 3, y + 3, w - 6, h - 6);
+  ctx.fillStyle = palette.edge;
+  ctx.fillRect(x + 4, y + 4, w - 8, 2);
+  ctx.fillRect(x + 4, y + h - 6, w - 8, 2);
+  ctx.fillRect(x + 4, y + 4, 2, h - 8);
+  ctx.fillRect(x + w - 6, y + 4, 2, h - 8);
+  ctx.fillStyle = palette.stripe;
+  if (w >= h) {
+    ctx.fillRect(x + 5, y + h * 0.45, w - 10, 2);
+  } else {
+    ctx.fillRect(x + w * 0.45, y + 5, 2, h - 10);
+  }
+  ctx.fillStyle = `rgba(255,255,255,${pulse})`;
+  ctx.fillRect(x + w * 0.24, y + h * 0.2, 3, 3);
+  ctx.fillRect(x + w * 0.68, y + h * 0.66, 3, 3);
+  ctx.strokeStyle = palette.edge;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
   ctx.restore();
 }
 
