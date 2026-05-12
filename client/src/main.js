@@ -183,14 +183,6 @@ function hideCmdPalette() {
   cmdPaletteFiltered = [];
 }
 
-const EMOTE_LABELS = {
-  dance: "💃",
-  wave:  "👋",
-  laugh: "😂",
-  cry:   "😢",
-  cheer: "🎉",
-  bow:   "🙇",
-};
 
 function southDoorTilesWideBuilding(building) {
   const iw = Math.max(3, Math.floor(Number(building?.w)));
@@ -5540,7 +5532,6 @@ function draw() {
   drawWorld();
   drawPortals();
   drawPlayers();
-  drawEmoteBubbles();
   drawFountainTossFx(halfW, halfH);
   drawTreeCanopies();
   drawCombatFx();
@@ -6674,48 +6665,6 @@ function drawPlayers() {
   }
 }
 
-function drawEmoteBubbles() {
-  const halfW = canvas.width / 2;
-  const halfH = canvas.height / 2;
-  const now = performance.now() / 1000;
-
-  for (const entity of state.players.values()) {
-    if (!entity.emote) continue;
-    const label = EMOTE_LABELS[entity.emote];
-    if (!label) continue;
-
-    const rx = Number.isFinite(entity.renderX) ? entity.renderX : entity.x;
-    const ry = Number.isFinite(entity.renderY) ? entity.renderY : entity.y;
-    const sx = Math.floor(rx * TILE_SIZE - state.camera.x + halfW);
-    const sy = Math.floor(ry * TILE_SIZE - state.camera.y + halfH);
-
-    const bob = Math.sin(now * 3.5) * 2;
-    const bx = sx;
-    const by = sy - 46 + bob;
-
-    ctx.save();
-    ctx.font = "18px serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-
-    const tw = ctx.measureText(label).width;
-    const padX = 6;
-    const padY = 4;
-    const bw = tw + padX * 2;
-    const bh = 26;
-
-    ctx.fillStyle = "rgba(12, 16, 26, 0.82)";
-    ctx.strokeStyle = "rgba(255,255,255,0.18)";
-    ctx.lineWidth = 1;
-    roundedRect(bx - bw / 2, by - bh / 2, bw, bh, 5);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillText(label, bx, by);
-    ctx.restore();
-  }
-}
-
 function drawWorldLoot() {
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
@@ -7016,14 +6965,27 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const sideX = -dirY;
   const sideY =  dirX;
 
-  const dancing = entity.emote === "dance";
-  const t = dancing ? performance.now() / 1000 : 0;
+  const emoteKind = entity.emote || null;
+  const t = emoteKind ? performance.now() / 1000 : 0;
+  const dancing  = emoteKind === "dance";
+  const waving   = emoteKind === "wave";
+  const laughing = emoteKind === "laugh";
+  const cheering = emoteKind === "cheer";
+  const crying   = emoteKind === "cry";
+  const bowing   = emoteKind === "bow";
 
   const wf   = dancing ? 4.0 : 2.6;
   const sin1 = (moving || dancing) ? Math.sin(dancing ? t * wf : phase * wf) : 0;
   const cos1 = (moving || dancing) ? Math.cos(dancing ? t * wf : phase * wf) : 0;
-  const rawBob  = (moving || dancing) ? Math.abs(cos1) * (dancing ? 4 : 1.5) - 0.4 : 0;
-  const bob  = dancing ? rawBob + Math.sin(t * 2.1) * 2 : Math.round(rawBob);
+
+  let rawBob;
+  if (dancing)       rawBob = Math.abs(Math.cos(t * 4.0)) * 4 - 0.4 + Math.sin(t * 2.1) * 2;
+  else if (laughing) rawBob = Math.sin(t * 13) * 2;
+  else if (crying)   rawBob = Math.sin(t * 1.8) * 1;
+  else if (bowing)   rawBob = 0;
+  else               rawBob = moving ? Math.abs(cos1) * 1.5 - 0.4 : 0;
+  const bob = dancing ? rawBob : Math.round(rawBob);
+
   const fx   = Math.round(dirX);
   const fy   = Math.round(dirY * 0.6);
 
@@ -7143,6 +7105,40 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
     rAY = by - 9 * s;
     ctx.fillRect(lAX, lAY, 2 * s, 5 * s);
     ctx.fillRect(rAX, rAY, 2 * s, 5 * s);
+  } else if (dancing) {
+    const da = Math.round(Math.sin(t * 4.0) * 3 * s);
+    lAX = bx - 7 * s; lAY = by - 3 * s - da;
+    rAX = bx + 4 * s; rAY = by - 3 * s + da;
+    ctx.fillRect(lAX, lAY, 2 * s, 4 * s);
+    ctx.fillRect(rAX, rAY, 2 * s, 4 * s);
+  } else if (waving) {
+    const wv = Math.round(Math.sin(t * 5) * 2 * s);
+    lAX = bx - 6 * s; lAY = by - 2 * s;
+    rAX = bx + 4 * s; rAY = by - 6 * s + wv;
+    ctx.fillRect(lAX, lAY, 2 * s, 4 * s);
+    ctx.fillRect(rAX, rAY, 2 * s, 3 * s);
+  } else if (cheering) {
+    const cv = Math.round(Math.sin(t * 3) * s);
+    lAX = bx - 8 * s + cv; lAY = by - 7 * s;
+    rAX = bx + 5 * s - cv; rAY = by - 7 * s;
+    ctx.fillRect(lAX, lAY, 2 * s, 5 * s);
+    ctx.fillRect(rAX, rAY, 2 * s, 5 * s);
+  } else if (crying) {
+    lAX = bx - 6 * s; lAY = by - s;
+    rAX = bx + 4 * s; rAY = by - s;
+    ctx.fillRect(lAX, lAY, 2 * s, 5 * s);
+    ctx.fillRect(rAX, rAY, 2 * s, 5 * s);
+  } else if (laughing) {
+    const la = Math.round(Math.sin(t * 13) * s);
+    lAX = bx - 6 * s + la; lAY = by - 2 * s;
+    rAX = bx + 4 * s - la; rAY = by - 2 * s;
+    ctx.fillRect(lAX, lAY, 2 * s, 4 * s);
+    ctx.fillRect(rAX, rAY, 2 * s, 4 * s);
+  } else if (bowing) {
+    lAX = bx - 4 * s; lAY = by + s;
+    rAX = bx + 3 * s; rAY = by + s;
+    ctx.fillRect(lAX, lAY, 2 * s, 4 * s);
+    ctx.fillRect(rAX, rAY, 2 * s, 4 * s);
   } else {
     const armSwing = moving ? Math.round(sin1 * 2) : 0;
     lAX = bx - 6 * s;
@@ -7154,8 +7150,9 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   }
 
   // Head / hood
-  const hx = bx - 2 * s + fx * s;
-  const hy = by - 7 * s + fy + headSitNudge;
+  const bowHeadNudge = bowing ? Math.round(3 * s) : 0;
+  const hx = bx - 2 * s + fx * s + (bowing ? Math.round(s) : 0);
+  const hy = by - 7 * s + fy + headSitNudge + bowHeadNudge;
   if (sciFiNpc) {
     drawSciFiHelmet(hx, hy, s, helmetColor, visorColor, fx);
   } else if (isMod) {
