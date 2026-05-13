@@ -34,7 +34,6 @@ const TILE = {
 };
 
 const BLOCKED_TILES = new Set([
-  TILE.WATER,
   TILE.WALL,
   TILE.LAVA,
   TILE.BED,
@@ -2073,6 +2072,11 @@ function isBlocked(x, y) {
   return BLOCKED_TILES.has(generateTile(Math.floor(x), Math.floor(y)));
 }
 
+/** True when the tile under the given world coordinates is deep water (player may swim). */
+function isSwimmingAt(x, y) {
+  return generateTile(Math.floor(x), Math.floor(y)) === TILE.WATER;
+}
+
 /**
  * Circle-vs-axis-aligned rectangle (world tile units).
  * Used for slender hit volumes that corner-sampling misses.
@@ -2236,6 +2240,7 @@ module.exports = {
   isProtectedStartingArea,
   isBlocked,
   isBlockedCircle,
+  isSwimmingAt,
   spawnPoint,
   southDoorWorldXs,
   southDoorAnchorWorldX,

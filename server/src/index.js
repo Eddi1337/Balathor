@@ -14,6 +14,7 @@ const {
   getShopFixtureAt,
   hash2,
   isBlockedCircle,
+  isSwimmingAt,
   getWorldThemeAt,
   spawnPoint,
   southDoorAnchorWorldX,
@@ -68,6 +69,8 @@ const MAX_CONNECTED_CLIENTS = Number(process.env.MAX_CLIENTS || 180);
 const MSG_RATE_LIMIT = 240; // max messages per second per client before dropping
 // Base player movement speed (tiles per second).
 const PLAYER_SPEED = 5.2;
+/** On-foot speed multiplier while standing on a water tile (keep in sync with client). */
+const SWIM_SPEED_MULT = 0.38;
 const MAX_CHUNKS_PER_REQUEST = 64;
 const MAX_NAME_LENGTH = 18;
 const MIN_USERNAME_LENGTH = 1;
@@ -1507,7 +1510,8 @@ function simulate() {
         dx /= length;
         dy /= length;
 
-        const speed = getPlayerSpeed(client.player);
+        const swim = isSwimmingAt(client.player.x, client.player.y);
+        const speed = getPlayerSpeed(client.player) * (swim ? SWIM_SPEED_MULT : 1);
         const nextX = client.player.x + dx * speed * dt;
         const nextY = client.player.y + dy * speed * dt;
 
@@ -1525,6 +1529,12 @@ function simulate() {
         client.player.moving = false;
         client.player._stillAccumulator = (client.player._stillAccumulator || 0) + dt;
       }
+    }
+
+    if (shipPilot) {
+      client.player.swimming = false;
+    } else {
+      client.player.swimming = isSwimmingAt(client.player.x, client.player.y);
     }
 
     handleDoorTravel(client);
@@ -3770,6 +3780,7 @@ function broadcastSnapshot() {
       y: Number(p.y.toFixed(3)),
       facing: Number(p.facing.toFixed(3)),
       moving: p.moving,
+      swimming: Boolean(p.swimming),
       isMod: p.isMod || false,
       emote: (p.emote && p.emote.until > Date.now()) ? p.emote.kind : null
     };
