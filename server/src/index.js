@@ -26,6 +26,7 @@ const {
   isTooCloseToAnyPortal,
   HUB_TOWN_GRASS_RADIUS,
   sciFiDockPortForPlayerId,
+  sciFiDockPortById,
   findNearestSciFiDockPort,
   STARGATE_LANDING
 } = require("./world");
@@ -1069,7 +1070,10 @@ function getPlayerDockPort(player) {
   return {
     id: port.id,
     x: port.x,
-    y: port.y
+    y: port.y,
+    facing: port.facing,
+    terminalX: port.terminalX,
+    terminalY: port.terminalY
   };
 }
 
@@ -2996,15 +3000,15 @@ function resolveShipBoarding(player) {
     return null;
   }
 
-  const dist = Math.hypot(player.x - dockX, player.y - dockY);
-  const nearestPort = ship.boarded ? findNearestSciFiDockPort(player.x, player.y, SHIP_DOCK_RADIUS + 2.5) : null;
+  const storedPort = sciFiDockPortById(ship.dockPortId) || findNearestSciFiDockPort(dockX, dockY, 18);
+  const distToStoredPort = storedPort ? Math.hypot(player.x - storedPort.x, player.y - storedPort.y) : Infinity;
+  const distToDock = Math.hypot(player.x - dockX, player.y - dockY);
   return {
     ship,
-    dockX: nearestPort?.x ?? dockX,
-    dockY: nearestPort?.y ?? dockY,
-    dockPort: nearestPort || null,
-    canBoard: !ship.boarded && dist <= SHIP_DOCK_RADIUS,
-    canDock: ship.boarded && Boolean(nearestPort || dist <= SHIP_DOCK_RADIUS)
+    dockX: storedPort?.x ?? dockX,
+    dockY: storedPort?.y ?? dockY,
+    dockPort: storedPort || null,
+    canBoard: !ship.boarded && Math.min(distToDock, distToStoredPort) <= SHIP_DOCK_RADIUS
   };
 }
 
@@ -3024,7 +3028,7 @@ function resolveShipLaunchPort(player, message = {}) {
 
   if (Number.isFinite(tx) && Number.isFinite(ty)) {
     const clickDist = Math.hypot(tx - port.x, ty - port.y);
-    if (clickDist > 8.5) {
+    if (clickDist > 10.5) {
       return null;
     }
   }
@@ -3044,9 +3048,62 @@ function facingForDockPort(port) {
   return 0;
 }
 
+function resolveShipExitDockPort(player) {
+  const ship = player?.ship;
+  const nearbyPort = findNearestSciFiDockPort(player?.x ?? 0, player?.y ?? 0, 18);
+  if (nearbyPort) {
+    return nearbyPort;
+  }
+
+  const storedPort = sciFiDockPortById(ship?.dockPortId);
+  if (storedPort) {
+    return storedPort;
+  }
+
+  const dockX = Number(ship?.dockX);
+  const dockY = Number(ship?.dockY);
+  if (Number.isFinite(dockX) && Number.isFinite(dockY)) {
+    const dockedPort = findNearestSciFiDockPort(dockX, dockY, 18);
+    if (dockedPort) {
+      return dockedPort;
+    }
+  }
+
+  return getPlayerDockPort(player) || findNearestSciFiDockPort(STARGATE_LANDING.x, STARGATE_LANDING.y, 120);
+}
+
+function dockPlayerShipAtStation(client, port = resolveShipExitDockPort(client.player)) {
+  if (!client.player?.ship || !port) {
+    return false;
+  }
+
+  client.player.ship.boarded = false;
+  client.player.ship.dockX = port.x;
+  client.player.ship.dockY = port.y;
+  client.player.ship.dockStationId = "station_ringforge";
+  client.player.ship.dockPortId = port.id;
+  client.player.x = Number.isFinite(port.terminalX) ? port.terminalX : port.x;
+  client.player.y = Number.isFinite(port.terminalY) ? port.terminalY : port.y;
+  client.player.facing = facingForDockPort(port);
+  client.player.moving = false;
+  client.player._stillAccumulator = 0;
+  saveClientCharacter(client);
+  send(client, {
+    type: "serverMessage",
+    message: "ship_docked",
+    shipName: client.player.ship.name
+  });
+  broadcastSnapshot();
+  return true;
+}
+
 function handleShipInteract(client) {
   if (!client.player?.ship) {
     return false;
+  }
+
+  if (client.player.ship.boarded) {
+    return dockPlayerShipAtStation(client);
   }
 
   const ctx = resolveShipBoarding(client.player);
@@ -3058,37 +3115,19 @@ function handleShipInteract(client) {
     client.player.ship.boarded = true;
     client.player.ship.dockX = ctx.dockX;
     client.player.ship.dockY = ctx.dockY;
+    if (ctx.dockPort) {
+      client.player.ship.dockStationId = "station_ringforge";
+      client.player.ship.dockPortId = ctx.dockPort.id;
+    }
     client.player.x = ctx.dockX;
     client.player.y = ctx.dockY;
-    client.player.facing = 0;
+    client.player.facing = ctx.dockPort ? facingForDockPort(ctx.dockPort) : 0;
     client.player.moving = false;
     client.player._stillAccumulator = 0;
     saveClientCharacter(client);
     send(client, {
       type: "serverMessage",
       message: "ship_boarded",
-      shipName: client.player.ship.name
-    });
-    broadcastSnapshot();
-    return true;
-  }
-
-  if (ctx.canDock) {
-    client.player.ship.boarded = false;
-    client.player.ship.dockX = client.player.x;
-    client.player.ship.dockY = client.player.y;
-    if (ctx.dockPort) {
-      client.player.ship.dockX = ctx.dockPort.x;
-      client.player.ship.dockY = ctx.dockPort.y;
-      client.player.ship.dockStationId = "station_ringforge";
-      client.player.ship.dockPortId = ctx.dockPort.id;
-      client.player.x = Number.isFinite(ctx.dockPort.terminalX) ? ctx.dockPort.terminalX : ctx.dockPort.x;
-      client.player.y = Number.isFinite(ctx.dockPort.terminalY) ? ctx.dockPort.terminalY : ctx.dockPort.y;
-    }
-    saveClientCharacter(client);
-    send(client, {
-      type: "serverMessage",
-      message: "ship_docked",
       shipName: client.player.ship.name
     });
     broadcastSnapshot();

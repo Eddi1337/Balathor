@@ -136,6 +136,13 @@ function sciFiDockPortForPlayerId(playerId) {
   return layoutDockPortForPlayerId(playerId);
 }
 
+function sciFiDockPortById(id) {
+  if (typeof id !== "string" || !id) {
+    return null;
+  }
+  return SCI_FI_DOCK_PORTS.find((port) => port.id === id) || null;
+}
+
 function findNearestSciFiDockPort(px, py, maxDist = 12) {
   const md = maxDist * maxDist;
   let best = null;
@@ -2085,13 +2092,13 @@ function isBlockedForShip(x, y) {
     return isBlocked(x, y);
   }
 
+  if (sciFiStationAt(tx, ty) || sciFiPlanetAt(tx, ty)) {
+    return true;
+  }
+
   const feature = sciFiStationFeatureAt(tx, ty);
   if (feature?.kind === "ship-port") {
     return false;
-  }
-
-  if (sciFiStationAt(tx, ty) || sciFiPlanetAt(tx, ty)) {
-    return true;
   }
 
   const tile = generateTile(tx, ty);
@@ -2263,6 +2270,7 @@ module.exports = {
   getDoorTransitionAt,
   getShopFixtureAt,
   sciFiDockPortForPlayerId,
+  sciFiDockPortById,
   findNearestSciFiDockPort,
   STARGATE_LANDING,
   getPortalAt,

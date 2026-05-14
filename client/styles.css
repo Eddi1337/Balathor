@@ -2125,6 +2125,18 @@ button:focus-visible {
   border-color: #3a9944;
 }
 
+.potion-slot.ship-exit-slot {
+  border-color: #42d8ff;
+  background: radial-gradient(circle at 50% 35%, rgba(103, 240, 255, 0.2), #07131d 68%);
+  box-shadow: 0 0 12px rgba(103, 240, 255, 0.22);
+  opacity: 1;
+}
+
+.potion-slot.ship-exit-slot:hover {
+  border-color: #d9fbff;
+  background: radial-gradient(circle at 50% 35%, rgba(103, 240, 255, 0.3), #0b1b28 72%);
+}
+
 .potion-slot.no-potions {
   opacity: 0.45;
 }
@@ -2144,6 +2156,17 @@ button:focus-visible {
   color: #66cc66;
   line-height: 1;
   pointer-events: none;
+}
+
+.potion-slot.ship-exit-slot .potion-key,
+.potion-slot.ship-exit-slot .potion-count {
+  color: #d9fbff;
+  text-shadow: 0 0 5px rgba(103, 240, 255, 0.85);
+}
+
+.potion-slot.ship-exit-slot .potion-count {
+  font-size: 9px;
+  letter-spacing: 0.02em;
 }
 
 /* ── Mobile ability bar: vertical stack on right side, 3 slots ── */

@@ -58,6 +58,7 @@ const abilityBarToggle = document.querySelector("#abilityBarToggle");
 const abilitySlotsEl = document.querySelector("#abilitySlots");
 const potionSlotEl = document.querySelector("#potionSlot");
 const potionCountEl = document.querySelector("#potionCount");
+const potionKeyEl = potionSlotEl?.querySelector(".potion-key");
 const potionSlotIconCanvas = document.querySelector("#potionSlotIcon");
 const homeTeleportSlotEl = document.querySelector("#homeTeleportSlot");
 const homeTeleportIconCanvas = document.querySelector("#homeTeleportIcon");
@@ -357,8 +358,7 @@ const CLIENT_BLOCKED_TILES = new Set([
   TILE.CHEST,
   TILE.HOME_TREE,
   TILE.VOID,
-  TILE.HULL,
-  TILE.WINDOW
+  TILE.HULL
 ]);
 
 /** Mirrors server/src/world.js isBlockedCircle default. */
@@ -422,6 +422,55 @@ function clientIsBlockedCircle(wx, wy, radius = PLAYER_COLLISION_RADIUS) {
     [wx + radius, wy + radius]
   ];
   return points.some(([px, py]) => CLIENT_BLOCKED_TILES.has(getTile(Math.floor(px), Math.floor(py))));
+}
+
+function clientSpaceObjectBlocksShip(wx, wy) {
+  const tx = Math.floor(wx);
+  const ty = Math.floor(wy);
+  for (const obj of state.spaceObjects.values()) {
+    if (!obj || !Number.isFinite(obj.x) || !Number.isFinite(obj.y)) {
+      continue;
+    }
+    if (obj.kind === "station") {
+      const halfW = Math.floor(Math.max(1, Number(obj.w || 1)) / 2);
+      const halfH = Math.floor(Math.max(1, Number(obj.h || 1)) / 2);
+      if (tx >= obj.x - halfW && tx <= obj.x + halfW && ty >= obj.y - halfH && ty <= obj.y + halfH) {
+        return true;
+      }
+    } else if (obj.kind === "planet" || obj.type === "planet") {
+      const radius = Math.max(1, Number(obj.radius || 1));
+      const dx = tx - obj.x;
+      const dy = ty - obj.y;
+      if (dx * dx + dy * dy <= radius * radius) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function clientIsBlockedForShip(wx, wy) {
+  const tx = Math.floor(wx);
+  const ty = Math.floor(wy);
+  if (clientSpaceObjectBlocksShip(wx, wy)) {
+    return true;
+  }
+  const tile = getTile(tx, ty);
+  return tile !== TILE.VOID && tile !== TILE.WALKWAY && tile !== TILE.ENERGY;
+}
+
+/** Mirrors server/src/world.js isBlockedCircleForShip using loaded local chunks/objects. */
+function clientIsBlockedCircleForShip(wx, wy, radius = 0.34) {
+  if (!clientMovementSampleChunksReady(wx, wy, radius)) {
+    return false;
+  }
+  const points = [
+    [wx - radius, wy - radius],
+    [wx + radius, wy - radius],
+    [wx - radius, wy + radius],
+    [wx + radius, wy + radius]
+  ];
+  return points.some(([px, py]) => clientIsBlockedForShip(px, py));
 }
 
 /** Mirrors server/src/index.js on-foot movement: X axis first, then Y with updated X. */
@@ -1770,8 +1819,14 @@ function predictLocalPlayer(player, dt) {
   const stepY = dy * speed * dt;
 
   if (player.ship?.boarded) {
-    player.renderX += stepX;
-    player.renderY += stepY;
+    const nextX = player.renderX + stepX;
+    const nextY = player.renderY + stepY;
+    if (!clientIsBlockedCircleForShip(nextX, player.renderY)) {
+      player.renderX = nextX;
+    }
+    if (!clientIsBlockedCircleForShip(player.renderX, nextY)) {
+      player.renderY = nextY;
+    }
     player.facing = Math.atan2(dy, dx);
     player.renderMoving = true;
     return true;
@@ -2469,13 +2524,13 @@ function wireUi() {
       if (!(event.pointerType === "touch" || event.pointerType === "pen")) return;
       if (!state.joined || state.menuOpen) return;
       event.preventDefault();
-      useHealthPotion();
+      usePotionOrShipExit();
     },
     { passive: false }
   );
   potionSlotEl?.addEventListener("click", () => {
     if (!state.joined || state.menuOpen) return;
-    useHealthPotion();
+    usePotionOrShipExit();
   });
 
   homeTeleportSlotEl?.addEventListener(
@@ -2894,10 +2949,10 @@ function wireUi() {
       return;
     }
 
-    // Q — use health potion
+    // Q — use the potion slot, or exit the ship while flying.
     if (event.key.toLowerCase() === "q" && state.joined && !isTextEntryTarget(event.target)) {
       event.preventDefault();
-      useHealthPotion();
+      usePotionOrShipExit();
       return;
     }
 
@@ -3279,6 +3334,19 @@ function useHealthPotion() {
   send({ type: "useItem", slot: potionSlot });
 }
 
+function isSelfFlyingShip() {
+  const self = state.players.get(state.selfId);
+  return Boolean(self?.ship?.boarded && isSciFiWorld());
+}
+
+function usePotionOrShipExit() {
+  if (isSelfFlyingShip()) {
+    sendInteract();
+    return;
+  }
+  useHealthPotion();
+}
+
 function findPotionInInventory() {
   if (!state.inventory) return -1;
   for (let i = 0; i < state.inventory.length; i++) {
@@ -3293,42 +3361,64 @@ function countPotionsInInventory() {
   return state.inventory.filter(item => item && item.type === "potion").length;
 }
 
-let potionIconDrawn = false;
+let potionIconMode = "";
 function renderPotionSlot() {
   if (!potionSlotEl || !potionCountEl) return;
+  const shipMode = isSelfFlyingShip();
   const count = countPotionsInInventory();
-  potionCountEl.textContent = count;
-  potionSlotEl.classList.toggle("has-potions", count > 0);
-  potionSlotEl.classList.toggle("no-potions", count === 0);
+  potionCountEl.textContent = shipMode ? "Exit" : count;
+  if (potionKeyEl) {
+    potionKeyEl.textContent = shipMode ? "E" : "Q";
+  }
+  potionSlotEl.title = shipMode ? "Exit Ship (E)" : "Health Potion (Q)";
+  potionSlotEl.classList.toggle("ship-exit-slot", shipMode);
+  potionSlotEl.classList.toggle("has-potions", shipMode || count > 0);
+  potionSlotEl.classList.toggle("no-potions", !shipMode && count === 0);
 
-  // Draw potion icon once
-  if (!potionIconDrawn && potionSlotIconCanvas) {
-    potionIconDrawn = true;
+  const mode = shipMode ? "ship-exit" : "potion";
+  if (potionIconMode !== mode && potionSlotIconCanvas) {
+    potionIconMode = mode;
     const c = potionSlotIconCanvas.getContext("2d");
     const w = potionSlotIconCanvas.width;
     const h = potionSlotIconCanvas.height;
-    // Bottle body
-    c.fillStyle = "#1a3a1a";
-    c.fillRect(w * 0.3, h * 0.35, w * 0.4, h * 0.55);
-    // Red liquid fill
-    c.fillStyle = "#cc2244";
-    c.fillRect(w * 0.3 + 2, h * 0.5, w * 0.4 - 4, h * 0.38);
-    // Bottle neck
-    c.fillStyle = "#1a3a1a";
-    c.fillRect(w * 0.38, h * 0.2, w * 0.24, h * 0.18);
-    // Cork
-    c.fillStyle = "#8b5e3c";
-    c.fillRect(w * 0.36, h * 0.15, w * 0.28, h * 0.08);
-    // Gloss highlight
-    c.fillStyle = "rgba(255,255,255,0.2)";
-    c.fillRect(w * 0.34, h * 0.4, w * 0.1, h * 0.2);
-    // Red glow
-    c.fillStyle = "#ff4466";
-    c.globalAlpha = 0.3;
-    c.beginPath();
-    c.ellipse(w / 2, h * 0.68, w * 0.22, h * 0.14, 0, 0, Math.PI * 2);
-    c.fill();
-    c.globalAlpha = 1;
+    c.clearRect(0, 0, w, h);
+    if (shipMode) {
+      c.fillStyle = "rgba(103,240,255,0.22)";
+      c.fillRect(w * 0.14, h * 0.56, w * 0.72, h * 0.12);
+      c.fillStyle = "#67f0ff";
+      c.fillRect(w * 0.3, h * 0.24, w * 0.4, h * 0.16);
+      c.fillRect(w * 0.22, h * 0.4, w * 0.56, h * 0.16);
+      c.fillStyle = "#d9fbff";
+      c.fillRect(w * 0.42, h * 0.28, w * 0.16, h * 0.1);
+      c.fillStyle = "#ffcf6a";
+      c.fillRect(w * 0.46, h * 0.58, w * 0.08, h * 0.2);
+      c.fillStyle = "#ffffff";
+      c.fillRect(w * 0.36, h * 0.75, w * 0.28, h * 0.08);
+      c.fillRect(w * 0.5, h * 0.68, w * 0.08, h * 0.2);
+    } else {
+      // Bottle body
+      c.fillStyle = "#1a3a1a";
+      c.fillRect(w * 0.3, h * 0.35, w * 0.4, h * 0.55);
+      // Red liquid fill
+      c.fillStyle = "#cc2244";
+      c.fillRect(w * 0.3 + 2, h * 0.5, w * 0.4 - 4, h * 0.38);
+      // Bottle neck
+      c.fillStyle = "#1a3a1a";
+      c.fillRect(w * 0.38, h * 0.2, w * 0.24, h * 0.18);
+      // Cork
+      c.fillStyle = "#8b5e3c";
+      c.fillRect(w * 0.36, h * 0.15, w * 0.28, h * 0.08);
+      // Gloss highlight
+      c.fillStyle = "rgba(255,255,255,0.2)";
+      c.fillRect(w * 0.34, h * 0.4, w * 0.1, h * 0.2);
+      // Red glow
+      c.fillStyle = "#ff4466";
+      c.globalAlpha = 0.3;
+      c.beginPath();
+      c.ellipse(w / 2, h * 0.68, w * 0.22, h * 0.14, 0, 0, Math.PI * 2);
+      c.fill();
+      c.globalAlpha = 1;
+    }
   }
 }
 
@@ -3858,6 +3948,13 @@ function findBuildingByKey(key) {
   return null;
 }
 
+function stationObjectInteractionAnchor(obj) {
+  return {
+    x: Number(obj?.x),
+    y: Number(obj?.y)
+  };
+}
+
 function refreshWorldHoverTooltip(event) {
   state.hoverTooltipText = "";
   state.hoverTooltipSmall = false;
@@ -3875,10 +3972,10 @@ function refreshWorldHoverTooltip(event) {
       if (!obj || (obj.kind !== "ship-port" && obj.kind !== "ship-console" && obj.kind !== "sci-shop" && obj.kind !== "station-kiosk")) {
         continue;
       }
-      const fw = Math.max(1, Math.floor(Number(obj.w || 1)));
-      const fh = Math.max(1, Math.floor(Number(obj.h || 1)));
-      const ax = obj.x + fw / 2;
-      const ay = obj.y + fh / 2;
+      const { x: ax, y: ay } = stationObjectInteractionAnchor(obj);
+      if (!Number.isFinite(ax) || !Number.isFinite(ay)) {
+        continue;
+      }
       const reach = obj.kind === "ship-console" ? 1.6 : obj.kind === "ship-port" ? 1.8 : 1.9;
       const dist = Math.hypot(world.x - ax, world.y - ay);
       if (dist <= reach && dist < bestStationDist) {
@@ -3888,9 +3985,9 @@ function refreshWorldHoverTooltip(event) {
     }
     if (bestStationObject) {
       if (bestStationObject.kind === "ship-console") {
-        state.hoverTooltipText = "Ship console - call your ship";
+        state.hoverTooltipText = "Ship terminal - board or exit";
       } else if (bestStationObject.kind === "ship-port") {
-        state.hoverTooltipText = "Dock port - launch your ship";
+        state.hoverTooltipText = "Docking port";
       } else {
         const labels = {
           ship: "Shipyard kiosk",
@@ -4089,10 +4186,10 @@ function tryDockPortClickInteract(event) {
     if (!obj || (obj.kind !== "ship-port" && obj.kind !== "ship-console" && obj.kind !== "sci-shop" && obj.kind !== "station-kiosk")) {
       continue;
     }
-    const fw = Math.max(1, Math.floor(Number(obj.w || 1)));
-    const fh = Math.max(1, Math.floor(Number(obj.h || 1)));
-    const ax = obj.x + fw / 2;
-    const ay = obj.y + fh / 2;
+    const { x: ax, y: ay } = stationObjectInteractionAnchor(obj);
+    if (!Number.isFinite(ax) || !Number.isFinite(ay)) {
+      continue;
+    }
     const clickReach = obj.kind === "ship-console" ? 1.55 : obj.kind === "ship-port" ? 1.85 : 1.9;
     const d = Math.hypot(world.x - ax, world.y - ay);
     if (d <= clickReach && d < bestDist) {
