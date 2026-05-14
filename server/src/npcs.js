@@ -1,6 +1,7 @@
 const WORLD = require("./world");
 const { isBlockedCircle } = WORLD;
 const { HUB_NPC_ORDER } = require("./hubRoundTown.js");
+const { SCI_FI_DOCK_PORTS, RINGFORGE_CENTER } = require("./sciFiStationLayout.js");
 
 const NPC_SPEED = 2.0;
 const NPC_STOP_DISTANCE = 0.08;
@@ -879,6 +880,210 @@ function romanceCourtAggressiveFromId(idStr) {
   return (npcIdHashSeed(idStr) % 100) < 70;
 }
 
+const SCI_FI_TRAFFIC_DWELL_MIN_MS = 5200;
+const SCI_FI_TRAFFIC_DWELL_MAX_MS = 11800;
+const SCI_FI_TRAFFIC_OUTER_RADIUS = 92;
+const SCI_FI_TRAFFIC_NAMES = Object.freeze([
+  "Pilot Zhara",
+  "Courier Vo",
+  "Captain Elix",
+  "Dockrunner Mave",
+  "Hauler Kesh",
+  "Axiom Nine",
+  "Vela Korr",
+  "Orrin Flux",
+  "Juno Vex",
+  "Talen Quill",
+  "Sable Dray",
+  "Kito Nara"
+]);
+const SCI_FI_TRAFFIC_HULLS = Object.freeze([
+  { hullClass: "skiff", templateId: "npc_skiff", color: "#67f0ff", speed: 9.2 },
+  { hullClass: "runner", templateId: "npc_runner", color: "#8affd2", speed: 10.6 },
+  { hullClass: "fighter", templateId: "npc_fighter", color: "#ff8f6b", speed: 11.4 },
+  { hullClass: "hauler", templateId: "npc_hauler", color: "#f7d86a", speed: 7.8 },
+  { hullClass: "interceptor", templateId: "npc_interceptor", color: "#c084fc", speed: 12.5 },
+  { hullClass: "courier", templateId: "npc_courier", color: "#9edfff", speed: 10.2 }
+]);
+
+function trafficVectorForPort(port) {
+  const dx = Number(port.x) - RINGFORGE_CENTER.x;
+  const dy = Number(port.y) - RINGFORGE_CENTER.y;
+  const len = Math.max(0.001, Math.hypot(dx, dy));
+  return { nx: dx / len, ny: dy / len };
+}
+
+function trafficOuterPointForPort(port, index = 0) {
+  const { nx, ny } = trafficVectorForPort(port);
+  const side = ((index % 5) - 2) * 7.5;
+  return {
+    x: port.x + nx * SCI_FI_TRAFFIC_OUTER_RADIUS + -ny * side,
+    y: port.y + ny * SCI_FI_TRAFFIC_OUTER_RADIUS + nx * side
+  };
+}
+
+function buildSciFiTrafficNpcDefinitions() {
+  const ports = SCI_FI_DOCK_PORTS.filter((_, index) => index % 2 === 0);
+  return ports.slice(0, SCI_FI_TRAFFIC_NAMES.length).map((port, index) => {
+    const hull = SCI_FI_TRAFFIC_HULLS[index % SCI_FI_TRAFFIC_HULLS.length];
+    return {
+      id: `npc_ship_traffic_${index}`,
+      name: SCI_FI_TRAFFIC_NAMES[index],
+      classId: index % 3 === 0 ? "ranger" : index % 3 === 1 ? "mage" : "knight",
+      primary: "#243447",
+      accent: hull.color,
+      homeX: RINGFORGE_CENTER.x,
+      homeY: RINGFORGE_CENTER.y,
+      patrolRadius: 220,
+      npcTheme: "sci-fi",
+      sciFiLook: index % 4 === 1 ? "android" : "alien",
+      sciFiRole: "pilot",
+      sciFiShipTraffic: true,
+      _trafficPortIndex: index % Math.max(1, SCI_FI_DOCK_PORTS.length),
+      ship: {
+        templateId: hull.templateId,
+        name: `${SCI_FI_TRAFFIC_NAMES[index]}'s Ship`,
+        color: hull.color,
+        hullClass: hull.hullClass,
+        boarded: true,
+        dockX: port.x,
+        dockY: port.y,
+        dockStationId: "station_ringforge",
+        dockPortId: port.id,
+        speed: hull.speed,
+        laserTier: 1 + (index % 3),
+        thrustTier: 1 + (index % 3)
+      },
+      dialogue: [
+        "Clearance received. Vectoring to dock.",
+        "Mind the mag-clamps, station crew.",
+        "Cargo seal is green. I am coming in.",
+        "Orbital Square, this is final approach.",
+      ]
+    };
+  });
+}
+
+function initSciFiTrafficRuntime(npc) {
+  const port = SCI_FI_DOCK_PORTS[npc._trafficPortIndex % SCI_FI_DOCK_PORTS.length] || SCI_FI_DOCK_PORTS[0];
+  const out = trafficOuterPointForPort(port, npc._trafficPortIndex || 0);
+  npc.x = out.x;
+  npc.y = out.y;
+  npc._targetX = port.x;
+  npc._targetY = port.y;
+  npc._trafficPhase = "inbound";
+  npc._trafficPortId = port.id;
+  npc._trafficDockUntil = 0;
+  npc.facing = Math.atan2(port.y - npc.y, port.x - npc.x);
+  npc.moving = true;
+  if (npc.ship) {
+    npc.ship.boarded = true;
+    npc.ship.dockX = port.x;
+    npc.ship.dockY = port.y;
+    npc.ship.dockStationId = "station_ringforge";
+    npc.ship.dockPortId = port.id;
+  }
+}
+
+function nextTrafficPort(npc) {
+  if (!SCI_FI_DOCK_PORTS.length) {
+    return null;
+  }
+  npc._trafficPortIndex = ((npc._trafficPortIndex || 0) + 5) % SCI_FI_DOCK_PORTS.length;
+  return SCI_FI_DOCK_PORTS[npc._trafficPortIndex];
+}
+
+function dockedPilotPoint(port) {
+  const { nx, ny } = trafficVectorForPort(port);
+  return {
+    x: port.x - nx * 10,
+    y: port.y - ny * 10
+  };
+}
+
+function tickSciFiTraffic(npc, dt, now) {
+  if (!npc._trafficPhase || !SCI_FI_DOCK_PORTS.length) {
+    initSciFiTrafficRuntime(npc);
+  }
+
+  let port = SCI_FI_DOCK_PORTS.find((p) => p.id === npc._trafficPortId) || SCI_FI_DOCK_PORTS[0];
+  if (npc._trafficPhase === "docked") {
+    npc.moving = false;
+    if (npc.ship) {
+      npc.ship.boarded = false;
+      npc.ship.dockX = port.x;
+      npc.ship.dockY = port.y;
+      npc.ship.dockStationId = "station_ringforge";
+      npc.ship.dockPortId = port.id;
+    }
+    if (now < (npc._trafficDockUntil || 0)) {
+      return;
+    }
+    npc._trafficPhase = "outbound";
+    npc.x = port.x;
+    npc.y = port.y;
+    const out = trafficOuterPointForPort(port, npc._trafficPortIndex || 0);
+    npc._targetX = out.x;
+    npc._targetY = out.y;
+    if (npc.ship) {
+      npc.ship.boarded = true;
+    }
+  }
+
+  const dx = npc._targetX - npc.x;
+  const dy = npc._targetY - npc.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 0.7) {
+    if (npc._trafficPhase === "inbound") {
+      const pilot = dockedPilotPoint(port);
+      npc.x = pilot.x;
+      npc.y = pilot.y;
+      npc._targetX = pilot.x;
+      npc._targetY = pilot.y;
+      npc._trafficPhase = "docked";
+      npc._trafficDockUntil =
+        now +
+        SCI_FI_TRAFFIC_DWELL_MIN_MS +
+        ((npcIdHashSeed(`${npc.id}|${now >>> 10}`) >>> 0) %
+          (SCI_FI_TRAFFIC_DWELL_MAX_MS - SCI_FI_TRAFFIC_DWELL_MIN_MS));
+      npc.moving = false;
+      if (npc.ship) {
+        npc.ship.boarded = false;
+      }
+      return;
+    }
+
+    if (npc._trafficPhase === "outbound") {
+      port = nextTrafficPort(npc) || port;
+      npc._trafficPortId = port.id;
+      npc._trafficPhase = "inbound";
+      npc._targetX = port.x;
+      npc._targetY = port.y;
+      if (npc.ship) {
+        npc.ship.dockX = port.x;
+        npc.ship.dockY = port.y;
+        npc.ship.dockStationId = "station_ringforge";
+        npc.ship.dockPortId = port.id;
+        npc.ship.boarded = true;
+      }
+    }
+  }
+
+  const ndx = npc._targetX - npc.x;
+  const ndy = npc._targetY - npc.y;
+  const nd = Math.hypot(ndx, ndy);
+  if (nd < 0.001) {
+    npc.moving = false;
+    return;
+  }
+  const speed = Math.max(5.5, Math.min(14, Number(npc.ship?.speed) || 9.2));
+  const step = Math.min(speed * dt, nd);
+  npc.x += (ndx / nd) * step;
+  npc.y += (ndy / nd) * step;
+  npc.facing = Math.atan2(ndy, ndx);
+  npc.moving = true;
+}
+
 function buildHydratedHubNpcExtras() {
   const navKeys = WORLD.HUB_NAV_PATH_KEYS instanceof Set ? WORLD.HUB_NAV_PATH_KEYS : null;
   rebuildHubNavAnchors(navKeys || new Set());
@@ -1473,11 +1678,12 @@ const BASE_NPC_DEFINITIONS = [
     classId: "knight",
     primary: "#243447",
     accent: "#67f0ff",
-    homeX: 1831,
-    homeY: 3,
-    patrolRadius: 6,
+    homeX: RINGFORGE_CENTER.x - 54,
+    homeY: RINGFORGE_CENTER.y - 34,
+    patrolRadius: 9,
     npcTheme: "sci-fi",
     sciFiRole: "dockmaster",
+    sciFiLook: "android",
     isTrader: true,
     dialogue: [
       "Docking clamps are green. Keep the lane clear.",
@@ -1493,11 +1699,12 @@ const BASE_NPC_DEFINITIONS = [
     classId: "mage",
     primary: "#30415a",
     accent: "#9fefff",
-    homeX: 1816,
-    homeY: -2,
-    patrolRadius: 7,
+    homeX: RINGFORGE_CENTER.x + 50,
+    homeY: RINGFORGE_CENTER.y - 4,
+    patrolRadius: 8,
     npcTheme: "sci-fi",
     sciFiRole: "engineer",
+    sciFiLook: "alien",
     dialogue: [
       "The conduit lights look clean today. That is a rare joy.",
       "I can hear the whole station through the floor panels.",
@@ -1512,11 +1719,12 @@ const BASE_NPC_DEFINITIONS = [
     classId: "ranger",
     primary: "#24303f",
     accent: "#7dd3fc",
-    homeX: 1846,
-    homeY: 13,
-    patrolRadius: 5,
+    homeX: RINGFORGE_CENTER.x - 42,
+    homeY: RINGFORGE_CENTER.y + 20,
+    patrolRadius: 7,
     npcTheme: "sci-fi",
     sciFiRole: "medic",
+    sciFiLook: "alien",
     dialogue: [
       "If you burn yourself on the drive coils, come straight here.",
       "No blood on the cargo bay floor. I have enough work already.",
@@ -1531,11 +1739,12 @@ const BASE_NPC_DEFINITIONS = [
     classId: "mage",
     primary: "#2b3b52",
     accent: "#c4f1ff",
-    homeX: 1868,
-    homeY: -12,
+    homeX: RINGFORGE_CENTER.x,
+    homeY: RINGFORGE_CENTER.y - 46,
     patrolRadius: 6,
     npcTheme: "sci-fi",
     sciFiRole: "navigator",
+    sciFiLook: "android",
     dialogue: [
       "I keep the lanes plotted so the pilots can pretend it was easy.",
       "We have three safe routes and a dozen reckless ones.",
@@ -1550,11 +1759,12 @@ const BASE_NPC_DEFINITIONS = [
     classId: "knight",
     primary: "#223044",
     accent: "#fbbf24",
-    homeX: 1837,
-    homeY: -17,
-    patrolRadius: 4,
+    homeX: RINGFORGE_CENTER.x + 42,
+    homeY: RINGFORGE_CENTER.y + 20,
+    patrolRadius: 6,
     npcTheme: "sci-fi",
     sciFiRole: "quartermaster",
+    sciFiLook: "alien",
     isTrader: true,
     dialogue: [
       "Supplies, ration packs, and replacement gear. No nonsense.",
@@ -1564,9 +1774,104 @@ const BASE_NPC_DEFINITIONS = [
       "If you need something carried or sold, I have a queue for it.",
     ]
   },
+  {
+    id: "npc_xel_station",
+    name: "Xel Korr",
+    classId: "mage",
+    primary: "#1f3f48",
+    accent: "#8affd2",
+    homeX: RINGFORGE_CENTER.x - 14,
+    homeY: RINGFORGE_CENTER.y + 18,
+    patrolRadius: 14,
+    npcTheme: "sci-fi",
+    sciFiRole: "alien_crew",
+    sciFiLook: "alien",
+    dialogue: [
+      "Your atmosphere mix is loud, but agreeable.",
+      "I trade in three currencies and one excellent soup.",
+      "The viewport glass sings when haulers pass.",
+      "Do not lick the blue conduits. That was a visiting diplomat.",
+    ]
+  },
+  {
+    id: "npc_veera_station",
+    name: "Vee'ra of the Coil",
+    classId: "ranger",
+    primary: "#2d3656",
+    accent: "#fbcfe8",
+    homeX: RINGFORGE_CENTER.x - 34,
+    homeY: RINGFORGE_CENTER.y - 24,
+    patrolRadius: 8,
+    npcTheme: "sci-fi",
+    sciFiRole: "alien_vendor",
+    sciFiLook: "alien",
+    dialogue: [
+      "I have six eyes for bargains and seven for trouble.",
+      "Photon blades, pulse coils, hull charms. You need at least one.",
+      "Human coin is heavy. Digital coin is shy.",
+      "The best ships look fast while parked.",
+    ]
+  },
+  {
+    id: "npc_rook17_station",
+    name: "Rook-17",
+    classId: "knight",
+    primary: "#293241",
+    accent: "#d9fbff",
+    homeX: RINGFORGE_CENTER.x + 8,
+    homeY: RINGFORGE_CENTER.y + 34,
+    patrolRadius: 18,
+    npcTheme: "sci-fi",
+    sciFiRole: "android_courier",
+    sciFiLook: "android",
+    dialogue: [
+      "Courier route recalculated. Please enjoy the delay.",
+      "I have delivered parcels to three moons and one fish tank.",
+      "Dock twenty-three smells like hot copper.",
+      "Your organic stride is inefficient, but charming.",
+    ]
+  },
+  {
+    id: "npc_saal_station",
+    name: "Saal Neb",
+    classId: "mage",
+    primary: "#25394a",
+    accent: "#c084fc",
+    homeX: RINGFORGE_CENTER.x + 30,
+    homeY: RINGFORGE_CENTER.y - 10,
+    patrolRadius: 16,
+    npcTheme: "sci-fi",
+    sciFiRole: "alien_pilgrim",
+    sciFiLook: "alien",
+    dialogue: [
+      "The stars outside this wall are older than all our maps.",
+      "A station is a campfire with better doors.",
+      "I came to watch ships arrive and left with three new debts.",
+      "Your skiff has a brave little engine note.",
+    ]
+  },
+  {
+    id: "npc_mira9_station",
+    name: "MIRA-9",
+    classId: "ranger",
+    primary: "#203044",
+    accent: "#7dd3fc",
+    homeX: RINGFORGE_CENTER.x + 48,
+    homeY: RINGFORGE_CENTER.y + 36,
+    patrolRadius: 10,
+    npcTheme: "sci-fi",
+    sciFiRole: "customs_android",
+    sciFiLook: "android",
+    dialogue: [
+      "Customs scan complete. You are only mildly suspicious.",
+      "Declare weapons, pets, moons, and haunted artifacts.",
+      "The bazaar imports everything except patience.",
+      "Dock traffic is currently within acceptable chaos limits.",
+    ]
+  },
 ];
 
-const DEFINITIONS = BASE_NPC_DEFINITIONS.concat(buildHydratedHubNpcExtras());
+const DEFINITIONS = BASE_NPC_DEFINITIONS.concat(buildHydratedHubNpcExtras(), buildSciFiTrafficNpcDefinitions());
 
 const soldCompanionNpcIds = new Set();
 const SOCIAL_PAIR_INTERVAL_MS = 9200;
@@ -1602,7 +1907,7 @@ const npcs = DEFINITIONS.map((def) => {
   const courtAggressive = isPurchasableRomance ? romanceCourtAggressiveFromId(idStr) : false;
   const longHair = isPurchasableRomance && def.bondTag === "gf";
   const romanceSilhouette = longHair ? "soft_curves" : null;
-  return {
+  const npc = {
     ...def,
     courtAggressive,
     longHair,
@@ -1619,6 +1924,10 @@ const npcs = DEFINITIONS.map((def) => {
       CHAT_INTERVAL_MIN +
       Math.random() * (CHAT_INTERVAL_MAX - CHAT_INTERVAL_MIN),
   };
+  if (npc.sciFiShipTraffic) {
+    initSciFiTrafficRuntime(npc);
+  }
+  return npc;
 });
 
 const hubLinkedNpcIds = new Set(HUB_NPC_ORDER.map((entry) => entry.id));
@@ -2244,6 +2553,11 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
       continue;
     }
 
+    if (npc.sciFiShipTraffic) {
+      tickSciFiTraffic(npc, dt, now);
+      continue;
+    }
+
     /** Retired romance NPCs idle at template home (clients see them only inside your house). */
     if (soldCompanionNpcIds.has(npc.id)) {
       npc.moving = false;
@@ -2482,7 +2796,26 @@ function getNpcSnapshot() {
       primary: npc.primary,
       accent: npc.accent,
       ...(npc.npcTheme ? { npcTheme: npc.npcTheme } : {}),
+      ...(npc.sciFiLook ? { sciFiLook: npc.sciFiLook } : {}),
       ...(npc.sciFiRole ? { sciFiRole: npc.sciFiRole } : {}),
+      ...(npc.ship
+        ? {
+            ship: {
+              templateId: typeof npc.ship.templateId === "string" ? npc.ship.templateId : "npc_ship",
+              name: typeof npc.ship.name === "string" ? npc.ship.name : "NPC Ship",
+              color: typeof npc.ship.color === "string" ? npc.ship.color : npc.accent,
+              hullClass: typeof npc.ship.hullClass === "string" ? npc.ship.hullClass : "skiff",
+              boarded: Boolean(npc.ship.boarded),
+              dockX: Number(npc.ship.dockX),
+              dockY: Number(npc.ship.dockY),
+              dockStationId: typeof npc.ship.dockStationId === "string" ? npc.ship.dockStationId : "station_ringforge",
+              dockPortId: typeof npc.ship.dockPortId === "string" ? npc.ship.dockPortId : null,
+              speed: Number(npc.ship.speed) || 9,
+              laserTier: Number(npc.ship.laserTier) || 1,
+              thrustTier: Number(npc.ship.thrustTier) || 1
+            }
+          }
+        : {}),
       x: Number(npc.x.toFixed(3)),
       y: Number(npc.y.toFixed(3)),
       facing: Number(npc.facing.toFixed(3)),

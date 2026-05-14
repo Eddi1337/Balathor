@@ -1,14 +1,18 @@
 "use strict";
 
 /**
- * Orbital Square — sci-fi sector. Layout v4: simple walkable square station with open space around it.
- * `node tools/generateSciFiStation.mjs`
+ * Orbital Square sci-fi sector.
+ *
+ * This file is the authoritative layout used by both tile generation and
+ * station interaction fixtures. Coordinates are world tile centers.
  */
 
 const CX = 1920;
 const CY = 0;
-const STATION_W = 97;
-const STATION_H = 97;
+const STATION_W = 131;
+const STATION_H = 111;
+const HALF_W = Math.floor(STATION_W / 2);
+const HALF_H = Math.floor(STATION_H / 2);
 
 function hash2(x, y, seed = 1337) {
   let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ (seed | 0);
@@ -18,33 +22,71 @@ function hash2(x, y, seed = 1337) {
 }
 
 const SCI_FI_STATIONS = Object.freeze([
-  { id: "station_ringforge", name: "Orbital Square", x: CX, y: CY, w: STATION_W, h: STATION_H, kind: "spawn" }
+  {
+    id: "station_ringforge",
+    name: "Orbital Square",
+    x: CX,
+    y: CY,
+    w: STATION_W,
+    h: STATION_H,
+    kind: "spawn"
+  }
 ]);
 
-const DOCK_ROW = Object.freeze([-34, -12, 12, 34]);
+const NORTH_SOUTH_DOCK_OFFSETS = Object.freeze([-52, -36, -20, -4, 12, 28, 44, 58]);
+const EAST_WEST_DOCK_OFFSETS = Object.freeze([-38, -22, -6, 10, 26, 42]);
 
 function buildDockPorts() {
   const out = [];
-  let k = 0;
-  for (const ox of DOCK_ROW) {
-    out.push({ id: `rf_dock_n_${k}`, x: CX + ox, y: CY - 50 });
-    k += 1;
+  let n = 0;
+
+  for (const ox of NORTH_SOUTH_DOCK_OFFSETS) {
+    out.push(Object.freeze({
+      id: `rf_dock_n_${n++}`,
+      x: CX + ox,
+      y: CY - HALF_H - 7,
+      facing: "north",
+      terminalX: CX + ox,
+      terminalY: CY - HALF_H + 2
+    }));
   }
-  k = 0;
-  for (const ox of DOCK_ROW) {
-    out.push({ id: `rf_dock_s_${k}`, x: CX + ox, y: CY + 50 });
-    k += 1;
+
+  n = 0;
+  for (const ox of NORTH_SOUTH_DOCK_OFFSETS) {
+    out.push(Object.freeze({
+      id: `rf_dock_s_${n++}`,
+      x: CX + ox,
+      y: CY + HALF_H + 7,
+      facing: "south",
+      terminalX: CX + ox,
+      terminalY: CY + HALF_H - 2
+    }));
   }
-  k = 0;
-  for (const oy of DOCK_ROW) {
-    out.push({ id: `rf_dock_w_${k}`, x: CX - 50, y: CY + oy });
-    k += 1;
+
+  n = 0;
+  for (const oy of EAST_WEST_DOCK_OFFSETS) {
+    out.push(Object.freeze({
+      id: `rf_dock_w_${n++}`,
+      x: CX - HALF_W - 7,
+      y: CY + oy,
+      facing: "west",
+      terminalX: CX - HALF_W + 2,
+      terminalY: CY + oy
+    }));
   }
-  k = 0;
-  for (const oy of DOCK_ROW) {
-    out.push({ id: `rf_dock_e_${k}`, x: CX + 50, y: CY + oy });
-    k += 1;
+
+  n = 0;
+  for (const oy of EAST_WEST_DOCK_OFFSETS) {
+    out.push(Object.freeze({
+      id: `rf_dock_e_${n++}`,
+      x: CX + HALF_W + 7,
+      y: CY + oy,
+      facing: "east",
+      terminalX: CX + HALF_W - 2,
+      terminalY: CY + oy
+    }));
   }
+
   return Object.freeze(out);
 }
 
@@ -54,25 +96,87 @@ function pushFeature(out, feature) {
   out.push(Object.freeze(feature));
 }
 
+function stationFacingForPort(port) {
+  if (port.facing === "north") return "south";
+  if (port.facing === "south") return "north";
+  if (port.facing === "west") return "east";
+  return "west";
+}
+
+function buildPortFeatures(out) {
+  for (const port of SCI_FI_DOCK_PORTS) {
+    const vertical = port.facing === "north" || port.facing === "south";
+    const portW = vertical ? 7 : 5;
+    const portH = vertical ? 5 : 7;
+    const bridgeX =
+      port.facing === "west"
+        ? CX - HALF_W - 1
+        : port.facing === "east"
+          ? CX + HALF_W + 1
+          : port.x;
+    const bridgeY =
+      port.facing === "north"
+        ? CY - HALF_H - 1
+        : port.facing === "south"
+          ? CY + HALF_H + 1
+          : port.y;
+
+    pushFeature(out, {
+      id: `${port.id}_port`,
+      name: "Docking Port",
+      kind: "ship-port",
+      portId: port.id,
+      x: bridgeX,
+      y: bridgeY,
+      w: portW,
+      h: portH,
+      facing: port.facing
+    });
+
+    pushFeature(out, {
+      id: `${port.id}_console`,
+      name: "Ship Call Terminal",
+      kind: "ship-console",
+      portId: port.id,
+      x: port.terminalX,
+      y: port.terminalY,
+      w: vertical ? 4 : 5,
+      h: vertical ? 3 : 4,
+      facing: stationFacingForPort(port)
+    });
+  }
+}
+
 function buildStationFeatures() {
   const out = [];
 
   pushFeature(out, {
     id: "rf_core",
-    name: "Fusion Core",
+    name: "Prismatic Reactor",
     kind: "station-core",
     x: CX,
     y: CY,
-    w: 13,
-    h: 13
+    w: 15,
+    h: 15
+  });
+
+  pushFeature(out, {
+    id: "rf_plaza",
+    name: "Zero-G Concourse",
+    kind: "station-plaza",
+    x: CX,
+    y: CY,
+    w: 33,
+    h: 25
   });
 
   const shops = [
-    { id: "rf_shop_ship", name: "Dock Exchange", shopType: "ship", x: CX - 24, y: CY - 22, w: 8, h: 5 },
-    { id: "rf_shop_arms", name: "Armory Node", shopType: "arms", x: CX + 24, y: CY - 22, w: 8, h: 5 },
-    { id: "rf_shop_stims", name: "Medbay Kiosk", shopType: "stims", x: CX - 24, y: CY + 22, w: 8, h: 5 },
-    { id: "rf_shop_parts", name: "Parts Depot", shopType: "parts", x: CX + 24, y: CY + 22, w: 8, h: 5 },
-    { id: "rf_shop_trade", name: "Orbital Bazaar", shopType: "trade", x: CX, y: CY + 30, w: 9, h: 5 }
+    { id: "rf_shop_ship", name: "Nova Shipyard", shopType: "ship", x: CX - 42, y: CY - 28, w: 12, h: 7 },
+    { id: "rf_shop_arms", name: "Photon Armory", shopType: "arms", x: CX + 42, y: CY - 28, w: 12, h: 7 },
+    { id: "rf_shop_stims", name: "Medgel Clinic", shopType: "stims", x: CX - 42, y: CY + 20, w: 11, h: 7 },
+    { id: "rf_shop_parts", name: "Drive Parts Depot", shopType: "parts", x: CX + 42, y: CY + 20, w: 11, h: 7 },
+    { id: "rf_shop_trade", name: "Alien Bazaar", shopType: "trade", x: CX, y: CY - 34, w: 13, h: 6 },
+    { id: "rf_shop_outfitter", name: "Exosuit Outfitter", shopType: "arms", x: CX, y: CY + 28, w: 13, h: 6 }
   ];
 
   for (const shop of shops) {
@@ -90,65 +194,49 @@ function buildStationFeatures() {
   }
 
   const modules = [
-    { id: "rf_module_nw", name: "Transit Node", x: CX - 34, y: CY - 34, w: 6, h: 4, facing: "south" },
-    { id: "rf_module_ne", name: "Dock Relay", x: CX + 34, y: CY - 34, w: 6, h: 4, facing: "south" },
-    { id: "rf_module_sw", name: "Signal Node", x: CX - 34, y: CY + 34, w: 6, h: 4, facing: "north" },
-    { id: "rf_module_se", name: "Service Node", x: CX + 34, y: CY + 34, w: 6, h: 4, facing: "north" },
-    { id: "rf_module_w", name: "Maintenance Rack", x: CX - 38, y: CY, w: 5, h: 4, facing: "east" },
-    { id: "rf_module_e", name: "Maintenance Rack", x: CX + 38, y: CY, w: 5, h: 4, facing: "west" }
+    { id: "rf_cmd", name: "Command Deck", kind: "command", x: CX, y: CY - 48, w: 15, h: 5, facing: "south" },
+    { id: "rf_observatory_s", name: "Starview Lounge", kind: "station-module", x: CX, y: CY + 48, w: 18, h: 5, facing: "north" },
+    { id: "rf_hydro_nw", name: "Hydroponics Rack", kind: "station-module", x: CX - 52, y: CY - 4, w: 6, h: 12, facing: "east" },
+    { id: "rf_hydro_ne", name: "Life Support Rack", kind: "station-module", x: CX + 52, y: CY - 4, w: 6, h: 12, facing: "west" },
+    { id: "rf_quarters_w", name: "Crew Bunks", kind: "quarters", x: CX - 22, y: CY + 42, w: 12, h: 5, facing: "north" },
+    { id: "rf_quarters_e", name: "Pilot Bunks", kind: "quarters", x: CX + 22, y: CY + 42, w: 12, h: 5, facing: "north" },
+    { id: "rf_relay_w", name: "Signal Relay", kind: "station-kiosk", shopType: "trade", x: CX - 58, y: CY + 28, w: 5, h: 5, facing: "east" },
+    { id: "rf_relay_e", name: "Signal Relay", kind: "station-kiosk", shopType: "trade", x: CX + 58, y: CY + 28, w: 5, h: 5, facing: "west" }
   ];
 
   for (const module of modules) {
-    pushFeature(out, {
-      id: module.id,
-      name: module.name,
-      kind: "station-module",
-      x: module.x,
-      y: module.y,
-      w: module.w,
-      h: module.h,
-      facing: module.facing
-    });
+    pushFeature(out, module);
   }
 
-  const cargoSlots = [];
-  for (let gx = -40; gx <= 40; gx += 8) {
-    for (let gy = -40; gy <= 40; gy += 8) {
-      const dist = Math.hypot(gx, gy);
-      if (dist < 16 || dist > 44) {
-        continue;
-      }
-      if (Math.abs(gx) <= 8 && Math.abs(gy) <= 8) {
-        continue;
-      }
+  buildPortFeatures(out);
+
+  const cargoKinds = [
+    { kind: "container-box", name: "Ion Container", w: 3, h: 2 },
+    { kind: "shipping-crate", name: "Stasis Crate", w: 4, h: 3 },
+    { kind: "cargo-crate", name: "Cargo Cube", w: 2, h: 2 }
+  ];
+  let cargoIndex = 0;
+  for (let gx = -58; gx <= 58; gx += 8) {
+    for (let gy = -46; gy <= 46; gy += 8) {
+      if (Math.abs(gx) < 18 && Math.abs(gy) < 18) continue;
+      if (Math.abs(gx) < 15 || Math.abs(gy) < 11) continue;
       const roll = hash2(gx, gy, 711);
-      if (roll < 0.58) {
-        continue;
-      }
-      cargoSlots.push({ x: CX + gx, y: CY + gy, roll });
+      if (roll < 0.62) continue;
+      const pick = cargoKinds[(cargoIndex + Math.floor(roll * 31)) % cargoKinds.length];
+      pushFeature(out, {
+        id: `rf_cargo_${cargoIndex}`,
+        name: pick.name,
+        kind: pick.kind,
+        x: CX + gx,
+        y: CY + gy,
+        w: pick.w,
+        h: pick.h,
+        facing: hash2(gx, gy, 913) > 0.5 ? "east" : "west"
+      });
+      cargoIndex += 1;
+      if (cargoIndex >= 26) return out;
     }
   }
-
-  cargoSlots.sort((a, b) => a.roll - b.roll);
-  const cargoKinds = [
-    { kind: "container-box", name: "Container Box", w: 3, h: 2 },
-    { kind: "shipping-crate", name: "Shipping Crate", w: 4, h: 3 },
-    { kind: "cargo-crate", name: "Cargo Crate", w: 2, h: 2 }
-  ];
-
-  cargoSlots.slice(0, 18).forEach((slot, index) => {
-    const pick = cargoKinds[Math.floor((slot.roll * 997 + index * 13) % cargoKinds.length)];
-    pushFeature(out, {
-      id: `rf_cargo_${index}`,
-      name: pick.name,
-      kind: pick.kind,
-      x: slot.x,
-      y: slot.y,
-      w: pick.w,
-      h: pick.h,
-      facing: hash2(slot.x, slot.y, 913) > 0.5 ? "east" : "west"
-    });
-  });
 
   return out;
 }
@@ -172,7 +260,7 @@ function sciFiDockPortForPlayerId(playerId) {
 
 module.exports = {
   RINGFORGE_CENTER: Object.freeze({ x: CX, y: CY }),
-  STARGATE_LANDING: Object.freeze({ x: CX, y: CY + 40 }),
+  STARGATE_LANDING: Object.freeze({ x: CX, y: CY + 42 }),
   SCI_FI_STATIONS,
   SCI_FI_STATION_FEATURES,
   SCI_FI_DOCK_PORTS,

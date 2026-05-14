@@ -475,11 +475,13 @@ function displayItemName(item) {
     return item.name || "Item";
   }
   if (item.type === "weapon") {
+    if (typeof item.templateId === "string" && item.templateId.startsWith("scifi_")) return item.name || "Sci-fi Weapon";
     if (item.weaponKind === "sword") return item.name?.includes("☆") ? item.name : "Lightsaber";
     if (item.weaponKind === "bow") return "Blaster Carbine";
     if (item.weaponKind === "staff") return "Laser Rifle";
   }
   if (item.type === "armor") {
+    if (typeof item.templateId === "string" && item.templateId.startsWith("scifi_")) return item.name || "Exo Armor";
     return "Exo Armor";
   }
   if (item.type === "ring") {
@@ -6344,10 +6346,73 @@ function drawCargoCrateObject(obj, sx, sy) {
   ctx.restore();
 }
 
+function shipHullDimensions(hullClass) {
+  if (hullClass === "freighter") return { w: 82, h: 42 };
+  if (hullClass === "hauler") return { w: 78, h: 40 };
+  if (hullClass === "interceptor" || hullClass === "needle") return { w: 74, h: 28 };
+  if (hullClass === "fighter") return { w: 70, h: 34 };
+  if (hullClass === "yacht") return { w: 72, h: 38 };
+  if (hullClass === "courier") return { w: 66, h: 32 };
+  return { w: 64, h: 36 };
+}
+
+function drawShipHullShape(hullClass, x, y, w, h, color) {
+  ctx.fillStyle = "rgba(18, 30, 48, 0.96)";
+  ctx.beginPath();
+  if (hullClass === "hauler" || hullClass === "freighter") {
+    ctx.moveTo(x + 4, y + h * 0.62);
+    ctx.lineTo(x + 16, y + 8);
+    ctx.lineTo(x + w * 0.78, y + 8);
+    ctx.lineTo(x + w - 2, y + h * 0.48);
+    ctx.lineTo(x + w * 0.78, y + h - 6);
+    ctx.lineTo(x + 16, y + h - 6);
+  } else if (hullClass === "fighter" || hullClass === "interceptor" || hullClass === "needle") {
+    ctx.moveTo(x + 2, y + h * 0.5);
+    ctx.lineTo(x + w * 0.34, y + 5);
+    ctx.lineTo(x + w - 3, y + h * 0.5);
+    ctx.lineTo(x + w * 0.34, y + h - 5);
+  } else if (hullClass === "yacht") {
+    ctx.moveTo(x + 5, y + h * 0.58);
+    ctx.bezierCurveTo(x + 18, y + 2, x + w * 0.72, y + 2, x + w - 3, y + h * 0.5);
+    ctx.bezierCurveTo(x + w * 0.74, y + h - 1, x + 20, y + h - 1, x + 5, y + h * 0.58);
+  } else {
+    ctx.moveTo(x + 6, y + h * 0.68);
+    ctx.lineTo(x + 16, y + 12);
+    ctx.lineTo(x + w * 0.6, y + 7);
+    ctx.lineTo(x + w - 4, y + h * 0.52);
+    ctx.lineTo(x + w * 0.7, y + h - 4);
+    ctx.lineTo(x + 18, y + h - 8);
+  }
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = color;
+  if (hullClass === "freighter" || hullClass === "hauler") {
+    ctx.fillRect(x + 18, y + 11, w * 0.44, 7);
+    ctx.fillRect(x + 18, y + h - 18, w * 0.44, 7);
+    ctx.fillStyle = "rgba(255,255,255,0.65)";
+    ctx.fillRect(x + w - 22, y + h * 0.41, 10, 6);
+  } else if (hullClass === "fighter" || hullClass === "interceptor" || hullClass === "needle") {
+    ctx.fillRect(x + w * 0.38, y + h * 0.42, w * 0.42, 4);
+    ctx.fillStyle = "rgba(255,255,255,0.78)";
+    ctx.fillRect(x + w * 0.58, y + h * 0.34, 8, 5);
+  } else {
+    ctx.fillRect(x + 18, y + 12, 18, 11);
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.fillRect(x + 24, y + 15, 6, 4);
+  }
+
+  ctx.fillStyle = "rgba(103,240,255,0.25)";
+  ctx.fillRect(x + 8, y + h * 0.5 - 2, w - 16, 4);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = hullClass === "needle" ? 2 : 3;
+  ctx.stroke();
+}
+
 function drawShipVehicleObject(obj, sx, sy, boarded = false, facing = 0, thrust = false) {
   const color = obj?.color || "#67f0ff";
-  const w = 64;
-  const h = 36;
+  const hullClass = obj?.hullClass || obj?.templateId || "skiff";
+  const { w, h } = shipHullDimensions(hullClass);
   ctx.save();
   ctx.translate(sx, sy);
   ctx.rotate(Number.isFinite(facing) ? facing : 0);
@@ -6375,25 +6440,7 @@ function drawShipVehicleObject(obj, sx, sy, boarded = false, facing = 0, thrust 
     ctx.fill();
   }
   drawEllipseShadow(x - 6, y + h * 0.84, w + 12, 10, 0.22);
-  ctx.fillStyle = "rgba(18, 30, 48, 0.95)";
-  ctx.beginPath();
-  ctx.moveTo(x + 6, y + h * 0.68);
-  ctx.lineTo(x + 16, y + 12);
-  ctx.lineTo(x + w * 0.6, y + 7);
-  ctx.lineTo(x + w - 4, y + h * 0.52);
-  ctx.lineTo(x + w * 0.7, y + h - 4);
-  ctx.lineTo(x + 18, y + h - 8);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = color;
-  ctx.fillRect(x + 18, y + 12, 18, 11);
-  ctx.fillStyle = "rgba(255,255,255,0.75)";
-  ctx.fillRect(x + 24, y + 15, 6, 4);
-  ctx.fillStyle = "rgba(103,240,255,0.25)";
-  ctx.fillRect(x + 8, y + 19, w - 16, 4);
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 3;
-  ctx.stroke();
+  drawShipHullShape(hullClass, x, y, w, h, color);
   ctx.restore();
   ctx.save();
   ctx.translate(sx, sy);
@@ -7356,6 +7403,24 @@ function drawSciFiHelmet(hx, hy, scale, shellColor, visorColor, dirX) {
   ctx.fillRect(hx - scale, hy - scale, 7 * scale, Math.max(scale, 2));
 }
 
+function drawAlienHead(hx, hy, scale, shellColor, visorColor, dirX) {
+  const eyeShift = Math.max(0, Math.round(dirX)) * scale;
+  ctx.fillStyle = blend(shellColor, "#102028", 0.18);
+  ctx.fillRect(hx - scale, hy - 2 * scale, 7 * scale, 7 * scale);
+  ctx.fillStyle = shellColor;
+  ctx.fillRect(hx, hy - scale, 5 * scale, 5 * scale);
+  ctx.fillStyle = blend(shellColor, "#ffffff", 0.18);
+  ctx.fillRect(hx + scale, hy - 2 * scale, 3 * scale, scale);
+  ctx.fillStyle = visorColor;
+  ctx.fillRect(hx + scale + eyeShift, hy + scale, scale, scale);
+  ctx.fillRect(hx + 3 * scale + eyeShift, hy + scale, scale, scale);
+  ctx.fillStyle = "rgba(255,255,255,0.65)";
+  ctx.fillRect(hx + scale + eyeShift, hy + scale, Math.max(1, scale - 1), Math.max(1, scale - 1));
+  ctx.fillRect(hx + 3 * scale + eyeShift, hy + scale, Math.max(1, scale - 1), Math.max(1, scale - 1));
+  ctx.fillStyle = blend(shellColor, "#000000", 0.35);
+  ctx.fillRect(hx + 2 * scale, hy + 3 * scale, 2 * scale, scale);
+}
+
 function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const isMod = !!entity.isMod;
   const s = isMod ? 3 * 1.2 : 3;
@@ -7392,6 +7457,7 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const fy   = Math.round(dirY * 0.6);
 
   const sciFiNpc = !!(isNpc && (entity.npcTheme === SCI_FI_THEME || entity.sciFiLook));
+  const sciFiLook = entity.sciFiLook || "";
   const torsoColor  = isMod ? "#697987" : (entity.torsoColor || entity.primary || "#5cc8ff");
   const weaponColor = entity.weaponColor || entity.accent || "#ffd166";
   const torsoStyle  = isMod ? "robe" : sciFiNpc ? "sciFi" : (entity.torsoStyle || "tunic");
@@ -7556,7 +7622,11 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const hx = bx - 2 * s + fx * s + (bowing ? Math.round(s) : 0);
   const hy = by - 7 * s + fy + headSitNudge + bowHeadNudge;
   if (sciFiNpc) {
-    drawSciFiHelmet(hx, hy, s, helmetColor, visorColor, fx);
+    if (sciFiLook === "alien") {
+      drawAlienHead(hx, hy, s, helmetColor, visorColor, fx);
+    } else {
+      drawSciFiHelmet(hx, hy, s, helmetColor, visorColor, fx);
+    }
   } else if (isMod) {
     drawModHood(hx, hy, s, dirX);
   } else {
@@ -7991,7 +8061,22 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
   if (!weaponKind) {
     return;
   }
-  const ornateWeapon = ["ornate","legendary","ascendant","crystal","dark","runic","spectral","frost","fire"].includes(style);
+  const ornateWeapon = [
+    "ornate",
+    "legendary",
+    "ascendant",
+    "crystal",
+    "dark",
+    "runic",
+    "spectral",
+    "frost",
+    "fire",
+    "saber",
+    "pulse",
+    "ion",
+    "plasma",
+    "rail"
+  ].includes(style);
   const isLegendary = style === "legendary";
   const isAscendant = style === "ascendant";
   ctx.save();
