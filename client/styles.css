@@ -2116,6 +2116,59 @@ button:focus-visible {
     -1px 0 0 rgba(12, 6, 2, 0.85);
 }
 
+.ship-engage {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.ship-engage button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 100px;
+  height: 40px;
+  padding: 0 16px;
+  border: 1px solid #2a6a8a;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #0f2a3a 0%, #081a24 100%);
+  color: #67f0ff;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.ship-engage button:active,
+.ship-engage button.pressed {
+  background: linear-gradient(180deg, #1a4a5a 0%, #0f2a3a 100%);
+  border-color: #67f0ff;
+  box-shadow: 0 0 12px rgba(103,240,255,0.4);
+}
+
+.ship-engage-key {
+  font-size: 10px;
+  color: #5a7a8a;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+body.theme-sci-fi .ship-engage button {
+  border-color: #2a8aaa;
+  background: linear-gradient(180deg, #0e2a3a 0%, #061824 100%);
+}
+
+body.theme-sci-fi .ship-engage button:active,
+body.theme-sci-fi .ship-engage button.pressed {
+  background: linear-gradient(180deg, #184a5a 0%, #0e2a3a 100%);
+  border-color: #8af0ff;
+  box-shadow: 0 0 16px rgba(103,240,255,0.5);
+}
+
 .ability-bar-divider {
   width: 1px;
   height: 40px;

@@ -702,7 +702,7 @@ const state = {
   fountainToss: null,
   requestedChunks: new Set(),
   population: 0,
-  input: { up: false, down: false, left: false, right: false },
+  input: { up: false, down: false, left: false, right: false, engage: false },
   inputSeq: 0,
   camera: { x: 0, y: 0 },
   zoom: 1,
@@ -1847,25 +1847,27 @@ function predictLocalPlayer(player, dt) {
   const speed = Number.isFinite(player.moveSpeed) ? player.moveSpeed : CLIENT_PLAYER_SPEED;
 
   if (player.ship?.boarded) {
-    const turn = (Number(state.input.right) - Number(state.input.left)) * CLIENT_SHIP_TURN_SPEED * dt;
-    player.facing = normalizeAngle(Number(player.facing || 0) + turn);
-    const thrust = Number(state.input.up) ? 1 : 0;
-    const brakes = Number(state.input.down) ? 1 : 0;
-    let vx = Math.cos(player.facing) * thrust * speed * dt;
-    let vy = Math.sin(player.facing) * thrust * speed * dt;
-    if (brakes) {
-      vx *= -0.42;
-      vy *= -0.42;
+    // WASD sets the ship's facing direction
+    const dx = Number(state.input.right) - Number(state.input.left);
+    const dy = Number(state.input.down) - Number(state.input.up);
+    const aimLength = Math.hypot(dx, dy);
+    if (aimLength > 0) {
+      player.facing = Math.atan2(dy, dx);
     }
-    const nextX = player.renderX + vx;
-    const nextY = player.renderY + vy;
-    if (!clientIsBlockedCircleForShip(nextX, player.renderY)) {
-      player.renderX = nextX;
+    // Engage thrusts forward in the facing direction
+    if (state.input.engage) {
+      let vx = Math.cos(player.facing) * speed * dt;
+      let vy = Math.sin(player.facing) * speed * dt;
+      const nextX = player.renderX + vx;
+      const nextY = player.renderY + vy;
+      if (!clientIsBlockedCircleForShip(nextX, player.renderY)) {
+        player.renderX = nextX;
+      }
+      if (!clientIsBlockedCircleForShip(player.renderX, nextY)) {
+        player.renderY = nextY;
+      }
     }
-    if (!clientIsBlockedCircleForShip(player.renderX, nextY)) {
-      player.renderY = nextY;
-    }
-    player.renderMoving = Boolean(thrust) || Math.abs(turn) > 0.0001;
+    player.renderMoving = Boolean(state.input.engage);
     return true;
   }
 
@@ -2588,6 +2590,27 @@ function wireUi() {
     usePotionOrShipExit();
   });
 
+  // Ship Engage button — held to thrust forward
+  const shipEngageEl = document.getElementById("shipEngageBtn");
+  if (shipEngageEl) {
+    function engageStart(e) {
+      if (!state.joined || state.menuOpen || !isSelfFlyingShip()) return;
+      e.preventDefault();
+      state.input.engage = true;
+      sendInput();
+    }
+    function engageStop(e) {
+      if (!state.joined || !isSelfFlyingShip()) return;
+      e.preventDefault();
+      state.input.engage = false;
+      sendInput();
+    }
+    shipEngageEl.addEventListener("pointerdown", engageStart, { passive: false });
+    shipEngageEl.addEventListener("pointerup", engageStop, { passive: false });
+    shipEngageEl.addEventListener("pointerleave", engageStop, { passive: false });
+    shipEngageEl.addEventListener("contextmenu", (e) => e.preventDefault());
+  }
+
   homeTeleportSlotEl?.addEventListener(
     "pointerdown",
     (event) => {
@@ -2988,7 +3011,22 @@ function wireUi() {
       return;
     }
 
-    if ((event.code === "Space" || event.key.toLowerCase() === "f") && state.joined && !isTextEntryTarget(event.target)) {
+    // Ship engage — Space thrusts forward when flying; attacks when on ground
+    if (event.code === "Space" && state.joined && !isTextEntryTarget(event.target)) {
+      event.preventDefault();
+      if (isSelfFlyingShip()) {
+        state.input.engage = true;
+        sendInput();
+        return;
+      }
+      if (!playerAttackBlockedBySafeZone()) {
+        sendAttack(state.lastPointerWorldX, state.lastPointerWorldY);
+      }
+      return;
+    }
+
+    // Attack — F key fires
+    if (event.key.toLowerCase() === "f" && state.joined && !isTextEntryTarget(event.target)) {
       event.preventDefault();
       if (!playerAttackBlockedBySafeZone()) {
         sendAttack(state.lastPointerWorldX, state.lastPointerWorldY);
@@ -3057,7 +3095,14 @@ function wireUi() {
 
     updateInput(event, true);
   });
-  window.addEventListener("keyup", (event) => updateInput(event, false));
+  window.addEventListener("keyup", (event) => {
+    if (event.code === "Space" && isSelfFlyingShip()) {
+      state.input.engage = false;
+      sendInput();
+      return;
+    }
+    updateInput(event, false);
+  });
 
   canvas.addEventListener("wheel", (event) => {
     const self = state.players.get(state.selfId);
@@ -3225,6 +3270,7 @@ function clearMovementInput() {
   state.input.down = false;
   state.input.left = false;
   state.input.right = false;
+  state.input.engage = false;
   sendInput();
 }
 
@@ -3322,6 +3368,14 @@ function renderAbilityBar() {
   if (!self || !state.joined) return;
   const bar = self.abilityBar || [null, null, null, null, null];
   abilityBar.classList.remove("hidden");
+
+  // Ship mode: hide spell slots, show Engage button
+  const shipMode = isSelfFlyingShip();
+  abilitySlotsEl.classList.toggle("hidden", shipMode);
+  const engageEl = document.getElementById("shipEngage");
+  if (engageEl) {
+    engageEl.classList.toggle("hidden", !shipMode);
+  }
 
   const slots = abilitySlotsEl.querySelectorAll(".ability-slot");
   slots.forEach((slot, i) => {

@@ -1826,32 +1826,34 @@ function simulate() {
 
     if (shipPilot) {
       client.player._stillAccumulator = 0;
-      const turn = (Number(input.right) - Number(input.left)) * SHIP_TURN_SPEED * dt;
-      client.player.facing = normalizeAngle(Number(client.player.facing || 0) + turn);
-      const thrust = Number(input.up) ? 1 : 0;
-      const brakes = Number(input.down) ? 1 : 0;
-      const sp = getPlayerSpeed(client.player);
-      let vx = Math.cos(client.player.facing) * thrust * sp * dt;
-      let vy = Math.sin(client.player.facing) * thrust * sp * dt;
-      if (brakes) {
-        vx *= -0.42;
-        vy *= -0.42;
+      // WASD sets the ship's facing direction
+      const dx = Number(input.right) - Number(input.left);
+      const dy = Number(input.down) - Number(input.up);
+      const aimLength = Math.hypot(dx, dy);
+      if (aimLength > 0) {
+        client.player.facing = Math.atan2(dy, dx);
       }
-      const nextX = client.player.x + vx;
-      const nextY = client.player.y + vy;
-      if (
-        !isBlockedCircleForShip(nextX, client.player.y) &&
-        !isDoorLockedForPlayer(nextX, client.player.y, doorAccountKey)
-      ) {
-        client.player.x = nextX;
+      // Engage thrusts forward in the facing direction
+      if (input.engage) {
+        const sp = getPlayerSpeed(client.player);
+        const vx = Math.cos(client.player.facing) * sp * dt;
+        const vy = Math.sin(client.player.facing) * sp * dt;
+        const nextX = client.player.x + vx;
+        const nextY = client.player.y + vy;
+        if (
+          !isBlockedCircleForShip(nextX, client.player.y) &&
+          !isDoorLockedForPlayer(nextX, client.player.y, doorAccountKey)
+        ) {
+          client.player.x = nextX;
+        }
+        if (
+          !isBlockedCircleForShip(client.player.x, nextY) &&
+          !isDoorLockedForPlayer(client.player.x, nextY, doorAccountKey)
+        ) {
+          client.player.y = nextY;
+        }
       }
-      if (
-        !isBlockedCircleForShip(client.player.x, nextY) &&
-        !isDoorLockedForPlayer(client.player.x, nextY, doorAccountKey)
-      ) {
-        client.player.y = nextY;
-      }
-      client.player.moving = Boolean(thrust) || Math.abs(turn) > 0.0001;
+      client.player.moving = Boolean(input.engage);
     } else {
       let dx = Number(input.right) - Number(input.left);
       let dy = Number(input.down) - Number(input.up);
@@ -5675,7 +5677,8 @@ function normalizeInput(keys = {}) {
     up: Boolean(keys.up),
     down: Boolean(keys.down),
     left: Boolean(keys.left),
-    right: Boolean(keys.right)
+    right: Boolean(keys.right),
+    engage: Boolean(keys.engage)
   };
 }
 
