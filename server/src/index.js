@@ -2837,13 +2837,15 @@ function handleAttack(client, message = {}) {
     return;
   }
 
-  // If client supplied a facing or target coords, prefer those (validate)
-  if (typeof message.facing === "number" && Number.isFinite(message.facing)) {
-    client.player.facing = normalizeAngle(Number(message.facing));
-  } else if (typeof message.targetX === "number" && typeof message.targetY === "number") {
-    const fx = Number(message.targetX) - client.player.x;
-    const fy = Number(message.targetY) - client.player.y;
-    client.player.facing = Math.atan2(fy, fx);
+  // When piloting a ship, always fire in the ship's facing direction
+  if (!(client.player.ship?.boarded && getWorldThemeAt(client.player.x, client.player.y) === "sci-fi")) {
+    if (typeof message.facing === "number" && Number.isFinite(message.facing)) {
+      client.player.facing = normalizeAngle(Number(message.facing));
+    } else if (typeof message.targetX === "number" && typeof message.targetY === "number") {
+      const fx = Number(message.targetX) - client.player.x;
+      const fy = Number(message.targetY) - client.player.y;
+      client.player.facing = Math.atan2(fy, fx);
+    }
   }
 
   const target = findAttackTarget(client, loadout);

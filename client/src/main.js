@@ -239,6 +239,7 @@ const TRADER_CARAVAN_SPOTS = [
 const CHUNK_SIZE = 16;
 const chunkCanvasCache = new Map();
 const CLIENT_PLAYER_SPEED = 5.2;
+const CLIENT_SHIP_TURN_SPEED = 2.65;
 
 const TALENT_TREES = {
   mage: [
@@ -1831,7 +1832,43 @@ function createLevelUpFireworks() {
   }
 }
 
+function normalizeAngle(value) {
+  let angle = value;
+  while (angle > Math.PI) {
+    angle -= Math.PI * 2;
+  }
+  while (angle < -Math.PI) {
+    angle += Math.PI * 2;
+  }
+  return angle;
+}
+
 function predictLocalPlayer(player, dt) {
+  const speed = Number.isFinite(player.moveSpeed) ? player.moveSpeed : CLIENT_PLAYER_SPEED;
+
+  if (player.ship?.boarded) {
+    const turn = (Number(state.input.right) - Number(state.input.left)) * CLIENT_SHIP_TURN_SPEED * dt;
+    player.facing = normalizeAngle(Number(player.facing || 0) + turn);
+    const thrust = Number(state.input.up) ? 1 : 0;
+    const brakes = Number(state.input.down) ? 1 : 0;
+    let vx = Math.cos(player.facing) * thrust * speed * dt;
+    let vy = Math.sin(player.facing) * thrust * speed * dt;
+    if (brakes) {
+      vx *= -0.42;
+      vy *= -0.42;
+    }
+    const nextX = player.renderX + vx;
+    const nextY = player.renderY + vy;
+    if (!clientIsBlockedCircleForShip(nextX, player.renderY)) {
+      player.renderX = nextX;
+    }
+    if (!clientIsBlockedCircleForShip(player.renderX, nextY)) {
+      player.renderY = nextY;
+    }
+    player.renderMoving = Boolean(thrust) || Math.abs(turn) > 0.0001;
+    return true;
+  }
+
   let dx = Number(state.input.right) - Number(state.input.left);
   let dy = Number(state.input.down) - Number(state.input.up);
   const length = Math.hypot(dx, dy);
@@ -1843,23 +1880,8 @@ function predictLocalPlayer(player, dt) {
 
   dx /= length;
   dy /= length;
-  const speed = Number.isFinite(player.moveSpeed) ? player.moveSpeed : CLIENT_PLAYER_SPEED;
   const stepX = dx * speed * dt;
   const stepY = dy * speed * dt;
-
-  if (player.ship?.boarded) {
-    const nextX = player.renderX + stepX;
-    const nextY = player.renderY + stepY;
-    if (!clientIsBlockedCircleForShip(nextX, player.renderY)) {
-      player.renderX = nextX;
-    }
-    if (!clientIsBlockedCircleForShip(player.renderX, nextY)) {
-      player.renderY = nextY;
-    }
-    player.facing = Math.atan2(dy, dx);
-    player.renderMoving = true;
-    return true;
-  }
 
   const moved = clientTryFootMove(player.renderX, player.renderY, stepX, stepY);
   if (!moved.moved) {
@@ -4633,21 +4655,30 @@ function clearWorldState() {
 
 function sendAttack() {
   cancelBenchSitClient();
+  const self = state.players.get(state.selfId);
+  let payload = { type: "attack" };
+
+  // When piloting a ship, always fire forward in the ship's facing direction
+  if (self?.ship?.boarded) {
+    if (Number.isFinite(self.facing)) {
+      payload.facing = Number(self.facing.toFixed(6));
+    }
+    send(payload);
+    return;
+  }
+
   // Allow optional target world coords (x,y) and compute facing client-side.
   const args = Array.from(arguments);
-  let payload = { type: "attack" };
   if (args.length >= 2 && Number.isFinite(args[0]) && Number.isFinite(args[1])) {
     const tx = Number(args[0]);
     const ty = Number(args[1]);
     payload.targetX = tx;
     payload.targetY = ty;
-    payload.facing = Number(Math.atan2(ty - (state.players.get(state.selfId)?.y || 0), tx - (state.players.get(state.selfId)?.x || 0)).toFixed(6));
+    payload.facing = Number(Math.atan2(ty - (self?.y || 0), tx - (self?.x || 0)).toFixed(6));
     // Also set local facing for immediate feedback
-    const self = state.players.get(state.selfId);
     if (self) self.facing = payload.facing;
   } else {
     // no coords: fire in current facing
-    const self = state.players.get(state.selfId);
     if (self && Number.isFinite(self.facing)) {
       payload.facing = Number(self.facing.toFixed(6));
     }
