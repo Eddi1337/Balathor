@@ -135,6 +135,13 @@ function sciFiDockPortForPlayerId(playerId) {
   return layoutDockPortForPlayerId(playerId);
 }
 
+function sciFiDockPortById(id) {
+  if (typeof id !== "string" || !id) {
+    return null;
+  }
+  return SCI_FI_DOCK_PORTS.find((port) => port.id === id) || null;
+}
+
 function findNearestSciFiDockPort(px, py, maxDist = 12) {
   const md = maxDist * maxDist;
   let best = null;
@@ -1809,12 +1816,17 @@ function generateExteriorTile(x, y) {
     if (station) {
       const dx = Math.abs(x - station.x);
       const dy = Math.abs(y - station.y);
-      const edge = Math.max(dx, dy);
-      const shell = Math.max(1, Math.floor(Math.min(station.w, station.h) / 2) - 1);
-      if (edge >= shell - 1) return TILE.WINDOW;
-      if (edge >= shell - 3) return TILE.WALKWAY;
-      if (edge >= shell - 7) return TILE.METAL;
-      if (edge <= 2) return TILE.ENERGY;
+      const halfW = Math.floor(station.w / 2);
+      const halfH = Math.floor(station.h / 2);
+      const edgeDepth = Math.min(halfW - dx, halfH - dy);
+      const coreDist = Math.max(dx, dy);
+      if (edgeDepth <= 0) return TILE.HULL;
+      if (edgeDepth <= 2) return TILE.HULL;
+      if (edgeDepth <= 4) return TILE.WINDOW;
+      if (edgeDepth <= 7) return TILE.WALKWAY;
+      if (coreDist <= 2) return TILE.ENERGY;
+      const promenade = Math.abs(dx - dy) <= 2 || Math.abs(x - station.x) <= 2 || Math.abs(y - station.y) <= 2;
+      if (promenade) return TILE.WALKWAY;
       return ((x + y) & 1) === 0 ? TILE.METAL : TILE.WALKWAY;
     }
 
@@ -2077,6 +2089,26 @@ function isSwimmingAt(x, y) {
   return generateTile(Math.floor(x), Math.floor(y)) === TILE.WATER;
 }
 
+function isBlockedForShip(x, y) {
+  const tx = Math.floor(x);
+  const ty = Math.floor(y);
+  if (!isSciFiSector(tx, ty)) {
+    return isBlocked(x, y);
+  }
+
+  if (sciFiStationAt(tx, ty) || sciFiPlanetAt(tx, ty)) {
+    return true;
+  }
+
+  const feature = sciFiStationFeatureAt(tx, ty);
+  if (feature?.kind === "ship-port") {
+    return false;
+  }
+
+  const tile = generateTile(tx, ty);
+  return tile !== TILE.VOID && tile !== TILE.WALKWAY && tile !== TILE.ENERGY;
+}
+
 /**
  * Circle-vs-axis-aligned rectangle (world tile units).
  * Used for slender hit volumes that corner-sampling misses.
@@ -2120,6 +2152,17 @@ function isBlockedCircle(x, y, radius = 0.28) {
   ];
 
   return points.some(([px, py]) => isBlocked(px, py));
+}
+
+function isBlockedCircleForShip(x, y, radius = 0.34) {
+  const points = [
+    [x - radius, y - radius],
+    [x + radius, y - radius],
+    [x - radius, y + radius],
+    [x + radius, y + radius]
+  ];
+
+  return points.some(([px, py]) => isBlockedForShip(px, py));
 }
 
 function spawnPoint(index = 0) {
@@ -2231,6 +2274,7 @@ module.exports = {
   getDoorTransitionAt,
   getShopFixtureAt,
   sciFiDockPortForPlayerId,
+  sciFiDockPortById,
   findNearestSciFiDockPort,
   STARGATE_LANDING,
   getPortalAt,
@@ -2241,6 +2285,8 @@ module.exports = {
   isBlocked,
   isBlockedCircle,
   isSwimmingAt,
+  isBlockedForShip,
+  isBlockedCircleForShip,
   spawnPoint,
   southDoorWorldXs,
   southDoorAnchorWorldX,

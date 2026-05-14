@@ -25,13 +25,13 @@ for (const s of SCI_FI_STATIONS) {
 
 const ports = SCI_FI_STATION_FEATURES.filter((f) => f.kind === "ship-port");
 const terms = SCI_FI_STATION_FEATURES.filter((f) => f.kind === "ship-console");
-const shops = SCI_FI_STATION_FEATURES.filter((f) => f.kind === "shop-bay");
+const shops = SCI_FI_STATION_FEATURES.filter((f) => f.kind === "sci-shop" || f.kind === "shop-bay");
 const core = SCI_FI_STATION_FEATURES.filter((f) => f.kind === "station-core");
 
 console.log("\nFeatures:", SCI_FI_STATION_FEATURES.length);
-console.log(`  ship-port: ${ports.length} (expected 16)`);
-console.log(`  ship-console: ${terms.length} (expected 16)`);
-console.log(`  shop-bay: ${shops.length} (expected 4)`);
+console.log(`  ship-port: ${ports.length} (expected ${SCI_FI_DOCK_PORTS.length})`);
+console.log(`  ship-console: ${terms.length} (expected ${SCI_FI_DOCK_PORTS.length})`);
+console.log(`  sci-shop/shop-bay: ${shops.length}`);
 for (const sh of shops) {
   console.log(`    - ${sh.name} (${sh.shopType})`);
 }

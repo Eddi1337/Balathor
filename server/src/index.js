@@ -15,6 +15,7 @@ const {
   hash2,
   isBlockedCircle,
   isSwimmingAt,
+  isBlockedCircleForShip,
   getWorldThemeAt,
   spawnPoint,
   southDoorAnchorWorldX,
@@ -26,6 +27,7 @@ const {
   isTooCloseToAnyPortal,
   HUB_TOWN_GRASS_RADIUS,
   sciFiDockPortForPlayerId,
+  sciFiDockPortById,
   findNearestSciFiDockPort,
   STARGATE_LANDING
 } = require("./world");
@@ -999,15 +1001,20 @@ function serializePlayer(player) {
       ? { houseCompanion: player.houseCompanion }
       : {}),
     ...(player.flirtFollowNpcId ? { flirtFollowNpcId: player.flirtFollowNpcId } : {}),
+    ...(Array.isArray(player.ships) && player.ships.length
+      ? { ships: player.ships.map(serializeShip), activeShipId: player.activeShipId || player.ship?.id || null }
+      : {}),
     ...(player.ship && typeof player.ship === "object" ? { ship: serializeShip(player.ship) } : {})
   };
 }
 
 function serializeShip(ship) {
   return {
+    id: typeof ship.id === "string" ? ship.id.slice(0, 64) : "starter_ship",
     templateId: typeof ship.templateId === "string" ? ship.templateId : "starter_ship",
     name: typeof ship.name === "string" ? ship.name : "Nova Skiff",
     color: typeof ship.color === "string" ? ship.color : "#67f0ff",
+    hullClass: typeof ship.hullClass === "string" ? ship.hullClass.slice(0, 24) : "skiff",
     boarded: Boolean(ship.boarded),
     dockX: clampNumber(ship.dockX, -10000, 10000, STARGATE_LANDING.x),
     dockY: clampNumber(ship.dockY, -10000, 10000, STARGATE_LANDING.y),
@@ -1019,14 +1026,21 @@ function serializeShip(ship) {
   };
 }
 
-function createStarterShip() {
+function createShipId(templateId = "ship") {
+  const base = String(templateId || "ship").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 32) || "ship";
+  return `${base}_${Date.now().toString(36)}_${crypto.randomBytes(3).toString("hex")}`.slice(0, 64);
+}
+
+function createStarterShip(playerId = "starter") {
   const dp =
-    findNearestSciFiDockPort(STARGATE_LANDING.x, STARGATE_LANDING.y, 120) ||
-    sciFiDockPortForPlayerId("starter");
+    sciFiDockPortForPlayerId(playerId) ||
+    findNearestSciFiDockPort(STARGATE_LANDING.x, STARGATE_LANDING.y, 120);
   return {
+    id: "starter_ship",
     templateId: "starter_ship",
     name: "Nova Skiff",
     color: "#67f0ff",
+    hullClass: "skiff",
     boarded: false,
     dockX: dp.x,
     dockY: dp.y,
@@ -1038,14 +1052,17 @@ function createStarterShip() {
   };
 }
 
-function sanitizeShip(ship) {
+function sanitizeShip(ship, fallbackId = null) {
   if (!ship || typeof ship !== "object") {
     return null;
   }
+  const templateId = typeof ship.templateId === "string" ? ship.templateId.slice(0, 48) : "starter_ship";
   return {
-    templateId: typeof ship.templateId === "string" ? ship.templateId.slice(0, 48) : "starter_ship",
+    id: typeof ship.id === "string" && ship.id ? ship.id.slice(0, 64) : fallbackId || createShipId(templateId),
+    templateId,
     name: typeof ship.name === "string" ? ship.name.slice(0, 48) : "Nova Skiff",
     color: typeof ship.color === "string" ? ship.color.slice(0, 22) : "#67f0ff",
+    hullClass: typeof ship.hullClass === "string" ? ship.hullClass.slice(0, 24) : "skiff",
     boarded: Boolean(ship.boarded),
     dockX: clampNumber(ship.dockX, -10000, 10000, STARGATE_LANDING.x),
     dockY: clampNumber(ship.dockY, -10000, 10000, STARGATE_LANDING.y),
@@ -1055,6 +1072,98 @@ function sanitizeShip(ship) {
     laserTier: clampInteger(ship.laserTier ?? 1, 1, 5),
     thrustTier: clampInteger(ship.thrustTier ?? 1, 1, 5)
   };
+}
+
+function sanitizeShipFleet(savedCharacter, ownerKey = "starter") {
+  const fallbackShip =
+    sanitizeShip(savedCharacter?.ship, typeof savedCharacter?.ship?.id === "string" ? savedCharacter.ship.id : "starter_ship") ||
+    createStarterShip(ownerKey);
+  const rawShips = Array.isArray(savedCharacter?.ships) ? savedCharacter.ships : [];
+  const ships = rawShips
+    .map((ship, index) => sanitizeShip(ship, index === 0 ? fallbackShip.id : null))
+    .filter(Boolean);
+
+  if (!ships.length && fallbackShip) {
+    ships.push(fallbackShip);
+  }
+  if (!ships.length) {
+    ships.push(createStarterShip(ownerKey));
+  }
+
+  const seen = new Set();
+  for (const ship of ships) {
+    if (!ship.id || seen.has(ship.id)) {
+      ship.id = createShipId(ship.templateId);
+    }
+    seen.add(ship.id);
+  }
+
+  const requestedActiveId =
+    typeof savedCharacter?.activeShipId === "string"
+      ? savedCharacter.activeShipId
+      : typeof savedCharacter?.ship?.id === "string"
+        ? savedCharacter.ship.id
+        : fallbackShip?.id;
+  const activeShip = ships.find((ship) => ship.id === requestedActiveId) || ships[0];
+  for (const ship of ships) {
+    if (ship !== activeShip) {
+      ship.boarded = false;
+    }
+  }
+
+  return {
+    ships,
+    activeShipId: activeShip.id,
+    activeShip
+  };
+}
+
+function ensurePlayerFleet(player) {
+  if (!player) {
+    return null;
+  }
+  if (!Array.isArray(player.ships) || !player.ships.length) {
+    player.ships = [player.ship ? sanitizeShip(player.ship, player.ship.id || "starter_ship") : createStarterShip(player.id)];
+  }
+  const activeShip = player.ships.find((ship) => ship.id === player.activeShipId) || player.ships[0];
+  player.activeShipId = activeShip.id;
+  player.ship = activeShip;
+  return activeShip;
+}
+
+function selectPlayerShip(player, shipId, { clearOtherBoarded = true } = {}) {
+  if (!player) {
+    return null;
+  }
+  ensurePlayerFleet(player);
+  const ship = player.ships.find((candidate) => candidate.id === shipId);
+  if (!ship) {
+    return null;
+  }
+  if (clearOtherBoarded) {
+    for (const candidate of player.ships) {
+      if (candidate !== ship) {
+        candidate.boarded = false;
+      }
+    }
+  }
+  player.activeShipId = ship.id;
+  player.ship = ship;
+  return ship;
+}
+
+function clearPlayerBoardedShips(player) {
+  if (!player) {
+    return;
+  }
+  if (Array.isArray(player.ships)) {
+    for (const ship of player.ships) {
+      ship.boarded = false;
+    }
+  }
+  if (player.ship) {
+    player.ship.boarded = false;
+  }
 }
 
 function getPlayerDockPort(player) {
@@ -1068,7 +1177,10 @@ function getPlayerDockPort(player) {
   return {
     id: port.id,
     x: port.x,
-    y: port.y
+    y: port.y,
+    facing: port.facing,
+    terminalX: port.terminalX,
+    terminalY: port.terminalY
   };
 }
 
@@ -1110,8 +1222,9 @@ function getShipCatalog() {
       icon: "ship",
       rarity: "rare",
       color: "#67f0ff",
-      value: SHIP_BUY_PRICE,
-      price: SHIP_BUY_PRICE,
+      hullClass: "skiff",
+      value: 650,
+      price: 650,
       shipTemplateId: "dock_skiff",
       shipName: "Dock Skiff",
       shipColor: "#67f0ff",
@@ -1124,12 +1237,248 @@ function getShipCatalog() {
       icon: "ship",
       rarity: "epic",
       color: "#9edfff",
+      hullClass: "runner",
       value: 1200,
       price: 1200,
       shipTemplateId: "station_runner",
       shipName: "Station Runner",
       shipColor: "#9edfff",
       stats: { speed: 16 }
+    },
+    {
+      templateId: "comet_courier",
+      type: "ship",
+      name: "Comet Courier",
+      icon: "ship",
+      rarity: "rare",
+      color: "#8affd2",
+      hullClass: "courier",
+      value: 980,
+      price: 980,
+      shipTemplateId: "comet_courier",
+      shipName: "Comet Courier",
+      shipColor: "#8affd2",
+      stats: { speed: 15.5 },
+      thrustTier: 2
+    },
+    {
+      templateId: "vesper_fighter",
+      type: "ship",
+      name: "Vesper Fighter",
+      icon: "ship",
+      rarity: "epic",
+      color: "#ff8f6b",
+      hullClass: "fighter",
+      value: 1850,
+      price: 1850,
+      shipTemplateId: "vesper_fighter",
+      shipName: "Vesper Fighter",
+      shipColor: "#ff8f6b",
+      stats: { speed: 17.25 },
+      laserTier: 2
+    },
+    {
+      templateId: "asterion_hauler",
+      type: "ship",
+      name: "Asterion Hauler",
+      icon: "ship",
+      rarity: "uncommon",
+      color: "#f7d86a",
+      hullClass: "hauler",
+      value: 1150,
+      price: 1150,
+      shipTemplateId: "asterion_hauler",
+      shipName: "Asterion Hauler",
+      shipColor: "#f7d86a",
+      stats: { speed: 12.75 },
+      laserTier: 2
+    },
+    {
+      templateId: "eclipse_interceptor",
+      type: "ship",
+      name: "Eclipse Interceptor",
+      icon: "ship",
+      rarity: "legendary",
+      color: "#c084fc",
+      hullClass: "interceptor",
+      value: 3100,
+      price: 3100,
+      shipTemplateId: "eclipse_interceptor",
+      shipName: "Eclipse Interceptor",
+      shipColor: "#c084fc",
+      stats: { speed: 19.5 },
+      laserTier: 3,
+      thrustTier: 3
+    },
+    {
+      templateId: "nebula_yacht",
+      type: "ship",
+      name: "Nebula Yacht",
+      icon: "ship",
+      rarity: "epic",
+      color: "#fbcfe8",
+      hullClass: "yacht",
+      value: 2400,
+      price: 2400,
+      shipTemplateId: "nebula_yacht",
+      shipName: "Nebula Yacht",
+      shipColor: "#fbcfe8",
+      stats: { speed: 15.75 },
+      thrustTier: 2
+    },
+    {
+      templateId: "titan_freighter",
+      type: "ship",
+      name: "Titan Freighter",
+      icon: "ship",
+      rarity: "legendary",
+      color: "#94a3b8",
+      hullClass: "freighter",
+      value: 3600,
+      price: 3600,
+      shipTemplateId: "titan_freighter",
+      shipName: "Titan Freighter",
+      shipColor: "#94a3b8",
+      stats: { speed: 13.5 },
+      laserTier: 4
+    },
+    {
+      templateId: "wraith_needle",
+      type: "ship",
+      name: "Wraith Needle",
+      icon: "ship",
+      rarity: "mythic",
+      color: "#d9fbff",
+      hullClass: "needle",
+      value: 5200,
+      price: 5200,
+      shipTemplateId: "wraith_needle",
+      shipName: "Wraith Needle",
+      shipColor: "#d9fbff",
+      stats: { speed: 22 },
+      laserTier: 4,
+      thrustTier: 4
+    }
+  ];
+}
+
+function getSciFiArmoryCatalog() {
+  return [
+    {
+      templateId: "scifi_weapon_lightsaber_aqua",
+      type: "weapon",
+      name: "Aqua Lightsaber",
+      icon: "lightsaber",
+      rarity: "rare",
+      color: "#67f0ff",
+      weaponKind: "sword",
+      visual: { weaponStyle: "saber", weaponColor: "#67f0ff" },
+      value: 210,
+      stats: { damage: 13, speed: 0.18 }
+    },
+    {
+      templateId: "scifi_weapon_sunblade",
+      type: "weapon",
+      name: "Solar Arc Saber",
+      icon: "lightsaber",
+      rarity: "epic",
+      color: "#fbbf24",
+      weaponKind: "sword",
+      visual: { weaponStyle: "saber", weaponColor: "#fbbf24" },
+      value: 380,
+      stats: { damage: 19, strength: 1 }
+    },
+    {
+      templateId: "scifi_weapon_pulse_rifle",
+      type: "weapon",
+      name: "VX-9 Pulse Rifle",
+      icon: "laser-rifle",
+      rarity: "rare",
+      color: "#9edfff",
+      weaponKind: "staff",
+      visual: { weaponStyle: "pulse", weaponColor: "#9edfff" },
+      value: 260,
+      stats: { damage: 15, strength: 1 }
+    },
+    {
+      templateId: "scifi_weapon_ion_lance",
+      type: "weapon",
+      name: "Ion Lance Rifle",
+      icon: "laser-rifle",
+      rarity: "epic",
+      color: "#c084fc",
+      weaponKind: "staff",
+      visual: { weaponStyle: "ion", weaponColor: "#c084fc" },
+      value: 430,
+      stats: { damage: 21, strength: 2 }
+    },
+    {
+      templateId: "scifi_weapon_blaster_carbine",
+      type: "weapon",
+      name: "Blaster Carbine",
+      icon: "blaster",
+      rarity: "uncommon",
+      color: "#8affd2",
+      weaponKind: "bow",
+      visual: { weaponStyle: "plasma", weaponColor: "#8affd2" },
+      value: 180,
+      stats: { damage: 11, speed: 0.22 }
+    },
+    {
+      templateId: "scifi_weapon_rail_caster",
+      type: "weapon",
+      name: "Rail Caster",
+      icon: "blaster",
+      rarity: "legendary",
+      color: "#ff8f6b",
+      weaponKind: "bow",
+      visual: { weaponStyle: "rail", weaponColor: "#ff8f6b" },
+      value: 740,
+      stats: { damage: 28, strength: 2, speed: 0.18 }
+    },
+    {
+      templateId: "scifi_armor_exo_scout",
+      type: "armor",
+      name: "Scout Exo Armor",
+      icon: "exo-armor",
+      rarity: "uncommon",
+      color: "#67f0ff",
+      visual: { torsoStyle: "sciFi", torsoColor: "#2b4f62" },
+      value: 190,
+      stats: { health: 18, armour: 2, speed: 0.16 }
+    },
+    {
+      templateId: "scifi_armor_voidplate",
+      type: "armor",
+      name: "Voidplate Harness",
+      icon: "exo-armor",
+      rarity: "rare",
+      color: "#c084fc",
+      visual: { torsoStyle: "sciFi", torsoColor: "#43315f" },
+      value: 320,
+      stats: { health: 28, armour: 4 }
+    },
+    {
+      templateId: "scifi_armor_titan_shell",
+      type: "armor",
+      name: "Titan Shell Armor",
+      icon: "exo-armor",
+      rarity: "epic",
+      color: "#f7d86a",
+      visual: { torsoStyle: "sciFi", torsoColor: "#4e4b39" },
+      value: 560,
+      stats: { health: 42, armour: 6, strength: 1 }
+    },
+    {
+      templateId: "scifi_armor_phaseweave",
+      type: "armor",
+      name: "Phaseweave Suit",
+      icon: "exo-armor",
+      rarity: "legendary",
+      color: "#d9fbff",
+      visual: { torsoStyle: "sciFi", torsoColor: "#263748" },
+      value: 920,
+      stats: { health: 56, armour: 5, speed: 0.38 }
     }
   ];
 }
@@ -1493,10 +1842,16 @@ function simulate() {
       }
       const nextX = client.player.x + vx;
       const nextY = client.player.y + vy;
-      if (!isBlockedCircle(nextX, client.player.y) && !isDoorLockedForPlayer(nextX, client.player.y, doorAccountKey)) {
+      if (
+        !isBlockedCircleForShip(nextX, client.player.y) &&
+        !isDoorLockedForPlayer(nextX, client.player.y, doorAccountKey)
+      ) {
         client.player.x = nextX;
       }
-      if (!isBlockedCircle(client.player.x, nextY) && !isDoorLockedForPlayer(client.player.x, nextY, doorAccountKey)) {
+      if (
+        !isBlockedCircleForShip(client.player.x, nextY) &&
+        !isDoorLockedForPlayer(client.player.x, nextY, doorAccountKey)
+      ) {
         client.player.y = nextY;
       }
       client.player.moving = Boolean(thrust) || Math.abs(turn) > 0.0001;
@@ -1860,7 +2215,7 @@ function handlePortalTravel(client) {
   client.player.y = portal.targetY + 3.2;
   client.player.moving = false;
   if (client.player.ship && getWorldThemeAt(client.player.x, client.player.y) !== "sci-fi") {
-    client.player.ship.boarded = false;
+    clearPlayerBoardedShips(client.player);
   }
   client.input = normalizeInput();
 
@@ -2011,6 +2366,11 @@ function handleMessage(client, raw) {
 
   if (message.type === "interact") {
     handleInteract(client, message);
+    return;
+  }
+
+  if (message.type === "shipTerminalAction") {
+    handleShipTerminalAction(client, message);
     return;
   }
 
@@ -2364,6 +2724,7 @@ function joinWorld(client, message, savedCharacter = null) {
   const classId = sanitizeChoice(message.classId, CLASS_IDS, "ranger");
   const isMod = Boolean(client.account?.isMod);
   const forcedName = isMod && client.account?.modCharacterName ? client.account.modCharacterName : null;
+  const shipFleet = sanitizeShipFleet(savedCharacter, client.account?.key || client.id);
   client.player = {
     id: client.id,
     name: forcedName || sanitizeName(message.name),
@@ -2391,7 +2752,9 @@ function joinWorld(client, message, savedCharacter = null) {
       torsoColor,
       weaponColor
     }),
-    ship: sanitizeShip(savedCharacter?.ship),
+    ships: shipFleet.ships,
+    activeShipId: shipFleet.activeShipId,
+    ship: shipFleet.activeShip,
     talentPoints: initialTalentPoints(savedCharacter, isMod),
     talents: savedCharacter?.talents || {},
     abilityBar: Array.isArray(savedCharacter?.abilityBar)
@@ -2625,14 +2988,10 @@ function handleSciFiTeleport(client) {
     return;
   }
 
-  const port = getPlayerDockPort(client.player);
-  if (!port) {
-    return;
-  }
-
   client.lastSciFiAt = now;
-  client.player.x = port.x;
-  client.player.y = port.y;
+  clearPlayerBoardedShips(client.player);
+  client.player.x = STARGATE_LANDING.x;
+  client.player.y = STARGATE_LANDING.y;
   client.player.moving = false;
   client.input = normalizeInput();
 
@@ -2761,13 +3120,15 @@ function resolveShipBoarding(player) {
     return null;
   }
 
-  const dist = Math.hypot(player.x - dockX, player.y - dockY);
+  const storedPort = sciFiDockPortById(ship.dockPortId) || findNearestSciFiDockPort(dockX, dockY, 18);
+  const distToStoredPort = storedPort ? Math.hypot(player.x - storedPort.x, player.y - storedPort.y) : Infinity;
+  const distToDock = Math.hypot(player.x - dockX, player.y - dockY);
   return {
     ship,
-    dockX,
-    dockY,
-    canBoard: !ship.boarded && dist <= SHIP_DOCK_RADIUS,
-    canDock: ship.boarded && dist <= SHIP_DOCK_RADIUS
+    dockX: storedPort?.x ?? dockX,
+    dockY: storedPort?.y ?? dockY,
+    dockPort: storedPort || null,
+    canBoard: !ship.boarded && Math.min(distToDock, distToStoredPort) <= SHIP_DOCK_RADIUS
   };
 }
 
@@ -2787,72 +3148,52 @@ function resolveShipLaunchPort(player, message = {}) {
 
   if (Number.isFinite(tx) && Number.isFinite(ty)) {
     const clickDist = Math.hypot(tx - port.x, ty - port.y);
-    if (clickDist > 8.5) {
+    if (clickDist > 10.5) {
       return null;
     }
   }
 
   const dist = Math.hypot(player.x - port.x, player.y - port.y);
-  if (dist > SHIP_DOCK_RADIUS + 5) {
+  if (dist > SHIP_DOCK_RADIUS + 10) {
     return null;
   }
 
   return port;
 }
 
-function handleShipInteract(client) {
-  if (!client.player?.ship) {
-    return false;
-  }
-
-  const ctx = resolveShipBoarding(client.player);
-  if (!ctx) {
-    return false;
-  }
-
-  if (ctx.canBoard) {
-    client.player.ship.boarded = true;
-    client.player.ship.dockX = ctx.dockX;
-    client.player.ship.dockY = ctx.dockY;
-    client.player.x = ctx.dockX;
-    client.player.y = ctx.dockY;
-    client.player.facing = 0;
-    client.player.moving = false;
-    client.player._stillAccumulator = 0;
-    saveClientCharacter(client);
-    send(client, {
-      type: "serverMessage",
-      message: "ship_boarded",
-      shipName: client.player.ship.name
-    });
-    broadcastSnapshot();
-    return true;
-  }
-
-  if (ctx.canDock) {
-    client.player.ship.boarded = false;
-    client.player.ship.dockX = client.player.x;
-    client.player.ship.dockY = client.player.y;
-    saveClientCharacter(client);
-    send(client, {
-      type: "serverMessage",
-      message: "ship_docked",
-      shipName: client.player.ship.name
-    });
-    broadcastSnapshot();
-    return true;
-  }
-
-  return false;
+function facingForDockPort(port) {
+  if (port?.facing === "north") return -Math.PI / 2;
+  if (port?.facing === "south") return Math.PI / 2;
+  if (port?.facing === "west") return Math.PI;
+  return 0;
 }
 
-function handleShipLaunchInteract(client, message = {}) {
-  if (!client.player?.ship || client.player.ship.boarded) {
-    return false;
+function resolveShipExitDockPort(player) {
+  const ship = player?.ship;
+  const nearbyPort = findNearestSciFiDockPort(player?.x ?? 0, player?.y ?? 0, 18);
+  if (nearbyPort) {
+    return nearbyPort;
   }
 
-  const port = resolveShipLaunchPort(client.player, message);
-  if (!port) {
+  const storedPort = sciFiDockPortById(ship?.dockPortId);
+  if (storedPort) {
+    return storedPort;
+  }
+
+  const dockX = Number(ship?.dockX);
+  const dockY = Number(ship?.dockY);
+  if (Number.isFinite(dockX) && Number.isFinite(dockY)) {
+    const dockedPort = findNearestSciFiDockPort(dockX, dockY, 18);
+    if (dockedPort) {
+      return dockedPort;
+    }
+  }
+
+  return getPlayerDockPort(player) || findNearestSciFiDockPort(STARGATE_LANDING.x, STARGATE_LANDING.y, 120);
+}
+
+function dockPlayerShipAtStation(client, port = resolveShipExitDockPort(client.player)) {
+  if (!client.player?.ship || !port) {
     return false;
   }
 
@@ -2861,19 +3202,140 @@ function handleShipLaunchInteract(client, message = {}) {
   client.player.ship.dockY = port.y;
   client.player.ship.dockStationId = "station_ringforge";
   client.player.ship.dockPortId = port.id;
-  client.player.x = port.x;
-  client.player.y = port.y;
-  client.player.facing = 0;
+  client.player.x = Number.isFinite(port.terminalX) ? port.terminalX : port.x;
+  client.player.y = Number.isFinite(port.terminalY) ? port.terminalY : port.y;
+  client.player.facing = facingForDockPort(port);
   client.player.moving = false;
   client.player._stillAccumulator = 0;
   saveClientCharacter(client);
   send(client, {
     type: "serverMessage",
-    message: "ship_called",
+    message: "ship_docked",
     shipName: client.player.ship.name
   });
   broadcastSnapshot();
   return true;
+}
+
+function handleShipInteract(client) {
+  return Boolean(client.player?.ship?.boarded) && dockPlayerShipAtStation(client);
+}
+
+function publicTerminalShip(ship, activeShipId, port) {
+  const snap = serializeShip(ship);
+  return {
+    ...snap,
+    active: ship.id === activeShipId,
+    atTerminalPort: Boolean(port && ship.dockPortId === port.id && !ship.boarded)
+  };
+}
+
+function sendShipTerminalWindow(client, port) {
+  if (!client.player || !port) {
+    return false;
+  }
+  ensurePlayerFleet(client.player);
+  send(client, {
+    type: "shipTerminal",
+    stationName: "Orbital Square",
+    port: {
+      id: port.id,
+      x: port.x,
+      y: port.y,
+      terminalX: port.terminalX,
+      terminalY: port.terminalY,
+      facing: port.facing
+    },
+    activeShipId: client.player.activeShipId || client.player.ship?.id || null,
+    ships: client.player.ships.map((ship) => publicTerminalShip(ship, client.player.activeShipId, port))
+  });
+  return true;
+}
+
+function handleShipTerminalInteract(client, message = {}) {
+  if (!client.player || client.player.ship?.boarded) {
+    return false;
+  }
+
+  const port = resolveShipLaunchPort(client.player, message);
+  if (!port) {
+    return false;
+  }
+
+  return sendShipTerminalWindow(client, port);
+}
+
+function summonPlayerShipToPort(player, ship, port) {
+  if (!player || !ship || !port) {
+    return false;
+  }
+  selectPlayerShip(player, ship.id);
+  ship.boarded = false;
+  ship.dockX = port.x;
+  ship.dockY = port.y;
+  ship.dockStationId = "station_ringforge";
+  ship.dockPortId = port.id;
+  return true;
+}
+
+function boardPlayerShipAtPort(client, ship, port) {
+  if (!client.player || !summonPlayerShipToPort(client.player, ship, port)) {
+    return false;
+  }
+  ship.boarded = true;
+  client.player.x = port.x;
+  client.player.y = port.y;
+  client.player.facing = facingForDockPort(port);
+  client.player.moving = false;
+  client.player._stillAccumulator = 0;
+  saveClientCharacter(client);
+  send(client, {
+    type: "serverMessage",
+    message: "ship_boarded",
+    shipName: client.player.ship.name
+  });
+  broadcastSnapshot();
+  return true;
+}
+
+function handleShipTerminalAction(client, message = {}) {
+  if (!client.player) {
+    return;
+  }
+  if (client.player.ship?.boarded) {
+    send(client, { type: "shipTerminalClose" });
+    return;
+  }
+
+  const port = resolveShipLaunchPort(client.player, message);
+  if (!port) {
+    send(client, { type: "serverMessage", message: "shop_not_nearby" });
+    return;
+  }
+
+  ensurePlayerFleet(client.player);
+  const shipId = typeof message.shipId === "string" ? message.shipId : client.player.activeShipId;
+  const ship = selectPlayerShip(client.player, shipId);
+  if (!ship) {
+    send(client, { type: "serverMessage", message: "ship_not_owned" });
+    sendShipTerminalWindow(client, port);
+    return;
+  }
+
+  const action = String(message.action || "");
+  if (action === "summon") {
+    summonPlayerShipToPort(client.player, ship, port);
+    saveClientCharacter(client);
+    send(client, { type: "serverMessage", message: "ship_called", shipName: ship.name });
+    sendShipTerminalWindow(client, port);
+    broadcastSnapshot();
+    return;
+  }
+
+  if (action === "board") {
+    send(client, { type: "shipTerminalClose" });
+    boardPlayerShipAtPort(client, ship, port);
+  }
 }
 
 function handleInteract(client, message = {}) {
@@ -2885,7 +3347,7 @@ function handleInteract(client, message = {}) {
     return;
   }
 
-  if (handleShipLaunchInteract(client, message)) {
+  if (handleShipTerminalInteract(client, message)) {
     return;
   }
 
@@ -3772,6 +4234,12 @@ function broadcastSnapshot() {
       inventory: p.inventory,
       equipment: p.equipment,
       ship: p.ship ? serializeShip(p.ship) : null,
+      ...(p.id === viewerId
+        ? {
+            ships: Array.isArray(p.ships) ? p.ships.map(serializeShip) : [],
+            activeShipId: p.activeShipId || p.ship?.id || null
+          }
+        : {}),
       talentPoints: p.talentPoints || 0,
       talents: p.talents || {},
       abilityBar: p.abilityBar || [null, null, null, null, null],
@@ -4358,6 +4826,9 @@ function getShopStock(shop) {
     return getShipCatalog();
   }
   if (shop?.shopType === "arms") {
+    if (getWorldThemeAt(shop.x, shop.y) === "sci-fi") {
+      return getSciFiArmoryCatalog();
+    }
     const arms = itemDatabase.filter((it) => it && (it.type === "weapon" || it.type === "armor"));
     const seedX = Math.floor((shop.x || 0) * 10);
     const seedY = Math.floor((shop.y || 0) * 10);
@@ -4413,6 +4884,7 @@ function publicShopItem(template) {
       icon: template.icon || "ship",
       rarity: template.rarity || "rare",
       color: template.color || "#67f0ff",
+      hullClass: template.hullClass || "skiff",
       stats: template.stats || {},
       value: template.value || template.price || SHIP_BUY_PRICE,
       price: template.price || template.value || SHIP_BUY_PRICE,
@@ -4472,7 +4944,8 @@ function handleShopBuy(client, message) {
   }
 
   if (template.type === "ship_upgrade") {
-    if (!client.player.ship) {
+    const sh = ensurePlayerFleet(client.player);
+    if (!sh) {
       send(client, { type: "serverMessage", message: "shop_not_nearby" });
       return;
     }
@@ -4483,7 +4956,6 @@ function handleShopBuy(client, message) {
       return;
     }
     const up = String(template.upgrade || "");
-    const sh = client.player.ship;
     if (up === "laser" && (sh.laserTier || 1) >= 5) {
       send(client, { type: "serverMessage", message: "shop_item_missing" });
       sendShopWindow(client, shop);
@@ -4516,30 +4988,29 @@ function handleShopBuy(client, message) {
       sendShopWindow(client, shop);
       return;
     }
-    if (client.player.ship && client.player.ship.templateId !== "starter_ship") {
-      send(client, { type: "serverMessage", message: "ship_already_owned" });
-      sendShopWindow(client, shop);
-      return;
-    }
-
     client.player.gold = Math.max(0, (client.player.gold || 0) - shipPrice);
     const dockPort =
       findNearestSciFiDockPort(client.player.x, client.player.y, 80) || getPlayerDockPort(client.player);
-    client.player.ship = sanitizeShip({
+    const newShip = sanitizeShip({
+      id: createShipId(template.shipTemplateId || template.templateId),
       templateId: template.shipTemplateId || template.templateId,
       name: template.shipName || template.name,
       color: template.shipColor || template.color,
+      hullClass: template.hullClass || "skiff",
       boarded: false,
       dockX: dockPort?.x ?? STARGATE_LANDING.x,
       dockY: dockPort?.y ?? STARGATE_LANDING.y,
       dockStationId: "station_ringforge",
       dockPortId: dockPort?.id || null,
       speed: Number(template.stats?.speed) || SHIP_SPEED,
-      laserTier: 1,
-      thrustTier: 1
-    }) || createStarterShip();
+      laserTier: Math.min(5, Math.max(1, Number(template.laserTier) || 1)),
+      thrustTier: Math.min(5, Math.max(1, Number(template.thrustTier) || 1))
+    }) || createStarterShip(client.account?.key || client.player.id);
+    ensurePlayerFleet(client.player);
+    client.player.ships.push(newShip);
+    selectPlayerShip(client.player, newShip.id);
     saveClientCharacter(client);
-    send(client, { type: "serverMessage", message: "ship_bought", itemName: client.player.ship.name });
+    send(client, { type: "serverMessage", message: "ship_bought", itemName: newShip.name });
     sendShopWindow(client, shop);
     broadcastSnapshot();
     return;
@@ -5048,9 +5519,7 @@ function respawnPlayer(player) {
   player.x = spawn.x;
   player.y = spawn.y;
   player.moving = false;
-  if (player.ship) {
-    player.ship.boarded = false;
-  }
+  clearPlayerBoardedShips(player);
 }
 
 function getMobSnapshot(viewBounds) {

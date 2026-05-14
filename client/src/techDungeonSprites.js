@@ -1,7 +1,8 @@
 /**
- * Space station tiles: Dithart's Free Sci-fi Tileset when available, else procedural look-alike.
- * Bitmap: client/assets/sci-fi/ditharts_tileset.png + atlas.json
- * License: client/assets/sci-fi/Ditharts_Free_Scifi_Tileset_LICENSE.txt
+ * Fresh procedural space-station tiles.
+ *
+ * This intentionally avoids external bitmap sheets so the sci-fi station art is
+ * generated in the same repo-native style as the fantasy world.
  */
 (function () {
   "use strict";
@@ -10,8 +11,6 @@
   const STATION_TILE_MIN = 22;
   const STATION_TILE_MAX = 27;
 
-  let atlas = null;
-  let image = null;
   let loadStarted = false;
 
   function hashPick(tx, ty, salt) {
@@ -38,70 +37,17 @@
 
   async function load() {
     if (loadStarted) {
-      return Boolean(image && atlas);
-    }
-    loadStarted = true;
-    let data = null;
-    try {
-      const res = await fetch("./assets/sci-fi/atlas.json", { cache: "no-store" });
-      if (res.ok) {
-        data = await res.json();
-      }
-    } catch {
-      return false;
-    }
-    if (!data || typeof data.image !== "string") {
-      return false;
-    }
-    const rel = data.image.replace(/^\.?\//, "");
-    const url = `./assets/sci-fi/${rel}`;
-    const img = new Image();
-    await new Promise((resolve) => {
-      img.onload = () => resolve();
-      img.onerror = () => resolve();
-      img.src = url;
-    });
-    if (img.naturalWidth > 0 && data.byId && typeof data.byId === "object") {
-      image = img;
-      atlas = data;
-      if (typeof globalThis.__balathorClearChunkCache === "function") {
-        globalThis.__balathorClearChunkCache();
-      }
       return true;
     }
-    return false;
+    loadStarted = true;
+    if (typeof globalThis.__balathorClearChunkCache === "function") {
+      globalThis.__balathorClearChunkCache();
+    }
+    return true;
   }
 
   function drawBitmapTile(ctx, tile, sx, sy, tx, ty) {
-    if (!image || !atlas) {
-      return false;
-    }
-    const variants = atlas.byId[String(tile)];
-    if (!Array.isArray(variants) || variants.length === 0) {
-      return false;
-    }
-    const pick = hashPick(tx, ty, Number(atlas.salt) | 0x3d91) % variants.length;
-    const cell = variants[pick];
-    if (!Array.isArray(cell) || cell.length < 2) {
-      return false;
-    }
-    const col = cell[0] | 0;
-    const row = cell[1] | 0;
-    const cw = Number(atlas.cellW) > 0 ? Number(atlas.cellW) | 0 : TILE_PX;
-    const ch = Number(atlas.cellH) > 0 ? Number(atlas.cellH) | 0 : TILE_PX;
-    const sx0 = col * cw;
-    const sy0 = row * ch;
-    const sw = Math.min(cw, image.naturalWidth - sx0);
-    const sh = Math.min(ch, image.naturalHeight - sy0);
-    if (sw <= 0 || sh <= 0) {
-      return false;
-    }
-    try {
-      ctx.drawImage(image, sx0, sy0, sw, sh, sx, sy, TILE_PX, TILE_PX);
-    } catch {
-      return false;
-    }
-    return true;
+    return false;
   }
 
   /** Procedural tiles in the same grey–teal + cyan accent language as the Ditharts sheet. */
@@ -136,16 +82,30 @@
     }
 
     if (tile === 25) {
-      /* HULL — vertical ribs, darker */
-      ctx.fillStyle = blend(base, "#000000", 0.28);
+      /* HULL — armored panoramic glass with ribs; blocked but visibly opens to space. */
+      ctx.fillStyle = "#050914";
       ctx.fillRect(sx, sy, TILE_PX, TILE_PX);
-      ctx.fillStyle = mid;
-      for (let x = 0; x < 5; x += 1) {
-        const xx = sx + 3 + x * 6;
-        ctx.fillRect(xx, sy + 2, 3, TILE_PX - 4);
+      for (let i = 0; i < 4; i += 1) {
+        const px = sx + 5 + (hashPick(tx + i, ty - i, 804) % 22);
+        const py = sy + 5 + (hashPick(tx - i, ty + i, 805) % 20);
+        ctx.fillStyle = i === 0 ? "rgba(220,255,255,0.7)" : "rgba(120,190,230,0.45)";
+        ctx.fillRect(px, py, 1, 1);
       }
-      ctx.strokeStyle = hi;
-      ctx.strokeRect(sx + 2, sy + 2, TILE_PX - 4, TILE_PX - 4);
+      const glass = ctx.createLinearGradient(sx, sy, sx + TILE_PX, sy + TILE_PX);
+      glass.addColorStop(0, "rgba(103,232,240,0.18)");
+      glass.addColorStop(0.5, "rgba(25,54,72,0.55)");
+      glass.addColorStop(1, "rgba(5,10,18,0.9)");
+      ctx.fillStyle = glass;
+      ctx.fillRect(sx + 3, sy + 3, TILE_PX - 6, TILE_PX - 6);
+      ctx.fillStyle = blend(base, "#000000", 0.2);
+      ctx.fillRect(sx, sy, TILE_PX, 4);
+      ctx.fillRect(sx, sy + TILE_PX - 4, TILE_PX, 4);
+      ctx.fillRect(sx, sy, 4, TILE_PX);
+      ctx.fillRect(sx + TILE_PX - 4, sy, 4, TILE_PX);
+      ctx.fillStyle = blend(mid, "#000000", 0.18);
+      ctx.fillRect(sx + 14, sy + 2, 4, TILE_PX - 4);
+      ctx.strokeStyle = "rgba(103,232,240,0.34)";
+      ctx.strokeRect(sx + 4.5, sy + 4.5, TILE_PX - 9, TILE_PX - 9);
       ctx.restore();
       return;
     }
@@ -230,7 +190,7 @@
   }
 
   function ready() {
-    return Boolean(image && atlas);
+    return loadStarted;
   }
 
   globalThis.TechDungeonSprites = { load, drawSciFiStationTile, ready };

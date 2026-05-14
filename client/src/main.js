@@ -58,6 +58,7 @@ const abilityBarToggle = document.querySelector("#abilityBarToggle");
 const abilitySlotsEl = document.querySelector("#abilitySlots");
 const potionSlotEl = document.querySelector("#potionSlot");
 const potionCountEl = document.querySelector("#potionCount");
+const potionKeyEl = potionSlotEl?.querySelector(".potion-key");
 const potionSlotIconCanvas = document.querySelector("#potionSlotIcon");
 const homeTeleportSlotEl = document.querySelector("#homeTeleportSlot");
 const homeTeleportIconCanvas = document.querySelector("#homeTeleportIcon");
@@ -70,6 +71,11 @@ const shopClose = document.querySelector("#shopClose");
 const shopGold = document.querySelector("#shopGold");
 const shopBuyList = document.querySelector("#shopBuyList");
 const shopSellList = document.querySelector("#shopSellList");
+const shipTerminalPanel = document.querySelector("#shipTerminalPanel");
+const shipTerminalTitle = document.querySelector("#shipTerminalTitle");
+const shipTerminalClose = document.querySelector("#shipTerminalClose");
+const shipTerminalPort = document.querySelector("#shipTerminalPort");
+const shipTerminalList = document.querySelector("#shipTerminalList");
 const chat = document.querySelector("#chat");
 const chatMessages = document.querySelector("#chatMessages");
 const chatForm = document.querySelector("#chatForm");
@@ -358,8 +364,7 @@ const CLIENT_BLOCKED_TILES = new Set([
   TILE.CHEST,
   TILE.HOME_TREE,
   TILE.VOID,
-  TILE.HULL,
-  TILE.WINDOW
+  TILE.HULL
 ]);
 
 /** Mirrors server/src/world.js isBlockedCircle default. */
@@ -432,6 +437,55 @@ function clientIsBlockedCircle(wx, wy, radius = PLAYER_COLLISION_RADIUS) {
   return points.some(([px, py]) => CLIENT_BLOCKED_TILES.has(getTile(Math.floor(px), Math.floor(py))));
 }
 
+function clientSpaceObjectBlocksShip(wx, wy) {
+  const tx = Math.floor(wx);
+  const ty = Math.floor(wy);
+  for (const obj of state.spaceObjects.values()) {
+    if (!obj || !Number.isFinite(obj.x) || !Number.isFinite(obj.y)) {
+      continue;
+    }
+    if (obj.kind === "station") {
+      const halfW = Math.floor(Math.max(1, Number(obj.w || 1)) / 2);
+      const halfH = Math.floor(Math.max(1, Number(obj.h || 1)) / 2);
+      if (tx >= obj.x - halfW && tx <= obj.x + halfW && ty >= obj.y - halfH && ty <= obj.y + halfH) {
+        return true;
+      }
+    } else if (obj.kind === "planet" || obj.type === "planet") {
+      const radius = Math.max(1, Number(obj.radius || 1));
+      const dx = tx - obj.x;
+      const dy = ty - obj.y;
+      if (dx * dx + dy * dy <= radius * radius) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function clientIsBlockedForShip(wx, wy) {
+  const tx = Math.floor(wx);
+  const ty = Math.floor(wy);
+  if (clientSpaceObjectBlocksShip(wx, wy)) {
+    return true;
+  }
+  const tile = getTile(tx, ty);
+  return tile !== TILE.VOID && tile !== TILE.WALKWAY && tile !== TILE.ENERGY;
+}
+
+/** Mirrors server/src/world.js isBlockedCircleForShip using loaded local chunks/objects. */
+function clientIsBlockedCircleForShip(wx, wy, radius = 0.34) {
+  if (!clientMovementSampleChunksReady(wx, wy, radius)) {
+    return false;
+  }
+  const points = [
+    [wx - radius, wy - radius],
+    [wx + radius, wy - radius],
+    [wx - radius, wy + radius],
+    [wx + radius, wy + radius]
+  ];
+  return points.some(([px, py]) => clientIsBlockedForShip(px, py));
+}
+
 /** Mirrors server/src/index.js on-foot movement: X axis first, then Y with updated X. */
 function clientTryFootMove(rx, ry, stepX, stepY) {
   const nextX = rx + stepX;
@@ -483,11 +537,13 @@ function displayItemName(item) {
     return item.name || "Item";
   }
   if (item.type === "weapon") {
+    if (typeof item.templateId === "string" && item.templateId.startsWith("scifi_")) return item.name || "Sci-fi Weapon";
     if (item.weaponKind === "sword") return item.name?.includes("☆") ? item.name : "Lightsaber";
     if (item.weaponKind === "bow") return "Blaster Carbine";
     if (item.weaponKind === "staff") return "Laser Rifle";
   }
   if (item.type === "armor") {
+    if (typeof item.templateId === "string" && item.templateId.startsWith("scifi_")) return item.name || "Exo Armor";
     return "Exo Armor";
   }
   if (item.type === "ring") {
@@ -620,6 +676,8 @@ const state = {
   inventory: Array(10).fill(null),
   equipment: { weapon: null, body: null, ring1: null, ring2: null },
   ship: null,
+  ships: [],
+  shipTerminal: null,
   gold: 0,
   shop: null,
   speechBubbles: new Map(),
@@ -1201,6 +1259,24 @@ function handleServerMessage(message) {
     return;
   }
 
+  if (message.type === "shipTerminal") {
+    state.shipTerminal = {
+      open: true,
+      stationName: message.stationName || "Ship Terminal",
+      port: message.port || null,
+      activeShipId: typeof message.activeShipId === "string" ? message.activeShipId : null,
+      ships: Array.isArray(message.ships) ? message.ships : []
+    };
+    renderShipTerminal();
+    shipTerminalPanel?.classList.remove("hidden");
+    return;
+  }
+
+  if (message.type === "shipTerminalClose") {
+    closeShipTerminal();
+    return;
+  }
+
   if (message.type === "combat") {
     applyCombatEvent(message);
     if (message.attackerId === state.selfId && message.xpGained) {
@@ -1361,6 +1437,8 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: `Called ${message.shipName || "your ship"} to the dock` });
     } else if (message.message === "ship_already_owned") {
       appendChat({ kind: "system", name: "Realm", text: "You already own a ship." });
+    } else if (message.message === "ship_not_owned") {
+      appendChat({ kind: "system", name: "Realm", text: "That ship is not registered to your account." });
     } else if (message.message === "item_sold_out") {
       appendChat({ kind: "system", name: "Realm", text: "Item is sold out" });
     } else if (message.message === "item_bought") {
@@ -1549,12 +1627,14 @@ function updateSelfInventory() {
     state.inventory = Array(10).fill(null);
     state.equipment = { weapon: null, body: null, ring1: null, ring2: null };
     state.ship = null;
+    state.ships = [];
     state.gold = 0;
     return;
   }
   state.inventory = Array.isArray(self.inventory) ? self.inventory : Array(10).fill(null);
   state.equipment = self.equipment || { weapon: null, body: null, ring1: null, ring2: null };
   state.ship = self.ship || null;
+  state.ships = Array.isArray(self.ships) ? self.ships : (self.ship ? [self.ship] : []);
   state.gold = Number.isFinite(self.gold) ? self.gold : state.gold;
   if (state.shop?.open) {
     state.shop.gold = state.gold;
@@ -1785,8 +1865,14 @@ function predictLocalPlayer(player, dt) {
   const stepY = dy * speed * dt;
 
   if (player.ship?.boarded) {
-    player.renderX += stepX;
-    player.renderY += stepY;
+    const nextX = player.renderX + stepX;
+    const nextY = player.renderY + stepY;
+    if (!clientIsBlockedCircleForShip(nextX, player.renderY)) {
+      player.renderX = nextX;
+    }
+    if (!clientIsBlockedCircleForShip(player.renderX, nextY)) {
+      player.renderY = nextY;
+    }
     player.facing = Math.atan2(dy, dx);
     player.renderMoving = true;
     return true;
@@ -2345,6 +2431,10 @@ function wireUi() {
     closeShop();
   });
 
+  shipTerminalClose?.addEventListener("click", () => {
+    closeShipTerminal();
+  });
+
   traderClose.addEventListener("click", () => {
     setActiveGameWindow(null);
   });
@@ -2484,13 +2574,13 @@ function wireUi() {
       if (!(event.pointerType === "touch" || event.pointerType === "pen")) return;
       if (!state.joined || state.menuOpen) return;
       event.preventDefault();
-      useHealthPotion();
+      usePotionOrShipExit();
     },
     { passive: false }
   );
   potionSlotEl?.addEventListener("click", () => {
     if (!state.joined || state.menuOpen) return;
-    useHealthPotion();
+    usePotionOrShipExit();
   });
 
   homeTeleportSlotEl?.addEventListener(
@@ -2520,6 +2610,7 @@ function wireUi() {
   makeDraggable(equipmentPanel);
   makeDraggable(bagsPanel);
   makeDraggable(shopPanel);
+  makeDraggable(shipTerminalPanel);
   makeDraggable(traderPanel);
   if (buyHousePanel) makeDraggable(buyHousePanel);
   if (companionOfferPanel) makeDraggable(companionOfferPanel);
@@ -2619,6 +2710,27 @@ function wireUi() {
   });
 
   shopPanel?.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+  });
+
+  shipTerminalPanel?.addEventListener("pointerdown", (event) => {
+    const button = event.target.closest("[data-ship-terminal-action]");
+    if (!button || !state.shipTerminal?.open) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const port = state.shipTerminal.port || {};
+    send({
+      type: "shipTerminalAction",
+      action: button.dataset.shipTerminalAction,
+      shipId: button.dataset.shipId,
+      x: Number.isFinite(port.terminalX) ? port.terminalX : port.x,
+      y: Number.isFinite(port.terminalY) ? port.terminalY : port.y
+    });
+  });
+
+  shipTerminalPanel?.addEventListener("pointerdown", (event) => {
     event.stopPropagation();
   });
 
@@ -2909,10 +3021,10 @@ function wireUi() {
       return;
     }
 
-    // Q — use health potion
+    // Q — use the potion slot, or exit the ship while flying.
     if (event.key.toLowerCase() === "q" && state.joined && !isTextEntryTarget(event.target)) {
       event.preventDefault();
-      useHealthPotion();
+      usePotionOrShipExit();
       return;
     }
 
@@ -3294,6 +3406,19 @@ function useHealthPotion() {
   send({ type: "useItem", slot: potionSlot });
 }
 
+function isSelfFlyingShip() {
+  const self = state.players.get(state.selfId);
+  return Boolean(self?.ship?.boarded && isSciFiWorld());
+}
+
+function usePotionOrShipExit() {
+  if (isSelfFlyingShip()) {
+    sendInteract();
+    return;
+  }
+  useHealthPotion();
+}
+
 function findPotionInInventory() {
   if (!state.inventory) return -1;
   for (let i = 0; i < state.inventory.length; i++) {
@@ -3308,42 +3433,64 @@ function countPotionsInInventory() {
   return state.inventory.filter(item => item && item.type === "potion").length;
 }
 
-let potionIconDrawn = false;
+let potionIconMode = "";
 function renderPotionSlot() {
   if (!potionSlotEl || !potionCountEl) return;
+  const shipMode = isSelfFlyingShip();
   const count = countPotionsInInventory();
-  potionCountEl.textContent = count;
-  potionSlotEl.classList.toggle("has-potions", count > 0);
-  potionSlotEl.classList.toggle("no-potions", count === 0);
+  potionCountEl.textContent = shipMode ? "Exit" : count;
+  if (potionKeyEl) {
+    potionKeyEl.textContent = shipMode ? "E" : "Q";
+  }
+  potionSlotEl.title = shipMode ? "Exit Ship (E)" : "Health Potion (Q)";
+  potionSlotEl.classList.toggle("ship-exit-slot", shipMode);
+  potionSlotEl.classList.toggle("has-potions", shipMode || count > 0);
+  potionSlotEl.classList.toggle("no-potions", !shipMode && count === 0);
 
-  // Draw potion icon once
-  if (!potionIconDrawn && potionSlotIconCanvas) {
-    potionIconDrawn = true;
+  const mode = shipMode ? "ship-exit" : "potion";
+  if (potionIconMode !== mode && potionSlotIconCanvas) {
+    potionIconMode = mode;
     const c = potionSlotIconCanvas.getContext("2d");
     const w = potionSlotIconCanvas.width;
     const h = potionSlotIconCanvas.height;
-    // Bottle body
-    c.fillStyle = "#1a3a1a";
-    c.fillRect(w * 0.3, h * 0.35, w * 0.4, h * 0.55);
-    // Red liquid fill
-    c.fillStyle = "#cc2244";
-    c.fillRect(w * 0.3 + 2, h * 0.5, w * 0.4 - 4, h * 0.38);
-    // Bottle neck
-    c.fillStyle = "#1a3a1a";
-    c.fillRect(w * 0.38, h * 0.2, w * 0.24, h * 0.18);
-    // Cork
-    c.fillStyle = "#8b5e3c";
-    c.fillRect(w * 0.36, h * 0.15, w * 0.28, h * 0.08);
-    // Gloss highlight
-    c.fillStyle = "rgba(255,255,255,0.2)";
-    c.fillRect(w * 0.34, h * 0.4, w * 0.1, h * 0.2);
-    // Red glow
-    c.fillStyle = "#ff4466";
-    c.globalAlpha = 0.3;
-    c.beginPath();
-    c.ellipse(w / 2, h * 0.68, w * 0.22, h * 0.14, 0, 0, Math.PI * 2);
-    c.fill();
-    c.globalAlpha = 1;
+    c.clearRect(0, 0, w, h);
+    if (shipMode) {
+      c.fillStyle = "rgba(103,240,255,0.22)";
+      c.fillRect(w * 0.14, h * 0.56, w * 0.72, h * 0.12);
+      c.fillStyle = "#67f0ff";
+      c.fillRect(w * 0.3, h * 0.24, w * 0.4, h * 0.16);
+      c.fillRect(w * 0.22, h * 0.4, w * 0.56, h * 0.16);
+      c.fillStyle = "#d9fbff";
+      c.fillRect(w * 0.42, h * 0.28, w * 0.16, h * 0.1);
+      c.fillStyle = "#ffcf6a";
+      c.fillRect(w * 0.46, h * 0.58, w * 0.08, h * 0.2);
+      c.fillStyle = "#ffffff";
+      c.fillRect(w * 0.36, h * 0.75, w * 0.28, h * 0.08);
+      c.fillRect(w * 0.5, h * 0.68, w * 0.08, h * 0.2);
+    } else {
+      // Bottle body
+      c.fillStyle = "#1a3a1a";
+      c.fillRect(w * 0.3, h * 0.35, w * 0.4, h * 0.55);
+      // Red liquid fill
+      c.fillStyle = "#cc2244";
+      c.fillRect(w * 0.3 + 2, h * 0.5, w * 0.4 - 4, h * 0.38);
+      // Bottle neck
+      c.fillStyle = "#1a3a1a";
+      c.fillRect(w * 0.38, h * 0.2, w * 0.24, h * 0.18);
+      // Cork
+      c.fillStyle = "#8b5e3c";
+      c.fillRect(w * 0.36, h * 0.15, w * 0.28, h * 0.08);
+      // Gloss highlight
+      c.fillStyle = "rgba(255,255,255,0.2)";
+      c.fillRect(w * 0.34, h * 0.4, w * 0.1, h * 0.2);
+      // Red glow
+      c.fillStyle = "#ff4466";
+      c.globalAlpha = 0.3;
+      c.beginPath();
+      c.ellipse(w / 2, h * 0.68, w * 0.22, h * 0.14, 0, 0, Math.PI * 2);
+      c.fill();
+      c.globalAlpha = 1;
+    }
   }
 }
 
@@ -3873,6 +4020,13 @@ function findBuildingByKey(key) {
   return null;
 }
 
+function stationObjectInteractionAnchor(obj) {
+  return {
+    x: Number(obj?.x),
+    y: Number(obj?.y)
+  };
+}
+
 function refreshWorldHoverTooltip(event) {
   state.hoverTooltipText = "";
   state.hoverTooltipSmall = false;
@@ -3890,10 +4044,10 @@ function refreshWorldHoverTooltip(event) {
       if (!obj || (obj.kind !== "ship-port" && obj.kind !== "ship-console" && obj.kind !== "sci-shop" && obj.kind !== "station-kiosk")) {
         continue;
       }
-      const fw = Math.max(1, Math.floor(Number(obj.w || 1)));
-      const fh = Math.max(1, Math.floor(Number(obj.h || 1)));
-      const ax = obj.x + fw / 2;
-      const ay = obj.y + fh / 2;
+      const { x: ax, y: ay } = stationObjectInteractionAnchor(obj);
+      if (!Number.isFinite(ax) || !Number.isFinite(ay)) {
+        continue;
+      }
       const reach = obj.kind === "ship-console" ? 1.6 : obj.kind === "ship-port" ? 1.8 : 1.9;
       const dist = Math.hypot(world.x - ax, world.y - ay);
       if (dist <= reach && dist < bestStationDist) {
@@ -3903,9 +4057,9 @@ function refreshWorldHoverTooltip(event) {
     }
     if (bestStationObject) {
       if (bestStationObject.kind === "ship-console") {
-        state.hoverTooltipText = "Ship console - call your ship";
+        state.hoverTooltipText = "Ship terminal - summon or board";
       } else if (bestStationObject.kind === "ship-port") {
-        state.hoverTooltipText = "Dock port - launch your ship";
+        state.hoverTooltipText = "Docking port";
       } else {
         const labels = {
           ship: "Shipyard kiosk",
@@ -4104,10 +4258,10 @@ function tryDockPortClickInteract(event) {
     if (!obj || (obj.kind !== "ship-port" && obj.kind !== "ship-console" && obj.kind !== "sci-shop" && obj.kind !== "station-kiosk")) {
       continue;
     }
-    const fw = Math.max(1, Math.floor(Number(obj.w || 1)));
-    const fh = Math.max(1, Math.floor(Number(obj.h || 1)));
-    const ax = obj.x + fw / 2;
-    const ay = obj.y + fh / 2;
+    const { x: ax, y: ay } = stationObjectInteractionAnchor(obj);
+    if (!Number.isFinite(ax) || !Number.isFinite(ay)) {
+      continue;
+    }
     const clickReach = obj.kind === "ship-console" ? 1.55 : obj.kind === "ship-port" ? 1.85 : 1.9;
     const d = Math.hypot(world.x - ax, world.y - ay);
     if (d <= clickReach && d < bestDist) {
@@ -4456,8 +4610,10 @@ function clearWorldState() {
   state.inventory = Array(10).fill(null);
   state.equipment = { weapon: null, body: null, ring1: null, ring2: null };
   state.ship = null;
+  state.ships = [];
   state.gold = 0;
   closeShop();
+  closeShipTerminal();
   closeBuyHousePanel();
   state.speechBubbles.clear();
   state.combatFx = [];
@@ -4711,6 +4867,15 @@ function checkWindowAutoClose() {
     const dist = Math.hypot(px - state.shop.x, py - state.shop.y);
     if (dist > AUTO_CLOSE_RADIUS) {
       closeShop();
+    }
+  }
+
+  if (state.shipTerminal?.open) {
+    const port = state.shipTerminal.port || {};
+    const tx = Number.isFinite(port.terminalX) ? port.terminalX : port.x;
+    const ty = Number.isFinite(port.terminalY) ? port.terminalY : port.y;
+    if (Number.isFinite(tx) && Number.isFinite(ty) && Math.hypot(px - tx, py - ty) > AUTO_CLOSE_RADIUS) {
+      closeShipTerminal();
     }
   }
 
@@ -5301,6 +5466,87 @@ function renderHouseChestPanelIfOpen() {
   if (state.houseChestBuildingKey) {
     renderHouseChestPanel();
   }
+}
+
+function renderShipTerminal() {
+  if (!shipTerminalPanel || !shipTerminalTitle || !shipTerminalPort || !shipTerminalList) {
+    return;
+  }
+
+  if (!state.shipTerminal?.open) {
+    shipTerminalPanel.classList.add("hidden");
+    return;
+  }
+
+  const terminal = state.shipTerminal;
+  shipTerminalTitle.textContent = `${terminal.stationName || "Station"} — Ship Terminal`;
+  shipTerminalPort.textContent = terminal.port?.id
+    ? `Linked dock: ${terminal.port.id.replace(/^rf_/, "").replaceAll("_", " ").toUpperCase()}`
+    : "Linked dock: unknown";
+  shipTerminalList.replaceChildren();
+
+  if (!terminal.ships.length) {
+    const empty = document.createElement("div");
+    empty.className = "ship-terminal-empty";
+    empty.textContent = "No ships registered to this account.";
+    shipTerminalList.append(empty);
+    return;
+  }
+
+  for (const ship of terminal.ships) {
+    const row = document.createElement("div");
+    row.className = `ship-terminal-row ${ship.active ? "active" : ""}`;
+
+    const icon = createItemIcon({
+      type: "ship",
+      icon: "ship",
+      rarity: ship.active ? "rare" : "common",
+      color: ship.color
+    });
+    const info = document.createElement("div");
+    info.className = "ship-terminal-info";
+
+    const name = document.createElement("strong");
+    name.textContent = ship.name || "Unnamed Ship";
+    const stats = document.createElement("span");
+    stats.className = "ship-terminal-stats";
+    const status = ship.boarded
+      ? "In flight"
+      : ship.atTerminalPort
+        ? "At this dock"
+        : "Stored";
+    stats.textContent = [
+      ship.hullClass || "ship",
+      `speed ${Number(ship.speed || 0).toFixed(1)}`,
+      `laser ${ship.laserTier || 1}`,
+      `thrust ${ship.thrustTier || 1}`,
+      status
+    ].join(" · ");
+    info.append(name, stats);
+
+    const actions = document.createElement("div");
+    actions.className = "ship-terminal-actions";
+    const summon = document.createElement("button");
+    summon.type = "button";
+    summon.dataset.shipTerminalAction = "summon";
+    summon.dataset.shipId = ship.id || "";
+    summon.textContent = ship.atTerminalPort ? "Summoned" : "Summon";
+    summon.disabled = Boolean(ship.atTerminalPort);
+    const board = document.createElement("button");
+    board.type = "button";
+    board.dataset.shipTerminalAction = "board";
+    board.dataset.shipId = ship.id || "";
+    board.textContent = "Board";
+    actions.append(summon, board);
+
+    row.append(icon, info, actions);
+    shipTerminalList.append(row);
+  }
+}
+
+function closeShipTerminal() {
+  state.shipTerminal = null;
+  shipTerminalPanel?.classList.add("hidden");
 }
 
 function renderShop() {
@@ -6089,9 +6335,12 @@ function drawSpaceObjects() {
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
   const items = [...state.spaceObjects.values()].sort((a, b) => {
-    const ak = a.kind || a.type || "";
-    const bk = b.kind || b.type || "";
-    return ak.localeCompare(bk);
+    const ao = spaceObjectDrawOrder(a);
+    const bo = spaceObjectDrawOrder(b);
+    if (ao !== bo) {
+      return ao - bo;
+    }
+    return String(a.kind || a.type || "").localeCompare(String(b.kind || b.type || ""));
   });
 
   for (const obj of items) {
@@ -6128,6 +6377,20 @@ function drawSpaceObjects() {
       drawStationObject(obj, sx, sy);
     }
   }
+}
+
+function spaceObjectDrawOrder(obj) {
+  const kind = obj?.kind || obj?.type || "";
+  if (kind === "lane") return 0;
+  if (kind === "planet") return 1;
+  if (kind === "station") return 2;
+  if (kind === "corridor" || kind === "station-core" || kind === "core" || kind === "command" || kind === "quarters" || kind === "reactor" || kind === "docks") return 3;
+  if (kind === "ship-bay" || kind === "shop-bay" || kind === "ship-shop" || kind === "station-module") return 4;
+  if (kind === "cargo-crate" || kind === "shipping-crate" || kind === "container-box") return 5;
+  if (kind === "sci-shop" || kind === "station-kiosk") return 6;
+  if (kind === "ship-port") return 7;
+  if (kind === "ship-console") return 8;
+  return 5;
 }
 
 function drawCorridorObject(obj, sx, sy) {
@@ -6361,10 +6624,73 @@ function drawCargoCrateObject(obj, sx, sy) {
   ctx.restore();
 }
 
+function shipHullDimensions(hullClass) {
+  if (hullClass === "freighter") return { w: 82, h: 42 };
+  if (hullClass === "hauler") return { w: 78, h: 40 };
+  if (hullClass === "interceptor" || hullClass === "needle") return { w: 74, h: 28 };
+  if (hullClass === "fighter") return { w: 70, h: 34 };
+  if (hullClass === "yacht") return { w: 72, h: 38 };
+  if (hullClass === "courier") return { w: 66, h: 32 };
+  return { w: 64, h: 36 };
+}
+
+function drawShipHullShape(hullClass, x, y, w, h, color) {
+  ctx.fillStyle = "rgba(18, 30, 48, 0.96)";
+  ctx.beginPath();
+  if (hullClass === "hauler" || hullClass === "freighter") {
+    ctx.moveTo(x + 4, y + h * 0.62);
+    ctx.lineTo(x + 16, y + 8);
+    ctx.lineTo(x + w * 0.78, y + 8);
+    ctx.lineTo(x + w - 2, y + h * 0.48);
+    ctx.lineTo(x + w * 0.78, y + h - 6);
+    ctx.lineTo(x + 16, y + h - 6);
+  } else if (hullClass === "fighter" || hullClass === "interceptor" || hullClass === "needle") {
+    ctx.moveTo(x + 2, y + h * 0.5);
+    ctx.lineTo(x + w * 0.34, y + 5);
+    ctx.lineTo(x + w - 3, y + h * 0.5);
+    ctx.lineTo(x + w * 0.34, y + h - 5);
+  } else if (hullClass === "yacht") {
+    ctx.moveTo(x + 5, y + h * 0.58);
+    ctx.bezierCurveTo(x + 18, y + 2, x + w * 0.72, y + 2, x + w - 3, y + h * 0.5);
+    ctx.bezierCurveTo(x + w * 0.74, y + h - 1, x + 20, y + h - 1, x + 5, y + h * 0.58);
+  } else {
+    ctx.moveTo(x + 6, y + h * 0.68);
+    ctx.lineTo(x + 16, y + 12);
+    ctx.lineTo(x + w * 0.6, y + 7);
+    ctx.lineTo(x + w - 4, y + h * 0.52);
+    ctx.lineTo(x + w * 0.7, y + h - 4);
+    ctx.lineTo(x + 18, y + h - 8);
+  }
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = color;
+  if (hullClass === "freighter" || hullClass === "hauler") {
+    ctx.fillRect(x + 18, y + 11, w * 0.44, 7);
+    ctx.fillRect(x + 18, y + h - 18, w * 0.44, 7);
+    ctx.fillStyle = "rgba(255,255,255,0.65)";
+    ctx.fillRect(x + w - 22, y + h * 0.41, 10, 6);
+  } else if (hullClass === "fighter" || hullClass === "interceptor" || hullClass === "needle") {
+    ctx.fillRect(x + w * 0.38, y + h * 0.42, w * 0.42, 4);
+    ctx.fillStyle = "rgba(255,255,255,0.78)";
+    ctx.fillRect(x + w * 0.58, y + h * 0.34, 8, 5);
+  } else {
+    ctx.fillRect(x + 18, y + 12, 18, 11);
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.fillRect(x + 24, y + 15, 6, 4);
+  }
+
+  ctx.fillStyle = "rgba(103,240,255,0.25)";
+  ctx.fillRect(x + 8, y + h * 0.5 - 2, w - 16, 4);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = hullClass === "needle" ? 2 : 3;
+  ctx.stroke();
+}
+
 function drawShipVehicleObject(obj, sx, sy, boarded = false, facing = 0, thrust = false) {
   const color = obj?.color || "#67f0ff";
-  const w = 64;
-  const h = 36;
+  const hullClass = obj?.hullClass || obj?.templateId || "skiff";
+  const { w, h } = shipHullDimensions(hullClass);
   ctx.save();
   ctx.translate(sx, sy);
   ctx.rotate(Number.isFinite(facing) ? facing : 0);
@@ -6392,25 +6718,7 @@ function drawShipVehicleObject(obj, sx, sy, boarded = false, facing = 0, thrust 
     ctx.fill();
   }
   drawEllipseShadow(x - 6, y + h * 0.84, w + 12, 10, 0.22);
-  ctx.fillStyle = "rgba(18, 30, 48, 0.95)";
-  ctx.beginPath();
-  ctx.moveTo(x + 6, y + h * 0.68);
-  ctx.lineTo(x + 16, y + 12);
-  ctx.lineTo(x + w * 0.6, y + 7);
-  ctx.lineTo(x + w - 4, y + h * 0.52);
-  ctx.lineTo(x + w * 0.7, y + h - 4);
-  ctx.lineTo(x + 18, y + h - 8);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = color;
-  ctx.fillRect(x + 18, y + 12, 18, 11);
-  ctx.fillStyle = "rgba(255,255,255,0.75)";
-  ctx.fillRect(x + 24, y + 15, 6, 4);
-  ctx.fillStyle = "rgba(103,240,255,0.25)";
-  ctx.fillRect(x + 8, y + 19, w - 16, 4);
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 3;
-  ctx.stroke();
+  drawShipHullShape(hullClass, x, y, w, h, color);
   ctx.restore();
   ctx.save();
   ctx.translate(sx, sy);
@@ -6640,24 +6948,50 @@ function drawShipConsoleObject(obj, sx, sy) {
   const h = Math.max(4, Number(obj.h || 4)) * TILE_SIZE;
   const x = sx - w / 2;
   const y = sy - h / 2;
+  const t = performance.now() / 1000;
+  const pulse = 0.46 + Math.sin(t * 4.6 + sx * 0.01) * 0.16;
   ctx.save();
-  drawEllipseShadow(x - 4, y + h * 0.82, w + 8, 10, 0.18);
-  ctx.fillStyle = "#17222f";
-  ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = "#304255";
-  ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
+  drawEllipseShadow(x - 6, y + h * 0.88, w + 12, 12, 0.28);
+
+  ctx.fillStyle = "rgba(7, 14, 24, 0.98)";
+  ctx.fillRect(x + 5, y + h * 0.42, w - 10, h * 0.5);
+  ctx.fillStyle = "#26384a";
+  ctx.fillRect(x + 8, y + h * 0.48, w - 16, h * 0.34);
+  ctx.fillStyle = "rgba(103,240,255,0.18)";
+  ctx.fillRect(x + 12, y + h * 0.53, w - 24, h * 0.18);
+
+  const screenW = w * 0.64;
+  const screenH = h * 0.38;
+  const screenX = x + (w - screenW) / 2;
+  const screenY = y + h * 0.06;
+  ctx.fillStyle = "#07131d";
+  ctx.fillRect(screenX, screenY, screenW, screenH);
+  ctx.strokeStyle = "#67f0ff";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(screenX, screenY, screenW, screenH);
+  ctx.fillStyle = `rgba(103,240,255,${pulse})`;
+  ctx.fillRect(screenX + 6, screenY + 6, screenW - 12, screenH - 12);
+  ctx.fillStyle = "rgba(255,255,255,0.58)";
+  ctx.fillRect(screenX + 10, screenY + 10, screenW * 0.3, 4);
+  ctx.fillRect(screenX + 10, screenY + 18, screenW * 0.52, 3);
+  ctx.fillStyle = "#d9fbff";
+  ctx.fillRect(screenX + screenW * 0.68, screenY + 10, 8, 8);
+  ctx.fillRect(screenX + screenW * 0.68, screenY + 21, 16, 3);
+
+  ctx.fillStyle = "#0a101a";
+  ctx.fillRect(x + w * 0.26, y + h * 0.42, w * 0.48, 8);
   ctx.fillStyle = "#67f0ff";
-  ctx.fillRect(x + 8, y + 8, w - 16, 4);
-  ctx.fillRect(x + w / 2 - 2, y + 8, 4, h - 16);
-  ctx.fillStyle = "rgba(255,255,255,0.5)";
-  ctx.fillRect(x + 10, y + 10, 6, 6);
-  ctx.fillStyle = "rgba(103,240,255,0.22)";
-  ctx.fillRect(x + 6, y + h - 10, w - 12, 4);
-  ctx.fillStyle = "rgba(255,255,255,0.16)";
-  ctx.fillRect(x + 6, y + 6, 4, 4);
-  ctx.strokeStyle = "rgba(103,240,255,0.44)";
+  for (let i = 0; i < 5; i += 1) {
+    ctx.fillRect(x + w * 0.32 + i * 9, y + h * 0.44, 4, 3);
+  }
+
+  ctx.fillStyle = "rgba(217,251,255,0.88)";
+  ctx.font = "bold 9px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.fillText("SHIP", sx, y + h - 9);
+  ctx.strokeStyle = "rgba(103,240,255,0.52)";
   ctx.lineWidth = 2;
-  ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+  ctx.strokeRect(x + 1, y + h * 0.42, w - 2, h * 0.5);
   ctx.restore();
 }
 
@@ -7373,6 +7707,24 @@ function drawSciFiHelmet(hx, hy, scale, shellColor, visorColor, dirX) {
   ctx.fillRect(hx - scale, hy - scale, 7 * scale, Math.max(scale, 2));
 }
 
+function drawAlienHead(hx, hy, scale, shellColor, visorColor, dirX) {
+  const eyeShift = Math.max(0, Math.round(dirX)) * scale;
+  ctx.fillStyle = blend(shellColor, "#102028", 0.18);
+  ctx.fillRect(hx - scale, hy - 2 * scale, 7 * scale, 7 * scale);
+  ctx.fillStyle = shellColor;
+  ctx.fillRect(hx, hy - scale, 5 * scale, 5 * scale);
+  ctx.fillStyle = blend(shellColor, "#ffffff", 0.18);
+  ctx.fillRect(hx + scale, hy - 2 * scale, 3 * scale, scale);
+  ctx.fillStyle = visorColor;
+  ctx.fillRect(hx + scale + eyeShift, hy + scale, scale, scale);
+  ctx.fillRect(hx + 3 * scale + eyeShift, hy + scale, scale, scale);
+  ctx.fillStyle = "rgba(255,255,255,0.65)";
+  ctx.fillRect(hx + scale + eyeShift, hy + scale, Math.max(1, scale - 1), Math.max(1, scale - 1));
+  ctx.fillRect(hx + 3 * scale + eyeShift, hy + scale, Math.max(1, scale - 1), Math.max(1, scale - 1));
+  ctx.fillStyle = blend(shellColor, "#000000", 0.35);
+  ctx.fillRect(hx + 2 * scale, hy + 3 * scale, 2 * scale, scale);
+}
+
 function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const isMod = !!entity.isMod;
   const s = isMod ? 3 * 1.2 : 3;
@@ -7421,6 +7773,7 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const fy   = Math.round(dirY * 0.6);
 
   const sciFiNpc = !!(isNpc && (entity.npcTheme === SCI_FI_THEME || entity.sciFiLook));
+  const sciFiLook = entity.sciFiLook || "";
   const torsoColor  = isMod ? "#697987" : (entity.torsoColor || entity.primary || "#5cc8ff");
   const weaponColor = entity.weaponColor || entity.accent || "#ffd166";
   const torsoStyle  = isMod ? "robe" : sciFiNpc ? "sciFi" : (entity.torsoStyle || "tunic");
@@ -7604,7 +7957,11 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const hx = bx - 2 * s + fx * s + (bowing ? Math.round(s) : 0);
   const hy = by - 7 * s + fy + headSitNudge + bowHeadNudge;
   if (sciFiNpc) {
-    drawSciFiHelmet(hx, hy, s, helmetColor, visorColor, fx);
+    if (sciFiLook === "alien") {
+      drawAlienHead(hx, hy, s, helmetColor, visorColor, fx);
+    } else {
+      drawSciFiHelmet(hx, hy, s, helmetColor, visorColor, fx);
+    }
   } else if (isMod) {
     drawModHood(hx, hy, s, dirX);
   } else {
@@ -8039,7 +8396,22 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
   if (!weaponKind) {
     return;
   }
-  const ornateWeapon = ["ornate","legendary","ascendant","crystal","dark","runic","spectral","frost","fire"].includes(style);
+  const ornateWeapon = [
+    "ornate",
+    "legendary",
+    "ascendant",
+    "crystal",
+    "dark",
+    "runic",
+    "spectral",
+    "frost",
+    "fire",
+    "saber",
+    "pulse",
+    "ion",
+    "plasma",
+    "rail"
+  ].includes(style);
   const isLegendary = style === "legendary";
   const isAscendant = style === "ascendant";
   ctx.save();
