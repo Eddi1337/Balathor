@@ -517,6 +517,15 @@ button:focus-visible {
   overflow-y: auto;
 }
 
+.ship-terminal-window {
+  left: 16px;
+  right: auto;
+  top: 116px;
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 132px);
+  overflow-y: auto;
+}
+
 .trader-window {
   width: min(380px, calc(100vw - 32px));
   max-height: calc(100vh - 260px);
@@ -853,6 +862,82 @@ button:focus-visible {
   grid-template-rows: auto;
   min-height: 42px;
   color: var(--muted);
+}
+
+.ship-terminal-port {
+  color: #a7f3ff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ship-terminal-list {
+  display: grid;
+  gap: 8px;
+}
+
+.ship-terminal-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 9px;
+  border: 1px solid rgba(103, 240, 255, 0.22);
+  border-left: 3px solid rgba(103, 240, 255, 0.44);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(103, 240, 255, 0.1), transparent 55%),
+    rgba(7, 14, 24, 0.78);
+}
+
+.ship-terminal-row.active {
+  border-color: rgba(217, 251, 255, 0.7);
+  box-shadow: 0 0 16px rgba(103, 240, 255, 0.16);
+}
+
+.ship-terminal-info {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ship-terminal-info strong {
+  color: #e9fbff;
+}
+
+.ship-terminal-stats,
+.ship-terminal-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ship-terminal-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.ship-terminal-actions button {
+  min-width: 68px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(103, 240, 255, 0.45);
+  border-radius: 6px;
+  background: rgba(7, 19, 29, 0.92);
+  color: #d9fbff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.ship-terminal-actions button:hover:not(:disabled) {
+  border-color: #d9fbff;
+  background: rgba(24, 58, 78, 0.95);
+}
+
+.ship-terminal-actions button:disabled {
+  cursor: default;
+  opacity: 0.46;
 }
 
 .shop-row strong,

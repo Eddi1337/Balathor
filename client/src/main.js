@@ -71,6 +71,11 @@ const shopClose = document.querySelector("#shopClose");
 const shopGold = document.querySelector("#shopGold");
 const shopBuyList = document.querySelector("#shopBuyList");
 const shopSellList = document.querySelector("#shopSellList");
+const shipTerminalPanel = document.querySelector("#shipTerminalPanel");
+const shipTerminalTitle = document.querySelector("#shipTerminalTitle");
+const shipTerminalClose = document.querySelector("#shipTerminalClose");
+const shipTerminalPort = document.querySelector("#shipTerminalPort");
+const shipTerminalList = document.querySelector("#shipTerminalList");
 const chat = document.querySelector("#chat");
 const chatMessages = document.querySelector("#chatMessages");
 const chatForm = document.querySelector("#chatForm");
@@ -663,6 +668,8 @@ const state = {
   inventory: Array(10).fill(null),
   equipment: { weapon: null, body: null, ring1: null, ring2: null },
   ship: null,
+  ships: [],
+  shipTerminal: null,
   gold: 0,
   shop: null,
   speechBubbles: new Map(),
@@ -1244,6 +1251,24 @@ function handleServerMessage(message) {
     return;
   }
 
+  if (message.type === "shipTerminal") {
+    state.shipTerminal = {
+      open: true,
+      stationName: message.stationName || "Ship Terminal",
+      port: message.port || null,
+      activeShipId: typeof message.activeShipId === "string" ? message.activeShipId : null,
+      ships: Array.isArray(message.ships) ? message.ships : []
+    };
+    renderShipTerminal();
+    shipTerminalPanel?.classList.remove("hidden");
+    return;
+  }
+
+  if (message.type === "shipTerminalClose") {
+    closeShipTerminal();
+    return;
+  }
+
   if (message.type === "combat") {
     applyCombatEvent(message);
     if (message.attackerId === state.selfId && message.xpGained) {
@@ -1404,6 +1429,8 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: `Called ${message.shipName || "your ship"} to the dock` });
     } else if (message.message === "ship_already_owned") {
       appendChat({ kind: "system", name: "Realm", text: "You already own a ship." });
+    } else if (message.message === "ship_not_owned") {
+      appendChat({ kind: "system", name: "Realm", text: "That ship is not registered to your account." });
     } else if (message.message === "item_sold_out") {
       appendChat({ kind: "system", name: "Realm", text: "Item is sold out" });
     } else if (message.message === "item_bought") {
@@ -1592,12 +1619,14 @@ function updateSelfInventory() {
     state.inventory = Array(10).fill(null);
     state.equipment = { weapon: null, body: null, ring1: null, ring2: null };
     state.ship = null;
+    state.ships = [];
     state.gold = 0;
     return;
   }
   state.inventory = Array.isArray(self.inventory) ? self.inventory : Array(10).fill(null);
   state.equipment = self.equipment || { weapon: null, body: null, ring1: null, ring2: null };
   state.ship = self.ship || null;
+  state.ships = Array.isArray(self.ships) ? self.ships : (self.ship ? [self.ship] : []);
   state.gold = Number.isFinite(self.gold) ? self.gold : state.gold;
   if (state.shop?.open) {
     state.shop.gold = state.gold;
@@ -2385,6 +2414,10 @@ function wireUi() {
     closeShop();
   });
 
+  shipTerminalClose?.addEventListener("click", () => {
+    closeShipTerminal();
+  });
+
   traderClose.addEventListener("click", () => {
     setActiveGameWindow(null);
   });
@@ -2560,6 +2593,7 @@ function wireUi() {
   makeDraggable(equipmentPanel);
   makeDraggable(bagsPanel);
   makeDraggable(shopPanel);
+  makeDraggable(shipTerminalPanel);
   makeDraggable(traderPanel);
   if (buyHousePanel) makeDraggable(buyHousePanel);
   if (companionOfferPanel) makeDraggable(companionOfferPanel);
@@ -2659,6 +2693,27 @@ function wireUi() {
   });
 
   shopPanel?.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+  });
+
+  shipTerminalPanel?.addEventListener("pointerdown", (event) => {
+    const button = event.target.closest("[data-ship-terminal-action]");
+    if (!button || !state.shipTerminal?.open) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const port = state.shipTerminal.port || {};
+    send({
+      type: "shipTerminalAction",
+      action: button.dataset.shipTerminalAction,
+      shipId: button.dataset.shipId,
+      x: Number.isFinite(port.terminalX) ? port.terminalX : port.x,
+      y: Number.isFinite(port.terminalY) ? port.terminalY : port.y
+    });
+  });
+
+  shipTerminalPanel?.addEventListener("pointerdown", (event) => {
     event.stopPropagation();
   });
 
@@ -3985,7 +4040,7 @@ function refreshWorldHoverTooltip(event) {
     }
     if (bestStationObject) {
       if (bestStationObject.kind === "ship-console") {
-        state.hoverTooltipText = "Ship terminal - board or exit";
+        state.hoverTooltipText = "Ship terminal - summon or board";
       } else if (bestStationObject.kind === "ship-port") {
         state.hoverTooltipText = "Docking port";
       } else {
@@ -4538,8 +4593,10 @@ function clearWorldState() {
   state.inventory = Array(10).fill(null);
   state.equipment = { weapon: null, body: null, ring1: null, ring2: null };
   state.ship = null;
+  state.ships = [];
   state.gold = 0;
   closeShop();
+  closeShipTerminal();
   closeBuyHousePanel();
   state.speechBubbles.clear();
   state.combatFx = [];
@@ -4793,6 +4850,15 @@ function checkWindowAutoClose() {
     const dist = Math.hypot(px - state.shop.x, py - state.shop.y);
     if (dist > AUTO_CLOSE_RADIUS) {
       closeShop();
+    }
+  }
+
+  if (state.shipTerminal?.open) {
+    const port = state.shipTerminal.port || {};
+    const tx = Number.isFinite(port.terminalX) ? port.terminalX : port.x;
+    const ty = Number.isFinite(port.terminalY) ? port.terminalY : port.y;
+    if (Number.isFinite(tx) && Number.isFinite(ty) && Math.hypot(px - tx, py - ty) > AUTO_CLOSE_RADIUS) {
+      closeShipTerminal();
     }
   }
 
@@ -5383,6 +5449,87 @@ function renderHouseChestPanelIfOpen() {
   if (state.houseChestBuildingKey) {
     renderHouseChestPanel();
   }
+}
+
+function renderShipTerminal() {
+  if (!shipTerminalPanel || !shipTerminalTitle || !shipTerminalPort || !shipTerminalList) {
+    return;
+  }
+
+  if (!state.shipTerminal?.open) {
+    shipTerminalPanel.classList.add("hidden");
+    return;
+  }
+
+  const terminal = state.shipTerminal;
+  shipTerminalTitle.textContent = `${terminal.stationName || "Station"} — Ship Terminal`;
+  shipTerminalPort.textContent = terminal.port?.id
+    ? `Linked dock: ${terminal.port.id.replace(/^rf_/, "").replaceAll("_", " ").toUpperCase()}`
+    : "Linked dock: unknown";
+  shipTerminalList.replaceChildren();
+
+  if (!terminal.ships.length) {
+    const empty = document.createElement("div");
+    empty.className = "ship-terminal-empty";
+    empty.textContent = "No ships registered to this account.";
+    shipTerminalList.append(empty);
+    return;
+  }
+
+  for (const ship of terminal.ships) {
+    const row = document.createElement("div");
+    row.className = `ship-terminal-row ${ship.active ? "active" : ""}`;
+
+    const icon = createItemIcon({
+      type: "ship",
+      icon: "ship",
+      rarity: ship.active ? "rare" : "common",
+      color: ship.color
+    });
+    const info = document.createElement("div");
+    info.className = "ship-terminal-info";
+
+    const name = document.createElement("strong");
+    name.textContent = ship.name || "Unnamed Ship";
+    const stats = document.createElement("span");
+    stats.className = "ship-terminal-stats";
+    const status = ship.boarded
+      ? "In flight"
+      : ship.atTerminalPort
+        ? "At this dock"
+        : "Stored";
+    stats.textContent = [
+      ship.hullClass || "ship",
+      `speed ${Number(ship.speed || 0).toFixed(1)}`,
+      `laser ${ship.laserTier || 1}`,
+      `thrust ${ship.thrustTier || 1}`,
+      status
+    ].join(" · ");
+    info.append(name, stats);
+
+    const actions = document.createElement("div");
+    actions.className = "ship-terminal-actions";
+    const summon = document.createElement("button");
+    summon.type = "button";
+    summon.dataset.shipTerminalAction = "summon";
+    summon.dataset.shipId = ship.id || "";
+    summon.textContent = ship.atTerminalPort ? "Summoned" : "Summon";
+    summon.disabled = Boolean(ship.atTerminalPort);
+    const board = document.createElement("button");
+    board.type = "button";
+    board.dataset.shipTerminalAction = "board";
+    board.dataset.shipId = ship.id || "";
+    board.textContent = "Board";
+    actions.append(summon, board);
+
+    row.append(icon, info, actions);
+    shipTerminalList.append(row);
+  }
+}
+
+function closeShipTerminal() {
+  state.shipTerminal = null;
+  shipTerminalPanel?.classList.add("hidden");
 }
 
 function renderShop() {
@@ -6171,9 +6318,12 @@ function drawSpaceObjects() {
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
   const items = [...state.spaceObjects.values()].sort((a, b) => {
-    const ak = a.kind || a.type || "";
-    const bk = b.kind || b.type || "";
-    return ak.localeCompare(bk);
+    const ao = spaceObjectDrawOrder(a);
+    const bo = spaceObjectDrawOrder(b);
+    if (ao !== bo) {
+      return ao - bo;
+    }
+    return String(a.kind || a.type || "").localeCompare(String(b.kind || b.type || ""));
   });
 
   for (const obj of items) {
@@ -6210,6 +6360,20 @@ function drawSpaceObjects() {
       drawStationObject(obj, sx, sy);
     }
   }
+}
+
+function spaceObjectDrawOrder(obj) {
+  const kind = obj?.kind || obj?.type || "";
+  if (kind === "lane") return 0;
+  if (kind === "planet") return 1;
+  if (kind === "station") return 2;
+  if (kind === "corridor" || kind === "station-core" || kind === "core" || kind === "command" || kind === "quarters" || kind === "reactor" || kind === "docks") return 3;
+  if (kind === "ship-bay" || kind === "shop-bay" || kind === "ship-shop" || kind === "station-module") return 4;
+  if (kind === "cargo-crate" || kind === "shipping-crate" || kind === "container-box") return 5;
+  if (kind === "sci-shop" || kind === "station-kiosk") return 6;
+  if (kind === "ship-port") return 7;
+  if (kind === "ship-console") return 8;
+  return 5;
 }
 
 function drawCorridorObject(obj, sx, sy) {
@@ -6767,24 +6931,50 @@ function drawShipConsoleObject(obj, sx, sy) {
   const h = Math.max(4, Number(obj.h || 4)) * TILE_SIZE;
   const x = sx - w / 2;
   const y = sy - h / 2;
+  const t = performance.now() / 1000;
+  const pulse = 0.46 + Math.sin(t * 4.6 + sx * 0.01) * 0.16;
   ctx.save();
-  drawEllipseShadow(x - 4, y + h * 0.82, w + 8, 10, 0.18);
-  ctx.fillStyle = "#17222f";
-  ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = "#304255";
-  ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
+  drawEllipseShadow(x - 6, y + h * 0.88, w + 12, 12, 0.28);
+
+  ctx.fillStyle = "rgba(7, 14, 24, 0.98)";
+  ctx.fillRect(x + 5, y + h * 0.42, w - 10, h * 0.5);
+  ctx.fillStyle = "#26384a";
+  ctx.fillRect(x + 8, y + h * 0.48, w - 16, h * 0.34);
+  ctx.fillStyle = "rgba(103,240,255,0.18)";
+  ctx.fillRect(x + 12, y + h * 0.53, w - 24, h * 0.18);
+
+  const screenW = w * 0.64;
+  const screenH = h * 0.38;
+  const screenX = x + (w - screenW) / 2;
+  const screenY = y + h * 0.06;
+  ctx.fillStyle = "#07131d";
+  ctx.fillRect(screenX, screenY, screenW, screenH);
+  ctx.strokeStyle = "#67f0ff";
+  ctx.lineWidth = 3;
+  ctx.strokeRect(screenX, screenY, screenW, screenH);
+  ctx.fillStyle = `rgba(103,240,255,${pulse})`;
+  ctx.fillRect(screenX + 6, screenY + 6, screenW - 12, screenH - 12);
+  ctx.fillStyle = "rgba(255,255,255,0.58)";
+  ctx.fillRect(screenX + 10, screenY + 10, screenW * 0.3, 4);
+  ctx.fillRect(screenX + 10, screenY + 18, screenW * 0.52, 3);
+  ctx.fillStyle = "#d9fbff";
+  ctx.fillRect(screenX + screenW * 0.68, screenY + 10, 8, 8);
+  ctx.fillRect(screenX + screenW * 0.68, screenY + 21, 16, 3);
+
+  ctx.fillStyle = "#0a101a";
+  ctx.fillRect(x + w * 0.26, y + h * 0.42, w * 0.48, 8);
   ctx.fillStyle = "#67f0ff";
-  ctx.fillRect(x + 8, y + 8, w - 16, 4);
-  ctx.fillRect(x + w / 2 - 2, y + 8, 4, h - 16);
-  ctx.fillStyle = "rgba(255,255,255,0.5)";
-  ctx.fillRect(x + 10, y + 10, 6, 6);
-  ctx.fillStyle = "rgba(103,240,255,0.22)";
-  ctx.fillRect(x + 6, y + h - 10, w - 12, 4);
-  ctx.fillStyle = "rgba(255,255,255,0.16)";
-  ctx.fillRect(x + 6, y + 6, 4, 4);
-  ctx.strokeStyle = "rgba(103,240,255,0.44)";
+  for (let i = 0; i < 5; i += 1) {
+    ctx.fillRect(x + w * 0.32 + i * 9, y + h * 0.44, 4, 3);
+  }
+
+  ctx.fillStyle = "rgba(217,251,255,0.88)";
+  ctx.font = "bold 9px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.fillText("SHIP", sx, y + h - 9);
+  ctx.strokeStyle = "rgba(103,240,255,0.52)";
   ctx.lineWidth = 2;
-  ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+  ctx.strokeRect(x + 1, y + h * 0.42, w - 2, h * 0.5);
   ctx.restore();
 }
 

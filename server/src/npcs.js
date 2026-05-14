@@ -1,5 +1,5 @@
 const WORLD = require("./world");
-const { isBlockedCircle } = WORLD;
+const { isBlockedCircle, isBlockedCircleForShip } = WORLD;
 const { HUB_NPC_ORDER } = require("./hubRoundTown.js");
 const { SCI_FI_DOCK_PORTS, RINGFORGE_CENTER } = require("./sciFiStationLayout.js");
 
@@ -1055,6 +1055,9 @@ function tickSciFiTraffic(npc, dt, now) {
 
     if (npc._trafficPhase === "outbound") {
       port = nextTrafficPort(npc) || port;
+      const out = trafficOuterPointForPort(port, npc._trafficPortIndex || 0);
+      npc.x = out.x;
+      npc.y = out.y;
       npc._trafficPortId = port.id;
       npc._trafficPhase = "inbound";
       npc._targetX = port.x;
@@ -1078,8 +1081,20 @@ function tickSciFiTraffic(npc, dt, now) {
   }
   const speed = Math.max(5.5, Math.min(14, Number(npc.ship?.speed) || 9.2));
   const step = Math.min(speed * dt, nd);
-  npc.x += (ndx / nd) * step;
-  npc.y += (ndy / nd) * step;
+  const nextX = npc.x + (ndx / nd) * step;
+  const nextY = npc.y + (ndy / nd) * step;
+  if (isBlockedCircleForShip(nextX, nextY)) {
+    const safe = trafficOuterPointForPort(port, npc._trafficPortIndex || 0);
+    npc.x = safe.x;
+    npc.y = safe.y;
+    npc._targetX = port.x;
+    npc._targetY = port.y;
+    npc._trafficPhase = "inbound";
+    npc.moving = true;
+    return;
+  }
+  npc.x = nextX;
+  npc.y = nextY;
   npc.facing = Math.atan2(ndy, ndx);
   npc.moving = true;
 }
