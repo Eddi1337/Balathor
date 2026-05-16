@@ -103,6 +103,24 @@ function stationFacingForPort(port) {
   return "west";
 }
 
+function shopkeeperPoint(shop) {
+  if (shop.keeperX != null && shop.keeperY != null) {
+    return { x: shop.x + shop.keeperX, y: shop.y + shop.keeperY };
+  }
+  if (shop.x < CX) return { x: shop.x - 3.1, y: shop.y - 0.2 };
+  if (shop.x > CX) return { x: shop.x + 3.1, y: shop.y - 0.2 };
+  return { x: shop.x, y: shop.y - 1.7 };
+}
+
+function terminalPoint(shop) {
+  if (shop.terminalX != null && shop.terminalY != null) {
+    return { x: shop.x + shop.terminalX, y: shop.y + shop.terminalY };
+  }
+  if (shop.x < CX) return { x: shop.x + 3.7, y: shop.y + 0.4 };
+  if (shop.x > CX) return { x: shop.x - 3.7, y: shop.y + 0.4 };
+  return { x: shop.x, y: shop.y + 2.1 };
+}
+
 function buildPortFeatures(out) {
   for (const port of SCI_FI_DOCK_PORTS) {
     const vertical = port.facing === "north" || port.facing === "south";
@@ -171,24 +189,106 @@ function buildStationFeatures() {
   });
 
   const shops = [
-    { id: "rf_shop_ship", name: "Nova Shipyard", shopType: "ship", x: CX - 42, y: CY - 28, w: 12, h: 7 },
-    { id: "rf_shop_arms", name: "Photon Armory", shopType: "arms", x: CX + 42, y: CY - 28, w: 12, h: 7 },
-    { id: "rf_shop_stims", name: "Medgel Clinic", shopType: "stims", x: CX - 42, y: CY + 20, w: 11, h: 7 },
-    { id: "rf_shop_parts", name: "Drive Parts Depot", shopType: "parts", x: CX + 42, y: CY + 20, w: 11, h: 7 },
-    { id: "rf_shop_trade", name: "Alien Bazaar", shopType: "trade", x: CX, y: CY - 34, w: 13, h: 6 },
-    { id: "rf_shop_outfitter", name: "Exosuit Outfitter", shopType: "arms", x: CX, y: CY + 28, w: 13, h: 6 }
+    {
+      id: "rf_shop_ship",
+      name: "Nova Shipyard",
+      keeperName: "Foreman Voss-7",
+      shopType: "ship",
+      x: CX - 42,
+      y: CY - 28,
+      w: 14,
+      h: 9,
+      entrances: [{ side: "east", width: 2 }, { side: "bottom", offset: 3, width: 2 }]
+    },
+    {
+      id: "rf_shop_arms",
+      name: "Photon Armory",
+      keeperName: "Armorer Kade",
+      shopType: "arms",
+      x: CX + 42,
+      y: CY - 28,
+      w: 14,
+      h: 9,
+      entrances: [{ side: "west", width: 2 }, { side: "bottom", offset: -3, width: 2 }]
+    },
+    {
+      id: "rf_shop_stims",
+      name: "Medgel Clinic",
+      keeperName: "Sera-Med Automa",
+      shopType: "stims",
+      x: CX - 42,
+      y: CY + 20,
+      w: 13,
+      h: 9,
+      entrances: [{ side: "east", offset: -1, width: 2 }, { side: "bottom", offset: 3, width: 2 }]
+    },
+    {
+      id: "rf_shop_parts",
+      name: "Drive Parts Depot",
+      keeperName: "Tess Gearwright",
+      shopType: "parts",
+      x: CX + 42,
+      y: CY + 20,
+      w: 13,
+      h: 9,
+      entrances: [{ side: "west", offset: -1, width: 2 }, { side: "bottom", offset: -3, width: 2 }]
+    },
+    {
+      id: "rf_shop_trade",
+      name: "Alien Bazaar",
+      keeperName: "Vee'ra Coilkeeper",
+      shopType: "trade",
+      x: CX,
+      y: CY - 34,
+      w: 15,
+      h: 8,
+      entrances: [{ side: "bottom", width: 3 }, { side: "east", offset: 1, width: 2 }]
+    },
+    {
+      id: "rf_shop_outfitter",
+      name: "Exosuit Outfitter",
+      keeperName: "Rook-17 Tailor",
+      shopType: "arms",
+      x: CX,
+      y: CY + 28,
+      w: 15,
+      h: 8,
+      entrances: [{ side: "bottom", width: 3 }, { side: "west", offset: -1, width: 2 }]
+    }
   ];
 
   for (const shop of shops) {
+    const keeper = shopkeeperPoint(shop);
+    const terminal = terminalPoint(shop);
     pushFeature(out, {
       id: shop.id,
       name: shop.name,
+      keeperName: shop.keeperName,
       kind: "sci-shop",
       shopType: shop.shopType,
       x: shop.x,
       y: shop.y,
       w: shop.w,
       h: shop.h,
+      entrances: shop.entrances,
+      terminalId: `${shop.id}_terminal`,
+      terminalX: terminal.x,
+      terminalY: terminal.y,
+      shopkeeperX: keeper.x,
+      shopkeeperY: keeper.y,
+      facing: shop.x < CX ? "east" : shop.x > CX ? "west" : shop.y < CY ? "south" : "north"
+    });
+    pushFeature(out, {
+      id: `${shop.id}_terminal`,
+      name: `${shop.name} Terminal`,
+      kind: "sci-shop-terminal",
+      shopId: shop.id,
+      shopName: shop.name,
+      shopType: shop.shopType,
+      x: terminal.x,
+      y: terminal.y,
+      w: 2,
+      h: 2,
       facing: shop.x < CX ? "east" : shop.x > CX ? "west" : shop.y < CY ? "south" : "north"
     });
   }

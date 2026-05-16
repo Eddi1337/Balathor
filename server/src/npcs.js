@@ -1,7 +1,7 @@
 const WORLD = require("./world");
 const { isBlockedCircle, isBlockedCircleForShip } = WORLD;
 const { HUB_NPC_ORDER } = require("./hubRoundTown.js");
-const { SCI_FI_DOCK_PORTS, RINGFORGE_CENTER } = require("./sciFiStationLayout.js");
+const { SCI_FI_DOCK_PORTS, SCI_FI_STATION_FEATURES, RINGFORGE_CENTER } = require("./sciFiStationLayout.js");
 
 const NPC_SPEED = 2.0;
 const NPC_STOP_DISTANCE = 0.08;
@@ -991,6 +991,46 @@ function buildSciFiTrafficNpcDefinitions() {
   });
 }
 
+function buildSciFiShopkeeperNpcDefinitions() {
+  return SCI_FI_STATION_FEATURES
+    .filter((feature) => feature?.kind === "sci-shop")
+    .map((shop, index) => {
+      const shopType = String(shop.shopType || "trade");
+      const role =
+        shopType === "ship" ? "shipwright" :
+        shopType === "arms" ? "armorer" :
+        shopType === "stims" ? "medic_vendor" :
+        shopType === "parts" ? "parts_dealer" :
+        "station_vendor";
+      const accent =
+        shopType === "ship" ? "#67f0ff" :
+        shopType === "arms" ? "#ff8f6b" :
+        shopType === "stims" ? "#82ffbb" :
+        shopType === "parts" ? "#f7d86a" :
+        "#c084fc";
+      return {
+        id: `npc_keeper_${shop.id}`,
+        name: shop.keeperName || `${shop.name} Keeper`,
+        classId: index % 3 === 0 ? "mage" : index % 3 === 1 ? "ranger" : "knight",
+        primary: index % 2 === 0 ? "#223044" : "#2a3650",
+        accent,
+        homeX: Number(shop.shopkeeperX) || Number(shop.x),
+        homeY: Number(shop.shopkeeperY) || Number(shop.y),
+        patrolRadius: 1.35,
+        npcTheme: "sci-fi",
+        sciFiRole: role,
+        sciFiLook: index % 2 === 0 ? "android" : "alien",
+        managedShopId: shop.id,
+        dialogue: [
+          `${shop.name} terminal is live. Browse from the console.`,
+          "Everything is tagged, scanned, and mostly legal.",
+          "Stand clear of the door field; it opens when you approach.",
+          "The terminal handles payment. I handle complaints.",
+        ]
+      };
+    });
+}
+
 function initSciFiTrafficRuntime(npc) {
   const port = SCI_FI_DOCK_PORTS[npc._trafficPortIndex % SCI_FI_DOCK_PORTS.length] || SCI_FI_DOCK_PORTS[0];
   const out = trafficOuterPointForPort(port, npc._trafficPortIndex || 0);
@@ -1761,8 +1801,8 @@ const BASE_NPC_DEFINITIONS = [
     classId: "ranger",
     primary: "#24303f",
     accent: "#7dd3fc",
-    homeX: RINGFORGE_CENTER.x - 42,
-    homeY: RINGFORGE_CENTER.y + 20,
+    homeX: RINGFORGE_CENTER.x - 54,
+    homeY: RINGFORGE_CENTER.y + 18,
     patrolRadius: 7,
     npcTheme: "sci-fi",
     sciFiRole: "medic",
@@ -1801,8 +1841,8 @@ const BASE_NPC_DEFINITIONS = [
     classId: "knight",
     primary: "#223044",
     accent: "#fbbf24",
-    homeX: RINGFORGE_CENTER.x + 42,
-    homeY: RINGFORGE_CENTER.y + 20,
+    homeX: RINGFORGE_CENTER.x + 54,
+    homeY: RINGFORGE_CENTER.y + 18,
     patrolRadius: 6,
     npcTheme: "sci-fi",
     sciFiRole: "quartermaster",
@@ -1913,7 +1953,11 @@ const BASE_NPC_DEFINITIONS = [
   },
 ];
 
-const DEFINITIONS = BASE_NPC_DEFINITIONS.concat(buildHydratedHubNpcExtras(), buildSciFiTrafficNpcDefinitions());
+const DEFINITIONS = BASE_NPC_DEFINITIONS.concat(
+  buildHydratedHubNpcExtras(),
+  buildSciFiShopkeeperNpcDefinitions(),
+  buildSciFiTrafficNpcDefinitions()
+);
 
 const soldCompanionNpcIds = new Set();
 const SOCIAL_PAIR_INTERVAL_MS = 9200;

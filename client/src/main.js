@@ -4092,6 +4092,52 @@ function stationObjectInteractionAnchor(obj) {
   };
 }
 
+function stationShopDoorOpenings(obj) {
+  const doors = Array.isArray(obj?.entrances) ? obj.entrances : [];
+  if (doors.length) {
+    return doors;
+  }
+  if (obj?.facing === "east") return [{ side: "east", width: 2 }];
+  if (obj?.facing === "west") return [{ side: "west", width: 2 }];
+  return [{ side: "bottom", width: 2 }];
+}
+
+function stationShopDoorAnchors(obj) {
+  const fw = Math.max(1, Math.floor(Number(obj?.w) || 1));
+  const fh = Math.max(1, Math.floor(Number(obj?.h) || 1));
+  const minX = Number(obj.x) - Math.floor(fw / 2);
+  const minY = Number(obj.y) - Math.floor(fh / 2);
+  const anchors = [];
+  for (const door of stationShopDoorOpenings(obj)) {
+    const side = String(door?.side || "bottom");
+    const width = Math.max(1, Math.min(4, Math.floor(Number(door?.width) || 2)));
+    const axisSize = side === "east" || side === "west" ? fh : fw;
+    const center = Math.floor(axisSize / 2) + Math.floor(Number(door?.offset) || 0);
+    const start = Math.max(0, Math.min(axisSize - width, Math.round(center - (width - 1) / 2)));
+    if (side === "east") anchors.push({ side, x: minX + fw, y: minY + start + width / 2, start, width });
+    if (side === "west") anchors.push({ side, x: minX, y: minY + start + width / 2, start, width });
+    if (side === "bottom" || side === "south") anchors.push({ side: "bottom", x: minX + start + width / 2, y: minY + fh, start, width });
+  }
+  return anchors;
+}
+
+function getStationShopDoorOpenFactor(obj) {
+  const self = state.players.get(state.selfId);
+  if (!self) return 0;
+  const px = Number.isFinite(self.renderX) ? self.renderX : self.x;
+  const py = Number.isFinite(self.renderY) ? self.renderY : self.y;
+  let best = 0;
+  for (const door of stationShopDoorAnchors(obj)) {
+    const d = Math.hypot(px - door.x, py - door.y);
+    const far = 4.0;
+    const near = 1.05;
+    if (d >= far) continue;
+    const u = d <= near ? 1 : (far - d) / (far - near);
+    best = Math.max(best, u * u * (3 - 2 * u));
+  }
+  return best;
+}
+
 function refreshWorldHoverTooltip(event) {
   state.hoverTooltipText = "";
   state.hoverTooltipSmall = false;
@@ -4106,14 +4152,14 @@ function refreshWorldHoverTooltip(event) {
     let bestStationObject = null;
     let bestStationDist = Infinity;
     for (const obj of state.spaceObjects.values()) {
-      if (!obj || (obj.kind !== "ship-port" && obj.kind !== "ship-console" && obj.kind !== "sci-shop" && obj.kind !== "station-kiosk")) {
+      if (!obj || (obj.kind !== "ship-port" && obj.kind !== "ship-console" && obj.kind !== "sci-shop" && obj.kind !== "sci-shop-terminal" && obj.kind !== "station-kiosk")) {
         continue;
       }
       const { x: ax, y: ay } = stationObjectInteractionAnchor(obj);
       if (!Number.isFinite(ax) || !Number.isFinite(ay)) {
         continue;
       }
-      const reach = obj.kind === "ship-console" ? 1.6 : obj.kind === "ship-port" ? 1.8 : 1.9;
+      const reach = obj.kind === "ship-console" || obj.kind === "sci-shop-terminal" ? 1.6 : obj.kind === "ship-port" ? 1.8 : 1.9;
       const dist = Math.hypot(world.x - ax, world.y - ay);
       if (dist <= reach && dist < bestStationDist) {
         bestStationDist = dist;
@@ -4134,7 +4180,8 @@ function refreshWorldHoverTooltip(event) {
           trade: "Bazaar kiosk",
           pub: "Lounge kiosk"
         };
-        state.hoverTooltipText = `${labels[bestStationObject.shopType] || "Station shop"} - open`;
+        const terminal = bestStationObject.kind === "sci-shop-terminal" ? "terminal" : "shop";
+        state.hoverTooltipText = `${labels[bestStationObject.shopType] || "Station shop"} ${terminal} - open`;
       }
       state.hoverTooltipSmall = true;
       return;
@@ -4320,14 +4367,14 @@ function tryDockPortClickInteract(event) {
   let best = null;
   let bestDist = Infinity;
   for (const obj of state.spaceObjects.values()) {
-    if (!obj || (obj.kind !== "ship-port" && obj.kind !== "ship-console" && obj.kind !== "sci-shop" && obj.kind !== "station-kiosk")) {
+    if (!obj || (obj.kind !== "ship-port" && obj.kind !== "ship-console" && obj.kind !== "sci-shop" && obj.kind !== "sci-shop-terminal" && obj.kind !== "station-kiosk")) {
       continue;
     }
     const { x: ax, y: ay } = stationObjectInteractionAnchor(obj);
     if (!Number.isFinite(ax) || !Number.isFinite(ay)) {
       continue;
     }
-    const clickReach = obj.kind === "ship-console" ? 1.55 : obj.kind === "ship-port" ? 1.85 : 1.9;
+    const clickReach = obj.kind === "ship-console" || obj.kind === "sci-shop-terminal" ? 1.55 : obj.kind === "ship-port" ? 1.85 : 1.9;
     const d = Math.hypot(world.x - ax, world.y - ay);
     if (d <= clickReach && d < bestDist) {
       bestDist = d;
@@ -6492,6 +6539,8 @@ function drawSpaceObjects() {
       drawShipBayObject(obj, sx, sy);
     } else if (obj.kind === "sci-shop") {
       drawSciFiShopObject(obj, sx, sy);
+    } else if (obj.kind === "sci-shop-terminal") {
+      drawSciFiShopTerminalObject(obj, sx, sy);
     } else if (obj.kind === "station-module" || obj.kind === "station-kiosk") {
       drawStationModuleObject(obj, sx, sy);
     } else if (obj.kind === "cargo-crate" || obj.kind === "shipping-crate" || obj.kind === "container-box") {
@@ -6518,7 +6567,7 @@ function spaceObjectDrawOrder(obj) {
   if (kind === "cargo-crate" || kind === "shipping-crate" || kind === "container-box") return 5;
   if (kind === "sci-shop" || kind === "station-kiosk") return 6;
   if (kind === "ship-port") return 7;
-  if (kind === "ship-console") return 8;
+  if (kind === "ship-console" || kind === "sci-shop-terminal") return 8;
   return 5;
 }
 
@@ -6677,9 +6726,96 @@ function drawSciFiShopObject(obj, sx, sy) {
   ctx.fillRect(x + 8, y + h - 10, w - 16, 3);
   ctx.fillStyle = `rgba(255,255,255,${pulse})`;
   ctx.fillRect(x + w * 0.47, y + h - 14, w * 0.06, 6);
+  drawSciFiShopDoors(obj, x, y, w, h, accent);
   ctx.strokeStyle = accent.main;
   ctx.lineWidth = 2;
   ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+  ctx.restore();
+}
+
+function drawSciFiShopDoors(obj, x, y, w, h, accent) {
+  const openT = getStationShopDoorOpenFactor(obj);
+  const fw = Math.max(1, Math.floor(Number(obj.w) || 1));
+  const fh = Math.max(1, Math.floor(Number(obj.h) || 1));
+  const tileW = w / fw;
+  const tileH = h / fh;
+
+  for (const door of stationShopDoorAnchors(obj)) {
+    const side = door.side;
+    const width = Math.max(1, Number(door.width) || 2);
+    const span = width * (side === "bottom" ? tileW : tileH);
+    const panelGap = Math.round(openT * Math.min(22, span * 0.34));
+    ctx.save();
+    ctx.shadowColor = accent.main;
+    ctx.shadowBlur = 7 + openT * 8;
+    ctx.fillStyle = "rgba(5, 10, 18, 0.92)";
+    if (side === "bottom") {
+      const localCenterX = (door.x - (Number(obj.x) - Math.floor(fw / 2))) * tileW;
+      const dw = Math.max(28, span);
+      const dh = 18;
+      const dx = x + localCenterX - dw / 2;
+      const dy = y + h - dh - 1;
+      ctx.fillRect(dx, dy, dw, dh);
+      ctx.strokeStyle = accent.main;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(dx - 2, dy - 2, dw + 4, dh + 4);
+      ctx.fillStyle = "rgba(103,240,255,0.18)";
+      ctx.fillRect(dx + 3, dy + 3, dw - 6, dh - 6);
+      ctx.fillStyle = accent.main;
+      const half = Math.max(4, dw / 2 - 3);
+      ctx.fillRect(dx + 2 - panelGap, dy + 2, half, dh - 4);
+      ctx.fillRect(dx + dw / 2 + 1 + panelGap, dy + 2, half, dh - 4);
+    } else {
+      const minY = Number(obj.y) - Math.floor(fh / 2);
+      const localCenterY = (door.y - minY) * tileH;
+      const dw = 18;
+      const dh = Math.max(30, span);
+      const dx = side === "east" ? x + w - dw - 1 : x + 1;
+      const dy = y + localCenterY - dh / 2;
+      ctx.fillRect(dx, dy, dw, dh);
+      ctx.strokeStyle = accent.main;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(dx - 2, dy - 2, dw + 4, dh + 4);
+      ctx.fillStyle = "rgba(103,240,255,0.18)";
+      ctx.fillRect(dx + 3, dy + 3, dw - 6, dh - 6);
+      ctx.fillStyle = accent.main;
+      const half = Math.max(5, dh / 2 - 3);
+      ctx.fillRect(dx + 2, dy + 2 - panelGap, dw - 4, half);
+      ctx.fillRect(dx + 2, dy + dh / 2 + 1 + panelGap, dw - 4, half);
+    }
+    ctx.restore();
+  }
+}
+
+function drawSciFiShopTerminalObject(obj, sx, sy) {
+  const accent = sciFiShopAccent(obj.shopType);
+  const t = performance.now() / 1000;
+  const pulse = 0.55 + Math.sin(t * 5.2 + sx * 0.01) * 0.18;
+  const w = 34;
+  const h = 42;
+  const x = sx - w / 2;
+  const y = sy - h / 2;
+  ctx.save();
+  drawEllipseShadow(x - 4, y + h - 8, w + 8, 8, 0.24);
+  ctx.fillStyle = "rgba(7, 11, 20, 0.96)";
+  ctx.fillRect(x + 5, y + 8, w - 10, h - 8);
+  ctx.fillStyle = "rgba(38, 53, 72, 0.98)";
+  ctx.fillRect(x + 2, y + 2, w - 4, h - 14);
+  ctx.fillStyle = accent.main;
+  ctx.globalAlpha = 0.35 + pulse * 0.35;
+  ctx.fillRect(x + 7, y + 7, w - 14, 14);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = "rgba(255,255,255,0.78)";
+  ctx.fillRect(x + 10, y + 10, w - 20, 2);
+  ctx.fillRect(x + 10, y + 15, w - 24, 2);
+  ctx.fillStyle = accent.main;
+  ctx.shadowColor = accent.main;
+  ctx.shadowBlur = 6 + pulse * 6;
+  ctx.fillRect(x + w / 2 - 3, y + h - 13, 6, 6);
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = accent.main;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 1, y + 1, w - 2, h - 13);
   ctx.restore();
 }
 

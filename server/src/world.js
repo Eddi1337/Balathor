@@ -248,11 +248,44 @@ function sciFiStationFeatureAt(x, y) {
   return null;
 }
 
-function sciFiStationTileForFeature(feature, x, y) {
+function sciFiFeatureFootprint(feature) {
   const fw = Math.max(1, Number(feature.w || 1));
   const fh = Math.max(1, Number(feature.h || 1));
   const minX = feature.x - Math.floor(fw / 2);
   const minY = feature.y - Math.floor(fh / 2);
+  return { fw, fh, minX, minY };
+}
+
+function sciFiShopDoorOpenings(feature) {
+  const openings = Array.isArray(feature?.entrances) ? feature.entrances : [];
+  if (openings.length) {
+    return openings;
+  }
+  if (feature?.facing === "east") return [{ side: "east", width: 2 }];
+  if (feature?.facing === "west") return [{ side: "west", width: 2 }];
+  return [{ side: "bottom", width: 2 }];
+}
+
+function sciFiShopDoorAtLocal(feature, lx, ly, fw, fh) {
+  if (!feature || (feature.kind !== "sci-shop" && feature.kind !== "shop-bay" && feature.kind !== "ship-shop")) {
+    return false;
+  }
+  for (const door of sciFiShopDoorOpenings(feature)) {
+    const side = String(door?.side || "bottom");
+    const width = Math.max(1, Math.min(4, Math.floor(Number(door?.width) || 2)));
+    const axisSize = side === "east" || side === "west" ? fh : fw;
+    const center = Math.floor(axisSize / 2) + Math.floor(Number(door?.offset) || 0);
+    const start = Math.max(0, Math.min(axisSize - width, Math.round(center - (width - 1) / 2)));
+    if (side === "east" && lx === fw - 1 && ly >= start && ly < start + width) return true;
+    if (side === "west" && lx === 0 && ly >= start && ly < start + width) return true;
+    if (side === "bottom" && ly === fh - 1 && lx >= start && lx < start + width) return true;
+    if (side === "south" && ly === fh - 1 && lx >= start && lx < start + width) return true;
+  }
+  return false;
+}
+
+function sciFiStationTileForFeature(feature, x, y) {
+  const { fw, fh, minX, minY } = sciFiFeatureFootprint(feature);
   const lx = x - minX;
   const ly = y - minY;
   const edge = lx === 0 || ly === 0 || lx === fw - 1 || ly === fh - 1;
@@ -291,7 +324,10 @@ function sciFiStationTileForFeature(feature, x, y) {
   }
 
   if (feature.kind === "sci-shop" || feature.kind === "station-kiosk") {
-    if (edge) return TILE.METAL;
+    if (feature.kind === "sci-shop" && sciFiShopDoorAtLocal(feature, lx, ly, fw, fh)) {
+      return TILE.DOOR;
+    }
+    if (edge) return feature.kind === "sci-shop" ? TILE.HULL : TILE.METAL;
     const cx = Math.floor(fw / 2);
     const cy = Math.floor(fh / 2);
     if (Math.abs(lx - cx) <= 1 || Math.abs(ly - cy) <= 1) return TILE.WALKWAY;
@@ -1586,8 +1622,17 @@ function getDoorTransitionAt(x, y) {
 
 function getShopFixtureAt(x, y) {
   if (isSciFiSector(x, y)) {
-    for (const feature of SCI_FI_STATION_FEATURES) {
-      if (feature.kind !== "shop-bay" && feature.kind !== "ship-shop" && feature.kind !== "sci-shop" && feature.kind !== "station-kiosk") {
+    const stationShopFeatures = SCI_FI_STATION_FEATURES
+      .filter((feature) => feature?.kind === "sci-shop-terminal")
+      .concat(SCI_FI_STATION_FEATURES.filter((feature) => feature?.kind !== "sci-shop-terminal"));
+    for (const feature of stationShopFeatures) {
+      if (
+        feature.kind !== "shop-bay" &&
+        feature.kind !== "ship-shop" &&
+        feature.kind !== "sci-shop" &&
+        feature.kind !== "sci-shop-terminal" &&
+        feature.kind !== "station-kiosk"
+      ) {
         continue;
       }
       if (!feature.shopType) {
@@ -1601,8 +1646,8 @@ function getShopFixtureAt(x, y) {
       if (x >= feature.x - halfW - 0.9 && x <= feature.x + halfW + 0.9 && y >= feature.y - halfH - 0.9 && y <= feature.y + halfH + 0.9) {
         return {
           id: feature.id,
-          name: feature.name,
-          buildingName: "Orbital Square",
+          name: feature.shopName || feature.name,
+          buildingName: feature.shopName || feature.name,
           isPub: false,
           shopType: feature.shopType,
           x: feature.x,
