@@ -2041,6 +2041,8 @@ function simulate() {
         const vx = Math.cos(client.player.facing) * sp * dt;
         const vy = Math.sin(client.player.facing) * sp * dt;
         const center = shipCenter(ship);
+        const prevShipX = Number.isFinite(ship.worldX) ? ship.worldX : center.x;
+        const prevShipY = Number.isFinite(ship.worldY) ? ship.worldY : center.y;
         const nextX = center.x + vx;
         const nextY = center.y + vy;
         if (
@@ -2054,6 +2056,18 @@ function simulate() {
           !isDoorLockedForPlayer(ship.worldX ?? center.x, nextY, doorAccountKey)
         ) {
           ship.worldY = nextY;
+        }
+        // Drag passengers (aboardShipId === ship.id) along with the ship so they stay
+        // in their relative position inside the interior as it flies.
+        const shipDx = (ship.worldX ?? prevShipX) - prevShipX;
+        const shipDy = (ship.worldY ?? prevShipY) - prevShipY;
+        if (shipDx !== 0 || shipDy !== 0) {
+          for (const passengerClient of clients.values()) {
+            const passenger = passengerClient.player;
+            if (!passenger || passenger.aboardShipId !== ship.id) continue;
+            passenger.x += shipDx;
+            passenger.y += shipDy;
+          }
         }
       }
       const station = getShipLayout(ship).stations.find((candidate) => candidate.id === ship.stationId) || getShipLayout(ship).stations[0];
@@ -3453,11 +3467,34 @@ function resolveShipExitDockPort(player) {
   return getPlayerDockPort(player) || findNearestSciFiDockPort(STARGATE_LANDING.x, STARGATE_LANDING.y, 120);
 }
 
+function disembarkPassengers(shipId, port) {
+  if (!shipId) return;
+  for (const passengerClient of clients.values()) {
+    const passenger = passengerClient.player;
+    if (!passenger || passenger.aboardShipId !== shipId) continue;
+    passenger.aboardShipId = null;
+    if (port) {
+      passenger.x = Number.isFinite(port.terminalX) ? port.terminalX : port.x;
+      passenger.y = Number.isFinite(port.terminalY) ? port.terminalY : port.y;
+      passenger.facing = facingForDockPort(port);
+    }
+    passenger.moving = false;
+    passenger._stillAccumulator = 0;
+    saveClientCharacter(passengerClient);
+    send(passengerClient, {
+      type: "serverMessage",
+      message: "party_disembarked",
+      shipName: passenger.name
+    });
+  }
+}
+
 function dockPlayerShipAtStation(client, port = resolveShipExitDockPort(client.player)) {
   if (!client.player?.ship || !port) {
     return false;
   }
 
+  const shipId = client.player.ship.id;
   client.player.ship.boarded = false;
   client.player.ship.deckMode = false;
   client.player.ship.stationRole = null;
@@ -3468,6 +3505,7 @@ function dockPlayerShipAtStation(client, port = resolveShipExitDockPort(client.p
   client.player.ship.dockPortId = port.id;
   client.player.ship.worldX = port.x;
   client.player.ship.worldY = port.y;
+  disembarkPassengers(shipId, port);
   client.player.x = Number.isFinite(port.terminalX) ? port.terminalX : port.x;
   client.player.y = Number.isFinite(port.terminalY) ? port.terminalY : port.y;
   client.player.facing = facingForDockPort(port);
@@ -3617,6 +3655,7 @@ function boardPlayerShipAtPort(client, ship, port) {
   client.player.facing = facingForDockPort(port);
   client.player.moving = false;
   client.player._stillAccumulator = 0;
+  client.player.aboardShipId = null;
   saveClientCharacter(client);
   send(client, {
     type: "serverMessage",
@@ -3647,6 +3686,7 @@ function teleportToPartyShip(client, ownerId, port) {
   client.player.facing = facingForDockPort(port);
   client.player.moving = false;
   client.player._stillAccumulator = 0;
+  client.player.aboardShipId = ship.id;
   saveClientCharacter(client);
   send(client, {
     type: "serverMessage",
@@ -4623,7 +4663,8 @@ function broadcastSnapshot() {
       facing: Number(p.facing.toFixed(3)),
       moving: p.moving,
       isMod: p.isMod || false,
-      emote: (p.emote && p.emote.until > Date.now()) ? p.emote.kind : null
+      emote: (p.emote && p.emote.until > Date.now()) ? p.emote.kind : null,
+      aboardShipId: typeof p.aboardShipId === "string" ? p.aboardShipId : null
     };
     if (
       viewerId &&

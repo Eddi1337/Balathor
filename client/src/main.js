@@ -1445,6 +1445,8 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: "That crewmate's ship is not available." });
     } else if (message.message === "party_ship_full") {
       appendChat({ kind: "system", name: "Realm", text: "That ship cannot host additional crew." });
+    } else if (message.message === "party_disembarked") {
+      appendChat({ kind: "system", name: "Realm", text: "Disembarked from crewmate's ship" });
     } else if (message.message === "ship_station_entered") {
       appendChat({ kind: "system", name: "Realm", text: `Entered ${message.stationName || "ship station"}` });
     } else if (message.message === "ship_station_left") {
@@ -8080,10 +8082,18 @@ function drawPlayers() {
   //   - If the viewer is sitting in a pilot/captain/copilot seat, they see their ship as the
   //     small exterior (interior hidden), with the camera zoomed out a bit.
   //   - If the viewer is walking around their deck (not piloting), they see the interior.
+  //   - If the viewer was teleported aboard a party member's ship (aboardShipId), they always
+  //     see the interior of that ship regardless of what the pilot is doing.
   //   - Everyone else (including other players) sees the small exterior view of any boarded ship.
   const selfShip = self?.ship?.boarded ? self.ship : null;
   const selfPiloting = Boolean(selfShip && isPilotShipRole(selfShip.stationRole));
-  const viewerInteriorShipId = (selfShip && selfShip.deckMode && !selfPiloting) ? selfShip.id : null;
+  const selfAboardShipId = typeof self?.aboardShipId === "string" ? self.aboardShipId : null;
+  let viewerInteriorShipId = null;
+  if (selfAboardShipId) {
+    viewerInteriorShipId = selfAboardShipId;
+  } else if (selfShip && selfShip.deckMode && !selfPiloting) {
+    viewerInteriorShipId = selfShip.id;
+  }
   const renderedShips = new Set();
 
   for (const { entity, isNpc, isMob } of entities) {
