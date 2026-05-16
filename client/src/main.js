@@ -1782,6 +1782,18 @@ function applyCombatEvent(event) {
       const player = state.players.get(event.targetId);
       if (player) {
         player.hp = event.targetHp;
+        // Light up the personal shield bubble locally in the direction of the hit so the
+        // glow is responsive (server snapshot will confirm on the next tick).
+        if (event.shieldHit && player.shieldBuff) {
+          const px = Number.isFinite(player.renderX) ? player.renderX : player.x;
+          const py = Number.isFinite(player.renderY) ? player.renderY : player.y;
+          const dx = Number(event.x) - px;
+          const dy = Number(event.y) - py;
+          const len = Math.hypot(dx, dy) || 1;
+          player.shieldBuff.lastHitAt = Date.now();
+          player.shieldBuff.lastHitDx = dx / len;
+          player.shieldBuff.lastHitDy = dy / len;
+        }
       }
     } else if (event.targetKind === "mob") {
       const mob = state.mobs.get(event.targetId);
@@ -7466,6 +7478,77 @@ function nearestShipStationForPlayer(player) {
 }
 
 const SHIP_DOCK_PROMPT_RANGE = 8;
+const SHIELD_HIT_GLOW_MS = 600;
+
+function drawShieldBuff(player, sx, sy) {
+  const buff = player?.shieldBuff;
+  if (!buff) return;
+  const now = Date.now();
+  if (!Number.isFinite(buff.expiresAt) || buff.expiresAt <= now) return;
+
+  const color = typeof buff.color === "string" ? buff.color : "#a07bff";
+  const t = performance.now() / 1000;
+  const radius = TILE_SIZE * 1.35;
+  // Soft breathing pulse so the bubble is always slightly visible
+  const idleAlpha = 0.22 + Math.sin(t * 2.4) * 0.06;
+
+  // Outer faint glow ring
+  ctx.save();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = idleAlpha;
+  ctx.beginPath();
+  ctx.arc(sx, sy - 6, radius, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Inner crisper ring
+  ctx.lineWidth = 1.2;
+  ctx.globalAlpha = idleAlpha * 1.4;
+  ctx.beginPath();
+  ctx.arc(sx, sy - 6, radius * 0.9, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  // Hit glow — bright arc on the side the damage came from
+  const sinceHit = now - (Number(buff.lastHitAt) || 0);
+  if (sinceHit >= 0 && sinceHit < SHIELD_HIT_GLOW_MS) {
+    const fade = 1 - sinceHit / SHIELD_HIT_GLOW_MS;
+    const dxh = Number(buff.lastHitDx) || 0;
+    const dyh = Number(buff.lastHitDy) || 0;
+    const angle = Math.atan2(dyh, dxh);
+    ctx.save();
+    ctx.translate(sx, sy - 6);
+    // Radial glow centred on the impact point
+    const impactX = Math.cos(angle) * radius;
+    const impactY = Math.sin(angle) * radius;
+    const glow = ctx.createRadialGradient(impactX, impactY, 0, impactX, impactY, radius * 0.9);
+    glow.addColorStop(0, color);
+    glow.addColorStop(0.5, hexToRgba(color, 0.45 * fade));
+    glow.addColorStop(1, hexToRgba(color, 0));
+    ctx.globalAlpha = Math.min(1, 0.85 * fade);
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 1.05, 0, Math.PI * 2);
+    ctx.fill();
+    // Bright arc rim where the strike landed
+    ctx.globalAlpha = Math.min(1, fade);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, angle - Math.PI / 3, angle + Math.PI / 3);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function hexToRgba(hex, alpha) {
+  const v = String(hex || "").replace("#", "");
+  const isShort = v.length === 3;
+  const r = parseInt(isShort ? v[0] + v[0] : v.slice(0, 2), 16);
+  const g = parseInt(isShort ? v[1] + v[1] : v.slice(2, 4), 16);
+  const b = parseInt(isShort ? v[2] + v[2] : v.slice(4, 6), 16);
+  return `rgba(${r || 0}, ${g || 0}, ${b || 0}, ${alpha})`;
+}
 
 // Runs `callback` in a transform that cancels the current camera rotation,
 // so anything drawn stays at its un-rotated screen position. Used to keep
@@ -8546,7 +8629,10 @@ function drawPlayers() {
           withCameraUnrotated(() => drawShipDeckObject(entity.ship, shipSx, shipSy));
         }
         const seated = Boolean(entity.ship.stationRole);
-        withCameraUnrotated(() => drawCharacter(entity, sx, sy, isNpc, { restingBench: seated }));
+        withCameraUnrotated(() => {
+          drawCharacter(entity, sx, sy, isNpc, { restingBench: seated });
+          drawShieldBuff(entity, sx, sy);
+        });
       } else {
         // Viewer is outside this ship (or is piloting) — show only the small exterior hull.
         if (!renderedShips.has(shipId)) {
@@ -8596,9 +8682,13 @@ function drawPlayers() {
       // Passengers and crew inside the viewer's ship interior keep their orientation locked to the deck.
       const lockToShip = insideShipDeck && viewerInteriorShipId;
       if (lockToShip) {
-        withCameraUnrotated(() => drawCharacter(entity, sx, sy, isNpc, { restingBench, insideShipDeck }));
+        withCameraUnrotated(() => {
+          drawCharacter(entity, sx, sy, isNpc, { restingBench, insideShipDeck });
+          if (!isNpc) drawShieldBuff(entity, sx, sy);
+        });
       } else {
         drawCharacter(entity, sx, sy, isNpc, { restingBench, insideShipDeck });
+        if (!isNpc) drawShieldBuff(entity, sx, sy);
       }
       if (isNpc) {
         drawQuestMarker(entity, sx, sy);

@@ -5345,7 +5345,17 @@ function broadcastSnapshot() {
       moving: p.moving,
       isMod: p.isMod || false,
       emote: (p.emote && p.emote.until > Date.now()) ? p.emote.kind : null,
-      aboardShipId: typeof p.aboardShipId === "string" ? p.aboardShipId : null
+      aboardShipId: typeof p.aboardShipId === "string" ? p.aboardShipId : null,
+      shieldBuff: (p.shieldBuff && p.shieldBuff.expiresAt > Date.now())
+        ? {
+            spellId: p.shieldBuff.spellId,
+            expiresAt: p.shieldBuff.expiresAt,
+            color: p.shieldBuff.color,
+            lastHitAt: p.shieldBuff.lastHitAt || 0,
+            lastHitDx: Number((p.shieldBuff.lastHitDx || 0).toFixed(3)),
+            lastHitDy: Number((p.shieldBuff.lastHitDy || 0).toFixed(3))
+          }
+        : null
     };
     if (
       viewerId &&
@@ -6580,6 +6590,20 @@ function attackPlayerWithMob(mob, player, now) {
     damage = Math.max(1, Math.round(damage * KNIGHT_SHIELD_DAMAGE_MULTIPLIER));
   }
   damage = applyArmourReduction(player, damage);
+
+  // Personal shield buff absorbs part of the damage and lights up in the direction of the hit.
+  let shieldHit = false;
+  if (player.shieldBuff && player.shieldBuff.expiresAt > now) {
+    shieldHit = true;
+    damage = Math.max(1, Math.round(damage * (1 - SHIELD_DAMAGE_REDUCTION)));
+    const dxh = player.x - mob.x;
+    const dyh = player.y - mob.y;
+    const len = Math.hypot(dxh, dyh) || 1;
+    player.shieldBuff.lastHitAt = now;
+    player.shieldBuff.lastHitDx = -dxh / len; // direction from player toward attacker
+    player.shieldBuff.lastHitDy = -dyh / len;
+  }
+
   player.hp = Math.max(0, player.hp - damage);
 
   const event = {
@@ -6597,6 +6621,7 @@ function attackPlayerWithMob(mob, player, now) {
     targetKind: "player",
     damage,
     blocked,
+    shieldHit,
     targetHp: player.hp,
     endX: Number(player.x.toFixed(3)),
     endY: Number(player.y.toFixed(3))
@@ -6922,6 +6947,19 @@ function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
+// Personal-shield spells get a long-duration protective bubble around the caster.
+const SHIELD_SPELLS = new Set(["mana_shield", "frost_barrier", "divine_shield", "fortify"]);
+const SHIELD_BUFF_DURATION_MS = 30000;
+const SHIELD_DAMAGE_REDUCTION = 0.5; // 50% incoming damage is absorbed while the shield holds.
+const SHIELD_HIT_GLOW_MS = 600;
+
+function shieldBuffColor(spellId) {
+  if (spellId === "frost_barrier") return "#9ee8ff";
+  if (spellId === "divine_shield") return "#ffe27a";
+  if (spellId === "fortify") return "#f4d35e";
+  return "#a07bff"; // mana_shield default
+}
+
 const SPELL_COOLDOWNS = new Map();
 const SPELL_COOLDOWN_MS = {
   fireball: 2000, fire_nova: 4000, inferno: 8000,
@@ -6990,6 +7028,16 @@ function handleCastSpell(client, spellId) {
   if (spellId === "battle_cry" || spellId === "evasion" || spellId === "camouflage") {
     p._buffExpires = now + 5000;
     p._buff = spellId;
+  }
+  if (SHIELD_SPELLS.has(spellId)) {
+    p.shieldBuff = {
+      spellId,
+      expiresAt: now + SHIELD_BUFF_DURATION_MS,
+      color: shieldBuffColor(spellId),
+      lastHitAt: 0,
+      lastHitDx: 0,
+      lastHitDy: 0
+    };
   }
   if (spellId === "consecration") {
     spawnConsecrationZone(p, now);
