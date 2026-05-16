@@ -2225,6 +2225,11 @@ function simulate() {
       continue;
     }
 
+    // Mod characters never run out of gold — refill every tick so purchases feel free.
+    if (client.player.isMod && client.player.gold < 99000000) {
+      client.player.gold = 99000000;
+    }
+
     const input = client.input;
     const doorAccountKey = client.account?.key || "";
     const shipPilot =
@@ -3434,6 +3439,8 @@ function handleAttack(client, message = {}) {
     kind: loadout.kind,
     weapon: loadout.weapon,
     projectileKind: loadout.projectileKind,
+    weaponStyle: loadout.weaponStyle || null,
+    weaponColor: loadout.weaponColor || null,
     attackerId: client.player.id,
     x: Number(client.player.x.toFixed(3)),
     y: Number(client.player.y.toFixed(3)),
@@ -5067,16 +5074,36 @@ function getActiveLoadout(player) {
     };
   }
 
+  const weaponStyle = weapon.visual?.weaponStyle || null;
+  const weaponColor = weapon.visual?.weaponColor || null;
+  // Sci-fi weapon visual styles drive distinct combat FX on the client.
+  // Saber-class weapons stay a swing but light up; rifles/blasters fire colored laser bolts.
+  const SCIFI_BOLT_STYLES = new Set(["pulse", "ion", "plasma", "rail"]);
+  const isSciFiSaber = weaponStyle === "saber";
+  const isSciFiBolt = SCIFI_BOLT_STYLES.has(weaponStyle);
+
   if (weapon.weaponKind === "staff") {
-    return { ...CLASS_LOADOUTS.mage, damage: 15 };
+    const base = { ...CLASS_LOADOUTS.mage, damage: 15 };
+    if (isSciFiBolt) {
+      return { ...base, projectileKind: "laser_bolt", weaponStyle, weaponColor };
+    }
+    return { ...base, weaponStyle, weaponColor };
   }
 
   if (weapon.weaponKind === "bow") {
-    return { ...CLASS_LOADOUTS.ranger, damage: 21 };
+    const base = { ...CLASS_LOADOUTS.ranger, damage: 21 };
+    if (isSciFiBolt) {
+      return { ...base, projectileKind: "laser_bolt", weaponStyle, weaponColor };
+    }
+    return { ...base, weaponStyle, weaponColor };
   }
 
   if (weapon.weaponKind === "sword") {
-    return { ...CLASS_LOADOUTS.knight, damage: 13 };
+    const base = { ...CLASS_LOADOUTS.knight, damage: 13 };
+    if (isSciFiSaber) {
+      return { ...base, weaponStyle, weaponColor };
+    }
+    return { ...base, weaponStyle, weaponColor };
   }
 
   return CLASS_LOADOUTS[player.classId] || CLASS_LOADOUTS.ranger;

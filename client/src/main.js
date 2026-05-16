@@ -6617,9 +6617,11 @@ function draw() {
   drawCombatFx();
   drawTalentSpellFx();
   drawLevelUpFx();
-  drawLighting();
 
   ctx.restore();
+  // Lighting overlay runs in screen space so it always covers the full viewport,
+  // even when the player has zoomed out and the scaled world doesn't fill the canvas.
+  drawLighting();
   drawQuestHelperArrow();
   drawPortalTransitionOverlay();
   drawPubPassoutOverlay();
@@ -10506,11 +10508,36 @@ function drawCombatFx() {
     ctx.translate(sx, sy);
     ctx.rotate(angle);
     ctx.globalAlpha = 1 - pct;
-    ctx.strokeStyle = fx.hit ? "#ffd166" : "rgba(255, 255, 255, 0.75)";
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(16, 0, reach, -0.5, 0.5);
-    ctx.stroke();
+    if (fx.weaponStyle === "saber") {
+      // Lightsaber swing — bright glowing arc in the weapon's color
+      const color = typeof fx.weaponColor === "string" ? fx.weaponColor : "#67f0ff";
+      ctx.lineCap = "round";
+      // Outer halo
+      ctx.strokeStyle = hexToRgba(color, 0.45);
+      ctx.lineWidth = 12;
+      ctx.beginPath();
+      ctx.arc(16, 0, reach, -0.6, 0.6);
+      ctx.stroke();
+      // Mid blade glow
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.arc(16, 0, reach, -0.55, 0.55);
+      ctx.stroke();
+      // Hot core
+      ctx.strokeStyle = "rgba(255,255,255,0.95)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(16, 0, reach, -0.5, 0.5);
+      ctx.stroke();
+      ctx.lineCap = "butt";
+    } else {
+      ctx.strokeStyle = fx.hit ? "#ffd166" : "rgba(255, 255, 255, 0.75)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(16, 0, reach, -0.5, 0.5);
+      ctx.stroke();
+    }
     ctx.restore();
 
     drawDamageFx(fx, pct, halfW, halfH);
@@ -10532,23 +10559,55 @@ function drawProjectileFx(fx, sx, sy, pct, halfW, halfH) {
   ctx.rotate(angle);
 
   if (fx.projectileKind === "laser_bolt") {
+    const boltColor = typeof fx.weaponColor === "string" ? fx.weaponColor : "#67f0ff";
+    const style = fx.weaponStyle || "";
+    // Pulse / plasma → fat short bolt. Ion → thinner with crackle. Rail → long streak.
+    const length = style === "rail" ? 26 : style === "ion" ? 20 : 18;
+    const thick = style === "plasma" ? 6 : style === "rail" ? 3 : 4;
     ctx.globalAlpha = Math.max(0, 1 - pct * 0.25);
-    ctx.strokeStyle = "#67f0ff";
-    ctx.lineWidth = 4;
+    // Outer halo for the bolt
+    const halo = ctx.createLinearGradient(-length, 0, length, 0);
+    halo.addColorStop(0, hexToRgba(boltColor, 0));
+    halo.addColorStop(0.5, hexToRgba(boltColor, 0.9));
+    halo.addColorStop(1, hexToRgba(boltColor, 0));
+    ctx.strokeStyle = halo;
+    ctx.lineWidth = thick + 4;
+    ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(-18, 0);
-    ctx.lineTo(18, 0);
+    ctx.moveTo(-length, 0);
+    ctx.lineTo(length, 0);
     ctx.stroke();
-    ctx.strokeStyle = "#dffaff";
-    ctx.lineWidth = 2;
+    // Core bolt
+    ctx.strokeStyle = boltColor;
+    ctx.lineWidth = thick;
     ctx.beginPath();
-    ctx.moveTo(-14, 0);
-    ctx.lineTo(16, 0);
+    ctx.moveTo(-length + 4, 0);
+    ctx.lineTo(length, 0);
     ctx.stroke();
-    ctx.fillStyle = "rgba(103,240,255,0.9)";
+    // Bright tip
+    ctx.strokeStyle = "rgba(255,255,255,0.85)";
+    ctx.lineWidth = Math.max(1, thick - 2);
     ctx.beginPath();
-    ctx.arc(10, 0, 3, 0, Math.PI * 2);
+    ctx.moveTo(-length + 8, 0);
+    ctx.lineTo(length - 2, 0);
+    ctx.stroke();
+    ctx.fillStyle = hexToRgba(boltColor, 0.9);
+    ctx.beginPath();
+    ctx.arc(length - 2, 0, thick - 1, 0, Math.PI * 2);
     ctx.fill();
+    if (style === "ion") {
+      // Crackle sparks along the bolt
+      ctx.strokeStyle = "rgba(255,255,255,0.7)";
+      ctx.lineWidth = 1;
+      for (let i = -length + 4; i < length - 4; i += 5) {
+        const jitter = (Math.sin(i * 17.3 + performance.now() * 0.04) * 3);
+        ctx.beginPath();
+        ctx.moveTo(i, jitter);
+        ctx.lineTo(i + 3, -jitter);
+        ctx.stroke();
+      }
+    }
+    ctx.lineCap = "butt";
   } else if (fx.projectileKind === "fireball") {
     const glow = ctx.createRadialGradient(0, 0, 1, 0, 0, 18);
     glow.addColorStop(0, "rgba(255, 209, 102, 0.95)");
@@ -12715,12 +12774,23 @@ function drawBuildingFrontDetail(leftX, rightX, groundY, variant, p) {
 
 function drawLighting() {
   const self = state.players.get(state.selfId);
-  const lightX = self ? self.renderX * TILE_SIZE - state.camera.x + canvas.width / 2 : canvas.width / 2;
-  const lightY = self ? self.renderY * TILE_SIZE - state.camera.y + canvas.height / 2 : canvas.height / 2;
+  // Compute the player's screen position via the same projection used for the world transform
+  // so the lighting tracks them regardless of zoom or camera rotation.
+  let lightX = canvas.width / 2;
+  let lightY = canvas.height / 2;
+  if (self) {
+    const screen = worldToScreenPoint(
+      Number.isFinite(self.renderX) ? self.renderX : self.x,
+      Number.isFinite(self.renderY) ? self.renderY : self.y
+    );
+    lightX = screen.x;
+    lightY = screen.y;
+  }
   const radius = Math.max(canvas.width, canvas.height) * 0.82;
   const gradient = ctx.createRadialGradient(lightX, lightY, 80, lightX, lightY, radius);
 
   ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalCompositeOperation = "multiply";
   gradient.addColorStop(0, "rgba(255, 244, 205, 0.98)");
   gradient.addColorStop(0.45, "rgba(222, 214, 180, 0.94)");
