@@ -124,6 +124,81 @@ const STAT_POINT_STRENGTH_DAMAGE = 4;
 const STAT_POINT_ARMOUR_REDUCTION = 0.04;
 const STAT_POINT_ARMOUR_CAP = 0.55;
 const CLASS_IDS = ["ranger", "mage", "knight"];
+const QUEST_INTERACT_RADIUS = 4.5;
+const QUEST_DEFINITIONS = Object.freeze({
+  q_slime_watch: {
+    id: "q_slime_watch",
+    giverId: "npc_quest_elm_watch",
+    title: "Slimes at the Pasture",
+    summary: "Elder Elm wants the nearby slime pockets thinned before they spill into the hub lanes.",
+    rewardGold: 18,
+    rewardXp: 65,
+    steps: [
+      { type: "kill", text: "Defeat 3 slimes near the oasis road", count: 3, matchName: "slime", target: { x: 137, y: 113 } },
+      { type: "talk", text: "Return to Elder Elm", npcId: "npc_quest_elm_watch", target: { x: -6, y: 7 } }
+    ]
+  },
+  q_north_watch: {
+    id: "q_north_watch",
+    giverId: "npc_quest_mara_gate",
+    title: "North Watch Sweep",
+    summary: "Gatewarden Mara needs the north approach cleared and reported.",
+    rewardGold: 24,
+    rewardXp: 85,
+    steps: [
+      { type: "kill", text: "Defeat 4 enemies around the north post", count: 4, campId: "north_post", target: { x: 12, y: -148 } },
+      { type: "talk", text: "Report back to Gatewarden Mara", npcId: "npc_quest_mara_gate", target: { x: 11, y: -18 } }
+    ]
+  },
+  q_road_report: {
+    id: "q_road_report",
+    giverId: "npc_quest_mara_gate",
+    title: "Market Road Report",
+    summary: "Mara needs you to check in with Borin at the market before the gate can send help.",
+    rewardGold: 16,
+    rewardXp: 50,
+    steps: [
+      { type: "talk", text: "Speak with Borin Reed in the market", npcId: "npc_quest_borin_market", target: { x: 24, y: 18 } },
+      { type: "talk", text: "Bring Borin's report to Gatewarden Mara", npcId: "npc_quest_mara_gate", target: { x: 11, y: -18 } }
+    ]
+  },
+  q_briar_errand: {
+    id: "q_briar_errand",
+    giverId: "npc_quest_borin_market",
+    title: "Briar Crate Recovery",
+    summary: "Borin's missing crates are guarded by raiders past the eastern road.",
+    rewardGold: 30,
+    rewardXp: 105,
+    steps: [
+      { type: "kill", text: "Defeat 5 enemies at Hollow Band", count: 5, campId: "hollow_band", target: { x: 150, y: -110 } },
+      { type: "talk", text: "Return to Borin Reed", npcId: "npc_quest_borin_market", target: { x: 24, y: 18 } }
+    ]
+  },
+  q_wisp_sample: {
+    id: "q_wisp_sample",
+    giverId: "npc_quest_lira_brook",
+    title: "Cold-Light Samples",
+    summary: "Lira wants frost wisps dispersed so she can study the residue safely.",
+    rewardGold: 34,
+    rewardXp: 120,
+    steps: [
+      { type: "kill", text: "Defeat 3 Frost Wisps", count: 3, matchName: "frost wisp", target: { x: -150, y: -122 } },
+      { type: "talk", text: "Return to Lira Brook", npcId: "npc_quest_lira_brook", target: { x: -27, y: 23 } }
+    ]
+  },
+  q_ember_cinders: {
+    id: "q_ember_cinders",
+    giverId: "npc_quest_tamsin_anvil",
+    title: "Cinders for the Forge",
+    summary: "Tamsin needs ember imps driven back from the forge supply road.",
+    rewardGold: 38,
+    rewardXp: 135,
+    steps: [
+      { type: "kill", text: "Defeat 3 Ember Imps", count: 3, matchName: "ember imp", target: { x: 146, y: -132 } },
+      { type: "talk", text: "Return to Tamsin Anvil", npcId: "npc_quest_tamsin_anvil", target: { x: 33, y: -25 } }
+    ]
+  }
+});
 
 const SERVER_TALENT_TREES = {
   mage: [
@@ -977,6 +1052,40 @@ function saveAllActiveCharacters() {
   }
 }
 
+function sanitizeQuestLog(raw) {
+  const out = {};
+  if (!raw || typeof raw !== "object") {
+    return out;
+  }
+  for (const [questId, quest] of Object.entries(raw)) {
+    const def = QUEST_DEFINITIONS[questId];
+    if (!def || !quest || typeof quest !== "object") continue;
+    const step = clampInteger(quest.step ?? 0, 0, def.steps.length);
+    out[questId] = {
+      id: questId,
+      step,
+      progress: clampInteger(quest.progress ?? 0, 0, 9999),
+      completed: Boolean(quest.completed) || step >= def.steps.length
+    };
+  }
+  return out;
+}
+
+function serializeQuestLog(quests) {
+  const out = {};
+  for (const [questId, quest] of Object.entries(quests || {})) {
+    const def = QUEST_DEFINITIONS[questId];
+    if (!def || !quest || typeof quest !== "object") continue;
+    out[questId] = {
+      id: questId,
+      step: clampInteger(quest.step ?? 0, 0, def.steps.length),
+      progress: clampInteger(quest.progress ?? 0, 0, 9999),
+      completed: Boolean(quest.completed)
+    };
+  }
+  return out;
+}
+
 function serializePlayer(player) {
   const ownedShip = getOwnedActiveShip(player);
   const savedShips = Array.isArray(player.ships) ? player.ships.map((ship) => serializeShip({
@@ -1007,6 +1116,7 @@ function serializePlayer(player) {
     gold: player.gold,
     inventory: player.inventory,
     equipment: player.equipment,
+    quests: serializeQuestLog(player.quests),
     x: Number(player.x.toFixed(3)),
     y: Number(player.y.toFixed(3)),
     facing: Number(player.facing.toFixed(3)),
@@ -2706,6 +2816,16 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "questNpc") {
+    handleQuestNpc(client, message);
+    return;
+  }
+
+  if (message.type === "abandonQuest") {
+    handleAbandonQuest(client, message);
+    return;
+  }
+
   if (message.type === "shipTerminalAction") {
     handleShipTerminalAction(client, message);
     return;
@@ -3082,6 +3202,7 @@ function joinWorld(client, message, savedCharacter = null) {
     statPoints: isMod ? 9999 : clampInteger(savedCharacter?.statPoints ?? 0, 0, 1000),
     stats: sanitizeStats(savedCharacter?.stats),
     gold: clampInteger(savedCharacter?.gold ?? STARTING_GOLD, 0, 100000000),
+    quests: sanitizeQuestLog(savedCharacter?.quests),
     inventory: sanitizeInventory(savedCharacter?.inventory),
     equipment: sanitizeEquipment(savedCharacter?.equipment) || createStarterEquipment(classId, {
       torsoStyle: baseTorsoStyle,
@@ -3268,6 +3389,7 @@ function handleAttack(client, message = {}) {
       client.player.gold += goldReward;
       event.goldGained = goldReward;
       dropLootForMob(hit);
+      recordMobDefeatForQuests(client, hit);
     }
 
     if (hitKind === "player" && hit.hp <= 0) {
@@ -3968,6 +4090,213 @@ function handleShipTerminalAction(client, message = {}) {
   }
 }
 
+function questStepFor(questId, quest) {
+  const def = QUEST_DEFINITIONS[questId];
+  if (!def || !quest || quest.completed) return null;
+  return def.steps[quest.step] || null;
+}
+
+function questStepProgressText(step, quest) {
+  if (!step) return "";
+  if (step.type === "kill") {
+    return `${Math.min(step.count, quest.progress || 0)} / ${step.count}`;
+  }
+  return "Speak";
+}
+
+function buildQuestSnapshot(player) {
+  const quests = sanitizeQuestLog(player?.quests || {});
+  return Object.values(quests).map((quest) => {
+    const def = QUEST_DEFINITIONS[quest.id];
+    const step = questStepFor(quest.id, quest);
+    return {
+      id: quest.id,
+      title: def.title,
+      summary: def.summary,
+      giverId: def.giverId,
+      step: quest.step,
+      progress: quest.progress,
+      completed: Boolean(quest.completed),
+      rewardGold: def.rewardGold || 0,
+      rewardXp: def.rewardXp || 0,
+      objective: step
+        ? {
+            type: step.type,
+            text: step.text,
+            progressText: questStepProgressText(step, quest),
+            target: step.target || null,
+            npcId: step.npcId || null
+          }
+        : null
+    };
+  });
+}
+
+function activeQuestByNpc(player, npcId) {
+  for (const [questId, quest] of Object.entries(player.quests || {})) {
+    const step = questStepFor(questId, quest);
+    if (step?.type === "talk" && step.npcId === npcId) {
+      return { questId, quest, step };
+    }
+  }
+  return null;
+}
+
+function completeQuestStep(client, questId) {
+  const player = client.player;
+  const quest = player?.quests?.[questId];
+  const def = QUEST_DEFINITIONS[questId];
+  if (!player || !quest || !def || quest.completed) return false;
+  quest.step += 1;
+  quest.progress = 0;
+  if (quest.step >= def.steps.length) {
+    quest.completed = true;
+    const xpReward = clampInteger(def.rewardXp || 0, 0, 1000000);
+    const goldReward = clampInteger(def.rewardGold || 0, 0, 1000000);
+    if (xpReward > 0) {
+      awardXp(player, xpReward);
+    }
+    if (goldReward > 0) {
+      player.gold += goldReward;
+    }
+    send(client, {
+      type: "serverMessage",
+      message: "quest_completed",
+      questTitle: def.title,
+      xpGained: xpReward,
+      goldGained: goldReward
+    });
+  } else {
+    send(client, { type: "serverMessage", message: "quest_updated", questTitle: def.title });
+  }
+  saveClientCharacter(client);
+  broadcastSnapshot();
+  return true;
+}
+
+function nearestQuestNpc(player, message = {}) {
+  const tx = Number(message.x);
+  const ty = Number(message.y);
+  const useTarget = Number.isFinite(tx) && Number.isFinite(ty);
+  let best = null;
+  let bestDist = Infinity;
+  for (const questId of Object.keys(QUEST_DEFINITIONS)) {
+    const def = QUEST_DEFINITIONS[questId];
+    const npc = getNpcById(def.giverId);
+    if (!npc) continue;
+    const d = Math.hypot((useTarget ? tx : player.x) - npc.x, (useTarget ? ty : player.y) - npc.y);
+    const reach = useTarget ? 1.45 : QUEST_INTERACT_RADIUS;
+    const playerReach = Math.hypot(player.x - npc.x, player.y - npc.y);
+    if (d <= reach && playerReach <= QUEST_INTERACT_RADIUS && d < bestDist) {
+      bestDist = d;
+      best = npc;
+    }
+  }
+  return best;
+}
+
+function findNextQuestFromNpc(player, npc) {
+  const ids = Array.isArray(npc?.questIds) ? npc.questIds : Object.values(QUEST_DEFINITIONS)
+    .filter((def) => def.giverId === npc?.id)
+    .map((def) => def.id);
+  for (const questId of ids) {
+    const def = QUEST_DEFINITIONS[questId];
+    const quest = player.quests?.[questId];
+    if (def && !quest) {
+      return def;
+    }
+  }
+  for (const questId of ids) {
+    const def = QUEST_DEFINITIONS[questId];
+    const quest = player.quests?.[questId];
+    if (def && quest && !quest.completed) {
+      return def;
+    }
+  }
+  return null;
+}
+
+function handleQuestNpc(client, message = {}) {
+  const player = client.player;
+  if (!player) return;
+  const npcId = typeof message.npcId === "string" ? message.npcId.slice(0, 96) : null;
+  const npc = npcId ? getNpcById(npcId) : nearestQuestNpc(player, message);
+  if (!npc || Math.hypot(npc.x - player.x, npc.y - player.y) > QUEST_INTERACT_RADIUS) {
+    send(client, { type: "serverMessage", message: "quest_too_far" });
+    return;
+  }
+
+  player.quests = sanitizeQuestLog(player.quests || {});
+  const activeTalk = activeQuestByNpc(player, npc.id);
+  if (activeTalk) {
+    completeQuestStep(client, activeTalk.questId);
+    return;
+  }
+
+  const next = findNextQuestFromNpc(player, npc);
+  if (!next) {
+    send(client, { type: "serverMessage", message: "quest_none" });
+    return;
+  }
+  const existing = player.quests[next.id];
+  if (existing?.completed) {
+    send(client, { type: "serverMessage", message: "quest_none" });
+    return;
+  }
+  if (existing) {
+    send(client, { type: "serverMessage", message: "quest_in_progress", questTitle: next.title });
+    return;
+  }
+  player.quests[next.id] = { id: next.id, step: 0, progress: 0, completed: false };
+  send(client, { type: "serverMessage", message: "quest_started", questTitle: next.title });
+  saveClientCharacter(client);
+  broadcastSnapshot();
+}
+
+function handleAbandonQuest(client, message = {}) {
+  const player = client.player;
+  const questId = typeof message.questId === "string" ? message.questId : null;
+  if (!player || !questId || !QUEST_DEFINITIONS[questId]) return;
+  const quest = player.quests?.[questId];
+  if (!quest || quest.completed) return;
+  delete player.quests[questId];
+  send(client, { type: "serverMessage", message: "quest_abandoned", questTitle: QUEST_DEFINITIONS[questId].title });
+  saveClientCharacter(client);
+  broadcastSnapshot();
+}
+
+function mobMatchesQuestStep(mob, step) {
+  if (!mob || !step || step.type !== "kill") return false;
+  if (step.campId && mob.campId === step.campId) return true;
+  if (step.faction && mob.faction === step.faction) return true;
+  if (step.matchName && String(mob.name || "").toLowerCase().includes(String(step.matchName).toLowerCase())) return true;
+  return false;
+}
+
+function recordMobDefeatForQuests(client, mob) {
+  const player = client?.player || client;
+  if (!player?.quests) return;
+  let changed = false;
+  for (const [questId, quest] of Object.entries(player.quests)) {
+    const step = questStepFor(questId, quest);
+    if (!mobMatchesQuestStep(mob, step)) continue;
+    quest.progress = Math.min(step.count, (quest.progress || 0) + 1);
+    changed = true;
+    if (quest.progress >= step.count) {
+      if (client?.player) {
+        completeQuestStep(client, questId);
+      } else {
+        quest.step += 1;
+        quest.progress = 0;
+      }
+    }
+  }
+  if (changed && client?.player) {
+    saveClientCharacter(client);
+    broadcastSnapshot();
+  }
+}
+
 function handleInteract(client, message = {}) {
   if (!client.player) {
     return;
@@ -3995,6 +4324,12 @@ function handleInteract(client, message = {}) {
   const chest = nearestClosedChest(client.player);
   if (chest) {
     lootWorldChest(client, chest);
+    return;
+  }
+
+  const questNpc = nearestQuestNpc(client.player, message);
+  if (questNpc) {
+    handleQuestNpc(client, { npcId: questNpc.id });
     return;
   }
 
@@ -4494,6 +4829,8 @@ function processConsecrationZones(now) {
         consecrationCaster.gold += goldReward;
         event.goldGained = goldReward;
         dropLootForMob(mob);
+        const casterClient = [...clients.values()].find((candidate) => candidate.player?.id === consecrationCaster.id);
+        recordMobDefeatForQuests(casterClient || consecrationCaster, mob);
       }
 
       broadcastCombat(event);
@@ -4872,7 +5209,8 @@ function broadcastSnapshot() {
       ...(p.id === viewerId
         ? {
             ships: Array.isArray(p.ships) ? p.ships.map(serializeShip) : [],
-            activeShipId: p.activeShipId || getOwnedActiveShip(p)?.id || null
+            activeShipId: p.activeShipId || getOwnedActiveShip(p)?.id || null,
+            quests: buildQuestSnapshot(p)
           }
         : {}),
       talentPoints: p.talentPoints || 0,
@@ -6601,6 +6939,7 @@ function applySpellDamage(client, spellId, now) {
       player.gold += goldReward;
       event.goldGained = goldReward;
       dropLootForMob(mob);
+      recordMobDefeatForQuests(client, mob);
     }
 
     broadcastCombat(event);

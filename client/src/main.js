@@ -39,10 +39,14 @@ const xpFill = document.querySelector("#xpFill");
 const xpText = document.querySelector("#xpText");
 const equipmentButton = document.querySelector("#equipmentButton");
 const bagsButton = document.querySelector("#bagsButton");
+const questsButton = document.querySelector("#questsButton");
 const equipmentPanel = document.querySelector("#equipmentPanel");
 const bagsPanel = document.querySelector("#bagsPanel");
+const questPanel = document.querySelector("#questPanel");
 const equipmentClose = document.querySelector("#equipmentClose");
 const bagsClose = document.querySelector("#bagsClose");
+const questClose = document.querySelector("#questClose");
+const questList = document.querySelector("#questList");
 const equipSlotsLeft = document.querySelector("#equipSlotsLeft");
 const equipSlotsRight = document.querySelector("#equipSlotsRight");
 const charPreviewCanvas = document.querySelector("#charPreview");
@@ -725,6 +729,7 @@ const state = {
   pendingCompanionInvite: null,
   traderNpcId: null,
   traderItems: [],
+  quests: [],
   lastViewSentAt: 0,
   lastFrame: performance.now(),
   debugHud: localStorage.getItem(DEBUG_HUD_STORAGE_KEY) === "1",
@@ -1233,6 +1238,7 @@ function handleServerMessage(message) {
     syncWorldThemeFromSelf();
     if (state.activeWindow === "equipment") renderEquipment();
     if (state.activeWindow === "talent") renderTalentPanel();
+    if (state.activeWindow === "quests") renderQuestPanel();
     renderBags();
     renderHouseChestPanelIfOpen();
     renderAbilityBar();
@@ -1455,6 +1461,24 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: "Left ship station" });
     } else if (message.message === "ship_fixture_used") {
       appendChat({ kind: "system", name: "Realm", text: "Used ship fixture" });
+    } else if (message.message === "quest_started") {
+      appendChat({ kind: "system", name: "Quest", text: `Started: ${message.questTitle || "Quest"}` });
+      toggleGameWindow("quests");
+    } else if (message.message === "quest_updated") {
+      appendChat({ kind: "system", name: "Quest", text: `Updated: ${message.questTitle || "Quest"}` });
+    } else if (message.message === "quest_completed") {
+      const xp = Number(message.xpGained) || 0;
+      const gold = Number(message.goldGained) || 0;
+      appendChat({ kind: "system", name: "Quest", text: `Completed: ${message.questTitle || "Quest"} (+${xp} XP, +${gold}g)` });
+    } else if (message.message === "quest_in_progress") {
+      appendChat({ kind: "system", name: "Quest", text: `${message.questTitle || "That quest"} is already in progress` });
+      toggleGameWindow("quests");
+    } else if (message.message === "quest_abandoned") {
+      appendChat({ kind: "system", name: "Quest", text: `Abandoned: ${message.questTitle || "Quest"}` });
+    } else if (message.message === "quest_too_far") {
+      appendChat({ kind: "system", name: "Quest", text: "Move closer to the quest giver." });
+    } else if (message.message === "quest_none") {
+      appendChat({ kind: "system", name: "Quest", text: "They have no quest for you right now." });
     } else if (message.message === "ship_already_owned") {
       appendChat({ kind: "system", name: "Realm", text: "You already own a ship." });
     } else if (message.message === "ship_not_owned") {
@@ -1665,6 +1689,7 @@ function updateSelfInventory() {
   state.equipment = self.equipment || { weapon: null, body: null, ring1: null, ring2: null };
   state.ship = self.ship || null;
   state.ships = Array.isArray(self.ships) ? self.ships : (self.ship ? [self.ship] : []);
+  state.quests = Array.isArray(self.quests) ? self.quests : [];
   state.gold = Number.isFinite(self.gold) ? self.gold : state.gold;
   if (state.shop?.open) {
     state.shop.gold = state.gold;
@@ -2090,13 +2115,22 @@ function showNpcContextMenu(npc) {
   const sy = Number.isFinite(self.renderY) ? self.renderY : self.y;
   if (Math.hypot(nx - sx, ny - sy) > NPC_CTX_PLAYER_RADIUS) return;
 
-  const kind = npc.bondTag ? "romance" : npc.wandersToPlayer ? "hawker" : "comment";
+  const kind = npc.questGiver ? "quest" : npc.bondTag ? "romance" : npc.wandersToPlayer ? "hawker" : "comment";
   state.npcContext = { npcId: npc.id, kind };
 
   if (npcContextMenuName) npcContextMenuName.textContent = npc.name || "";
   if (npcContextMenuButtons) {
     npcContextMenuButtons.replaceChildren();
-    if (kind === "romance") {
+    if (kind === "quest") {
+      const questBtn = document.createElement("button");
+      questBtn.dataset.npcAction = "quest";
+      questBtn.textContent = "Quest";
+      const shooBtn = document.createElement("button");
+      shooBtn.dataset.npcAction = "shoo";
+      shooBtn.className = "npc-ctx-shoo";
+      shooBtn.textContent = "Shoo";
+      npcContextMenuButtons.append(questBtn, shooBtn);
+    } else if (kind === "romance") {
       const self = state.players.get(state.selfId);
       const isMyFollower = npc.wandersToFlirt && self?.flirtFollowNpcId === npc.id;
       if (!isMyFollower) {
@@ -2550,8 +2584,13 @@ function wireUi() {
     toggleGameWindow("bags");
   });
 
+  questsButton?.addEventListener("click", () => {
+    toggleGameWindow("quests");
+  });
+
   equipmentClose.addEventListener("click", () => setActiveGameWindow(null));
   bagsClose.addEventListener("click", () => setActiveGameWindow(null));
+  questClose?.addEventListener("click", () => setActiveGameWindow(null));
   talentClose.addEventListener("click", () => setActiveGameWindow(null));
 
   document.querySelector("#talentResetBtn")?.addEventListener("click", () => {
@@ -2595,6 +2634,13 @@ function wireUi() {
     if (!button || !state.traderNpcId) return;
     event.preventDefault();
     send({ type: "sellItem", npcId: state.traderNpcId, slot: Number(button.dataset.traderSell) });
+  });
+
+  questList?.addEventListener("pointerdown", (event) => {
+    const button = event.target.closest("[data-abandon-quest]");
+    if (!button) return;
+    event.preventDefault();
+    send({ type: "abandonQuest", questId: button.dataset.abandonQuest });
   });
 
   interactButton.addEventListener("click", () => {
@@ -3085,6 +3131,8 @@ function wireUi() {
     hideNpcContextMenu();
     if (act === "shoo") {
       send({ type: "shoo_npc", npcId });
+    } else if (act === "quest") {
+      send({ type: "questNpc", npcId });
     } else if (act === "shop") {
       send({ type: "traderOpen", npcId });
     } else if (act === "pursue_flirt") {
@@ -3203,7 +3251,7 @@ function wireUi() {
       return;
     }
 
-    // B — bags, C — character, T — talents
+    // B — bags, C — character, T — talents, L — quests
     if (event.key.toLowerCase() === "b" && state.joined && !isTextEntryTarget(event.target)) {
       event.preventDefault();
       toggleGameWindow("bags");
@@ -3217,6 +3265,11 @@ function wireUi() {
     if (event.key.toLowerCase() === "t" && state.joined && !isTextEntryTarget(event.target)) {
       event.preventDefault();
       toggleGameWindow("talent");
+      return;
+    }
+    if (event.key.toLowerCase() === "l" && state.joined && !isTextEntryTarget(event.target)) {
+      event.preventDefault();
+      toggleGameWindow("quests");
       return;
     }
     if (event.key.toLowerCase() === "o" && state.joined && !isTextEntryTarget(event.target)) {
@@ -3920,10 +3973,12 @@ function openBuyHousePanel(building) {
   state.activeWindow = null;
   equipmentPanel.classList.add("hidden");
   bagsPanel.classList.add("hidden");
+  questPanel?.classList.add("hidden");
   traderPanel.classList.add("hidden");
   talentPanel.classList.add("hidden");
   equipmentButton.classList.remove("selected");
   bagsButton.classList.remove("selected");
+  questsButton?.classList.remove("selected");
   state.traderNpcId = null;
   state.traderItems = [];
   clearMovementInput();
@@ -4982,6 +5037,7 @@ function clearWorldState() {
   state.equipment = { weapon: null, body: null, ring1: null, ring2: null };
   state.ship = null;
   state.ships = [];
+  state.quests = [];
   state.gold = 0;
   closeShop();
   closeShipTerminal();
@@ -6168,12 +6224,15 @@ function setActiveGameWindow(windowName) {
   state.activeWindow = windowName;
   equipmentPanel.classList.toggle("hidden", windowName !== "equipment");
   bagsPanel.classList.toggle("hidden", windowName !== "bags");
+  questPanel?.classList.toggle("hidden", windowName !== "quests");
   traderPanel.classList.toggle("hidden", windowName !== "trader");
   talentPanel.classList.toggle("hidden", windowName !== "talent");
   equipmentButton.classList.toggle("selected", windowName === "equipment");
   bagsButton.classList.toggle("selected", windowName === "bags");
+  questsButton?.classList.toggle("selected", windowName === "quests");
   if (windowName === "equipment") renderEquipment();
   if (windowName === "talent") renderTalentPanel();
+  if (windowName === "quests") renderQuestPanel();
   if (windowName !== "trader") {
     state.traderNpcId = null;
     state.traderItems = [];
@@ -6196,6 +6255,57 @@ function tryOpenTraderAtClick(worldX, worldY) {
     return true;
   }
   return false;
+}
+
+function renderQuestPanel() {
+  if (!questList) return;
+  questList.replaceChildren();
+  const quests = Array.isArray(state.quests) ? state.quests : [];
+  if (!quests.length) {
+    const empty = document.createElement("div");
+    empty.className = "quest-empty";
+    empty.textContent = "No active quests. Speak to people marked with ! in fantasy towns.";
+    questList.append(empty);
+    return;
+  }
+  const active = quests.filter((quest) => !quest.completed);
+  const completed = quests.filter((quest) => quest.completed);
+  for (const quest of [...active, ...completed]) {
+    const card = document.createElement("section");
+    card.className = `quest-card${quest.completed ? " completed" : ""}`;
+    const head = document.createElement("div");
+    head.className = "quest-card-head";
+    const title = document.createElement("strong");
+    title.textContent = quest.title || "Quest";
+    const stateText = document.createElement("span");
+    stateText.textContent = quest.completed ? "Complete" : "Active";
+    head.append(title, stateText);
+
+    const summary = document.createElement("p");
+    summary.className = "quest-summary";
+    summary.textContent = quest.summary || "";
+
+    const objective = document.createElement("div");
+    objective.className = "quest-objective";
+    const obj = quest.objective;
+    objective.textContent = quest.completed
+      ? `Reward claimed: ${Number(quest.rewardXp) || 0} XP, ${Number(quest.rewardGold) || 0}g`
+      : `${obj?.text || "Continue the quest"}${obj?.progressText ? ` (${obj.progressText})` : ""}`;
+
+    card.append(head, summary, objective);
+    if (!quest.completed) {
+      const actions = document.createElement("div");
+      actions.className = "quest-actions";
+      const abandon = document.createElement("button");
+      abandon.type = "button";
+      abandon.className = "window-close";
+      abandon.dataset.abandonQuest = quest.id;
+      abandon.textContent = "Abandon";
+      actions.append(abandon);
+      card.append(actions);
+    }
+    questList.append(card);
+  }
 }
 
 function renderTraderStock() {
@@ -6410,6 +6520,7 @@ function draw() {
   drawLighting();
 
   ctx.restore();
+  drawQuestHelperArrow();
   drawPortalTransitionOverlay();
   drawPubPassoutOverlay();
   drawIntimateBlackoutOverlay();
@@ -6418,6 +6529,81 @@ function draw() {
     syncMenuSessionInfo();
   }
   drawDebugHud();
+}
+
+function worldToScreenPoint(worldX, worldY) {
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const zoom = getEffectiveWorldZoom();
+  const dx = worldX * TILE_SIZE - state.camera.x;
+  const dy = worldY * TILE_SIZE - state.camera.y;
+  const rotation = Number(state.camera.rotation) || 0;
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  return {
+    x: (dx * cos - dy * sin) * zoom + halfW,
+    y: (dx * sin + dy * cos) * zoom + halfH
+  };
+}
+
+function getTrackedQuestObjective() {
+  const quests = Array.isArray(state.quests) ? state.quests : [];
+  return quests.find((quest) => !quest.completed && quest.objective?.target) || null;
+}
+
+function drawQuestHelperArrow() {
+  if (!state.joined || state.menuOpen || isSciFiWorld()) return;
+  const quest = getTrackedQuestObjective();
+  const target = quest?.objective?.target;
+  if (!target || !Number.isFinite(Number(target.x)) || !Number.isFinite(Number(target.y))) return;
+
+  const sx = Number(target.x);
+  const sy = Number(target.y);
+  const screen = worldToScreenPoint(sx, sy);
+  const margin = 44;
+  const inside =
+    screen.x >= margin &&
+    screen.x <= canvas.width - margin &&
+    screen.y >= margin &&
+    screen.y <= canvas.height - margin;
+
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const dx = screen.x - halfW;
+  const dy = screen.y - halfH;
+  const angle = Math.atan2(dy, dx);
+  const arrowX = inside ? screen.x : Math.max(margin, Math.min(canvas.width - margin, halfW + Math.cos(angle) * (halfW - margin)));
+  const arrowY = inside ? screen.y : Math.max(margin, Math.min(canvas.height - margin, halfH + Math.sin(angle) * (halfH - margin)));
+
+  ctx.save();
+  ctx.translate(arrowX, arrowY);
+  ctx.rotate(angle);
+  ctx.fillStyle = inside ? "rgba(255, 209, 102, 0.36)" : "rgba(255, 209, 102, 0.92)";
+  ctx.strokeStyle = "rgba(30, 18, 4, 0.85)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(20, 0);
+  ctx.lineTo(-10, -10);
+  ctx.lineTo(-5, 0);
+  ctx.lineTo(-10, 10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  if (!inside) {
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.font = "11px ui-sans-serif, system-ui";
+    ctx.fillStyle = "rgba(255, 245, 215, 0.95)";
+    ctx.strokeStyle = "rgba(8, 6, 3, 0.88)";
+    ctx.lineWidth = 3;
+    const label = quest.objective?.type === "kill" ? "Quest hunt" : "Quest talk";
+    ctx.strokeText(label, arrowX, arrowY + 18);
+    ctx.fillText(label, arrowX, arrowY + 18);
+    ctx.restore();
+  }
 }
 
 function drawTitleWorld() {
@@ -8193,6 +8379,44 @@ function isNpcRestingOnBench(npc) {
   return false;
 }
 
+function npcQuestMarkerKind(npc) {
+  if (!npc?.questGiver) return null;
+  const quests = Array.isArray(state.quests) ? state.quests : [];
+  for (const quest of quests) {
+    if (quest.completed) continue;
+    if (quest.objective?.type === "talk" && quest.objective?.npcId === npc.id) {
+      return "turnin";
+    }
+  }
+  const questIds = Array.isArray(npc.questIds) ? npc.questIds : [];
+  const known = new Set(quests.map((quest) => quest.id));
+  if (questIds.some((questId) => !known.has(questId))) {
+    return "available";
+  }
+  if (questIds.some((questId) => quests.some((quest) => quest.id === questId && !quest.completed))) {
+    return "active";
+  }
+  return null;
+}
+
+function drawQuestMarker(npc, sx, sy) {
+  const kind = npcQuestMarkerKind(npc);
+  if (!kind) return;
+  const t = performance.now() / 1000;
+  const y = sy - 48 + Math.sin(t * 3.4) * 2;
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "bold 22px ui-sans-serif, system-ui";
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = "rgba(20, 13, 4, 0.9)";
+  ctx.fillStyle = kind === "turnin" ? "#74f29c" : kind === "available" ? "#ffd166" : "#b8c7ff";
+  const mark = kind === "active" ? "?" : "!";
+  ctx.strokeText(mark, sx, y);
+  ctx.fillText(mark, sx, y);
+  ctx.restore();
+}
+
 function drawPlayers() {
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
@@ -8300,6 +8524,9 @@ function drawPlayers() {
         continue;
       }
       drawCharacter(entity, sx, sy, isNpc, { restingBench, insideShipDeck });
+      if (isNpc) {
+        drawQuestMarker(entity, sx, sy);
+      }
     }
   }
 }

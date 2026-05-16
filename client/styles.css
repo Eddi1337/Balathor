@@ -408,7 +408,7 @@ button:focus-visible {
 
 .window-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -530,6 +530,70 @@ button:focus-visible {
   width: min(380px, calc(100vw - 32px));
   max-height: calc(100vh - 260px);
   overflow-y: auto;
+}
+
+.quest-window {
+  left: 16px;
+  right: auto;
+  top: 148px;
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100vh - 168px);
+  overflow-y: auto;
+}
+
+.quest-list {
+  display: grid;
+  gap: 10px;
+}
+
+.quest-empty {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.quest-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(232, 200, 106, 0.32);
+  border-radius: 4px;
+  background: rgba(34, 23, 10, 0.72);
+}
+
+.quest-card.completed {
+  opacity: 0.68;
+}
+
+.quest-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.quest-card-head span {
+  color: #ffd166;
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.quest-summary {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.quest-objective {
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.quest-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .buy-house-window {

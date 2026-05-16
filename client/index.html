@@ -112,6 +112,7 @@
         <div class="window-actions">
           <button id="equipmentButton" type="button">Character</button>
           <button id="bagsButton" type="button">Bags</button>
+          <button id="questsButton" type="button">Quests</button>
         </div>
       </div>
     </aside>
@@ -156,6 +157,14 @@
         <div class="talent-xp-track"><div id="talentProgressFill" class="talent-xp-fill"></div></div>
         <div id="talentTree" class="talent-tree"></div>
       </div>
+    </aside>
+
+    <aside id="questPanel" class="game-window quest-window hidden" aria-label="Quests">
+      <div class="window-head">
+        <strong>Quests</strong>
+        <button id="questClose" class="window-close" type="button" aria-label="Close quests">Close</button>
+      </div>
+      <div id="questList" class="quest-list"></div>
     </aside>
 
     <div id="abilityBar" class="ability-bar hidden" aria-label="Ability bar">
