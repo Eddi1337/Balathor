@@ -2262,6 +2262,29 @@ button:focus-visible {
   white-space: nowrap;
 }
 
+.ship-station-stats {
+  min-width: 148px;
+  padding: 5px 7px;
+  border: 1px solid rgba(103, 240, 255, 0.28);
+  border-radius: 4px;
+  background: rgba(4, 12, 20, 0.82);
+  color: #d8fbff;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.ship-station-stats strong {
+  display: block;
+  color: #67f0ff;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.ship-station-stats span {
+  display: block;
+  color: #9fb8cf;
+}
+
 body.theme-sci-fi .ship-engage button {
   border-color: #2a8aaa;
   background: linear-gradient(180deg, #0e2a3a 0%, #061824 100%);

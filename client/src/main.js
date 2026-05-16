@@ -246,6 +246,7 @@ const CLIENT_SHIP_TURN_SPEED = 2.65;
 const LOCAL_CORRECTION_DEADZONE_TILES = 0.65;
 const LOCAL_CORRECTION_BLEND_THRESHOLD_TILES = 1.35;
 const LOCAL_CORRECTION_SNAP_TILES = 3.0;
+const SHIP_STATION_INTERACT_RADIUS = 1.35;
 
 const TALENT_TREES = {
   mage: [
@@ -709,7 +710,7 @@ const state = {
   requestedChunks: new Set(),
   population: 0,
   worldTime: { hour: 8, phase: "day" },
-  input: { up: false, down: false, left: false, right: false, engage: false },
+  input: { up: false, down: false, left: false, right: false, engage: false, fire: false, repair: false },
   inputSeq: 0,
   camera: { x: 0, y: 0 },
   zoom: 1,
@@ -1437,6 +1438,10 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: `Docked ${message.shipName || "your ship"}` });
     } else if (message.message === "ship_called") {
       appendChat({ kind: "system", name: "Realm", text: `Called ${message.shipName || "your ship"} to the dock` });
+    } else if (message.message === "ship_station_entered") {
+      appendChat({ kind: "system", name: "Realm", text: `Entered ${message.stationName || "ship station"}` });
+    } else if (message.message === "ship_station_left") {
+      appendChat({ kind: "system", name: "Realm", text: "Left ship station" });
     } else if (message.message === "ship_already_owned") {
       appendChat({ kind: "system", name: "Realm", text: "You already own a ship." });
     } else if (message.message === "ship_not_owned") {
@@ -1765,7 +1770,7 @@ function updateSmoothPlayers(dt) {
         state.input.down ||
         state.input.left ||
         state.input.right ||
-        (player.ship?.boarded && state.input.engage)
+        (player.ship?.boarded && (state.input.engage || state.input.fire || state.input.repair))
       );
       const err = Math.hypot(player.targetX - player.renderX, player.targetY - player.renderY);
       if (err > LOCAL_CORRECTION_SNAP_TILES) {
@@ -1868,6 +1873,55 @@ function normalizeAngle(value) {
 
 function predictLocalPlayer(player, dt) {
   const speed = Number.isFinite(player.moveSpeed) ? player.moveSpeed : CLIENT_PLAYER_SPEED;
+
+  if (player.ship?.boarded && player.ship.deckMode) {
+    const role = player.ship.stationRole;
+    if (isPilotShipRole(role)) {
+      const dx = Number(state.input.right) - Number(state.input.left);
+      const dy = Number(state.input.down) - Number(state.input.up);
+      const aimLength = Math.hypot(dx, dy);
+      if (aimLength > 0) {
+        player.facing = Math.atan2(dy, dx);
+      }
+      if (state.input.engage) {
+        const vx = Math.cos(player.facing) * speed * dt;
+        const vy = Math.sin(player.facing) * speed * dt;
+        player.renderX += vx;
+        player.renderY += vy;
+        player.ship.worldX = (Number(player.ship.worldX) || player.x) + vx;
+        player.ship.worldY = (Number(player.ship.worldY) || player.y) + vy;
+      }
+      player.renderMoving = Boolean(state.input.engage);
+      return true;
+    }
+    if (role) {
+      if (role === "gunner") {
+        const dx = Number(state.input.right) - Number(state.input.left);
+        const dy = Number(state.input.down) - Number(state.input.up);
+        if (Math.hypot(dx, dy) > 0) {
+          player.facing = Math.atan2(dy, dx);
+        }
+      }
+      player.renderMoving = Boolean((role === "engineer" && state.input.repair) || (role === "gunner" && state.input.fire));
+      return true;
+    }
+
+    let dx = Number(state.input.right) - Number(state.input.left);
+    let dy = Number(state.input.down) - Number(state.input.up);
+    const length = Math.hypot(dx, dy);
+    if (length === 0) {
+      player.renderMoving = false;
+      return false;
+    }
+    dx /= length;
+    dy /= length;
+    const next = clampPointToShipDeck(player.ship, player.renderX + dx * CLIENT_PLAYER_SPEED * 0.82 * dt, player.renderY + dy * CLIENT_PLAYER_SPEED * 0.82 * dt);
+    player.renderX = next.x;
+    player.renderY = next.y;
+    player.facing = Math.atan2(dy, dx);
+    player.renderMoving = true;
+    return true;
+  }
 
   if (player.ship?.boarded) {
     // WASD sets the ship's facing direction
@@ -2613,24 +2667,25 @@ function wireUi() {
     usePotionOrShipExit();
   });
 
-  // Ship Engage button — held to thrust forward
+  // Ship station button — held to thrust, fire, or repair depending on the active seat.
   const shipEngageEl = document.getElementById("shipEngageBtn");
   if (shipEngageEl) {
-    function engageStart(e) {
-      if (!state.joined || state.menuOpen || !isSelfFlyingShip()) return;
+    function setShipStationButton(active, e) {
+      if (!state.joined || state.menuOpen || !isSelfOnShip()) return;
       e.preventDefault();
-      state.input.engage = true;
+      const role = selfShipStationRole();
+      if (!role) {
+        if (active) sendInteract();
+        return;
+      }
+      state.input.engage = Boolean(active && isPilotShipRole(role));
+      state.input.fire = Boolean(active && role === "gunner");
+      state.input.repair = Boolean(active && role === "engineer");
       sendInput();
     }
-    function engageStop(e) {
-      if (!state.joined || !isSelfFlyingShip()) return;
-      e.preventDefault();
-      state.input.engage = false;
-      sendInput();
-    }
-    shipEngageEl.addEventListener("pointerdown", engageStart, { passive: false });
-    shipEngageEl.addEventListener("pointerup", engageStop, { passive: false });
-    shipEngageEl.addEventListener("pointerleave", engageStop, { passive: false });
+    shipEngageEl.addEventListener("pointerdown", (e) => setShipStationButton(true, e), { passive: false });
+    shipEngageEl.addEventListener("pointerup", (e) => setShipStationButton(false, e), { passive: false });
+    shipEngageEl.addEventListener("pointerleave", (e) => setShipStationButton(false, e), { passive: false });
     shipEngageEl.addEventListener("contextmenu", (e) => e.preventDefault());
   }
 
@@ -3037,8 +3092,11 @@ function wireUi() {
     // Ship engage — Space thrusts forward when flying; attacks when on ground
     if (event.code === "Space" && state.joined && !isTextEntryTarget(event.target)) {
       event.preventDefault();
-      if (isSelfFlyingShip()) {
-        state.input.engage = true;
+      if (isSelfOnShip()) {
+        const role = selfShipStationRole();
+        state.input.engage = Boolean(isPilotShipRole(role) || (isSelfFlyingShip() && !role));
+        state.input.fire = Boolean(role === "gunner");
+        state.input.repair = Boolean(role === "engineer");
         sendInput();
         return;
       }
@@ -3119,8 +3177,10 @@ function wireUi() {
     updateInput(event, true);
   });
   window.addEventListener("keyup", (event) => {
-    if (event.code === "Space" && isSelfFlyingShip()) {
+    if (event.code === "Space" && isSelfOnShip()) {
       state.input.engage = false;
+      state.input.fire = false;
+      state.input.repair = false;
       sendInput();
       return;
     }
@@ -3298,6 +3358,8 @@ function clearMovementInput() {
   state.input.left = false;
   state.input.right = false;
   state.input.engage = false;
+  state.input.fire = false;
+  state.input.repair = false;
   sendInput();
 }
 
@@ -3396,12 +3458,46 @@ function renderAbilityBar() {
   const bar = self.abilityBar || [null, null, null, null, null];
   abilityBar.classList.remove("hidden");
 
-  // Ship mode: hide spell slots, show Engage button
-  const shipMode = isSelfFlyingShip();
+  // Ship mode: replace spell slots with the active ship-station control.
+  const shipMode = isSelfOnShip();
   abilitySlotsEl.classList.toggle("hidden", shipMode);
   const engageEl = document.getElementById("shipEngage");
   if (engageEl) {
     engageEl.classList.toggle("hidden", !shipMode);
+    const button = document.getElementById("shipEngageBtn");
+    const key = engageEl.querySelector(".ship-engage-key");
+    const role = selfShipStationRole();
+    if (button) {
+      button.textContent = role === "gunner"
+        ? "Fire"
+        : role === "engineer"
+          ? "Repair"
+          : isPilotShipRole(role) || !self.ship?.deckMode
+            ? "Engage"
+            : "Station";
+    }
+    if (key) {
+      key.textContent = role ? "Space" : "E";
+    }
+    const stats = document.getElementById("shipStationStats");
+    if (stats) {
+      const hp = Math.round(Number(self.ship?.health) || 0);
+      const maxHp = Math.round(Number(self.ship?.maxHealth) || 0);
+      const shields = Math.round(Number(self.ship?.shields) || 0);
+      const maxShields = Math.round(Number(self.ship?.maxShields) || 0);
+      const shieldDir = String(self.ship?.shieldFacing || "front");
+      stats.classList.toggle("hidden", !shipMode || role !== "engineer");
+      if (shipMode && role === "engineer") {
+        stats.replaceChildren();
+        const title = document.createElement("strong");
+        title.textContent = "Engineering";
+        const hull = document.createElement("span");
+        hull.textContent = `Hull ${hp}/${maxHp}`;
+        const shield = document.createElement("span");
+        shield.textContent = `Shields ${shields}/${maxShields} ${shieldDir}`;
+        stats.append(title, hull, shield);
+      }
+    }
   }
 
   const slots = abilitySlotsEl.querySelectorAll(".ability-slot");
@@ -3494,11 +3590,21 @@ function useHealthPotion() {
 
 function isSelfFlyingShip() {
   const self = state.players.get(state.selfId);
+  return Boolean(self?.ship?.boarded && isSciFiWorld() && (!self.ship.deckMode || isPilotShipRole(self.ship.stationRole)));
+}
+
+function isSelfOnShip() {
+  const self = state.players.get(state.selfId);
   return Boolean(self?.ship?.boarded && isSciFiWorld());
 }
 
+function selfShipStationRole() {
+  const self = state.players.get(state.selfId);
+  return self?.ship?.boarded ? self.ship.stationRole || null : null;
+}
+
 function usePotionOrShipExit() {
-  if (isSelfFlyingShip()) {
+  if (isSelfOnShip()) {
     sendInteract();
     return;
   }
@@ -3522,7 +3628,7 @@ function countPotionsInInventory() {
 let potionIconMode = "";
 function renderPotionSlot() {
   if (!potionSlotEl || !potionCountEl) return;
-  const shipMode = isSelfFlyingShip();
+  const shipMode = isSelfOnShip();
   const count = countPotionsInInventory();
   potionCountEl.textContent = shipMode ? "Exit" : count;
   if (potionKeyEl) {
@@ -5714,6 +5820,9 @@ function renderShipTerminal() {
         : "Stored";
     stats.textContent = [
       ship.hullClass || "ship",
+      `crew ${ship.crewCapacity || 1}`,
+      `hull ${Math.round(Number(ship.health) || 0)}/${Math.round(Number(ship.maxHealth) || 0)}`,
+      `shield ${Math.round(Number(ship.shields) || 0)}/${Math.round(Number(ship.maxShields) || 0)}`,
       `speed ${Number(ship.speed || 0).toFixed(1)}`,
       `laser ${ship.laserTier || 1}`,
       `thrust ${ship.thrustTier || 1}`,
@@ -6911,6 +7020,8 @@ function drawCargoCrateObject(obj, sx, sy) {
 }
 
 function shipHullDimensions(hullClass) {
+  if (hullClass === "crew4") return { w: 124, h: 62 };
+  if (hullClass === "crew2") return { w: 104, h: 52 };
   if (hullClass === "freighter") return { w: 82, h: 42 };
   if (hullClass === "hauler") return { w: 78, h: 40 };
   if (hullClass === "interceptor" || hullClass === "needle") return { w: 74, h: 28 };
@@ -6918,6 +7029,100 @@ function shipHullDimensions(hullClass) {
   if (hullClass === "yacht") return { w: 72, h: 38 };
   if (hullClass === "courier") return { w: 66, h: 32 };
   return { w: 64, h: 36 };
+}
+
+function getShipLayout(shipOrClass = "skiff") {
+  const hullClass = typeof shipOrClass === "string" ? shipOrClass : shipOrClass?.hullClass;
+  if (hullClass === "crew4" || hullClass === "frigate" || hullClass === "freighter") {
+    return {
+      crewCapacity: 4,
+      deckW: 18,
+      deckH: 10,
+      entry: { x: -7, y: 0 },
+      stations: [
+        { id: "captain", role: "captain", name: "Captain", x: 5, y: -1 },
+        { id: "pilot", role: "pilot", name: "Pilot", x: 6, y: 1 },
+        { id: "copilot", role: "copilot", name: "Co-Pilot", x: 3, y: 1 },
+        { id: "gunner_aft", role: "gunner", name: "Gunner", x: -6, y: 0 },
+        { id: "engineer_mid", role: "engineer", name: "Engineering", x: -1, y: -2 },
+        { id: "engineer_aux", role: "engineer", name: "Engineering", x: -2, y: 2 }
+      ],
+      amenities: [
+        { kind: "bed", x: -6, y: -3 },
+        { kind: "bed", x: -6, y: 3 },
+        { kind: "kitchen", x: -3, y: -3 },
+        { kind: "table", x: 0, y: 3 }
+      ]
+    };
+  }
+  if (hullClass === "crew2" || hullClass === "corvette" || hullClass === "hauler" || hullClass === "yacht") {
+    return {
+      crewCapacity: 2,
+      deckW: 14,
+      deckH: 8,
+      entry: { x: -5, y: 0 },
+      stations: [
+        { id: "pilot", role: "pilot", name: "Pilot", x: 4, y: -1 },
+        { id: "copilot", role: "copilot", name: "Co-Pilot", x: 4, y: 1 },
+        { id: "gunner_aft", role: "gunner", name: "Gunner", x: -5, y: 0 },
+        { id: "engineer_mid", role: "engineer", name: "Engineering", x: -1, y: 0 }
+      ],
+      amenities: [
+        { kind: "bed", x: -4, y: -2 },
+        { kind: "kitchen", x: -3, y: 2 }
+      ]
+    };
+  }
+  return {
+    crewCapacity: 1,
+    deckW: 7,
+    deckH: 4,
+    entry: { x: 0, y: 0 },
+    stations: [{ id: "pilot", role: "pilot", name: "Pilot", x: 0, y: 0 }],
+    amenities: []
+  };
+}
+
+function isPilotShipRole(role) {
+  return role === "pilot" || role === "captain" || role === "copilot";
+}
+
+function shipCenter(ship, fallback) {
+  return {
+    x: Number.isFinite(Number(ship?.worldX)) ? Number(ship.worldX) : Number(ship?.dockX) || fallback?.x || 0,
+    y: Number.isFinite(Number(ship?.worldY)) ? Number(ship.worldY) : Number(ship?.dockY) || fallback?.y || 0
+  };
+}
+
+function nearestShipStationForPlayer(player) {
+  if (!player?.ship?.boarded || !player.ship.deckMode) return null;
+  const layout = getShipLayout(player.ship);
+  const center = shipCenter(player.ship, player);
+  const px = Number.isFinite(player.renderX) ? player.renderX : player.x;
+  const py = Number.isFinite(player.renderY) ? player.renderY : player.y;
+  let best = null;
+  let bestDist = Infinity;
+  for (const station of layout.stations) {
+    const wx = center.x + station.x;
+    const wy = center.y + station.y;
+    const dist = Math.hypot(px - wx, py - wy);
+    if (dist <= SHIP_STATION_INTERACT_RADIUS && dist < bestDist) {
+      bestDist = dist;
+      best = { ...station, worldX: wx, worldY: wy };
+    }
+  }
+  return best;
+}
+
+function clampPointToShipDeck(ship, x, y) {
+  const layout = getShipLayout(ship);
+  const center = shipCenter(ship, { x, y });
+  const halfW = Math.max(1, layout.deckW / 2 - 0.9);
+  const halfH = Math.max(1, layout.deckH / 2 - 0.9);
+  return {
+    x: Math.max(center.x - halfW, Math.min(center.x + halfW, x)),
+    y: Math.max(center.y - halfH, Math.min(center.y + halfH, y))
+  };
 }
 
 function drawShipHullShape(hullClass, x, y, w, h, color) {
@@ -7016,6 +7221,91 @@ function drawShipVehicleObject(obj, sx, sy, boarded = false, facing = 0, thrust 
   const nameY = -h / 2 - 6;
   ctx.strokeText(obj?.name || "Ship", 0, nameY);
   ctx.fillText(obj?.name || "Ship", 0, nameY);
+  ctx.restore();
+}
+
+function drawShipDeckObject(ship, sx, sy) {
+  const layout = getShipLayout(ship);
+  const color = ship?.color || "#67f0ff";
+  const w = layout.deckW * TILE_SIZE;
+  const h = layout.deckH * TILE_SIZE;
+  const x = sx - w / 2;
+  const y = sy - h / 2;
+  ctx.save();
+  drawEllipseShadow(x - 8, y + h * 0.82, w + 16, 12, 0.22);
+  ctx.fillStyle = "rgba(8, 15, 28, 0.96)";
+  roundedRect(x, y, w, h, 8);
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.fillStyle = "rgba(36, 55, 78, 0.96)";
+  ctx.fillRect(x + 8, y + 8, w - 16, h - 16);
+  ctx.fillStyle = "rgba(103,240,255,0.12)";
+  ctx.fillRect(x + w * 0.57, y + 10, w * 0.26, h - 20);
+
+  const shieldFacing = ship?.shieldFacing || "front";
+  const shieldAngle = shieldFacing === "right" ? 0 : shieldFacing === "back" ? Math.PI / 2 : shieldFacing === "left" ? Math.PI : -Math.PI / 2;
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.strokeStyle = "rgba(103, 240, 255, 0.65)";
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.arc(0, 0, Math.max(w, h) * 0.55, shieldAngle - Math.PI / 4, shieldAngle + Math.PI / 4);
+  ctx.stroke();
+  ctx.restore();
+
+  for (const amenity of layout.amenities || []) {
+    const ax = sx + amenity.x * TILE_SIZE;
+    const ay = sy + amenity.y * TILE_SIZE;
+    if (amenity.kind === "bed") {
+      ctx.fillStyle = "rgba(20, 32, 48, 0.95)";
+      ctx.fillRect(ax - 10, ay - 6, 20, 12);
+      ctx.fillStyle = "rgba(150, 210, 255, 0.7)";
+      ctx.fillRect(ax - 8, ay - 4, 7, 8);
+    } else if (amenity.kind === "kitchen") {
+      ctx.fillStyle = "rgba(14, 22, 34, 0.95)";
+      ctx.fillRect(ax - 12, ay - 8, 24, 16);
+      ctx.fillStyle = "rgba(255, 210, 110, 0.75)";
+      ctx.fillRect(ax - 7, ay - 3, 14, 4);
+    } else {
+      ctx.fillStyle = "rgba(12, 22, 35, 0.95)";
+      ctx.fillRect(ax - 12, ay - 7, 24, 14);
+    }
+  }
+
+  for (const station of layout.stations) {
+    const wx = sx + station.x * TILE_SIZE;
+    const wy = sy + station.y * TILE_SIZE;
+    const active = ship?.stationId === station.id;
+    ctx.fillStyle = active ? "rgba(103,240,255,0.9)" : "rgba(13, 25, 42, 0.95)";
+    ctx.strokeStyle = station.role === "engineer" ? "#8fe388" : station.role === "gunner" ? "#ff8f6b" : "#67f0ff";
+    ctx.lineWidth = 2;
+    roundedRect(wx - 9, wy - 7, 18, 14, 4);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = active ? "#06101c" : ctx.strokeStyle;
+    ctx.font = "bold 8px ui-sans-serif, system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText(station.role[0].toUpperCase(), wx, wy + 3);
+  }
+
+  ctx.fillStyle = "#d2f6ff";
+  ctx.font = "bold 10px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.strokeStyle = "rgba(4,8,16,0.9)";
+  ctx.lineWidth = 3;
+  ctx.strokeText(ship?.name || "Ship", sx, y - 6);
+  ctx.fillText(ship?.name || "Ship", sx, y - 6);
+
+  const hp = Math.max(0, Math.min(1, (Number(ship?.health) || 0) / Math.max(1, Number(ship?.maxHealth) || 1)));
+  const sh = Math.max(0, Math.min(1, (Number(ship?.shields) || 0) / Math.max(1, Number(ship?.maxShields) || 1)));
+  ctx.fillStyle = "rgba(2, 8, 14, 0.82)";
+  ctx.fillRect(x + 10, y + h + 4, 72, 10);
+  ctx.fillStyle = "#ef6461";
+  ctx.fillRect(x + 12, y + h + 6, 32 * hp, 3);
+  ctx.fillStyle = "#67f0ff";
+  ctx.fillRect(x + 12, y + h + 10, 32 * sh, 3);
   ctx.restore();
 }
 
@@ -7678,6 +7968,13 @@ function drawPlayers() {
     const sy = Math.floor(entity.renderY * TILE_SIZE - state.camera.y + halfH);
     if (isMob) {
       drawMob(entity, sx, sy);
+    } else if (entity.ship?.boarded && entity.ship.deckMode) {
+      const center = shipCenter(entity.ship, entity);
+      const shipSx = Math.floor(center.x * TILE_SIZE - state.camera.x + halfW);
+      const shipSy = Math.floor(center.y * TILE_SIZE - state.camera.y + halfH);
+      drawShipDeckObject(entity.ship, shipSx, shipSy);
+      const seated = Boolean(entity.ship.stationRole);
+      drawCharacter(entity, sx, sy, isNpc, { restingBench: seated });
     } else if (entity.ship?.boarded) {
       const thrustOn = entity.id === state.selfId && state.input.up;
       drawShipVehicleObject(

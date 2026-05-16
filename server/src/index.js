@@ -105,6 +105,8 @@ const SHIP_BUY_PRICE = 850;
 const SHIP_SPEED = 9.75;
 const SHIP_DOCK_RADIUS = 4.25;
 const SHIP_TURN_SPEED = 2.65;
+const SHIP_REPAIR_PER_SECOND = 7;
+const SHIP_STATION_INTERACT_RADIUS = 1.35;
 const MAX_GROUND_ITEMS = 140;
 const TRADER_INTERACT_RADIUS = 8;
 const MOB_AGGRO_RADIUS = 7.5;
@@ -1015,6 +1017,9 @@ function serializePlayer(player) {
 }
 
 function serializeShip(ship) {
+  const layout = getShipLayout(ship);
+  const maxHealth = getShipMaxHealth(ship);
+  const maxShields = getShipMaxShields(ship);
   return {
     id: typeof ship.id === "string" ? ship.id.slice(0, 64) : "starter_ship",
     templateId: typeof ship.templateId === "string" ? ship.templateId : "starter_ship",
@@ -1026,10 +1031,133 @@ function serializeShip(ship) {
     dockY: clampNumber(ship.dockY, -10000, 10000, STARGATE_LANDING.y),
     dockStationId: typeof ship.dockStationId === "string" ? ship.dockStationId : "station_ringforge",
     dockPortId: typeof ship.dockPortId === "string" ? ship.dockPortId.slice(0, 48) : null,
+    worldX: clampNumber(ship.worldX, -10000, 10000, ship.dockX ?? STARGATE_LANDING.x),
+    worldY: clampNumber(ship.worldY, -10000, 10000, ship.dockY ?? STARGATE_LANDING.y),
     speed: clampNumber(ship.speed, 0, 1000, SHIP_SPEED),
     laserTier: clampInteger(ship.laserTier ?? 1, 1, 5),
-    thrustTier: clampInteger(ship.thrustTier ?? 1, 1, 5)
+    thrustTier: clampInteger(ship.thrustTier ?? 1, 1, 5),
+    crewCapacity: layout.crewCapacity,
+    deckMode: Boolean(ship.deckMode),
+    stationRole: typeof ship.stationRole === "string" ? ship.stationRole : null,
+    stationId: typeof ship.stationId === "string" ? ship.stationId : null,
+    health: clampNumber(ship.health, 0, maxHealth, maxHealth),
+    maxHealth,
+    shields: clampNumber(ship.shields, 0, maxShields, maxShields),
+    maxShields,
+    shieldFacing: normalizeShieldFacing(ship.shieldFacing)
   };
+}
+
+function getShipLayout(shipOrClass = "skiff") {
+  const hullClass = typeof shipOrClass === "string" ? shipOrClass : shipOrClass?.hullClass;
+  if (hullClass === "crew4" || hullClass === "frigate" || hullClass === "freighter") {
+    return {
+      crewCapacity: 4,
+      deckW: 18,
+      deckH: 10,
+      entry: { x: -7, y: 0 },
+      stations: [
+        { id: "captain", role: "captain", name: "Captain Seat", x: 5, y: -1 },
+        { id: "pilot", role: "pilot", name: "Pilot Seat", x: 6, y: 1 },
+        { id: "copilot", role: "copilot", name: "Co-Pilot Seat", x: 3, y: 1 },
+        { id: "gunner_aft", role: "gunner", name: "Aft Gunner", x: -6, y: 0 },
+        { id: "engineer_mid", role: "engineer", name: "Main Engineering", x: -1, y: -2 },
+        { id: "engineer_aux", role: "engineer", name: "Aux Engineering", x: -2, y: 2 }
+      ]
+    };
+  }
+  if (hullClass === "crew2" || hullClass === "corvette" || hullClass === "hauler" || hullClass === "yacht") {
+    return {
+      crewCapacity: 2,
+      deckW: 14,
+      deckH: 8,
+      entry: { x: -5, y: 0 },
+      stations: [
+        { id: "pilot", role: "pilot", name: "Pilot Seat", x: 4, y: -1 },
+        { id: "copilot", role: "copilot", name: "Co-Pilot Seat", x: 4, y: 1 },
+        { id: "gunner_aft", role: "gunner", name: "Aft Gunner", x: -5, y: 0 },
+        { id: "engineer_mid", role: "engineer", name: "Engineering", x: -1, y: 0 }
+      ]
+    };
+  }
+  return {
+    crewCapacity: 1,
+    deckW: 7,
+    deckH: 4,
+    entry: { x: 0, y: 0 },
+    stations: [{ id: "pilot", role: "pilot", name: "Pilot Seat", x: 0, y: 0 }]
+  };
+}
+
+function getShipMaxHealth(ship) {
+  const layout = getShipLayout(ship);
+  return Math.max(80, Math.round(90 + layout.crewCapacity * 55 + (Number(ship?.laserTier) || 1) * 8));
+}
+
+function getShipMaxShields(ship) {
+  const layout = getShipLayout(ship);
+  return Math.max(45, Math.round(45 + layout.crewCapacity * 32 + (Number(ship?.thrustTier) || 1) * 6));
+}
+
+function normalizeShieldFacing(value) {
+  const dir = String(value || "front");
+  return ["front", "right", "back", "left"].includes(dir) ? dir : "front";
+}
+
+function shieldFacingFromInput(input = {}) {
+  const dx = Number(input.right) - Number(input.left);
+  const dy = Number(input.down) - Number(input.up);
+  if (Math.abs(dx) > Math.abs(dy)) {
+    return dx > 0 ? "right" : dx < 0 ? "left" : null;
+  }
+  if (dy !== 0) {
+    return dy > 0 ? "back" : "front";
+  }
+  return null;
+}
+
+function shipCenter(ship) {
+  return {
+    x: clampNumber(ship?.worldX, -10000, 10000, ship?.dockX ?? STARGATE_LANDING.x),
+    y: clampNumber(ship?.worldY, -10000, 10000, ship?.dockY ?? STARGATE_LANDING.y)
+  };
+}
+
+function shipStationWorld(ship, station) {
+  const center = shipCenter(ship);
+  return { x: center.x + Number(station?.x || 0), y: center.y + Number(station?.y || 0) };
+}
+
+function clampPlayerToShipDeck(player) {
+  const ship = player?.ship;
+  if (!ship) return;
+  const layout = getShipLayout(ship);
+  const center = shipCenter(ship);
+  const halfW = Math.max(1, layout.deckW / 2 - 0.9);
+  const halfH = Math.max(1, layout.deckH / 2 - 0.9);
+  player.x = Math.max(center.x - halfW, Math.min(center.x + halfW, player.x));
+  player.y = Math.max(center.y - halfH, Math.min(center.y + halfH, player.y));
+}
+
+function nearestShipStation(player) {
+  const ship = player?.ship;
+  if (!ship?.boarded || !ship.deckMode) return null;
+  const layout = getShipLayout(ship);
+  let best = null;
+  let bestDist = Infinity;
+  for (const station of layout.stations) {
+    const p = shipStationWorld(ship, station);
+    const dist = Math.hypot(player.x - p.x, player.y - p.y);
+    if (dist <= SHIP_STATION_INTERACT_RADIUS && dist < bestDist) {
+      bestDist = dist;
+      best = { ...station, worldX: p.x, worldY: p.y };
+    }
+  }
+  return best;
+}
+
+function isPilotShipRole(role) {
+  return role === "pilot" || role === "captain" || role === "copilot";
 }
 
 function createShipId(templateId = "ship") {
@@ -1041,7 +1169,7 @@ function createStarterShip(playerId = "starter") {
   const dp =
     sciFiDockPortForPlayerId(playerId) ||
     findNearestSciFiDockPort(STARGATE_LANDING.x, STARGATE_LANDING.y, 120);
-  return {
+  const ship = {
     id: "starter_ship",
     templateId: "starter_ship",
     name: "Nova Skiff",
@@ -1052,10 +1180,21 @@ function createStarterShip(playerId = "starter") {
     dockY: dp.y,
     dockStationId: "station_ringforge",
     dockPortId: dp.id,
+    worldX: dp.x,
+    worldY: dp.y,
     speed: SHIP_SPEED,
     laserTier: 1,
-    thrustTier: 1
+    thrustTier: 1,
+    deckMode: false,
+    stationRole: null,
+    stationId: null,
+    shieldFacing: "front"
   };
+  ship.maxHealth = getShipMaxHealth(ship);
+  ship.health = ship.maxHealth;
+  ship.maxShields = getShipMaxShields(ship);
+  ship.shields = ship.maxShields;
+  return ship;
 }
 
 function sanitizeShip(ship, fallbackId = null) {
@@ -1063,7 +1202,7 @@ function sanitizeShip(ship, fallbackId = null) {
     return null;
   }
   const templateId = typeof ship.templateId === "string" ? ship.templateId.slice(0, 48) : "starter_ship";
-  return {
+  const out = {
     id: typeof ship.id === "string" && ship.id ? ship.id.slice(0, 64) : fallbackId || createShipId(templateId),
     templateId,
     name: typeof ship.name === "string" ? ship.name.slice(0, 48) : "Nova Skiff",
@@ -1074,10 +1213,21 @@ function sanitizeShip(ship, fallbackId = null) {
     dockY: clampNumber(ship.dockY, -10000, 10000, STARGATE_LANDING.y),
     dockStationId: typeof ship.dockStationId === "string" ? ship.dockStationId.slice(0, 48) : "station_ringforge",
     dockPortId: typeof ship.dockPortId === "string" ? ship.dockPortId.slice(0, 48) : null,
+    worldX: clampNumber(ship.worldX, -10000, 10000, ship.dockX ?? STARGATE_LANDING.x),
+    worldY: clampNumber(ship.worldY, -10000, 10000, ship.dockY ?? STARGATE_LANDING.y),
     speed: clampNumber(ship.speed, 0, 1000, SHIP_SPEED),
     laserTier: clampInteger(ship.laserTier ?? 1, 1, 5),
-    thrustTier: clampInteger(ship.thrustTier ?? 1, 1, 5)
+    thrustTier: clampInteger(ship.thrustTier ?? 1, 1, 5),
+    deckMode: Boolean(ship.deckMode),
+    stationRole: typeof ship.stationRole === "string" ? ship.stationRole.slice(0, 24) : null,
+    stationId: typeof ship.stationId === "string" ? ship.stationId.slice(0, 48) : null,
+    shieldFacing: normalizeShieldFacing(ship.shieldFacing)
   };
+  out.maxHealth = getShipMaxHealth(out);
+  out.health = clampNumber(ship.health, 0, out.maxHealth, out.maxHealth);
+  out.maxShields = getShipMaxShields(out);
+  out.shields = clampNumber(ship.shields, 0, out.maxShields, out.maxShields);
+  return out;
 }
 
 function sanitizeShipFleet(savedCharacter, ownerKey = "starter") {
@@ -1165,10 +1315,16 @@ function clearPlayerBoardedShips(player) {
   if (Array.isArray(player.ships)) {
     for (const ship of player.ships) {
       ship.boarded = false;
+      ship.deckMode = false;
+      ship.stationRole = null;
+      ship.stationId = null;
     }
   }
   if (player.ship) {
     player.ship.boarded = false;
+    player.ship.deckMode = false;
+    player.ship.stationRole = null;
+    player.ship.stationId = null;
   }
 }
 
@@ -1347,6 +1503,40 @@ function getShipCatalog() {
       shipColor: "#94a3b8",
       stats: { speed: 13.5 },
       laserTier: 4
+    },
+    {
+      templateId: "duo_corvette",
+      type: "ship",
+      name: "Duo Corvette",
+      icon: "ship",
+      rarity: "epic",
+      color: "#58d5ff",
+      hullClass: "crew2",
+      value: 2850,
+      price: 2850,
+      shipTemplateId: "duo_corvette",
+      shipName: "Duo Corvette",
+      shipColor: "#58d5ff",
+      stats: { speed: 14.4 },
+      laserTier: 3,
+      thrustTier: 2
+    },
+    {
+      templateId: "aegis_frigate",
+      type: "ship",
+      name: "Aegis Frigate",
+      icon: "ship",
+      rarity: "legendary",
+      color: "#a7f3d0",
+      hullClass: "crew4",
+      value: 4650,
+      price: 4650,
+      shipTemplateId: "aegis_frigate",
+      shipName: "Aegis Frigate",
+      shipColor: "#a7f3d0",
+      stats: { speed: 12.4 },
+      laserTier: 4,
+      thrustTier: 3
     },
     {
       templateId: "wraith_needle",
@@ -1831,9 +2021,12 @@ function simulate() {
     const input = client.input;
     const doorAccountKey = client.account?.key || "";
     const shipPilot =
-      Boolean(client.player.ship?.boarded) && getWorldThemeAt(client.player.x, client.player.y) === "sci-fi";
+      Boolean(client.player.ship?.boarded) &&
+      isPilotShipRole(client.player.ship.stationRole) &&
+      getWorldThemeAt(client.player.x, client.player.y) === "sci-fi";
 
     if (shipPilot) {
+      const ship = client.player.ship;
       client.player._stillAccumulator = 0;
       // WASD sets the ship's facing direction
       const dx = Number(input.right) - Number(input.left);
@@ -1847,22 +2040,84 @@ function simulate() {
         const sp = getPlayerSpeed(client.player);
         const vx = Math.cos(client.player.facing) * sp * dt;
         const vy = Math.sin(client.player.facing) * sp * dt;
-        const nextX = client.player.x + vx;
-        const nextY = client.player.y + vy;
+        const center = shipCenter(ship);
+        const nextX = center.x + vx;
+        const nextY = center.y + vy;
         if (
-          !isBlockedCircleForShip(nextX, client.player.y) &&
-          !isDoorLockedForPlayer(nextX, client.player.y, doorAccountKey)
+          !isBlockedCircleForShip(nextX, center.y) &&
+          !isDoorLockedForPlayer(nextX, center.y, doorAccountKey)
         ) {
-          client.player.x = nextX;
+          ship.worldX = nextX;
         }
         if (
-          !isBlockedCircleForShip(client.player.x, nextY) &&
-          !isDoorLockedForPlayer(client.player.x, nextY, doorAccountKey)
+          !isBlockedCircleForShip(ship.worldX ?? center.x, nextY) &&
+          !isDoorLockedForPlayer(ship.worldX ?? center.x, nextY, doorAccountKey)
         ) {
-          client.player.y = nextY;
+          ship.worldY = nextY;
         }
       }
+      const station = getShipLayout(ship).stations.find((candidate) => candidate.id === ship.stationId) || getShipLayout(ship).stations[0];
+      const seat = shipStationWorld(ship, station);
+      client.player.x = seat.x;
+      client.player.y = seat.y;
       client.player.moving = Boolean(input.engage);
+    } else if (client.player.ship?.boarded && client.player.ship.deckMode) {
+      const ship = client.player.ship;
+      const role = ship.stationRole;
+      client.player._stillAccumulator = 0;
+      if (role === "engineer") {
+        const shieldFacing = shieldFacingFromInput(input);
+        if (shieldFacing) {
+          ship.shieldFacing = shieldFacing;
+        }
+        if (input.repair) {
+          ship.health = Math.min(getShipMaxHealth(ship), (Number(ship.health) || 0) + SHIP_REPAIR_PER_SECOND * dt);
+        }
+        client.player.moving = false;
+      } else if (role === "gunner") {
+        const dx = Number(input.right) - Number(input.left);
+        const dy = Number(input.down) - Number(input.up);
+        if (Math.hypot(dx, dy) > 0) {
+          client.player.facing = Math.atan2(dy, dx);
+        }
+        if (input.fire && Date.now() - client.lastAttackAt > 420) {
+          client.lastAttackAt = Date.now();
+          const center = shipCenter(ship);
+          const tier = Math.max(1, Number(ship.laserTier) || 1);
+          const range = 9 + tier * 2;
+          broadcastCombat({
+            type: "combat",
+            kind: "projectile",
+            weapon: "ship_turret",
+            projectileKind: "arcane",
+            attackerId: client.player.id,
+            x: Number(center.x.toFixed(3)),
+            y: Number(center.y.toFixed(3)),
+            facing: Number(client.player.facing.toFixed(3)),
+            range,
+            hit: false,
+            endX: Number((center.x + Math.cos(client.player.facing) * range).toFixed(3)),
+            endY: Number((center.y + Math.sin(client.player.facing) * range).toFixed(3))
+          });
+        }
+        client.player.moving = Boolean(input.fire);
+      } else {
+        let dx = Number(input.right) - Number(input.left);
+        let dy = Number(input.down) - Number(input.up);
+        const length = Math.hypot(dx, dy);
+        if (length > 0) {
+          dx /= length;
+          dy /= length;
+          const speed = (PLAYER_SPEED + client.player.stats.speed * STAT_POINT_SPEED + getEquipmentStats(client.player).speed) * 0.82;
+          client.player.x += dx * speed * dt;
+          client.player.y += dy * speed * dt;
+          clampPlayerToShipDeck(client.player);
+          client.player.facing = Math.atan2(dy, dx);
+          client.player.moving = true;
+        } else {
+          client.player.moving = false;
+        }
+      }
     } else {
       let dx = Number(input.right) - Number(input.left);
       let dy = Number(input.down) - Number(input.up);
@@ -3204,10 +3459,15 @@ function dockPlayerShipAtStation(client, port = resolveShipExitDockPort(client.p
   }
 
   client.player.ship.boarded = false;
+  client.player.ship.deckMode = false;
+  client.player.ship.stationRole = null;
+  client.player.ship.stationId = null;
   client.player.ship.dockX = port.x;
   client.player.ship.dockY = port.y;
   client.player.ship.dockStationId = "station_ringforge";
   client.player.ship.dockPortId = port.id;
+  client.player.ship.worldX = port.x;
+  client.player.ship.worldY = port.y;
   client.player.x = Number.isFinite(port.terminalX) ? port.terminalX : port.x;
   client.player.y = Number.isFinite(port.terminalY) ? port.terminalY : port.y;
   client.player.facing = facingForDockPort(port);
@@ -3224,7 +3484,33 @@ function dockPlayerShipAtStation(client, port = resolveShipExitDockPort(client.p
 }
 
 function handleShipInteract(client) {
-  return Boolean(client.player?.ship?.boarded) && dockPlayerShipAtStation(client);
+  const ship = client.player?.ship;
+  if (!ship?.boarded) {
+    return false;
+  }
+  if (ship.deckMode) {
+    if (ship.stationRole) {
+      ship.stationRole = null;
+      ship.stationId = null;
+      client.input = normalizeInput();
+      send(client, { type: "serverMessage", message: "ship_station_left" });
+      broadcastSnapshot();
+      return true;
+    }
+    const station = nearestShipStation(client.player);
+    if (station) {
+      ship.stationRole = station.role;
+      ship.stationId = station.id;
+      client.player.x = station.worldX;
+      client.player.y = station.worldY;
+      client.player.moving = false;
+      client.input = normalizeInput();
+      send(client, { type: "serverMessage", message: "ship_station_entered", stationName: station.name, stationRole: station.role });
+      broadcastSnapshot();
+      return true;
+    }
+  }
+  return dockPlayerShipAtStation(client);
 }
 
 function publicTerminalShip(ship, activeShipId, port) {
@@ -3281,6 +3567,8 @@ function summonPlayerShipToPort(player, ship, port) {
   ship.dockY = port.y;
   ship.dockStationId = "station_ringforge";
   ship.dockPortId = port.id;
+  ship.worldX = port.x;
+  ship.worldY = port.y;
   return true;
 }
 
@@ -3288,9 +3576,16 @@ function boardPlayerShipAtPort(client, ship, port) {
   if (!client.player || !summonPlayerShipToPort(client.player, ship, port)) {
     return false;
   }
+  const layout = getShipLayout(ship);
+  const deckMode = layout.crewCapacity > 1;
   ship.boarded = true;
-  client.player.x = port.x;
-  client.player.y = port.y;
+  ship.deckMode = deckMode;
+  ship.stationRole = deckMode ? null : "pilot";
+  ship.stationId = deckMode ? null : "pilot";
+  ship.worldX = port.x;
+  ship.worldY = port.y;
+  client.player.x = port.x + (deckMode ? layout.entry.x : 0);
+  client.player.y = port.y + (deckMode ? layout.entry.y : 0);
   client.player.facing = facingForDockPort(port);
   client.player.moving = false;
   client.player._stillAccumulator = 0;
@@ -5691,7 +5986,9 @@ function normalizeInput(keys = {}) {
     down: Boolean(keys.down),
     left: Boolean(keys.left),
     right: Boolean(keys.right),
-    engage: Boolean(keys.engage)
+    engage: Boolean(keys.engage),
+    fire: Boolean(keys.fire),
+    repair: Boolean(keys.repair)
   };
 }
 
