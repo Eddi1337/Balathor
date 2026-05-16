@@ -1359,6 +1359,23 @@ function buildHydratedHubNpcExtras() {
 
 const BASE_NPC_DEFINITIONS = [
   {
+    id: "npc_quest_wynn_hearth",
+    name: "Sage Wynn",
+    classId: "mage",
+    primary: "#5a4a7a",
+    accent: "#ffd66e",
+    homeX: -3,
+    homeY: 4,
+    patrolRadius: 2,
+    questGiver: true,
+    questIds: ["q_first_hunt"],
+    dialogue: [
+      "Welcome to the home tree, traveler.",
+      "Even quiet paths grow restless if no one walks them.",
+      "Test your blade on a slime or two — the realm thanks you for it.",
+    ],
+  },
+  {
     id: "npc_quest_elm_watch",
     name: "Elder Elm",
     classId: "mage",

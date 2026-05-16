@@ -126,6 +126,18 @@ const STAT_POINT_ARMOUR_CAP = 0.55;
 const CLASS_IDS = ["ranger", "mage", "knight"];
 const QUEST_INTERACT_RADIUS = 4.5;
 const QUEST_DEFINITIONS = Object.freeze({
+  q_first_hunt: {
+    id: "q_first_hunt",
+    giverId: "npc_quest_wynn_hearth",
+    title: "Welcome to the Hearth",
+    summary: "Sage Wynn — at the home tree — offers a starter task to teach you the basics of combat.",
+    rewardGold: 12,
+    rewardXp: 40,
+    steps: [
+      { type: "kill", text: "Defeat 2 slimes near the home tree", count: 2, matchName: "slime", target: { x: 12, y: 12 } },
+      { type: "talk", text: "Return to Sage Wynn at the home tree", npcId: "npc_quest_wynn_hearth", target: { x: -3, y: 4 } }
+    ]
+  },
   q_slime_watch: {
     id: "q_slime_watch",
     giverId: "npc_quest_elm_watch",

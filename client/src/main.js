@@ -7467,6 +7467,29 @@ function nearestShipStationForPlayer(player) {
 
 const SHIP_DOCK_PROMPT_RANGE = 8;
 
+// Runs `callback` in a transform that cancels the current camera rotation,
+// so anything drawn stays at its un-rotated screen position. Used to keep
+// the interior ship view and on-deck crew "stationary" while the rest of
+// the world spins around them when the ship turns.
+function withCameraUnrotated(callback) {
+  const rotation = Number(state.camera.rotation) || 0;
+  if (!rotation) {
+    callback();
+    return;
+  }
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  ctx.save();
+  ctx.translate(halfW, halfH);
+  ctx.rotate(-rotation);
+  ctx.translate(-halfW, -halfH);
+  try {
+    callback();
+  } finally {
+    ctx.restore();
+  }
+}
+
 function isShipNearAnyDockPort(ship) {
   if (!ship) return false;
   const cx = Number.isFinite(ship.worldX) ? ship.worldX : ship.dockX;
@@ -8513,15 +8536,17 @@ function drawPlayers() {
       const sameAsViewer = shipId && shipId === viewerInteriorShipId;
       if (sameAsViewer) {
         // Viewer is inside this ship and not in a pilot seat — render the interior view once and the crew inside it.
+        // The interior view stays "locked" to ship orientation — counter-rotate so the deck and crew don't spin
+        // when the ship turns; only the world background rotates around them.
         if (!renderedShips.has(shipId)) {
           renderedShips.add(shipId);
           const center = shipCenter(entity.ship, entity);
           const shipSx = Math.floor(center.x * TILE_SIZE - state.camera.x + halfW);
           const shipSy = Math.floor(center.y * TILE_SIZE - state.camera.y + halfH);
-          drawShipDeckObject(entity.ship, shipSx, shipSy);
+          withCameraUnrotated(() => drawShipDeckObject(entity.ship, shipSx, shipSy));
         }
         const seated = Boolean(entity.ship.stationRole);
-        drawCharacter(entity, sx, sy, isNpc, { restingBench: seated });
+        withCameraUnrotated(() => drawCharacter(entity, sx, sy, isNpc, { restingBench: seated }));
       } else {
         // Viewer is outside this ship (or is piloting) — show only the small exterior hull.
         if (!renderedShips.has(shipId)) {
@@ -8568,7 +8593,13 @@ function drawPlayers() {
       if (insideShipDeck && entity.id !== state.selfId && !viewerInteriorShipId) {
         continue;
       }
-      drawCharacter(entity, sx, sy, isNpc, { restingBench, insideShipDeck });
+      // Passengers and crew inside the viewer's ship interior keep their orientation locked to the deck.
+      const lockToShip = insideShipDeck && viewerInteriorShipId;
+      if (lockToShip) {
+        withCameraUnrotated(() => drawCharacter(entity, sx, sy, isNpc, { restingBench, insideShipDeck }));
+      } else {
+        drawCharacter(entity, sx, sy, isNpc, { restingBench, insideShipDeck });
+      }
       if (isNpc) {
         drawQuestMarker(entity, sx, sy);
       }
