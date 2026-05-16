@@ -3522,6 +3522,33 @@ function publicTerminalShip(ship, activeShipId, port) {
   };
 }
 
+function getPartyShipOffers(client) {
+  if (!social) return [];
+  const view = social.getPartyView(client);
+  if (!view || !Array.isArray(view.members)) return [];
+  const offers = [];
+  for (const member of view.members) {
+    if (!member?.id || member.offline) continue;
+    if (member.id === client.player.id) continue;
+    const other = getPlayerById(member.id);
+    const ship = other?.ship;
+    if (!ship || !ship.boarded) continue;
+    const layout = getShipLayout(ship);
+    if (!layout || layout.crewCapacity < 2) continue;
+    offers.push({
+      ownerId: other.id,
+      ownerName: other.name,
+      shipId: ship.id,
+      shipName: ship.name,
+      hullClass: ship.hullClass,
+      color: ship.color,
+      crewCapacity: layout.crewCapacity,
+      deckMode: Boolean(ship.deckMode)
+    });
+  }
+  return offers;
+}
+
 function sendShipTerminalWindow(client, port) {
   if (!client.player || !port) {
     return false;
@@ -3539,7 +3566,8 @@ function sendShipTerminalWindow(client, port) {
       facing: port.facing
     },
     activeShipId: client.player.activeShipId || client.player.ship?.id || null,
-    ships: client.player.ships.map((ship) => publicTerminalShip(ship, client.player.activeShipId, port))
+    ships: client.player.ships.map((ship) => publicTerminalShip(ship, client.player.activeShipId, port)),
+    partyShips: getPartyShipOffers(client)
   });
   return true;
 }
@@ -3599,6 +3627,38 @@ function boardPlayerShipAtPort(client, ship, port) {
   return true;
 }
 
+function teleportToPartyShip(client, ownerId, port) {
+  if (!client?.player) return false;
+  const owner = getPlayerById(ownerId);
+  const ship = owner?.ship;
+  if (!ship || !ship.boarded) {
+    send(client, { type: "serverMessage", message: "party_ship_unavailable" });
+    return false;
+  }
+  const layout = getShipLayout(ship);
+  if (!layout || layout.crewCapacity < 2) {
+    send(client, { type: "serverMessage", message: "party_ship_full" });
+    return false;
+  }
+  const center = shipCenter(ship);
+  if (!Number.isFinite(center.x) || !Number.isFinite(center.y)) return false;
+  client.player.x = center.x + layout.entry.x;
+  client.player.y = center.y + layout.entry.y;
+  client.player.facing = facingForDockPort(port);
+  client.player.moving = false;
+  client.player._stillAccumulator = 0;
+  saveClientCharacter(client);
+  send(client, {
+    type: "serverMessage",
+    message: "party_teleported_to_ship",
+    shipName: ship.name,
+    ownerName: owner.name
+  });
+  send(client, { type: "shipTerminalClose" });
+  broadcastSnapshot();
+  return true;
+}
+
 function handleShipTerminalAction(client, message = {}) {
   if (!client.player) {
     return;
@@ -3611,6 +3671,19 @@ function handleShipTerminalAction(client, message = {}) {
   const port = resolveShipLaunchPort(client.player, message);
   if (!port) {
     send(client, { type: "serverMessage", message: "shop_not_nearby" });
+    return;
+  }
+
+  if (String(message.action || "") === "boardParty") {
+    const ownerId = typeof message.ownerId === "string" ? message.ownerId : null;
+    if (!ownerId) {
+      send(client, { type: "serverMessage", message: "party_ship_unavailable" });
+      sendShipTerminalWindow(client, port);
+      return;
+    }
+    if (!teleportToPartyShip(client, ownerId, port)) {
+      sendShipTerminalWindow(client, port);
+    }
     return;
   }
 

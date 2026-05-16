@@ -1268,7 +1268,8 @@ function handleServerMessage(message) {
       stationName: message.stationName || "Ship Terminal",
       port: message.port || null,
       activeShipId: typeof message.activeShipId === "string" ? message.activeShipId : null,
-      ships: Array.isArray(message.ships) ? message.ships : []
+      ships: Array.isArray(message.ships) ? message.ships : [],
+      partyShips: Array.isArray(message.partyShips) ? message.partyShips : []
     };
     renderShipTerminal();
     shipTerminalPanel?.classList.remove("hidden");
@@ -1438,6 +1439,12 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: `Docked ${message.shipName || "your ship"}` });
     } else if (message.message === "ship_called") {
       appendChat({ kind: "system", name: "Realm", text: `Called ${message.shipName || "your ship"} to the dock` });
+    } else if (message.message === "party_teleported_to_ship") {
+      appendChat({ kind: "system", name: "Realm", text: `Teleported aboard ${message.shipName || "ship"} (${message.ownerName || "crewmate"})` });
+    } else if (message.message === "party_ship_unavailable") {
+      appendChat({ kind: "system", name: "Realm", text: "That crewmate's ship is not available." });
+    } else if (message.message === "party_ship_full") {
+      appendChat({ kind: "system", name: "Realm", text: "That ship cannot host additional crew." });
     } else if (message.message === "ship_station_entered") {
       appendChat({ kind: "system", name: "Realm", text: `Entered ${message.stationName || "ship station"}` });
     } else if (message.message === "ship_station_left") {
@@ -2831,6 +2838,7 @@ function wireUi() {
       type: "shipTerminalAction",
       action: button.dataset.shipTerminalAction,
       shipId: button.dataset.shipId,
+      ownerId: button.dataset.ownerId || undefined,
       x: Number.isFinite(port.terminalX) ? port.terminalX : port.x,
       y: Number.isFinite(port.terminalY) ? port.terminalY : port.y
     });
@@ -5848,6 +5856,50 @@ function renderShipTerminal() {
     row.append(icon, info, actions);
     shipTerminalList.append(row);
   }
+
+  const partyShips = Array.isArray(terminal.partyShips) ? terminal.partyShips : [];
+  if (partyShips.length) {
+    const header = document.createElement("div");
+    header.className = "ship-terminal-section-header";
+    header.textContent = "Party — Teleport to Crew";
+    shipTerminalList.append(header);
+
+    for (const offer of partyShips) {
+      const row = document.createElement("div");
+      row.className = "ship-terminal-row party";
+
+      const icon = createItemIcon({
+        type: "ship",
+        icon: "ship",
+        rarity: "uncommon",
+        color: offer.color
+      });
+      const info = document.createElement("div");
+      info.className = "ship-terminal-info";
+      const name = document.createElement("strong");
+      name.textContent = `${offer.shipName || "Ship"} — ${offer.ownerName || "Crewmate"}`;
+      const stats = document.createElement("span");
+      stats.className = "ship-terminal-stats";
+      stats.textContent = [
+        offer.hullClass || "ship",
+        `crew ${offer.crewCapacity || 2}`,
+        offer.deckMode ? "Interior" : "In flight"
+      ].join(" · ");
+      info.append(name, stats);
+
+      const actions = document.createElement("div");
+      actions.className = "ship-terminal-actions";
+      const teleport = document.createElement("button");
+      teleport.type = "button";
+      teleport.dataset.shipTerminalAction = "boardParty";
+      teleport.dataset.ownerId = offer.ownerId || "";
+      teleport.textContent = "Teleport";
+      actions.append(teleport);
+
+      row.append(icon, info, actions);
+      shipTerminalList.append(row);
+    }
+  }
 }
 
 function closeShipTerminal() {
@@ -7114,6 +7166,24 @@ function nearestShipStationForPlayer(player) {
   return best;
 }
 
+function isEntityInsideAnyShipDeck(entity) {
+  if (!entity || !state.players) return false;
+  const px = Number.isFinite(entity.renderX) ? entity.renderX : entity.x;
+  const py = Number.isFinite(entity.renderY) ? entity.renderY : entity.y;
+  if (!Number.isFinite(px) || !Number.isFinite(py)) return false;
+  for (const other of state.players.values()) {
+    if (!other || other.id === entity.id) continue;
+    const ship = other.ship;
+    if (!ship?.boarded || !ship.deckMode) continue;
+    const layout = getShipLayout(ship);
+    const center = shipCenter(ship, other);
+    if (Math.abs(px - center.x) <= layout.deckW / 2 && Math.abs(py - center.y) <= layout.deckH / 2) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function clampPointToShipDeck(ship, x, y) {
   const layout = getShipLayout(ship);
   const center = shipCenter(ship, { x, y });
@@ -7233,79 +7303,85 @@ function drawShipDeckObject(ship, sx, sy) {
   const layout = getShipLayout(ship);
   const color = ship?.color || "#67f0ff";
   const hullClass = ship?.hullClass || "skiff";
-  // Use the same dimensions as the exterior hull so interior and exterior match in size/style
-  const { w, h } = shipHullDimensions(hullClass);
+  // Interior size matches the player walkable area (deck tiles), so players have room to walk
+  const w = layout.deckW * TILE_SIZE;
+  const h = layout.deckH * TILE_SIZE;
   const x = sx - w / 2;
   const y = sy - h / 2;
-  // Scale from deck tile coords to hull pixel coords
-  const scaleX = w / layout.deckW;
-  const scaleY = h / layout.deckH;
 
   ctx.save();
-  drawEllipseShadow(x - 6, y + h * 0.82, w + 12, 10, 0.22);
+  drawEllipseShadow(x - 10, y + h * 0.82, w + 20, 14, 0.22);
 
-  // Draw dark hull interior fill using the hull silhouette
+  // Draw dark hull-shaped fill (silhouette matches the exterior)
   ctx.fillStyle = "rgba(8, 15, 28, 0.96)";
   buildShipHullPath(hullClass, x, y, w, h);
   ctx.fill();
 
-  // Clip subsequent drawing to the hull shape
+  // Clip interior decorations to the hull silhouette
   buildShipHullPath(hullClass, x, y, w, h);
   ctx.clip();
 
-  // Interior floor panel
-  ctx.fillStyle = "rgba(22, 38, 58, 0.96)";
-  ctx.fillRect(x + w * 0.06, y + h * 0.06, w * 0.88, h * 0.88);
+  // Interior floor
+  ctx.fillStyle = "rgba(28, 44, 64, 0.96)";
+  ctx.fillRect(x + w * 0.04, y + h * 0.06, w * 0.92, h * 0.88);
 
-  // Cockpit/bridge highlight at bow (right side)
+  // Bridge/cockpit highlight at the bow (right side)
   ctx.fillStyle = "rgba(103,240,255,0.10)";
   ctx.fillRect(x + w * 0.55, y + h * 0.12, w * 0.38, h * 0.76);
 
-  // Interior stripe detail matching exterior
-  ctx.fillStyle = "rgba(103,240,255,0.18)";
-  ctx.fillRect(x + w * 0.12, y + h * 0.44, w * 0.76, h * 0.12);
+  // Center walkway stripe
+  ctx.fillStyle = "rgba(103,240,255,0.16)";
+  ctx.fillRect(x + w * 0.12, y + h * 0.46, w * 0.76, h * 0.08);
 
-  // Amenities scaled to hull pixel space
+  // Amenities (in tile-space, scaled by TILE_SIZE)
   for (const amenity of layout.amenities || []) {
-    const ax = sx + amenity.x * scaleX;
-    const ay = sy + amenity.y * scaleY;
-    const bw = Math.max(6, scaleX * 1.4);
-    const bh = Math.max(4, scaleY * 0.9);
+    const ax = sx + amenity.x * TILE_SIZE;
+    const ay = sy + amenity.y * TILE_SIZE;
     if (amenity.kind === "bed") {
       ctx.fillStyle = "rgba(20, 32, 48, 0.95)";
-      ctx.fillRect(ax - bw * 0.7, ay - bh * 0.6, bw * 1.4, bh * 1.2);
+      ctx.fillRect(ax - 22, ay - 12, 44, 24);
       ctx.fillStyle = "rgba(150, 210, 255, 0.7)";
-      ctx.fillRect(ax - bw * 0.55, ay - bh * 0.45, bw * 0.5, bh * 0.9);
+      ctx.fillRect(ax - 18, ay - 9, 16, 18);
+      ctx.strokeStyle = "rgba(103,240,255,0.5)";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(ax - 22, ay - 12, 44, 24);
     } else if (amenity.kind === "kitchen") {
       ctx.fillStyle = "rgba(14, 22, 34, 0.95)";
-      ctx.fillRect(ax - bw * 0.8, ay - bh * 0.7, bw * 1.6, bh * 1.4);
+      ctx.fillRect(ax - 26, ay - 16, 52, 32);
       ctx.fillStyle = "rgba(255, 210, 110, 0.75)";
-      ctx.fillRect(ax - bw * 0.45, ay - bh * 0.25, bw * 0.9, bh * 0.4);
+      ctx.fillRect(ax - 16, ay - 6, 32, 8);
+      ctx.fillStyle = "rgba(103,240,255,0.55)";
+      ctx.fillRect(ax - 12, ay + 4, 24, 4);
     } else {
       ctx.fillStyle = "rgba(12, 22, 35, 0.95)";
-      ctx.fillRect(ax - bw * 0.8, ay - bh * 0.6, bw * 1.6, bh * 1.2);
+      ctx.fillRect(ax - 26, ay - 14, 52, 28);
+      ctx.strokeStyle = "rgba(103,240,255,0.4)";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(ax - 26, ay - 14, 52, 28);
     }
   }
 
-  // Stations scaled to hull pixel space
+  // Stations - drawn as crew chairs/consoles at full tile scale
   for (const station of layout.stations) {
-    const wx = sx + station.x * scaleX;
-    const wy = sy + station.y * scaleY;
+    const wx = sx + station.x * TILE_SIZE;
+    const wy = sy + station.y * TILE_SIZE;
     const active = ship?.stationId === station.id;
-    const sw = Math.max(8, scaleX * 1.5);
-    const sh2 = Math.max(6, scaleY * 1.1);
-    ctx.fillStyle = active ? "rgba(103,240,255,0.9)" : "rgba(13, 25, 42, 0.95)";
-    ctx.strokeStyle = station.role === "engineer" ? "#8fe388" : station.role === "gunner" ? "#ff8f6b" : "#67f0ff";
-    ctx.lineWidth = 1.5;
-    roundedRect(wx - sw * 0.5, wy - sh2 * 0.5, sw, sh2, 2);
+    const stroke = station.role === "engineer" ? "#8fe388" : station.role === "gunner" ? "#ff8f6b" : "#67f0ff";
+    // Console panel
+    ctx.fillStyle = "rgba(10, 18, 30, 0.95)";
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 2;
+    roundedRect(wx - 14, wy - 12, 28, 24, 4);
     ctx.fill();
     ctx.stroke();
-    if (sw >= 10) {
-      ctx.fillStyle = active ? "#06101c" : ctx.strokeStyle;
-      ctx.font = `bold ${Math.max(5, Math.floor(scaleY * 0.7))}px ui-sans-serif, system-ui`;
-      ctx.textAlign = "center";
-      ctx.fillText(station.role[0].toUpperCase(), wx, wy + sh2 * 0.25);
-    }
+    // Chair indicator
+    ctx.fillStyle = active ? "rgba(103,240,255,0.9)" : "rgba(40, 58, 80, 0.9)";
+    roundedRect(wx - 8, wy - 6, 16, 12, 3);
+    ctx.fill();
+    ctx.fillStyle = active ? "#06101c" : stroke;
+    ctx.font = "bold 10px ui-sans-serif, system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText(station.role[0].toUpperCase(), wx, wy + 3);
   }
 
   ctx.restore();
@@ -7316,37 +7392,37 @@ function drawShipDeckObject(ship, sx, sy) {
   const shieldAngle = shieldFacing === "right" ? 0 : shieldFacing === "back" ? Math.PI / 2 : shieldFacing === "left" ? Math.PI : -Math.PI / 2;
   ctx.translate(sx, sy);
   ctx.strokeStyle = "rgba(103, 240, 255, 0.65)";
-  ctx.lineWidth = 4;
+  ctx.lineWidth = 5;
   ctx.beginPath();
-  ctx.arc(0, 0, Math.max(w, h) * 0.58, shieldAngle - Math.PI / 4, shieldAngle + Math.PI / 4);
+  ctx.arc(0, 0, Math.max(w, h) * 0.55, shieldAngle - Math.PI / 4, shieldAngle + Math.PI / 4);
   ctx.stroke();
   ctx.restore();
 
   ctx.save();
-  // Hull outline using the same silhouette as exterior
+  // Hull outline matches the exterior silhouette
   buildShipHullPath(hullClass, x, y, w, h);
   ctx.strokeStyle = color;
-  ctx.lineWidth = hullClass === "needle" ? 2 : 3;
+  ctx.lineWidth = hullClass === "needle" ? 3 : 4;
   ctx.stroke();
 
-  // Ship name
+  // Ship name above hull
   ctx.fillStyle = color;
-  ctx.font = "bold 10px ui-sans-serif, system-ui";
+  ctx.font = "bold 12px ui-sans-serif, system-ui";
   ctx.textAlign = "center";
   ctx.lineWidth = 3;
   ctx.strokeStyle = "rgba(4,8,16,0.9)";
-  ctx.strokeText(ship?.name || "Ship", sx, y - 6);
-  ctx.fillText(ship?.name || "Ship", sx, y - 6);
+  ctx.strokeText(ship?.name || "Ship", sx, y - 8);
+  ctx.fillText(ship?.name || "Ship", sx, y - 8);
 
   // Health/shield bars
   const hp = Math.max(0, Math.min(1, (Number(ship?.health) || 0) / Math.max(1, Number(ship?.maxHealth) || 1)));
   const shp = Math.max(0, Math.min(1, (Number(ship?.shields) || 0) / Math.max(1, Number(ship?.maxShields) || 1)));
   ctx.fillStyle = "rgba(2, 8, 14, 0.82)";
-  ctx.fillRect(x + 10, y + h + 4, 72, 10);
+  ctx.fillRect(x + 10, y + h + 6, 80, 12);
   ctx.fillStyle = "#ef6461";
-  ctx.fillRect(x + 12, y + h + 6, 32 * hp, 3);
+  ctx.fillRect(x + 12, y + h + 8, 36 * hp, 3);
   ctx.fillStyle = "#67f0ff";
-  ctx.fillRect(x + 12, y + h + 10, 32 * shp, 3);
+  ctx.fillRect(x + 12, y + h + 13, 36 * shp, 3);
   ctx.restore();
 }
 
@@ -8037,7 +8113,9 @@ function drawPlayers() {
           drawShipVehicleObject(entity.ship, dockSx, dockSy, false);
         }
       }
-      drawCharacter(entity, sx, sy, isNpc, { restingBench });
+      // Detect if this entity is standing inside a party member's ship deck so we shrink them too
+      const insideShipDeck = !isMob && !isNpc && isEntityInsideAnyShipDeck(entity);
+      drawCharacter(entity, sx, sy, isNpc, { restingBench, insideShipDeck });
     }
   }
 }
@@ -8351,7 +8429,10 @@ function drawAlienHead(hx, hy, scale, shellColor, visorColor, dirX) {
 
 function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const isMod = !!entity.isMod;
-  const s = isMod ? 3 * 1.2 : 3;
+  // Players appear smaller when walking around inside a ship deck so the interior feels spacious
+  const onShipDeck = Boolean(entity?.ship?.boarded && entity.ship?.deckMode) || Boolean(poseOpts?.insideShipDeck);
+  const deckScale = onShipDeck ? 0.55 : 1;
+  const s = (isMod ? 3 * 1.2 : 3) * deckScale;
   const phase  = entity.walkPhase || 0;
   const moving = Boolean(entity.renderMoving);
   const facing = Number.isFinite(entity.facing) ? entity.facing : Math.PI / 2;
