@@ -243,6 +243,9 @@ const CHUNK_SIZE = 16;
 const chunkCanvasCache = new Map();
 const CLIENT_PLAYER_SPEED = 5.2;
 const CLIENT_SHIP_TURN_SPEED = 2.65;
+const LOCAL_CORRECTION_DEADZONE_TILES = 0.65;
+const LOCAL_CORRECTION_BLEND_THRESHOLD_TILES = 1.35;
+const LOCAL_CORRECTION_SNAP_TILES = 3.0;
 
 const TALENT_TREES = {
   mage: [
@@ -1752,21 +1755,35 @@ function updateSmoothPlayers(dt) {
       isMoving = predictLocalPlayer(player, dt) || isMoving;
     }
     // Interpolation strategy:
-    // - When local player is moving (local input), follow server target aggressively for responsiveness.
+    // - When local player is moving, ignore normal snapshot delay and only correct meaningful drift.
     // - When local player stops, ease toward server position slowly to avoid bouncing from network jitter.
-    const fastBase = 0.00002; // aggressive follow
     const slowBase = 0.01; // gentle correction when stopping
     let follow;
     if (player.id === state.selfId) {
-      const localInputActive = Boolean(state.input.up || state.input.down || state.input.left || state.input.right);
-      follow = localInputActive ? 1 - Math.pow(fastBase, dt) : 1 - Math.pow(slowBase, dt);
-      // If server and client disagree massively, snap to avoid long drift
+      const localInputActive = Boolean(
+        state.input.up ||
+        state.input.down ||
+        state.input.left ||
+        state.input.right ||
+        (player.ship?.boarded && state.input.engage)
+      );
       const err = Math.hypot(player.targetX - player.renderX, player.targetY - player.renderY);
-      if (!localInputActive && err > 3.0) {
+      if (err > LOCAL_CORRECTION_SNAP_TILES) {
         player.renderX = player.targetX;
         player.renderY = player.targetY;
         player.renderMoving = false;
         continue;
+      }
+      if (localInputActive) {
+        if (err <= LOCAL_CORRECTION_DEADZONE_TILES) {
+          follow = 0;
+        } else if (err <= LOCAL_CORRECTION_BLEND_THRESHOLD_TILES) {
+          follow = 1 - Math.pow(0.45, dt);
+        } else {
+          follow = 1 - Math.pow(0.02, dt);
+        }
+      } else {
+        follow = 1 - Math.pow(slowBase, dt);
       }
     } else {
       follow = 1 - Math.pow(0.0005, dt);
@@ -3266,7 +3283,11 @@ function updateInput(event, pressed) {
   ) {
     cancelBenchSitClient();
   }
+  const changed = state.input[key] !== pressed;
   state.input[key] = pressed;
+  if (changed) {
+    sendInput();
+  }
   if (pressed && homeCastTimer) cancelHomeCast(); // movement cancels cast
 }
 

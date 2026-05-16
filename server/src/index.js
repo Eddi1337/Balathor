@@ -65,8 +65,15 @@ const PORT = Number(process.env.PORT || 8080);
 const ACCOUNT_STORE_PATH = process.env.ACCOUNT_STORE_PATH || path.join(__dirname, "..", "data", "accounts.json");
 /** Auth notifications; env DISCORD_AUTH_WEBHOOK_URL overrides built-in default in discordWebhook.js. */
 const DISCORD_AUTH_WEBHOOK_URL = resolveDiscordAuthWebhookUrl();
-const TICK_RATE = 30;
-const SNAPSHOT_RATE = 20;
+function readRateEnv(name, fallback, min, max) {
+  const value = Number(process.env[name]);
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+const TICK_RATE = readRateEnv("TICK_RATE", 60, 20, 120);
+const SNAPSHOT_RATE = Math.min(TICK_RATE, readRateEnv("SNAPSHOT_RATE", 20, 5, 60));
 const MAX_CONNECTED_CLIENTS = Number(process.env.MAX_CLIENTS || 180);
 const MSG_RATE_LIMIT = 240; // max messages per second per client before dropping
 // Base player movement speed (tiles per second).
@@ -632,6 +639,7 @@ let nextSpawnIndex = 0;
 let nextItemId = 1;
 let nextGroundItemId = 1;
 let tick = 0;
+let snapshotAccumulator = 0;
 
 /** Rolling wall-clock intervals between simulate() runs (for debug pong). */
 let lastSimulateWallMs = Date.now();
@@ -1918,7 +1926,9 @@ function simulate() {
 
   processConsecrationZones(Date.now());
 
-  if (tick % Math.round(TICK_RATE / SNAPSHOT_RATE) === 0) {
+  snapshotAccumulator += SNAPSHOT_RATE;
+  if (snapshotAccumulator >= TICK_RATE) {
+    snapshotAccumulator -= TICK_RATE;
     broadcastSnapshot();
   }
 }
