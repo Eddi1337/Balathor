@@ -266,7 +266,7 @@ button:focus-visible {
   z-index: 71;
   right: 16px;
   top: 16px;
-  width: min(220px, calc(100vw - 32px));
+  width: min(248px, calc(100vw - 32px));
   display: grid;
   padding: 0;
   border: 2px solid #7a5a1e;
@@ -418,13 +418,18 @@ button:focus-visible {
 .item-actions button,
 .shop-list button {
   min-height: 28px;
+  padding: 0 6px;
   border: 1px solid #7a5a1e;
   border-radius: 3px;
   background: linear-gradient(180deg, #2e1e08 0%, #1a1208 100%);
   color: #e8c86a;
   cursor: pointer;
-  font-size: 12px;
-  letter-spacing: 0.03em;
+  font-size: 11px;
+  letter-spacing: 0;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .window-close:hover,
@@ -539,6 +544,90 @@ button:focus-visible {
   width: min(420px, calc(100vw - 32px));
   max-height: calc(100vh - 168px);
   overflow-y: auto;
+}
+
+.quest-offer-window {
+  left: 50%;
+  right: auto;
+  top: 96px;
+  transform: translateX(-50%);
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100vh - 132px);
+  overflow-y: auto;
+  z-index: 90;
+}
+
+.quest-offer-body {
+  display: grid;
+  gap: 10px;
+}
+
+.quest-offer-giver {
+  color: #ffd166;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.quest-offer-summary {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.45;
+  font-size: 13px;
+}
+
+.quest-offer-steps {
+  margin: 0;
+  padding-left: 18px;
+  color: #d2b97a;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.quest-offer-rewards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: #e8c86a;
+  padding: 6px 8px;
+  border: 1px dashed rgba(232, 200, 106, 0.4);
+  border-radius: 4px;
+}
+
+.quest-offer-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.quest-offer-accept,
+.quest-offer-decline {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid #7a5a1e;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.quest-offer-accept {
+  background: linear-gradient(180deg, #3e5a26 0%, #233614 100%);
+  border-color: #6da039;
+  color: #c8f08a;
+}
+
+.quest-offer-accept:hover {
+  background: linear-gradient(180deg, #4d7030 0%, #2d441a 100%);
+}
+
+.quest-offer-decline {
+  background: linear-gradient(180deg, #2e1e08 0%, #1a1208 100%);
+  color: #e8c86a;
+}
+
+.quest-offer-decline:hover {
+  background: linear-gradient(180deg, #3e2a10 0%, #2a1808 100%);
 }
 
 .quest-list {

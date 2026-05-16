@@ -2912,6 +2912,11 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "questAccept") {
+    handleQuestAccept(client, message);
+    return;
+  }
+
   if (message.type === "abandonQuest") {
     handleAbandonQuest(client, message);
     return;
@@ -4369,8 +4374,46 @@ function handleQuestNpc(client, message = {}) {
     send(client, { type: "serverMessage", message: "quest_in_progress", questTitle: next.title });
     return;
   }
-  player.quests[next.id] = { id: next.id, step: 0, progress: 0, completed: false };
-  send(client, { type: "serverMessage", message: "quest_started", questTitle: next.title });
+  // Offer the quest to the player rather than auto-accepting.
+  send(client, {
+    type: "questOffer",
+    npcId: npc.id,
+    npcName: npc.name || "",
+    quest: {
+      id: next.id,
+      title: next.title,
+      summary: next.summary,
+      rewardGold: next.rewardGold,
+      rewardXp: next.rewardXp,
+      steps: Array.isArray(next.steps) ? next.steps.map((step) => ({ text: step.text, type: step.type, count: step.count })) : []
+    }
+  });
+}
+
+function handleQuestAccept(client, message = {}) {
+  const player = client.player;
+  if (!player) return;
+  const questId = typeof message.questId === "string" ? message.questId : null;
+  const def = questId ? QUEST_DEFINITIONS[questId] : null;
+  if (!def) return;
+  player.quests = sanitizeQuestLog(player.quests || {});
+  const existing = player.quests[def.id];
+  if (existing) {
+    if (existing.completed) {
+      send(client, { type: "serverMessage", message: "quest_none" });
+    } else {
+      send(client, { type: "serverMessage", message: "quest_in_progress", questTitle: def.title });
+    }
+    return;
+  }
+  // Make sure the player is still in range of the giver before committing.
+  const giver = getNpcById(def.giverId);
+  if (!giver || Math.hypot(giver.x - player.x, giver.y - player.y) > QUEST_INTERACT_RADIUS + 1) {
+    send(client, { type: "serverMessage", message: "quest_too_far" });
+    return;
+  }
+  player.quests[def.id] = { id: def.id, step: 0, progress: 0, completed: false };
+  send(client, { type: "serverMessage", message: "quest_started", questTitle: def.title });
   saveClientCharacter(client);
   broadcastSnapshot();
 }

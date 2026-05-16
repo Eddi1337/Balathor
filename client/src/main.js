@@ -115,6 +115,15 @@ const partyPanel = document.querySelector("#partyPanel");
 const partyMembersEl = document.querySelector("#partyMembers");
 const partyPanelMin = document.querySelector("#partyPanelMin");
 const playerContextMenu = document.querySelector("#playerContextMenu");
+const questOfferPanel = document.querySelector("#questOfferPanel");
+const questOfferTitle = document.querySelector("#questOfferTitle");
+const questOfferGiver = document.querySelector("#questOfferGiver");
+const questOfferSummary = document.querySelector("#questOfferSummary");
+const questOfferSteps = document.querySelector("#questOfferSteps");
+const questOfferRewards = document.querySelector("#questOfferRewards");
+const questOfferAcceptBtn = document.querySelector("#questOfferAccept");
+const questOfferDeclineBtn = document.querySelector("#questOfferDecline");
+const questOfferCloseBtn = document.querySelector("#questOfferClose");
 const npcContextMenu = document.querySelector("#npcContextMenu");
 const npcContextMenuName = document.querySelector("#npcContextMenuName");
 const npcContextMenuButtons = document.querySelector("#npcContextMenuButtons");
@@ -682,6 +691,7 @@ const state = {
   ship: null,
   ships: [],
   shipTerminal: null,
+  questOffer: null,
   gold: 0,
   shop: null,
   speechBubbles: new Map(),
@@ -1286,6 +1296,11 @@ function handleServerMessage(message) {
 
   if (message.type === "shipTerminalClose") {
     closeShipTerminal();
+    return;
+  }
+
+  if (message.type === "questOffer") {
+    showQuestOffer(message);
     return;
   }
 
@@ -2622,6 +2637,14 @@ function wireUi() {
   shipTerminalClose?.addEventListener("click", () => {
     closeShipTerminal();
   });
+
+  questOfferAcceptBtn?.addEventListener("click", () => {
+    if (!state.questOffer?.quest?.id) return;
+    send({ type: "questAccept", questId: state.questOffer.quest.id, npcId: state.questOffer.npcId });
+    closeQuestOffer();
+  });
+  questOfferDeclineBtn?.addEventListener("click", () => closeQuestOffer());
+  questOfferCloseBtn?.addEventListener("click", () => closeQuestOffer());
 
   traderClose.addEventListener("click", () => {
     setActiveGameWindow(null);
@@ -6081,6 +6104,43 @@ function renderShipTerminal() {
 function closeShipTerminal() {
   state.shipTerminal = null;
   shipTerminalPanel?.classList.add("hidden");
+}
+
+function showQuestOffer(payload) {
+  if (!questOfferPanel) return;
+  const quest = payload?.quest;
+  if (!quest?.id || !quest.title) return;
+  state.questOffer = { npcId: payload.npcId || null, quest };
+  if (questOfferTitle) questOfferTitle.textContent = quest.title;
+  if (questOfferGiver) questOfferGiver.textContent = payload.npcName ? `Offered by ${payload.npcName}` : "";
+  if (questOfferSummary) questOfferSummary.textContent = quest.summary || "";
+  if (questOfferSteps) {
+    questOfferSteps.replaceChildren();
+    for (const step of quest.steps || []) {
+      const li = document.createElement("li");
+      li.textContent = step?.text || step?.type || "";
+      questOfferSteps.append(li);
+    }
+  }
+  if (questOfferRewards) {
+    questOfferRewards.replaceChildren();
+    if (Number(quest.rewardGold) > 0) {
+      const g = document.createElement("span");
+      g.textContent = `Reward: ${quest.rewardGold}g`;
+      questOfferRewards.append(g);
+    }
+    if (Number(quest.rewardXp) > 0) {
+      const x = document.createElement("span");
+      x.textContent = `${quest.rewardXp} XP`;
+      questOfferRewards.append(x);
+    }
+  }
+  questOfferPanel.classList.remove("hidden");
+}
+
+function closeQuestOffer() {
+  state.questOffer = null;
+  questOfferPanel?.classList.add("hidden");
 }
 
 function renderShop() {

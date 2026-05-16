@@ -167,6 +167,23 @@
       <div id="questList" class="quest-list"></div>
     </aside>
 
+    <aside id="questOfferPanel" class="game-window quest-offer-window hidden" aria-label="Quest offer">
+      <div class="window-head">
+        <strong id="questOfferTitle">Quest Offer</strong>
+        <button id="questOfferClose" class="window-close" type="button" aria-label="Decline quest">Close</button>
+      </div>
+      <div class="quest-offer-body">
+        <div id="questOfferGiver" class="quest-offer-giver"></div>
+        <p id="questOfferSummary" class="quest-offer-summary"></p>
+        <ul id="questOfferSteps" class="quest-offer-steps"></ul>
+        <div id="questOfferRewards" class="quest-offer-rewards"></div>
+        <div class="quest-offer-actions">
+          <button id="questOfferAccept" type="button" class="quest-offer-accept">Accept</button>
+          <button id="questOfferDecline" type="button" class="quest-offer-decline">Decline</button>
+        </div>
+      </div>
+    </aside>
+
     <div id="abilityBar" class="ability-bar hidden" aria-label="Ability bar">
       <button id="abilityBarToggle" class="ability-bar-toggle" type="button" title="Minimise">&#8722;</button>
       <div id="abilitySlots" class="ability-slots">
