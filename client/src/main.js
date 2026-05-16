@@ -7125,54 +7125,59 @@ function clampPointToShipDeck(ship, x, y) {
   };
 }
 
-function drawShipHullShape(hullClass, x, y, w, h, color) {
-  ctx.fillStyle = "rgba(18, 30, 48, 0.96)";
+function buildShipHullPath(hullClass, x, y, w, h) {
   ctx.beginPath();
   if (hullClass === "hauler" || hullClass === "freighter") {
-    ctx.moveTo(x + 4, y + h * 0.62);
-    ctx.lineTo(x + 16, y + 8);
-    ctx.lineTo(x + w * 0.78, y + 8);
-    ctx.lineTo(x + w - 2, y + h * 0.48);
-    ctx.lineTo(x + w * 0.78, y + h - 6);
-    ctx.lineTo(x + 16, y + h - 6);
+    ctx.moveTo(x + w * 0.05, y + h * 0.62);
+    ctx.lineTo(x + w * 0.20, y + h * 0.19);
+    ctx.lineTo(x + w * 0.78, y + h * 0.19);
+    ctx.lineTo(x + w * 0.97, y + h * 0.48);
+    ctx.lineTo(x + w * 0.78, y + h * 0.81);
+    ctx.lineTo(x + w * 0.20, y + h * 0.81);
   } else if (hullClass === "fighter" || hullClass === "interceptor" || hullClass === "needle") {
-    ctx.moveTo(x + 2, y + h * 0.5);
-    ctx.lineTo(x + w * 0.34, y + 5);
-    ctx.lineTo(x + w - 3, y + h * 0.5);
-    ctx.lineTo(x + w * 0.34, y + h - 5);
+    ctx.moveTo(x + w * 0.03, y + h * 0.5);
+    ctx.lineTo(x + w * 0.34, y + h * 0.15);
+    ctx.lineTo(x + w * 0.97, y + h * 0.5);
+    ctx.lineTo(x + w * 0.34, y + h * 0.85);
   } else if (hullClass === "yacht") {
-    ctx.moveTo(x + 5, y + h * 0.58);
-    ctx.bezierCurveTo(x + 18, y + 2, x + w * 0.72, y + 2, x + w - 3, y + h * 0.5);
-    ctx.bezierCurveTo(x + w * 0.74, y + h - 1, x + 20, y + h - 1, x + 5, y + h * 0.58);
+    ctx.moveTo(x + w * 0.07, y + h * 0.58);
+    ctx.bezierCurveTo(x + w * 0.25, y + h * 0.05, x + w * 0.72, y + h * 0.05, x + w * 0.96, y + h * 0.5);
+    ctx.bezierCurveTo(x + w * 0.74, y + h * 0.97, x + w * 0.28, y + h * 0.97, x + w * 0.07, y + h * 0.58);
   } else {
-    ctx.moveTo(x + 6, y + h * 0.68);
-    ctx.lineTo(x + 16, y + 12);
-    ctx.lineTo(x + w * 0.6, y + 7);
-    ctx.lineTo(x + w - 4, y + h * 0.52);
-    ctx.lineTo(x + w * 0.7, y + h - 4);
-    ctx.lineTo(x + 18, y + h - 8);
+    ctx.moveTo(x + w * 0.09, y + h * 0.68);
+    ctx.lineTo(x + w * 0.25, y + h * 0.33);
+    ctx.lineTo(x + w * 0.60, y + h * 0.19);
+    ctx.lineTo(x + w * 0.94, y + h * 0.52);
+    ctx.lineTo(x + w * 0.70, y + h * 0.89);
+    ctx.lineTo(x + w * 0.28, y + h * 0.78);
   }
   ctx.closePath();
+}
+
+function drawShipHullShape(hullClass, x, y, w, h, color) {
+  ctx.fillStyle = "rgba(18, 30, 48, 0.96)";
+  buildShipHullPath(hullClass, x, y, w, h);
   ctx.fill();
 
   ctx.fillStyle = color;
   if (hullClass === "freighter" || hullClass === "hauler") {
-    ctx.fillRect(x + 18, y + 11, w * 0.44, 7);
-    ctx.fillRect(x + 18, y + h - 18, w * 0.44, 7);
+    ctx.fillRect(x + w * 0.22, y + h * 0.21, w * 0.44, h * 0.17);
+    ctx.fillRect(x + w * 0.22, y + h * 0.62, w * 0.44, h * 0.17);
     ctx.fillStyle = "rgba(255,255,255,0.65)";
-    ctx.fillRect(x + w - 22, y + h * 0.41, 10, 6);
+    ctx.fillRect(x + w * 0.73, y + h * 0.41, w * 0.12, h * 0.14);
   } else if (hullClass === "fighter" || hullClass === "interceptor" || hullClass === "needle") {
-    ctx.fillRect(x + w * 0.38, y + h * 0.42, w * 0.42, 4);
+    ctx.fillRect(x + w * 0.38, y + h * 0.42, w * 0.42, h * 0.12);
     ctx.fillStyle = "rgba(255,255,255,0.78)";
-    ctx.fillRect(x + w * 0.58, y + h * 0.34, 8, 5);
+    ctx.fillRect(x + w * 0.58, y + h * 0.34, w * 0.11, h * 0.15);
   } else {
-    ctx.fillRect(x + 18, y + 12, 18, 11);
+    ctx.fillRect(x + w * 0.28, y + h * 0.33, w * 0.28, h * 0.31);
     ctx.fillStyle = "rgba(255,255,255,0.75)";
-    ctx.fillRect(x + 24, y + 15, 6, 4);
+    ctx.fillRect(x + w * 0.38, y + h * 0.42, w * 0.09, h * 0.11);
   }
 
   ctx.fillStyle = "rgba(103,240,255,0.25)";
-  ctx.fillRect(x + 8, y + h * 0.5 - 2, w - 16, 4);
+  ctx.fillRect(x + w * 0.12, y + h * 0.46, w * 0.76, h * 0.11);
+  buildShipHullPath(hullClass, x, y, w, h);
   ctx.strokeStyle = color;
   ctx.lineWidth = hullClass === "needle" ? 2 : 3;
   ctx.stroke();
@@ -7227,85 +7232,121 @@ function drawShipVehicleObject(obj, sx, sy, boarded = false, facing = 0, thrust 
 function drawShipDeckObject(ship, sx, sy) {
   const layout = getShipLayout(ship);
   const color = ship?.color || "#67f0ff";
-  const w = layout.deckW * TILE_SIZE;
-  const h = layout.deckH * TILE_SIZE;
+  const hullClass = ship?.hullClass || "skiff";
+  // Use the same dimensions as the exterior hull so interior and exterior match in size/style
+  const { w, h } = shipHullDimensions(hullClass);
   const x = sx - w / 2;
   const y = sy - h / 2;
+  // Scale from deck tile coords to hull pixel coords
+  const scaleX = w / layout.deckW;
+  const scaleY = h / layout.deckH;
+
   ctx.save();
-  drawEllipseShadow(x - 8, y + h * 0.82, w + 16, 12, 0.22);
+  drawEllipseShadow(x - 6, y + h * 0.82, w + 12, 10, 0.22);
+
+  // Draw dark hull interior fill using the hull silhouette
   ctx.fillStyle = "rgba(8, 15, 28, 0.96)";
-  roundedRect(x, y, w, h, 8);
+  buildShipHullPath(hullClass, x, y, w, h);
   ctx.fill();
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 3;
-  ctx.stroke();
-  ctx.fillStyle = "rgba(36, 55, 78, 0.96)";
-  ctx.fillRect(x + 8, y + 8, w - 16, h - 16);
-  ctx.fillStyle = "rgba(103,240,255,0.12)";
-  ctx.fillRect(x + w * 0.57, y + 10, w * 0.26, h - 20);
 
-  const shieldFacing = ship?.shieldFacing || "front";
-  const shieldAngle = shieldFacing === "right" ? 0 : shieldFacing === "back" ? Math.PI / 2 : shieldFacing === "left" ? Math.PI : -Math.PI / 2;
-  ctx.save();
-  ctx.translate(sx, sy);
-  ctx.strokeStyle = "rgba(103, 240, 255, 0.65)";
-  ctx.lineWidth = 5;
-  ctx.beginPath();
-  ctx.arc(0, 0, Math.max(w, h) * 0.55, shieldAngle - Math.PI / 4, shieldAngle + Math.PI / 4);
-  ctx.stroke();
-  ctx.restore();
+  // Clip subsequent drawing to the hull shape
+  buildShipHullPath(hullClass, x, y, w, h);
+  ctx.clip();
 
+  // Interior floor panel
+  ctx.fillStyle = "rgba(22, 38, 58, 0.96)";
+  ctx.fillRect(x + w * 0.06, y + h * 0.06, w * 0.88, h * 0.88);
+
+  // Cockpit/bridge highlight at bow (right side)
+  ctx.fillStyle = "rgba(103,240,255,0.10)";
+  ctx.fillRect(x + w * 0.55, y + h * 0.12, w * 0.38, h * 0.76);
+
+  // Interior stripe detail matching exterior
+  ctx.fillStyle = "rgba(103,240,255,0.18)";
+  ctx.fillRect(x + w * 0.12, y + h * 0.44, w * 0.76, h * 0.12);
+
+  // Amenities scaled to hull pixel space
   for (const amenity of layout.amenities || []) {
-    const ax = sx + amenity.x * TILE_SIZE;
-    const ay = sy + amenity.y * TILE_SIZE;
+    const ax = sx + amenity.x * scaleX;
+    const ay = sy + amenity.y * scaleY;
+    const bw = Math.max(6, scaleX * 1.4);
+    const bh = Math.max(4, scaleY * 0.9);
     if (amenity.kind === "bed") {
       ctx.fillStyle = "rgba(20, 32, 48, 0.95)";
-      ctx.fillRect(ax - 10, ay - 6, 20, 12);
+      ctx.fillRect(ax - bw * 0.7, ay - bh * 0.6, bw * 1.4, bh * 1.2);
       ctx.fillStyle = "rgba(150, 210, 255, 0.7)";
-      ctx.fillRect(ax - 8, ay - 4, 7, 8);
+      ctx.fillRect(ax - bw * 0.55, ay - bh * 0.45, bw * 0.5, bh * 0.9);
     } else if (amenity.kind === "kitchen") {
       ctx.fillStyle = "rgba(14, 22, 34, 0.95)";
-      ctx.fillRect(ax - 12, ay - 8, 24, 16);
+      ctx.fillRect(ax - bw * 0.8, ay - bh * 0.7, bw * 1.6, bh * 1.4);
       ctx.fillStyle = "rgba(255, 210, 110, 0.75)";
-      ctx.fillRect(ax - 7, ay - 3, 14, 4);
+      ctx.fillRect(ax - bw * 0.45, ay - bh * 0.25, bw * 0.9, bh * 0.4);
     } else {
       ctx.fillStyle = "rgba(12, 22, 35, 0.95)";
-      ctx.fillRect(ax - 12, ay - 7, 24, 14);
+      ctx.fillRect(ax - bw * 0.8, ay - bh * 0.6, bw * 1.6, bh * 1.2);
     }
   }
 
+  // Stations scaled to hull pixel space
   for (const station of layout.stations) {
-    const wx = sx + station.x * TILE_SIZE;
-    const wy = sy + station.y * TILE_SIZE;
+    const wx = sx + station.x * scaleX;
+    const wy = sy + station.y * scaleY;
     const active = ship?.stationId === station.id;
+    const sw = Math.max(8, scaleX * 1.5);
+    const sh2 = Math.max(6, scaleY * 1.1);
     ctx.fillStyle = active ? "rgba(103,240,255,0.9)" : "rgba(13, 25, 42, 0.95)";
     ctx.strokeStyle = station.role === "engineer" ? "#8fe388" : station.role === "gunner" ? "#ff8f6b" : "#67f0ff";
-    ctx.lineWidth = 2;
-    roundedRect(wx - 9, wy - 7, 18, 14, 4);
+    ctx.lineWidth = 1.5;
+    roundedRect(wx - sw * 0.5, wy - sh2 * 0.5, sw, sh2, 2);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = active ? "#06101c" : ctx.strokeStyle;
-    ctx.font = "bold 8px ui-sans-serif, system-ui";
-    ctx.textAlign = "center";
-    ctx.fillText(station.role[0].toUpperCase(), wx, wy + 3);
+    if (sw >= 10) {
+      ctx.fillStyle = active ? "#06101c" : ctx.strokeStyle;
+      ctx.font = `bold ${Math.max(5, Math.floor(scaleY * 0.7))}px ui-sans-serif, system-ui`;
+      ctx.textAlign = "center";
+      ctx.fillText(station.role[0].toUpperCase(), wx, wy + sh2 * 0.25);
+    }
   }
 
-  ctx.fillStyle = "#d2f6ff";
+  ctx.restore();
+  ctx.save();
+
+  // Shield arc outside the hull clip
+  const shieldFacing = ship?.shieldFacing || "front";
+  const shieldAngle = shieldFacing === "right" ? 0 : shieldFacing === "back" ? Math.PI / 2 : shieldFacing === "left" ? Math.PI : -Math.PI / 2;
+  ctx.translate(sx, sy);
+  ctx.strokeStyle = "rgba(103, 240, 255, 0.65)";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(0, 0, Math.max(w, h) * 0.58, shieldAngle - Math.PI / 4, shieldAngle + Math.PI / 4);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.save();
+  // Hull outline using the same silhouette as exterior
+  buildShipHullPath(hullClass, x, y, w, h);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = hullClass === "needle" ? 2 : 3;
+  ctx.stroke();
+
+  // Ship name
+  ctx.fillStyle = color;
   ctx.font = "bold 10px ui-sans-serif, system-ui";
   ctx.textAlign = "center";
-  ctx.strokeStyle = "rgba(4,8,16,0.9)";
   ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(4,8,16,0.9)";
   ctx.strokeText(ship?.name || "Ship", sx, y - 6);
   ctx.fillText(ship?.name || "Ship", sx, y - 6);
 
+  // Health/shield bars
   const hp = Math.max(0, Math.min(1, (Number(ship?.health) || 0) / Math.max(1, Number(ship?.maxHealth) || 1)));
-  const sh = Math.max(0, Math.min(1, (Number(ship?.shields) || 0) / Math.max(1, Number(ship?.maxShields) || 1)));
+  const shp = Math.max(0, Math.min(1, (Number(ship?.shields) || 0) / Math.max(1, Number(ship?.maxShields) || 1)));
   ctx.fillStyle = "rgba(2, 8, 14, 0.82)";
   ctx.fillRect(x + 10, y + h + 4, 72, 10);
   ctx.fillStyle = "#ef6461";
   ctx.fillRect(x + 12, y + h + 6, 32 * hp, 3);
   ctx.fillStyle = "#67f0ff";
-  ctx.fillRect(x + 12, y + h + 10, 32 * sh, 3);
+  ctx.fillRect(x + 12, y + h + 10, 32 * shp, 3);
   ctx.restore();
 }
 
