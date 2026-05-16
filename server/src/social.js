@@ -82,8 +82,38 @@ function createSocialSystem(api) {
     });
   }
 
+  function persistAccountParty(accountKey, partyId) {
+    const acc = accountStore.accounts[accountKey];
+    if (!acc) return;
+    if (partyId) {
+      if (acc.partyId === partyId) return;
+      acc.partyId = partyId;
+    } else {
+      if (!acc.partyId) return;
+      delete acc.partyId;
+    }
+    saveAccountStore();
+  }
+
+  function restorePartyForAccount(accountKey) {
+    if (accountParty.has(accountKey)) return accountParty.get(accountKey);
+    const acc = accountStore.accounts[accountKey];
+    const pid = acc?.partyId;
+    if (!pid) return null;
+    let party = parties.get(pid);
+    if (!party) {
+      party = { id: pid, leaderKey: accountKey, members: new Set([accountKey]) };
+      parties.set(pid, party);
+    } else {
+      party.members.add(accountKey);
+    }
+    accountParty.set(accountKey, pid);
+    return pid;
+  }
+
   function leaveParty(accountKey) {
     const pid = accountParty.get(accountKey);
+    persistAccountParty(accountKey, null);
     if (!pid) return;
     const party = parties.get(pid);
     if (!party) {
@@ -102,11 +132,13 @@ function createSocialSystem(api) {
 
   function joinPartyInternal(joinerKey, hostKey) {
     if (joinerKey === hostKey) return { ok: false, message: "party_self" };
+    restorePartyForAccount(hostKey);
     let pid = accountParty.get(hostKey);
     if (!pid) {
       pid = `party_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
       parties.set(pid, { id: pid, leaderKey: hostKey, members: new Set([hostKey]) });
       accountParty.set(hostKey, pid);
+      persistAccountParty(hostKey, pid);
     }
     const party = parties.get(pid);
     if (!party) return { ok: false, message: "party_missing" };
@@ -117,12 +149,16 @@ function createSocialSystem(api) {
     }
     party.members.add(joinerKey);
     accountParty.set(joinerKey, pid);
+    persistAccountParty(joinerKey, pid);
     return { ok: true };
   }
 
   function getPartyView(client) {
     if (!client.player || !client.account) return null;
-    const pid = accountParty.get(client.account.key);
+    const key = client.account.key;
+    // Lazy-restore persisted party membership the first time this account is seen this session
+    restorePartyForAccount(key);
+    const pid = accountParty.get(key);
     if (!pid) return null;
     const party = parties.get(pid);
     if (!party) return null;
@@ -481,7 +517,8 @@ function createSocialSystem(api) {
         if (other) send(other, { type: "tradeClosed" });
       }
     }
-    leaveParty(key);
+    // Party persists across disconnects — member appears offline but stays in the party.
+    // Membership is restored on reconnect from accountStore via restorePartyForAccount.
   }
 
   function handleMessage(client, message) {
