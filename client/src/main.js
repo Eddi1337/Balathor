@@ -6306,7 +6306,13 @@ function draw() {
     return;
   }
 
-  const zoom = state.zoom || 1;
+  const baseZoom = state.zoom || 1;
+  // Pull the camera back a bit when seated at the pilot/captain/copilot console
+  const selfForZoom = state.players.get(state.selfId);
+  const pilotingForZoom = Boolean(
+    selfForZoom?.ship?.boarded && isPilotShipRole(selfForZoom.ship?.stationRole)
+  );
+  const zoom = baseZoom * (pilotingForZoom ? 0.7 : 1);
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
   ctx.save();
@@ -8070,6 +8076,16 @@ function drawPlayers() {
     ...[...state.mobs.values()].map((m) => ({ entity: m, isMob: true })),
   ].sort((a, b) => a.entity.renderY - b.entity.renderY);
 
+  // View rules:
+  //   - If the viewer is sitting in a pilot/captain/copilot seat, they see their ship as the
+  //     small exterior (interior hidden), with the camera zoomed out a bit.
+  //   - If the viewer is walking around their deck (not piloting), they see the interior.
+  //   - Everyone else (including other players) sees the small exterior view of any boarded ship.
+  const selfShip = self?.ship?.boarded ? self.ship : null;
+  const selfPiloting = Boolean(selfShip && isPilotShipRole(selfShip.stationRole));
+  const viewerInteriorShipId = (selfShip && selfShip.deckMode && !selfPiloting) ? selfShip.id : null;
+  const renderedShips = new Set();
+
   for (const { entity, isNpc, isMob } of entities) {
     if (entityHiddenByBuildingRoof(entity, viewerBuilding)) {
       continue;
@@ -8086,12 +8102,38 @@ function drawPlayers() {
     if (isMob) {
       drawMob(entity, sx, sy);
     } else if (entity.ship?.boarded && entity.ship.deckMode) {
-      const center = shipCenter(entity.ship, entity);
-      const shipSx = Math.floor(center.x * TILE_SIZE - state.camera.x + halfW);
-      const shipSy = Math.floor(center.y * TILE_SIZE - state.camera.y + halfH);
-      drawShipDeckObject(entity.ship, shipSx, shipSy);
-      const seated = Boolean(entity.ship.stationRole);
-      drawCharacter(entity, sx, sy, isNpc, { restingBench: seated });
+      const shipId = entity.ship.id;
+      const sameAsViewer = shipId && shipId === viewerInteriorShipId;
+      if (sameAsViewer) {
+        // Viewer is inside this ship and not in a pilot seat — render the interior view once and the crew inside it.
+        if (!renderedShips.has(shipId)) {
+          renderedShips.add(shipId);
+          const center = shipCenter(entity.ship, entity);
+          const shipSx = Math.floor(center.x * TILE_SIZE - state.camera.x + halfW);
+          const shipSy = Math.floor(center.y * TILE_SIZE - state.camera.y + halfH);
+          drawShipDeckObject(entity.ship, shipSx, shipSy);
+        }
+        const seated = Boolean(entity.ship.stationRole);
+        drawCharacter(entity, sx, sy, isNpc, { restingBench: seated });
+      } else {
+        // Viewer is outside this ship (or is piloting) — show only the small exterior hull.
+        if (!renderedShips.has(shipId)) {
+          renderedShips.add(shipId);
+          const center = shipCenter(entity.ship, entity);
+          const shipSx = Math.floor(center.x * TILE_SIZE - state.camera.x + halfW);
+          const shipSy = Math.floor(center.y * TILE_SIZE - state.camera.y + halfH);
+          const thrustOn = entity.id === state.selfId && state.input.up;
+          drawShipVehicleObject(
+            entity.ship,
+            shipSx,
+            shipSy,
+            true,
+            Number.isFinite(entity.facing) ? entity.facing : 0,
+            Boolean(entity.moving || thrustOn)
+          );
+        }
+        // Crew member is inside the hull — do not draw their character above the exterior.
+      }
     } else if (entity.ship?.boarded) {
       const thrustOn = entity.id === state.selfId && state.input.up;
       drawShipVehicleObject(
@@ -8115,6 +8157,10 @@ function drawPlayers() {
       }
       // Detect if this entity is standing inside a party member's ship deck so we shrink them too
       const insideShipDeck = !isMob && !isNpc && isEntityInsideAnyShipDeck(entity);
+      // Only show party-mate characters in their interior if we're inside that same ship.
+      if (insideShipDeck && entity.id !== state.selfId && !viewerInteriorShipId) {
+        continue;
+      }
       drawCharacter(entity, sx, sy, isNpc, { restingBench, insideShipDeck });
     }
   }
