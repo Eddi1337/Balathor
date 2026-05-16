@@ -6414,18 +6414,19 @@ function normalizeAngle(value) {
   return angle;
 }
 
-// Hand-placed pirate fleet anchor points. Each anchor seeds a fleet of N ships orbiting
-// the anchor. All are placed comfortably outside the SCI_FI_SAFE_RADIUS around the station.
-const SCI_FI_PIRATE_FLEETS = [
-  { id: "pirate_eclipse", name: "Eclipse Raider", x: 1740, y: -180, size: 3, color: "#ff6b8a", level: 8 },
-  { id: "pirate_blacksun", name: "Blacksun Corsair", x: 2240, y: 250, size: 4, color: "#c084fc", level: 10 },
-  { id: "pirate_redclaw", name: "Redclaw Marauder", x: 1660, y: 350, size: 3, color: "#f97316", level: 9 },
-  { id: "pirate_void", name: "Void Stalker", x: 2200, y: -420, size: 4, color: "#22d3ee", level: 11 }
-];
-
 function createSciFiPirateMobs() {
+  // Hand-placed pirate fleet anchor points. Each anchor seeds a fleet of N ships orbiting
+  // the anchor. All are placed comfortably outside the SCI_FI_SAFE_RADIUS around the station.
+  // Declared inside the function so it's evaluated lazily and avoids a temporal dead zone
+  // when createMobs() runs at module top-level startup.
+  const fleets = [
+    { id: "pirate_eclipse", name: "Eclipse Raider", x: 1740, y: -180, size: 3, color: "#ff6b8a", level: 8 },
+    { id: "pirate_blacksun", name: "Blacksun Corsair", x: 2240, y: 250, size: 4, color: "#c084fc", level: 10 },
+    { id: "pirate_redclaw", name: "Redclaw Marauder", x: 1660, y: 350, size: 3, color: "#f97316", level: 9 },
+    { id: "pirate_void", name: "Void Stalker", x: 2200, y: -420, size: 4, color: "#22d3ee", level: 11 }
+  ];
   const out = [];
-  for (const fleet of SCI_FI_PIRATE_FLEETS) {
+  for (const fleet of fleets) {
     const count = Math.max(1, fleet.size | 0);
     for (let i = 0; i < count; i += 1) {
       // Stagger fleet members in a small ring around the anchor point.
