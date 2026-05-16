@@ -3537,8 +3537,14 @@ function disembarkPassengers(shipId, port) {
   if (!shipId) return;
   for (const passengerClient of clients.values()) {
     const passenger = passengerClient.player;
-    if (!passenger || passenger.aboardShipId !== shipId) continue;
+    if (!passenger || (passenger.aboardShipId !== shipId && passenger.boardedShip?.shipId !== shipId)) continue;
     passenger.aboardShipId = null;
+    passenger.boardedShip = null;
+    passenger.shipStationRole = null;
+    passenger.shipStationId = null;
+    passenger.shipLocalX = 0;
+    passenger.shipLocalY = 0;
+    passenger.ship = getOwnedActiveShip(passenger);
     if (port) {
       passenger.x = Number.isFinite(port.terminalX) ? port.terminalX : port.x;
       passenger.y = Number.isFinite(port.terminalY) ? port.terminalY : port.y;
@@ -3550,7 +3556,7 @@ function disembarkPassengers(shipId, port) {
     send(passengerClient, {
       type: "serverMessage",
       message: "party_disembarked",
-      shipName: passenger.name
+      shipName: shipId
     });
   }
 }
@@ -3559,7 +3565,7 @@ function dockPlayerShipAtStation(client, port = resolveShipExitDockPort(client.p
   if (!client.player?.ship || !port) {
     return false;
   }
-  if (client.player.boardedShip) {
+  if (client.player.boardedShip || client.player.aboardShipId) {
     return disembarkFromSharedShip(client);
   }
 
@@ -3571,6 +3577,7 @@ function dockPlayerShipAtStation(client, port = resolveShipExitDockPort(client.p
   client.player.shipStationRole = null;
   client.player.shipStationId = null;
   client.player.boardedShip = null;
+  client.player.aboardShipId = null;
   client.player.ship.dockX = port.x;
   client.player.ship.dockY = port.y;
   client.player.ship.dockStationId = "station_ringforge";
@@ -3601,6 +3608,7 @@ function disembarkFromSharedShip(client) {
   const layout = getShipLayout(ship);
   const center = shipCenter(ship);
   client.player.boardedShip = null;
+  client.player.aboardShipId = null;
   client.player.shipStationRole = null;
   client.player.shipStationId = null;
   client.player.shipLocalX = 0;
@@ -3670,6 +3678,7 @@ function boardSharedShip(client, match, message = {}) {
   const localX = Number.isFinite(tx) ? tx - center.x : layout.entry.x;
   const localY = Number.isFinite(ty) ? ty - center.y : layout.entry.y;
   client.player.boardedShip = { ownerId: match.owner.id, shipId: ship.id };
+  client.player.aboardShipId = ship.id;
   client.player.ship = ship;
   client.player.shipStationRole = null;
   client.player.shipStationId = null;
@@ -3869,12 +3878,24 @@ function teleportToPartyShip(client, ownerId, port) {
   }
   const center = shipCenter(ship);
   if (!Number.isFinite(center.x) || !Number.isFinite(center.y)) return false;
-  client.player.x = center.x + layout.entry.x;
-  client.player.y = center.y + layout.entry.y;
+  const owned = getOwnedActiveShip(client.player);
+  if (owned && owned !== ship) {
+    owned.boarded = false;
+    owned.deckMode = false;
+    owned.stationRole = null;
+    owned.stationId = null;
+  }
+  ship.deckMode = true;
+  client.player.ship = ship;
+  client.player.boardedShip = { ownerId: owner.id, shipId: ship.id };
+  client.player.aboardShipId = ship.id;
+  client.player.shipStationRole = null;
+  client.player.shipStationId = null;
+  setPlayerShipLocal(client.player, layout.entry.x, layout.entry.y);
+  clampPlayerToShipDeck(client.player);
   client.player.facing = facingForDockPort(port);
   client.player.moving = false;
   client.player._stillAccumulator = 0;
-  client.player.aboardShipId = ship.id;
   saveClientCharacter(client);
   send(client, {
     type: "serverMessage",
