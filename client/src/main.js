@@ -712,7 +712,7 @@ const state = {
   worldTime: { hour: 8, phase: "day" },
   input: { up: false, down: false, left: false, right: false, engage: false, fire: false, repair: false },
   inputSeq: 0,
-  camera: { x: 0, y: 0 },
+  camera: { x: 0, y: 0, rotation: 0 },
   zoom: 1,
   activeServerUrl: "",
   authenticated: false,
@@ -1128,6 +1128,7 @@ function handleServerMessage(message) {
     }
     state.camera.x = message.spawn.x * TILE_SIZE;
     state.camera.y = message.spawn.y * TILE_SIZE;
+    state.camera.rotation = 0;
     requestVisibleChunks();
     return;
   }
@@ -1155,6 +1156,7 @@ function handleServerMessage(message) {
     }
     state.camera.x = message.x * TILE_SIZE;
     state.camera.y = message.y * TILE_SIZE;
+    state.camera.rotation = 0;
     // Block stale pre-teleport snapshots from snapping the player back
     state.teleportGuardUntil = performance.now() + 700;
     state.requestedChunks.clear();
@@ -1892,6 +1894,29 @@ function normalizeAngle(value) {
   return angle;
 }
 
+function getInteriorShipView(player = state.players.get(state.selfId)) {
+  const ship = player?.ship;
+  if (!ship?.boarded || !ship.deckMode) {
+    return null;
+  }
+  if (isPilotShipRole(ship.stationRole)) {
+    return null;
+  }
+  const center = shipCenter(ship, player);
+  const facing = Number.isFinite(Number(ship.facing)) ? Number(ship.facing) : Number(player?.facing) || 0;
+  return {
+    ship,
+    center,
+    rotation: normalizeAngle(-facing)
+  };
+}
+
+function getEffectiveWorldZoom(player = state.players.get(state.selfId)) {
+  const baseZoom = state.zoom || 1;
+  const pilotingForZoom = Boolean(player?.ship?.boarded && isPilotShipRole(player.ship?.stationRole));
+  return baseZoom * (pilotingForZoom ? 0.7 : 1);
+}
+
 function predictLocalPlayer(player, dt) {
   const speed = Number.isFinite(player.moveSpeed) ? player.moveSpeed : CLIENT_PLAYER_SPEED;
 
@@ -1903,6 +1928,7 @@ function predictLocalPlayer(player, dt) {
       const aimLength = Math.hypot(dx, dy);
       if (aimLength > 0) {
         player.facing = Math.atan2(dy, dx);
+        player.ship.facing = player.facing;
       }
       if (state.input.engage) {
         const vx = Math.cos(player.facing) * speed * dt;
@@ -3231,10 +3257,9 @@ function wireUi() {
     const scaleY = canvas.height / rect.height;
     const cx = (event.clientX - rect.left) * scaleX;
     const cy = (event.clientY - rect.top) * scaleY;
-    const halfW = canvas.width / 2;
-    const halfH = canvas.height / 2;
-    const worldX = (cx - halfW) / (TILE_SIZE * state.zoom) + state.camera.x / TILE_SIZE;
-    const worldY = (cy - halfH) / (TILE_SIZE * state.zoom) + state.camera.y / TILE_SIZE;
+    const world = screenPointToWorld(cx, cy);
+    const worldX = world.x;
+    const worldY = world.y;
     send({ type: "modTeleport", x: worldX, y: worldY });
   });
 
@@ -4041,18 +4066,30 @@ function sendInteract(target = null) {
   send(target ? { type: "interact", ...target } : { type: "interact" });
 }
 
+function screenPointToWorld(cx, cy) {
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const zoom = getEffectiveWorldZoom();
+  const dx = (cx - halfW) / (zoom || 1);
+  const dy = (cy - halfH) / (zoom || 1);
+  const rotation = Number(state.camera.rotation) || 0;
+  const cos = Math.cos(-rotation);
+  const sin = Math.sin(-rotation);
+  const worldDx = dx * cos - dy * sin;
+  const worldDy = dx * sin + dy * cos;
+  return {
+    x: (state.camera.x + worldDx) / TILE_SIZE,
+    y: (state.camera.y + worldDy) / TILE_SIZE
+  };
+}
+
 function screenEventToWorld(event) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
   const scaleY = canvas.height / rect.height;
   const cx = (event.clientX - rect.left) * scaleX;
   const cy = (event.clientY - rect.top) * scaleY;
-  const halfW = canvas.width / 2;
-  const halfH = canvas.height / 2;
-  return {
-    x: (cx - halfW) / (TILE_SIZE * state.zoom) + state.camera.x / TILE_SIZE,
-    y: (cy - halfH) / (TILE_SIZE * state.zoom) + state.camera.y / TILE_SIZE
-  };
+  return screenPointToWorld(cx, cy);
 }
 
 function getOwnedHouseHomeTreeWorldPos(building) {
@@ -5274,11 +5311,21 @@ function updateCamera(dt) {
     return;
   }
 
-  const targetX = self.renderX * TILE_SIZE;
-  const targetY = self.renderY * TILE_SIZE;
   const follow = 1 - Math.pow(0.001, dt);
-  state.camera.x += (targetX - state.camera.x) * follow;
-  state.camera.y += (targetY - state.camera.y) * follow;
+  const interiorView = getInteriorShipView(self);
+  if (interiorView) {
+    state.camera.x = interiorView.center.x * TILE_SIZE;
+    state.camera.y = interiorView.center.y * TILE_SIZE;
+    state.camera.rotation = normalizeAngle(
+      state.camera.rotation + normalizeAngle(interiorView.rotation - state.camera.rotation) * follow
+    );
+  } else {
+    const targetX = self.renderX * TILE_SIZE;
+    const targetY = self.renderY * TILE_SIZE;
+    state.camera.x += (targetX - state.camera.x) * follow;
+    state.camera.y += (targetY - state.camera.y) * follow;
+    state.camera.rotation = normalizeAngle(state.camera.rotation + normalizeAngle(0 - state.camera.rotation) * follow);
+  }
   renderProgression(self);
   sendViewUpdate();
   requestVisibleChunks();
@@ -5295,8 +5342,8 @@ function sendViewUpdate() {
     view: {
       x: state.camera.x / TILE_SIZE,
       y: state.camera.y / TILE_SIZE,
-      halfW: canvas.width / TILE_SIZE / 2 / (state.zoom || 1),
-      halfH: canvas.height / TILE_SIZE / 2 / (state.zoom || 1)
+      halfW: canvas.width / TILE_SIZE / 2 / getEffectiveWorldZoom(),
+      halfH: canvas.height / TILE_SIZE / 2 / getEffectiveWorldZoom()
     }
   });
 }
@@ -6339,18 +6386,17 @@ function draw() {
     return;
   }
 
-  const baseZoom = state.zoom || 1;
-  // Pull the camera back a bit when seated at the pilot/captain/copilot console
   const selfForZoom = state.players.get(state.selfId);
-  const pilotingForZoom = Boolean(
-    selfForZoom?.ship?.boarded && isPilotShipRole(selfForZoom.ship?.stationRole)
-  );
-  const zoom = baseZoom * (pilotingForZoom ? 0.7 : 1);
+  const zoom = getEffectiveWorldZoom(selfForZoom);
+  const viewRotation = Number(state.camera.rotation) || 0;
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
   ctx.save();
   ctx.translate(halfW, halfH);
   ctx.scale(zoom, zoom);
+  if (viewRotation) {
+    ctx.rotate(viewRotation);
+  }
   ctx.translate(-halfW, -halfH);
 
   drawWorld();

@@ -1049,6 +1049,7 @@ function serializeShip(ship) {
     dockPortId: typeof ship.dockPortId === "string" ? ship.dockPortId.slice(0, 48) : null,
     worldX: clampNumber(ship.worldX, -10000, 10000, ship.dockX ?? STARGATE_LANDING.x),
     worldY: clampNumber(ship.worldY, -10000, 10000, ship.dockY ?? STARGATE_LANDING.y),
+    facing: normalizeAngle(clampNumber(ship.facing, -Math.PI * 2, Math.PI * 2, 0)),
     speed: clampNumber(ship.speed, 0, 1000, SHIP_SPEED),
     laserTier: clampInteger(ship.laserTier ?? 1, 1, 5),
     thrustTier: clampInteger(ship.thrustTier ?? 1, 1, 5),
@@ -1226,6 +1227,7 @@ function createStarterShip(playerId = "starter") {
     dockPortId: dp.id,
     worldX: dp.x,
     worldY: dp.y,
+    facing: facingForDockPort(dp),
     speed: SHIP_SPEED,
     laserTier: 1,
     thrustTier: 1,
@@ -1259,6 +1261,7 @@ function sanitizeShip(ship, fallbackId = null) {
     dockPortId: typeof ship.dockPortId === "string" ? ship.dockPortId.slice(0, 48) : null,
     worldX: clampNumber(ship.worldX, -10000, 10000, ship.dockX ?? STARGATE_LANDING.x),
     worldY: clampNumber(ship.worldY, -10000, 10000, ship.dockY ?? STARGATE_LANDING.y),
+    facing: normalizeAngle(clampNumber(ship.facing, -Math.PI * 2, Math.PI * 2, 0)),
     speed: clampNumber(ship.speed, 0, 1000, SHIP_SPEED),
     laserTier: clampInteger(ship.laserTier ?? 1, 1, 5),
     thrustTier: clampInteger(ship.thrustTier ?? 1, 1, 5),
@@ -2083,6 +2086,7 @@ function simulate() {
       const aimLength = Math.hypot(dx, dy);
       if (aimLength > 0) {
         client.player.facing = Math.atan2(dy, dx);
+        ship.facing = client.player.facing;
       }
       // Engage thrusts forward in the facing direction
       if (input.engage) {
@@ -3584,6 +3588,7 @@ function dockPlayerShipAtStation(client, port = resolveShipExitDockPort(client.p
   client.player.ship.dockPortId = port.id;
   client.player.ship.worldX = port.x;
   client.player.ship.worldY = port.y;
+  client.player.ship.facing = facingForDockPort(port);
   disembarkPassengers(shipId, port);
   client.player.x = Number.isFinite(port.terminalX) ? port.terminalX : port.x;
   client.player.y = Number.isFinite(port.terminalY) ? port.terminalY : port.y;
@@ -3828,6 +3833,7 @@ function summonPlayerShipToPort(player, ship, port) {
   ship.dockPortId = port.id;
   ship.worldX = port.x;
   ship.worldY = port.y;
+  ship.facing = facingForDockPort(port);
   return true;
 }
 
@@ -3846,6 +3852,7 @@ function boardPlayerShipAtPort(client, ship, port) {
   client.player.shipStationId = deckMode ? null : "pilot";
   ship.worldX = port.x;
   ship.worldY = port.y;
+  ship.facing = facingForDockPort(port);
   setPlayerShipLocal(client.player, deckMode ? layout.entry.x : 0, deckMode ? layout.entry.y : 0);
   client.player.x = port.x + (deckMode ? layout.entry.x : 0);
   client.player.y = port.y + (deckMode ? layout.entry.y : 0);
@@ -5631,6 +5638,7 @@ function handleShopBuy(client, message) {
       dockY: dockPort?.y ?? STARGATE_LANDING.y,
       dockStationId: "station_ringforge",
       dockPortId: dockPort?.id || null,
+      facing: dockPort ? facingForDockPort(dockPort) : 0,
       speed: Number(template.stats?.speed) || SHIP_SPEED,
       laserTier: Math.min(5, Math.max(1, Number(template.laserTier) || 1)),
       thrustTier: Math.min(5, Math.max(1, Number(template.thrustTier) || 1))
