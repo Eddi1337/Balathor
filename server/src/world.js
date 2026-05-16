@@ -95,6 +95,62 @@ const SCI_FI_PLANETS = Object.freeze([
   { id: "planet_icefall", name: "Icefall", x: 2214, y: 180, radius: 64, seed: 9181, type: "ice" },
   { id: "planet_rust", name: "Rust", x: 2050, y: 416, radius: 58, seed: 10201, type: "desert" }
 ]);
+
+// Safe zone around the station — no pirate spawns or aggro within this radius.
+const SCI_FI_STATION_CENTER = { x: 1920, y: 0 };
+const SCI_FI_SAFE_RADIUS = 60;
+
+// Asteroid fields scattered around the sector. Each cluster is a circular area
+// with a seeded layout the client renders, and rocks act as ship-blocking hazards.
+const SCI_FI_ASTEROIDS = Object.freeze([
+  { id: "asteroid_belt_north", x: 1820, y: -260, radius: 18, density: 14, seed: 3201 },
+  { id: "asteroid_belt_south", x: 1990, y: 290, radius: 22, density: 18, seed: 4117 },
+  { id: "asteroid_belt_east_outer", x: 2280, y: -90, radius: 16, density: 12, seed: 5293 },
+  { id: "asteroid_belt_west_outer", x: 1620, y: 90, radius: 20, density: 16, seed: 6418 },
+  { id: "asteroid_belt_far_north", x: 1740, y: -450, radius: 14, density: 10, seed: 7102 }
+]);
+
+function getAsteroidRocks(cluster) {
+  const rocks = [];
+  const count = Math.max(4, Number(cluster.density) || 10);
+  for (let i = 0; i < count; i += 1) {
+    const a = hash2(cluster.seed, i, 17) * Math.PI * 2;
+    const r = Math.sqrt(hash2(cluster.seed, i, 29)) * cluster.radius;
+    const size = 0.9 + hash2(cluster.seed, i, 43) * 1.6;
+    rocks.push({
+      x: cluster.x + Math.cos(a) * r,
+      y: cluster.y + Math.sin(a) * r,
+      radius: size
+    });
+  }
+  return rocks;
+}
+
+function getSciFiAsteroids() {
+  return SCI_FI_ASTEROIDS;
+}
+
+function isInsideSciFiSafeZone(x, y) {
+  const dx = x - SCI_FI_STATION_CENTER.x;
+  const dy = y - SCI_FI_STATION_CENTER.y;
+  return dx * dx + dy * dy <= SCI_FI_SAFE_RADIUS * SCI_FI_SAFE_RADIUS;
+}
+
+function isBlockedByAsteroid(x, y, radius = 0.34) {
+  for (const cluster of SCI_FI_ASTEROIDS) {
+    const dx = x - cluster.x;
+    const dy = y - cluster.y;
+    const reach = cluster.radius + radius + 1;
+    if (dx * dx + dy * dy > reach * reach) continue;
+    for (const rock of getAsteroidRocks(cluster)) {
+      const rdx = x - rock.x;
+      const rdy = y - rock.y;
+      const ar = rock.radius + radius;
+      if (rdx * rdx + rdy * rdy < ar * ar) return true;
+    }
+  }
+  return false;
+}
 const { computeHubDistrict, HUB_CLEARING_RADIUS: HUB_TOWN_GRASS_RADIUS } = require("./hubRoundTown.js");
 /** Walled procedural hub + arterial sets (paths never overlap building rects). */
 const _hubDistrict = computeHubDistrict();
@@ -423,6 +479,13 @@ function getSciFiObjectsInChunk(cx, cy) {
 
   for (const planet of SCI_FI_PLANETS) {
     const obj = { ...planet, kind: "planet" };
+    if (sciFiObjectTouchesChunk(obj, startX, startY, endX, endY)) {
+      out.push(obj);
+    }
+  }
+
+  for (const cluster of SCI_FI_ASTEROIDS) {
+    const obj = { ...cluster, kind: "asteroid_field", rocks: getAsteroidRocks(cluster) };
     if (sciFiObjectTouchesChunk(obj, startX, startY, endX, endY)) {
       out.push(obj);
     }
@@ -2202,7 +2265,14 @@ function isBlockedCircleForShip(x, y, radius = 0.34) {
     [x + radius, y + radius]
   ];
 
-  return points.some(([px, py]) => isBlockedForShip(px, py));
+  if (points.some(([px, py]) => isBlockedForShip(px, py))) {
+    return true;
+  }
+  // Asteroid fields block ship movement so pilots have to weave around them.
+  if (isBlockedByAsteroid(x, y, radius)) {
+    return true;
+  }
+  return false;
 }
 
 function spawnPoint(index = 0) {
@@ -2326,6 +2396,11 @@ module.exports = {
   isBlockedCircle,
   isBlockedForShip,
   isBlockedCircleForShip,
+  isBlockedByAsteroid,
+  isInsideSciFiSafeZone,
+  getSciFiAsteroids,
+  SCI_FI_STATION_CENTER,
+  SCI_FI_SAFE_RADIUS,
   spawnPoint,
   southDoorWorldXs,
   southDoorAnchorWorldX,

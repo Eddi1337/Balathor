@@ -28,7 +28,10 @@ const {
   sciFiDockPortForPlayerId,
   sciFiDockPortById,
   findNearestSciFiDockPort,
-  STARGATE_LANDING
+  STARGATE_LANDING,
+  isInsideSciFiSafeZone,
+  SCI_FI_STATION_CENTER,
+  SCI_FI_SAFE_RADIUS
 } = require("./world");
 const {
   updateNpcs,
@@ -3522,18 +3525,24 @@ function handleAttack(client, message = {}) {
       );
     }
 
-    if (hitKind === "mob" && hit.hp <= 0) {
-      hit.dead = true;
-      hit.respawnAt = now + (hit.isCritter ? 4200 : MOB_RESPAWN_MS);
-      event.defeated = true;
-      const progress = awardXp(client.player, xpForMob(hit));
-      event.xpGained = progress.xpGained;
-      event.levelsGained = progress.levelsGained;
-      const goldReward = goldForMob(hit);
-      client.player.gold += goldReward;
-      event.goldGained = goldReward;
-      dropLootForMob(hit);
-      recordMobDefeatForQuests(client, hit);
+    if (hitKind === "mob") {
+      // Damaging a pirate alerts the rest of their fleet.
+      if (hit.isShipPirate) {
+        alertPirateFleet(hit);
+      }
+      if (hit.hp <= 0) {
+        hit.dead = true;
+        hit.respawnAt = now + (hit.isCritter ? 4200 : MOB_RESPAWN_MS);
+        event.defeated = true;
+        const progress = awardXp(client.player, xpForMob(hit));
+        event.xpGained = progress.xpGained;
+        event.levelsGained = progress.levelsGained;
+        const goldReward = goldForMob(hit);
+        client.player.gold += goldReward;
+        event.goldGained = goldReward;
+        dropLootForMob(hit);
+        recordMobDefeatForQuests(client, hit);
+      }
     }
 
     if (hitKind === "player" && hit.hp <= 0) {
@@ -4104,6 +4113,7 @@ function handleShipFire(client, message = {}) {
     client.player.facing = Math.atan2(aimDy, aimDx);
   }
 
+  const turretDamage = 12 + tier * 6;
   for (const turret of turrets) {
     const ox = center.x + turret.x;
     const oy = center.y + turret.y;
@@ -4112,9 +4122,32 @@ function handleShipFire(client, message = {}) {
     const dist = Math.hypot(dxs, dys);
     const reach = Math.min(baseRange, dist || baseRange) || baseRange;
     const facing = Math.atan2(dys, dxs);
-    const endX = ox + Math.cos(facing) * reach;
-    const endY = oy + Math.sin(facing) * reach;
-    broadcastCombat({
+
+    // Find the nearest live mob whose center is roughly along this turret's beam.
+    let bestMob = null;
+    let bestT = reach;
+    const beamCos = Math.cos(facing);
+    const beamSin = Math.sin(facing);
+    for (const mob of mobs) {
+      if (mob.dead) continue;
+      const mx = mob.x - ox;
+      const my = mob.y - oy;
+      const t = mx * beamCos + my * beamSin;
+      if (t < 0 || t > reach) continue;
+      const perpX = mx - beamCos * t;
+      const perpY = my - beamSin * t;
+      const perpDist = Math.hypot(perpX, perpY);
+      if (perpDist > 1.6) continue;
+      if (t < bestT) {
+        bestT = t;
+        bestMob = mob;
+      }
+    }
+
+    const endX = bestMob ? bestMob.x : ox + beamCos * reach;
+    const endY = bestMob ? bestMob.y : oy + beamSin * reach;
+
+    const event = {
       type: "combat",
       kind: "projectile",
       weapon: "ship_turret",
@@ -4126,10 +4159,37 @@ function handleShipFire(client, message = {}) {
       y: Number(oy.toFixed(3)),
       facing: Number(facing.toFixed(3)),
       range: reach,
-      hit: false,
+      hit: Boolean(bestMob),
       endX: Number(endX.toFixed(3)),
       endY: Number(endY.toFixed(3))
-    });
+    };
+
+    if (bestMob) {
+      const damage = Math.max(1, Math.round(turretDamage + bestMob.level));
+      bestMob.hp = Math.max(0, bestMob.hp - damage);
+      event.targetId = bestMob.id;
+      event.targetKind = "mob";
+      event.damage = damage;
+      event.targetHp = bestMob.hp;
+      if (bestMob.isShipPirate) {
+        alertPirateFleet(bestMob);
+      }
+      if (bestMob.hp <= 0) {
+        bestMob.dead = true;
+        bestMob.respawnAt = Date.now() + MOB_RESPAWN_MS;
+        event.defeated = true;
+        const progress = awardXp(client.player, xpForMob(bestMob));
+        event.xpGained = progress.xpGained;
+        event.levelsGained = progress.levelsGained;
+        const goldReward = goldForMob(bestMob);
+        client.player.gold += goldReward;
+        event.goldGained = goldReward;
+        dropLootForMob(bestMob);
+        recordMobDefeatForQuests(client, bestMob);
+      }
+    }
+
+    broadcastCombat(event);
   }
   client.player.moving = true;
 }
@@ -6354,6 +6414,47 @@ function normalizeAngle(value) {
   return angle;
 }
 
+// Hand-placed pirate fleet anchor points. Each anchor seeds a fleet of N ships orbiting
+// the anchor. All are placed comfortably outside the SCI_FI_SAFE_RADIUS around the station.
+const SCI_FI_PIRATE_FLEETS = [
+  { id: "pirate_eclipse", name: "Eclipse Raider", x: 1740, y: -180, size: 3, color: "#ff6b8a", level: 8 },
+  { id: "pirate_blacksun", name: "Blacksun Corsair", x: 2240, y: 250, size: 4, color: "#c084fc", level: 10 },
+  { id: "pirate_redclaw", name: "Redclaw Marauder", x: 1660, y: 350, size: 3, color: "#f97316", level: 9 },
+  { id: "pirate_void", name: "Void Stalker", x: 2200, y: -420, size: 4, color: "#22d3ee", level: 11 }
+];
+
+function createSciFiPirateMobs() {
+  const out = [];
+  for (const fleet of SCI_FI_PIRATE_FLEETS) {
+    const count = Math.max(1, fleet.size | 0);
+    for (let i = 0; i < count; i += 1) {
+      // Stagger fleet members in a small ring around the anchor point.
+      const angle = (i / count) * Math.PI * 2 + (i * 0.37);
+      const ringR = 4 + i * 1.4;
+      const homeX = fleet.x + Math.cos(angle) * ringR;
+      const homeY = fleet.y + Math.sin(angle) * ringR;
+      const lvl = fleet.level + (i === 0 ? 1 : 0); // lead ship is a touch tougher
+      out.push({
+        id: `mob_${fleet.id}_${i + 1}`,
+        name: fleet.name,
+        level: lvl,
+        homeX,
+        homeY,
+        primary: fleet.color,
+        accent: "#0a0613",
+        faction: fleet.id,
+        isShipPirate: true,
+        hullClass: i === 0 ? "interceptor" : "fighter",
+        maxHp: 90 + lvl * 14,
+        attackDamage: 6 + Math.floor(lvl * 0.9),
+        roamRadius: 7 + (i % 2) * 3,
+        speed: 1.9 + Math.random() * 0.4
+      });
+    }
+  }
+  return out;
+}
+
 function createMobs() {
   const fixedMobs = [
     { id: "mob_slime_oasis_1", name: "Oasis Slime", level: 5, homeX: 137, homeY: 113, primary: "#56b88f", accent: "#c7f5b0", maxHp: 74, attackDamage: 13 },
@@ -6363,7 +6464,7 @@ function createMobs() {
     { id: "mob_imp_ember_1", name: "Ember Imp", level: 9, homeX: 134, homeY: -121, primary: "#d85b35", accent: "#ffd06a", maxHp: 86, attackDamage: 19 },
     { id: "mob_imp_ember_2", name: "Ember Imp", level: 9, homeX: 158, homeY: -142, primary: "#d85b35", accent: "#ffd06a", maxHp: 86, attackDamage: 19 },
   ];
-  return [...fixedMobs, ...createWildernessMobs(), ...createRoamingMobs(), ...createCritterMobs()].map((mob) => ({
+  return [...fixedMobs, ...createWildernessMobs(), ...createRoamingMobs(), ...createCritterMobs(), ...createSciFiPirateMobs()].map((mob) => ({
     ...mob,
     x: mob.homeX,
     y: mob.homeY,
@@ -6673,7 +6774,14 @@ function updateMobs(dt, boundsArray) {
       mob._targetY = targetPlayer.y;
       const angleToPlayer = Math.atan2(targetPlayer.y - mob.y, targetPlayer.x - mob.x);
       mob.facing = angleToPlayer;
-      if (distance(mob, targetPlayer) <= MOB_ATTACK_RADIUS) {
+      const distToPlayer = distance(mob, targetPlayer);
+      if (mob.isShipPirate) {
+        // Pirates fire laser bolts from beyond melee range, but still drift toward the target.
+        if (distToPlayer <= PIRATE_ATTACK_RANGE) {
+          fireShipPirateLaser(mob, targetPlayer, now);
+        }
+        // Don't `continue` — let movement code below close the gap toward the player.
+      } else if (distToPlayer <= MOB_ATTACK_RADIUS) {
         attackPlayerWithMob(mob, targetPlayer, now);
         continue;
       }
@@ -6710,29 +6818,113 @@ function updateMobs(dt, boundsArray) {
   }
 }
 
+const PIRATE_AGGRO_RADIUS = 22;
+const PIRATE_ATTACK_RANGE = 14;
+const PIRATE_ATTACK_COOLDOWN_MS = 1400;
+const PIRATE_ALERTED_MS = 30000;
+
 function nearestAttackablePlayer(mob) {
   if (mob.isCritter) {
     return null;
   }
   let nearest = null;
   let nearestDistance = Infinity;
-  const aggroSq = MOB_AGGRO_RADIUS * MOB_AGGRO_RADIUS;
+  const isPirate = Boolean(mob.isShipPirate);
+  const aggroRange = isPirate ? PIRATE_AGGRO_RADIUS : MOB_AGGRO_RADIUS;
+  const aggroSq = aggroRange * aggroRange;
+  const now = Date.now();
+  // Alerted pirates aggro from anywhere on the map for a window after taking damage.
+  const alerted = isPirate && mob._alertedUntil && mob._alertedUntil > now;
 
   for (const client of clients.values()) {
     const player = client.player;
     if (!player || player.hp <= 0 || !canAttackAt(player.x, player.y)) {
       continue;
     }
+    // Pirates never attack a player who is inside the station safe zone.
+    if (isPirate && isInsideSciFiSafeZone(player.x, player.y)) {
+      continue;
+    }
     const ddx = mob.x - player.x;
     const ddy = mob.y - player.y;
     const distSq = ddx * ddx + ddy * ddy;
-    if (distSq <= aggroSq && distSq < nearestDistance) {
+    if ((alerted || distSq <= aggroSq) && distSq < nearestDistance) {
       nearest = player;
       nearestDistance = distSq;
     }
   }
 
   return nearest;
+}
+
+function fireShipPirateLaser(mob, player, now) {
+  if (now - (mob.lastAttackAt || 0) < PIRATE_ATTACK_COOLDOWN_MS) return;
+  mob.lastAttackAt = now;
+  const dxh = player.x - mob.x;
+  const dyh = player.y - mob.y;
+  const dist = Math.hypot(dxh, dyh);
+  if (dist > PIRATE_ATTACK_RANGE || dist < 0.01) return;
+  const facing = Math.atan2(dyh, dxh);
+  mob.facing = facing;
+  const range = PIRATE_ATTACK_RANGE;
+  const endX = mob.x + Math.cos(facing) * Math.min(range, dist);
+  const endY = mob.y + Math.sin(facing) * Math.min(range, dist);
+
+  // Damage application — direct hit on the targeted player.
+  let damage = mob.attackDamage || 8;
+  damage = applyArmourReduction(player, damage);
+  let shieldHit = false;
+  if (player.shieldBuff && player.shieldBuff.expiresAt > now) {
+    shieldHit = true;
+    damage = Math.max(1, Math.round(damage * (1 - SHIELD_DAMAGE_REDUCTION)));
+    const len = dist || 1;
+    player.shieldBuff.lastHitAt = now;
+    player.shieldBuff.lastHitDx = -dxh / len;
+    player.shieldBuff.lastHitDy = -dyh / len;
+  }
+  player.hp = Math.max(0, player.hp - damage);
+  const event = {
+    type: "combat",
+    kind: "projectile",
+    weapon: "ship_turret",
+    projectileKind: "laser_bolt",
+    weaponStyle: "ship_laser",
+    weaponColor: mob.primary || "#ff6b8a",
+    attackerId: mob.id,
+    x: Number(mob.x.toFixed(3)),
+    y: Number(mob.y.toFixed(3)),
+    facing: Number(facing.toFixed(3)),
+    range,
+    hit: true,
+    targetId: player.id,
+    targetKind: "player",
+    damage,
+    shieldHit,
+    targetHp: player.hp,
+    endX: Number(endX.toFixed(3)),
+    endY: Number(endY.toFixed(3))
+  };
+  if (player.hp <= 0) {
+    respawnPlayer(player);
+    event.defeated = true;
+  }
+  broadcastCombat(event);
+}
+
+function alertPirateFleet(triggerMob, alertRadius = 28) {
+  if (!triggerMob?.faction) return;
+  const until = Date.now() + PIRATE_ALERTED_MS;
+  const r2 = alertRadius * alertRadius;
+  for (const other of mobs) {
+    if (other === triggerMob) continue;
+    if (!other.isShipPirate || other.faction !== triggerMob.faction || other.dead) continue;
+    const ddx = other.x - triggerMob.x;
+    const ddy = other.y - triggerMob.y;
+    if (ddx * ddx + ddy * ddy <= r2) {
+      other._alertedUntil = until;
+    }
+  }
+  triggerMob._alertedUntil = until;
 }
 
 function attackPlayerWithMob(mob, player, now) {
@@ -6836,6 +7028,8 @@ function getMobSnapshot(viewBounds) {
       isDragon: Boolean(mob.isDragon),
       megaBoss: Boolean(mob.megaBoss),
       isCritter: Boolean(mob.isCritter),
+      isShipPirate: Boolean(mob.isShipPirate),
+      hullClass: typeof mob.hullClass === "string" ? mob.hullClass : null,
       x: Number(mob.x.toFixed(3)),
       y: Number(mob.y.toFixed(3)),
       facing: Number(mob.facing.toFixed(3))

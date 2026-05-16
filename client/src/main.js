@@ -7096,6 +7096,8 @@ function drawSpaceObjects() {
     const sy = obj.y * TILE_SIZE - state.camera.y + halfH;
     if (obj.kind === "planet" || obj.type === "planet") {
       drawPlanetObject(obj, sx, sy);
+    } else if (obj.kind === "asteroid_field") {
+      drawAsteroidFieldObject(obj, sx, sy);
     } else if (obj.kind === "lane" || obj.type === "lane") {
       drawShipLaneObject(obj, halfW, halfH);
     } else if (obj.kind === "corridor") {
@@ -7130,6 +7132,7 @@ function spaceObjectDrawOrder(obj) {
   const kind = obj?.kind || obj?.type || "";
   if (kind === "lane") return 0;
   if (kind === "planet") return 1;
+  if (kind === "asteroid_field") return 1;
   if (kind === "station") return 2;
   if (kind === "corridor" || kind === "station-core" || kind === "core" || kind === "command" || kind === "quarters" || kind === "reactor" || kind === "docks") return 3;
   if (kind === "ship-bay" || kind === "shop-bay" || kind === "ship-shop" || kind === "station-module") return 4;
@@ -8338,6 +8341,47 @@ function drawBarrelCluster(x, y, cols = 1, rows = 1, scale = 1) {
       ctx.fillRect(bx + 2, by + 2, 2, 3);
     }
   }
+}
+
+function drawAsteroidFieldObject(obj, sx, sy) {
+  const rocks = Array.isArray(obj?.rocks) ? obj.rocks : [];
+  if (!rocks.length) return;
+  ctx.save();
+  for (const rock of rocks) {
+    const rsx = (rock.x - obj.x) * TILE_SIZE + sx;
+    const rsy = (rock.y - obj.y) * TILE_SIZE + sy;
+    const rr = Math.max(6, Number(rock.radius || 1) * TILE_SIZE);
+    // Soft outer haze
+    const halo = ctx.createRadialGradient(rsx, rsy, rr * 0.4, rsx, rsy, rr * 1.5);
+    halo.addColorStop(0, "rgba(140, 130, 120, 0.45)");
+    halo.addColorStop(1, "rgba(60, 50, 40, 0)");
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(rsx, rsy, rr * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    // Rock body
+    ctx.fillStyle = "#574a3d";
+    ctx.beginPath();
+    ctx.arc(rsx, rsy, rr, 0, Math.PI * 2);
+    ctx.fill();
+    // Highlights
+    ctx.fillStyle = "#8a7763";
+    ctx.beginPath();
+    ctx.arc(rsx - rr * 0.3, rsy - rr * 0.3, rr * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+    // Dark crater
+    ctx.fillStyle = "#2c241c";
+    ctx.beginPath();
+    ctx.arc(rsx + rr * 0.2, rsy + rr * 0.25, rr * 0.25, 0, Math.PI * 2);
+    ctx.fill();
+    // Outline
+    ctx.strokeStyle = "rgba(20, 18, 14, 0.7)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(rsx, rsy, rr, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function drawPlanetObject(obj, sx, sy) {
@@ -10017,6 +10061,7 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
 
 function drawMob(entity, x, y) {
   const faction = entity.faction;
+  if (entity.isShipPirate)     return drawMobShipPirate(entity, x, y);
   if (entity.megaBoss)         return drawMobMegaBoss(entity, x, y);
   if (faction === "dragon" || entity.isDragon) return drawMobDragon(entity, x, y);
   if (faction === "undead")    return drawMobUndead(entity, x, y);
@@ -10024,6 +10069,38 @@ function drawMob(entity, x, y) {
   if (faction === "golem")     return drawMobGolem(entity, x, y);
   if (faction === "bandit")    return drawMobBandit(entity, x, y);
   drawMobSludge(entity, x, y);
+}
+
+function drawMobShipPirate(entity, x, y) {
+  const hullClass = typeof entity.hullClass === "string" ? entity.hullClass : "fighter";
+  const color = entity.primary || "#ff6b8a";
+  const { w, h } = shipHullDimensions(hullClass);
+  const facing = Number.isFinite(entity.facing) ? entity.facing : 0;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(facing);
+  drawEllipseShadow(-w / 2 - 4, h * 0.36, w + 8, 8, 0.28);
+  drawShipHullShape(hullClass, -w / 2, -h / 2, w, h, color);
+  ctx.restore();
+  // Hostile name label below the hull
+  ctx.save();
+  ctx.font = "bold 10px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(4,8,16,0.9)";
+  ctx.fillStyle = "#ff8aa6";
+  const label = `Lv ${entity.level || 1} ${entity.name || "Pirate"}`;
+  ctx.strokeText(label, x, y - h / 2 - 6);
+  ctx.fillText(label, x, y - h / 2 - 6);
+  ctx.restore();
+  // HP bar
+  const hpPct = Math.max(0, Math.min(1, (entity.hp || 0) / Math.max(1, entity.maxHp || 1)));
+  if (hpPct < 1) {
+    ctx.fillStyle = "rgba(0,0,0,0.6)";
+    ctx.fillRect(x - 22, y + h / 2 + 4, 44, 4);
+    ctx.fillStyle = "#ff5d6e";
+    ctx.fillRect(x - 21, y + h / 2 + 5, 42 * hpPct, 2);
+  }
 }
 
 function _mobLabel(entity, x, nameY, labelColor, fontSize) {
