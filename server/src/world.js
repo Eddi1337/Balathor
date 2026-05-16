@@ -416,7 +416,7 @@ function getSciFiObjectsInChunk(cx, cy) {
 
   for (const feature of SCI_FI_STATION_FEATURES) {
     const obj = { ...feature };
-    if (sciFiFeatureTouchesChunk(feature, startX, startY, endX, endY) && !footprintHitsPortalClearance(feature.x, feature.y, Math.max(1, Number(feature.w || 1)), Math.max(1, Number(feature.h || 1)))) {
+    if (sciFiFeatureTouchesChunk(feature, startX, startY, endX, endY)) {
       out.push(obj);
     }
   }
@@ -1640,9 +1640,6 @@ function getShopFixtureAt(x, y) {
       }
       const halfW = Math.max(1, Math.floor(feature.w / 2));
       const halfH = Math.max(1, Math.floor(feature.h / 2));
-      if (footprintHitsPortalClearance(feature.x - halfW, feature.y - halfH, feature.w, feature.h)) {
-        continue;
-      }
       if (x >= feature.x - halfW - 0.9 && x <= feature.x + halfW + 0.9 && y >= feature.y - halfH - 0.9 && y <= feature.y + halfH + 0.9) {
         return {
           id: feature.id,
@@ -2113,6 +2110,8 @@ function generateChunk(cx, cy) {
     }
   }
 
+  const spaceObjects = getSciFiObjectsInChunk(cx, cy);
+
   return {
     cx,
     cy,
@@ -2122,7 +2121,7 @@ function generateChunk(cx, cy) {
     portals: getPortalsInChunk(cx, cy),
     buildings: getBuildingsInChunk(cx, cy),
     roadsides: getRoadsideFeaturesInChunk(cx, cy),
-    spaceObjects: theme === SCI_FI_THEME ? getSciFiObjectsInChunk(cx, cy) : []
+    spaceObjects
   };
 }
 

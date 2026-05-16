@@ -293,6 +293,18 @@ function buildStationFeatures() {
     });
   }
 
+  const shopCorridors = [
+    { id: "rf_shop_lane_n", name: "North Retail Walk", kind: "corridor", x: CX, y: CY - 28, w: 76, h: 7 },
+    { id: "rf_shop_lane_s", name: "South Retail Walk", kind: "corridor", x: CX, y: CY + 20, w: 76, h: 7 },
+    { id: "rf_shop_lane_spine", name: "Retail Spine", kind: "corridor", x: CX, y: CY - 3, w: 7, h: 61 },
+    { id: "rf_shop_lane_gate", name: "Stargate Arcade", kind: "corridor", x: CX, y: CY + 37, w: 9, h: 20 },
+    { id: "rf_shop_lane_w", name: "West Arcade", kind: "corridor", x: CX - 48, y: CY - 4, w: 9, h: 43 },
+    { id: "rf_shop_lane_e", name: "East Arcade", kind: "corridor", x: CX + 48, y: CY - 4, w: 9, h: 43 }
+  ];
+  for (const corridor of shopCorridors) {
+    pushFeature(out, corridor);
+  }
+
   const modules = [
     { id: "rf_cmd", name: "Command Deck", kind: "command", x: CX, y: CY - 48, w: 15, h: 5, facing: "south" },
     { id: "rf_observatory_s", name: "Starview Lounge", kind: "station-module", x: CX, y: CY + 48, w: 18, h: 5, facing: "north" },
