@@ -1451,6 +1451,8 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: `Entered ${message.stationName || "ship station"}` });
     } else if (message.message === "ship_station_left") {
       appendChat({ kind: "system", name: "Realm", text: "Left ship station" });
+    } else if (message.message === "ship_fixture_used") {
+      appendChat({ kind: "system", name: "Realm", text: "Used ship fixture" });
     } else if (message.message === "ship_already_owned") {
       appendChat({ kind: "system", name: "Realm", text: "You already own a ship." });
     } else if (message.message === "ship_not_owned") {
@@ -1622,6 +1624,16 @@ function applySnapshot(players) {
     // otherwise snap renderX/Y back to the old portal position.
     const isSelf = snapshot.id === state.selfId;
     const posGuarded = isSelf && now < state.teleportGuardUntil;
+    if (snapshot.ship?.boarded && snapshot.ship.deckMode && player.ship?.boarded && player.ship.deckMode) {
+      const oldCenter = shipCenter(player.ship, player);
+      const newCenter = shipCenter(snapshot.ship, snapshot);
+      const dx = newCenter.x - oldCenter.x;
+      const dy = newCenter.y - oldCenter.y;
+      if (Number.isFinite(dx) && Number.isFinite(dy) && (dx || dy)) {
+        player.renderX += dx;
+        player.renderY += dy;
+      }
+    }
     Object.assign(player, snapshot, {
       targetX: posGuarded ? player.targetX : snapshot.x,
       targetY: posGuarded ? player.targetY : snapshot.y,
@@ -2983,6 +2995,9 @@ function wireUi() {
     const world = screenEventToWorld(event);
     state.lastPointerWorldX = world.x;
     state.lastPointerWorldY = world.y;
+    if (tryShipDeckClickInteract(event)) {
+      return;
+    }
     if (tryDockPortClickInteract(event)) {
       return;
     }
@@ -4286,6 +4301,12 @@ function refreshWorldHoverTooltip(event) {
 
   const world = screenEventToWorld(event);
   if (isSciFiWorld()) {
+    const shipDeckHit = findShipDeckInteractionAt(world.x, world.y);
+    if (shipDeckHit?.label) {
+      state.hoverTooltipText = shipDeckHit.label;
+      state.hoverTooltipSmall = true;
+      return;
+    }
     let bestStationObject = null;
     let bestStationDist = Infinity;
     for (const obj of state.spaceObjects.values()) {
@@ -4527,6 +4548,16 @@ function tryDockPortClickInteract(event) {
   }
 
   sendInteract({ x: best.x, y: best.y });
+  return true;
+}
+
+function tryShipDeckClickInteract(event) {
+  const world = screenEventToWorld(event);
+  const hit = findShipDeckInteractionAt(world.x, world.y);
+  if (!hit) {
+    return false;
+  }
+  sendInteract({ x: hit.x, y: hit.y });
   return true;
 }
 
@@ -7190,6 +7221,57 @@ function isEntityInsideAnyShipDeck(entity) {
     }
   }
   return false;
+}
+
+function findShipDeckInteractionAt(wx, wy) {
+  if (!isSciFiWorld()) return null;
+  const self = state.players.get(state.selfId);
+  if (!self) return null;
+  let best = null;
+  let bestDist = Infinity;
+  for (const player of state.players.values()) {
+    const ship = player?.ship;
+    if (!ship?.boarded || !ship.deckMode) continue;
+    const layout = getShipLayout(ship);
+    const center = shipCenter(ship, player);
+    const inside =
+      wx >= center.x - layout.deckW / 2 - 0.5 &&
+      wx <= center.x + layout.deckW / 2 + 0.5 &&
+      wy >= center.y - layout.deckH / 2 - 0.5 &&
+      wy <= center.y + layout.deckH / 2 + 0.5;
+    if (!inside) continue;
+    const selfOnThisShip = self.ship?.boarded && self.ship?.id === ship.id;
+    const reachFromSelf = Math.hypot((self.renderX ?? self.x) - wx, (self.renderY ?? self.y) - wy);
+    if (!selfOnThisShip && reachFromSelf > 42) continue;
+
+    for (const station of layout.stations) {
+      const sx = center.x + station.x;
+      const sy = center.y + station.y;
+      const d = Math.hypot(wx - sx, wy - sy);
+      if (d <= 1.15 && d < bestDist) {
+        bestDist = d;
+        best = { x: sx, y: sy, label: `${station.name} - use`, kind: "station" };
+      }
+    }
+
+    for (const amenity of layout.amenities || []) {
+      const ax = center.x + amenity.x;
+      const ay = center.y + amenity.y;
+      const d = Math.hypot(wx - ax, wy - ay);
+      if (d <= 1.2 && d < bestDist) {
+        bestDist = d;
+        const label = amenity.kind === "bed" ? "Ship bunk - use" : amenity.kind === "kitchen" ? "Galley - use" : "Ship fixture - use";
+        best = { x: ax, y: ay, label, kind: "fixture" };
+      }
+    }
+
+    if (!best && !selfOnThisShip) {
+      best = { x: wx, y: wy, label: `${ship.name || "Ship"} - board`, kind: "ship" };
+    } else if (!best && selfOnThisShip) {
+      best = { x: wx, y: wy, label: "Ship deck", kind: "deck" };
+    }
+  }
+  return best;
 }
 
 function clampPointToShipDeck(ship, x, y) {

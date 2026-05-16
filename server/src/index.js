@@ -978,6 +978,14 @@ function saveAllActiveCharacters() {
 }
 
 function serializePlayer(player) {
+  const ownedShip = getOwnedActiveShip(player);
+  const savedShips = Array.isArray(player.ships) ? player.ships.map((ship) => serializeShip({
+    ...ship,
+    boarded: false,
+    deckMode: false,
+    stationRole: null,
+    stationId: null
+  })) : [];
   return {
     name: player.name,
     classId: player.classId,
@@ -1009,11 +1017,19 @@ function serializePlayer(player) {
       ? { houseCompanion: player.houseCompanion }
       : {}),
     ...(player.flirtFollowNpcId ? { flirtFollowNpcId: player.flirtFollowNpcId } : {}),
-    ...(Array.isArray(player.ships) && player.ships.length
-      ? { ships: player.ships.map(serializeShip), activeShipId: player.activeShipId || player.ship?.id || null }
+    ...(savedShips.length
+      ? { ships: savedShips, activeShipId: player.activeShipId || ownedShip?.id || null }
       : {}),
-    ...(player.ship && typeof player.ship === "object" ? { ship: serializeShip(player.ship) } : {})
+    ...(ownedShip && typeof ownedShip === "object" ? { ship: serializeShip({ ...ownedShip, boarded: false, deckMode: false, stationRole: null, stationId: null }) } : {})
   };
+}
+
+function getOwnedActiveShip(player) {
+  if (!player) return null;
+  if (Array.isArray(player.ships) && player.ships.length) {
+    return player.ships.find((ship) => ship.id === player.activeShipId) || player.ships[0];
+  }
+  return player.ship && !player.boardedShip ? player.ship : null;
 }
 
 function serializeShip(ship) {
@@ -1046,6 +1062,14 @@ function serializeShip(ship) {
     maxShields,
     shieldFacing: normalizeShieldFacing(ship.shieldFacing)
   };
+}
+
+function serializeShipForPlayer(player, ship = player?.ship) {
+  if (!ship) return null;
+  const snap = serializeShip(ship);
+  snap.stationRole = typeof player?.shipStationRole === "string" ? player.shipStationRole : snap.stationRole;
+  snap.stationId = typeof player?.shipStationId === "string" ? player.shipStationId : snap.stationId;
+  return snap;
 }
 
 function getShipLayout(shipOrClass = "skiff") {
@@ -1123,6 +1147,21 @@ function shipCenter(ship) {
   };
 }
 
+function setPlayerShipLocal(player, localX, localY) {
+  player.shipLocalX = Number.isFinite(localX) ? localX : 0;
+  player.shipLocalY = Number.isFinite(localY) ? localY : 0;
+}
+
+function syncPlayerToShipLocal(player) {
+  const ship = player?.ship;
+  if (!ship?.boarded || !ship.deckMode) return;
+  const center = shipCenter(ship);
+  const localX = Number(player.shipLocalX);
+  const localY = Number(player.shipLocalY);
+  player.x = center.x + (Number.isFinite(localX) ? localX : 0);
+  player.y = center.y + (Number.isFinite(localY) ? localY : 0);
+}
+
 function shipStationWorld(ship, station) {
   const center = shipCenter(ship);
   return { x: center.x + Number(station?.x || 0), y: center.y + Number(station?.y || 0) };
@@ -1132,23 +1171,28 @@ function clampPlayerToShipDeck(player) {
   const ship = player?.ship;
   if (!ship) return;
   const layout = getShipLayout(ship);
-  const center = shipCenter(ship);
   const halfW = Math.max(1, layout.deckW / 2 - 0.9);
   const halfH = Math.max(1, layout.deckH / 2 - 0.9);
-  player.x = Math.max(center.x - halfW, Math.min(center.x + halfW, player.x));
-  player.y = Math.max(center.y - halfH, Math.min(center.y + halfH, player.y));
+  player.shipLocalX = Math.max(-halfW, Math.min(halfW, Number(player.shipLocalX) || 0));
+  player.shipLocalY = Math.max(-halfH, Math.min(halfH, Number(player.shipLocalY) || 0));
+  syncPlayerToShipLocal(player);
 }
 
-function nearestShipStation(player) {
+function nearestShipStation(player, message = {}) {
   const ship = player?.ship;
   if (!ship?.boarded || !ship.deckMode) return null;
   const layout = getShipLayout(ship);
+  const tx = Number(message.x);
+  const ty = Number(message.y);
+  const useTarget = Number.isFinite(tx) && Number.isFinite(ty);
   let best = null;
   let bestDist = Infinity;
   for (const station of layout.stations) {
     const p = shipStationWorld(ship, station);
-    const dist = Math.hypot(player.x - p.x, player.y - p.y);
-    if (dist <= SHIP_STATION_INTERACT_RADIUS && dist < bestDist) {
+    const dist = Math.hypot((useTarget ? tx : player.x) - p.x, (useTarget ? ty : player.y) - p.y);
+    const playerReach = Math.hypot(player.x - p.x, player.y - p.y);
+    const clickReach = useTarget ? 1.15 : SHIP_STATION_INTERACT_RADIUS;
+    if (dist <= clickReach && playerReach <= 6.5 && dist < bestDist) {
       bestDist = dist;
       best = { ...station, worldX: p.x, worldY: p.y };
     }
@@ -1312,6 +1356,11 @@ function clearPlayerBoardedShips(player) {
   if (!player) {
     return;
   }
+  player.boardedShip = null;
+  player.shipStationRole = null;
+  player.shipStationId = null;
+  player.shipLocalX = 0;
+  player.shipLocalY = 0;
   if (Array.isArray(player.ships)) {
     for (const ship of player.ships) {
       ship.boarded = false;
@@ -2022,7 +2071,7 @@ function simulate() {
     const doorAccountKey = client.account?.key || "";
     const shipPilot =
       Boolean(client.player.ship?.boarded) &&
-      isPilotShipRole(client.player.ship.stationRole) &&
+      isPilotShipRole(client.player.shipStationRole || client.player.ship.stationRole) &&
       getWorldThemeAt(client.player.x, client.player.y) === "sci-fi";
 
     if (shipPilot) {
@@ -2070,16 +2119,22 @@ function simulate() {
           }
         }
       }
-      const station = getShipLayout(ship).stations.find((candidate) => candidate.id === ship.stationId) || getShipLayout(ship).stations[0];
+      const station = getShipLayout(ship).stations.find((candidate) => candidate.id === (client.player.shipStationId || ship.stationId)) || getShipLayout(ship).stations[0];
       const seat = shipStationWorld(ship, station);
+      setPlayerShipLocal(client.player, Number(station.x) || 0, Number(station.y) || 0);
       client.player.x = seat.x;
       client.player.y = seat.y;
       client.player.moving = Boolean(input.engage);
     } else if (client.player.ship?.boarded && client.player.ship.deckMode) {
       const ship = client.player.ship;
-      const role = ship.stationRole;
+      const role = client.player.shipStationRole || ship.stationRole;
       client.player._stillAccumulator = 0;
       if (role === "engineer") {
+        const station = getShipLayout(ship).stations.find((candidate) => candidate.id === (client.player.shipStationId || ship.stationId));
+        if (station) {
+          setPlayerShipLocal(client.player, Number(station.x) || 0, Number(station.y) || 0);
+          syncPlayerToShipLocal(client.player);
+        }
         const shieldFacing = shieldFacingFromInput(input);
         if (shieldFacing) {
           ship.shieldFacing = shieldFacing;
@@ -2089,6 +2144,11 @@ function simulate() {
         }
         client.player.moving = false;
       } else if (role === "gunner") {
+        const station = getShipLayout(ship).stations.find((candidate) => candidate.id === (client.player.shipStationId || ship.stationId));
+        if (station) {
+          setPlayerShipLocal(client.player, Number(station.x) || 0, Number(station.y) || 0);
+          syncPlayerToShipLocal(client.player);
+        }
         const dx = Number(input.right) - Number(input.left);
         const dy = Number(input.down) - Number(input.up);
         if (Math.hypot(dx, dy) > 0) {
@@ -2123,12 +2183,13 @@ function simulate() {
           dx /= length;
           dy /= length;
           const speed = (PLAYER_SPEED + client.player.stats.speed * STAT_POINT_SPEED + getEquipmentStats(client.player).speed) * 0.82;
-          client.player.x += dx * speed * dt;
-          client.player.y += dy * speed * dt;
+          client.player.shipLocalX = (Number(client.player.shipLocalX) || 0) + dx * speed * dt;
+          client.player.shipLocalY = (Number(client.player.shipLocalY) || 0) + dy * speed * dt;
           clampPlayerToShipDeck(client.player);
           client.player.facing = Math.atan2(dy, dx);
           client.player.moving = true;
         } else {
+          syncPlayerToShipLocal(client.player);
           client.player.moving = false;
         }
       }
@@ -3037,6 +3098,11 @@ function joinWorld(client, message, savedCharacter = null) {
     facing: 0,
     moving: false,
     isMod,
+    boardedShip: null,
+    shipStationRole: null,
+    shipStationId: null,
+    shipLocalX: 0,
+    shipLocalY: 0,
     _stillAccumulator: 0
   };
 
@@ -3493,12 +3559,18 @@ function dockPlayerShipAtStation(client, port = resolveShipExitDockPort(client.p
   if (!client.player?.ship || !port) {
     return false;
   }
+  if (client.player.boardedShip) {
+    return disembarkFromSharedShip(client);
+  }
 
   const shipId = client.player.ship.id;
   client.player.ship.boarded = false;
   client.player.ship.deckMode = false;
   client.player.ship.stationRole = null;
   client.player.ship.stationId = null;
+  client.player.shipStationRole = null;
+  client.player.shipStationId = null;
+  client.player.boardedShip = null;
   client.player.ship.dockX = port.x;
   client.player.ship.dockY = port.y;
   client.player.ship.dockStationId = "station_ringforge";
@@ -3521,30 +3593,142 @@ function dockPlayerShipAtStation(client, port = resolveShipExitDockPort(client.p
   return true;
 }
 
-function handleShipInteract(client) {
+function disembarkFromSharedShip(client) {
+  const ship = client.player?.ship;
+  if (!client.player || !ship) {
+    return false;
+  }
+  const layout = getShipLayout(ship);
+  const center = shipCenter(ship);
+  client.player.boardedShip = null;
+  client.player.shipStationRole = null;
+  client.player.shipStationId = null;
+  client.player.shipLocalX = 0;
+  client.player.shipLocalY = 0;
+  client.player.ship = getOwnedActiveShip(client.player);
+  client.player.x = center.x - layout.deckW / 2 - 1.2;
+  client.player.y = center.y;
+  client.player.moving = false;
+  client.input = normalizeInput();
+  saveClientCharacter(client);
+  send(client, { type: "serverMessage", message: "ship_docked", shipName: ship.name });
+  broadcastSnapshot();
+  return true;
+}
+
+function findBoardableSharedShip(client, message = {}) {
+  if (!client.player) {
+    return null;
+  }
+  const tx = Number(message.x);
+  const ty = Number(message.y);
+  if (!Number.isFinite(tx) || !Number.isFinite(ty)) {
+    return null;
+  }
+  let best = null;
+  let bestDist = Infinity;
+  for (const other of clients.values()) {
+    if (!other.player || other === client) continue;
+    const ship = other.player.ship;
+    if (!ship?.boarded || !ship.deckMode) continue;
+    if (client.player.ship === ship) continue;
+    const layout = getShipLayout(ship);
+    const center = shipCenter(ship);
+    const insideDeck =
+      tx >= center.x - layout.deckW / 2 - 0.5 &&
+      tx <= center.x + layout.deckW / 2 + 0.5 &&
+      ty >= center.y - layout.deckH / 2 - 0.5 &&
+      ty <= center.y + layout.deckH / 2 + 0.5;
+    if (!insideDeck) continue;
+    const travelDist = Math.hypot(client.player.x - tx, client.player.y - ty);
+    if (travelDist > 42) continue;
+    const d = Math.hypot(tx - center.x, ty - center.y);
+    if (d < bestDist) {
+      bestDist = d;
+      best = { owner: other, ship, layout, center };
+    }
+  }
+  return best;
+}
+
+function boardSharedShip(client, match, message = {}) {
+  if (!client.player || !match?.ship) {
+    return false;
+  }
+  const owned = getOwnedActiveShip(client.player);
+  if (owned && owned !== match.ship) {
+    owned.boarded = false;
+    owned.deckMode = false;
+    owned.stationRole = null;
+    owned.stationId = null;
+  }
+  const ship = match.ship;
+  const layout = match.layout || getShipLayout(ship);
+  const tx = Number(message.x);
+  const ty = Number(message.y);
+  const center = shipCenter(ship);
+  const localX = Number.isFinite(tx) ? tx - center.x : layout.entry.x;
+  const localY = Number.isFinite(ty) ? ty - center.y : layout.entry.y;
+  client.player.boardedShip = { ownerId: match.owner.id, shipId: ship.id };
+  client.player.ship = ship;
+  client.player.shipStationRole = null;
+  client.player.shipStationId = null;
+  setPlayerShipLocal(client.player, localX, localY);
+  clampPlayerToShipDeck(client.player);
+  client.player.facing = 0;
+  client.player.moving = false;
+  client.input = normalizeInput();
+  saveClientCharacter(client);
+  send(client, { type: "serverMessage", message: "ship_boarded", shipName: ship.name });
+  broadcastSnapshot();
+  return true;
+}
+
+function targetInsideActiveShipDeck(player, message = {}) {
+  const ship = player?.ship;
+  if (!ship?.boarded || !ship.deckMode) return false;
+  const tx = Number(message.x);
+  const ty = Number(message.y);
+  if (!Number.isFinite(tx) || !Number.isFinite(ty)) return false;
+  const layout = getShipLayout(ship);
+  const center = shipCenter(ship);
+  return (
+    tx >= center.x - layout.deckW / 2 - 0.5 &&
+    tx <= center.x + layout.deckW / 2 + 0.5 &&
+    ty >= center.y - layout.deckH / 2 - 0.5 &&
+    ty <= center.y + layout.deckH / 2 + 0.5
+  );
+}
+
+function handleShipInteract(client, message = {}) {
   const ship = client.player?.ship;
   if (!ship?.boarded) {
     return false;
   }
   if (ship.deckMode) {
-    if (ship.stationRole) {
-      ship.stationRole = null;
-      ship.stationId = null;
+    if (client.player.shipStationRole || ship.stationRole) {
+      client.player.shipStationRole = null;
+      client.player.shipStationId = null;
       client.input = normalizeInput();
       send(client, { type: "serverMessage", message: "ship_station_left" });
       broadcastSnapshot();
       return true;
     }
-    const station = nearestShipStation(client.player);
+    const station = nearestShipStation(client.player, message);
     if (station) {
-      ship.stationRole = station.role;
-      ship.stationId = station.id;
+      client.player.shipStationRole = station.role;
+      client.player.shipStationId = station.id;
+      setPlayerShipLocal(client.player, Number(station.x) || 0, Number(station.y) || 0);
       client.player.x = station.worldX;
       client.player.y = station.worldY;
       client.player.moving = false;
       client.input = normalizeInput();
       send(client, { type: "serverMessage", message: "ship_station_entered", stationName: station.name, stationRole: station.role });
       broadcastSnapshot();
+      return true;
+    }
+    if (targetInsideActiveShipDeck(client.player, message)) {
+      send(client, { type: "serverMessage", message: "ship_fixture_used" });
       return true;
     }
   }
@@ -3646,10 +3830,14 @@ function boardPlayerShipAtPort(client, ship, port) {
   const deckMode = layout.crewCapacity > 1;
   ship.boarded = true;
   ship.deckMode = deckMode;
-  ship.stationRole = deckMode ? null : "pilot";
-  ship.stationId = deckMode ? null : "pilot";
+  ship.stationRole = null;
+  ship.stationId = null;
+  client.player.boardedShip = null;
+  client.player.shipStationRole = deckMode ? null : "pilot";
+  client.player.shipStationId = deckMode ? null : "pilot";
   ship.worldX = port.x;
   ship.worldY = port.y;
+  setPlayerShipLocal(client.player, deckMode ? layout.entry.x : 0, deckMode ? layout.entry.y : 0);
   client.player.x = port.x + (deckMode ? layout.entry.x : 0);
   client.player.y = port.y + (deckMode ? layout.entry.y : 0);
   client.player.facing = facingForDockPort(port);
@@ -3757,7 +3945,12 @@ function handleInteract(client, message = {}) {
     return;
   }
 
-  if (handleShipInteract(client)) {
+  const sharedShip = findBoardableSharedShip(client, message);
+  if (sharedShip && boardSharedShip(client, sharedShip, message)) {
+    return;
+  }
+
+  if (handleShipInteract(client, message)) {
     return;
   }
 
@@ -4647,11 +4840,11 @@ function broadcastSnapshot() {
       gold: p.gold,
       inventory: p.inventory,
       equipment: p.equipment,
-      ship: p.ship ? serializeShip(p.ship) : null,
+      ship: p.ship ? serializeShipForPlayer(p, p.ship) : null,
       ...(p.id === viewerId
         ? {
             ships: Array.isArray(p.ships) ? p.ships.map(serializeShip) : [],
-            activeShipId: p.activeShipId || p.ship?.id || null
+            activeShipId: p.activeShipId || getOwnedActiveShip(p)?.id || null
           }
         : {}),
       talentPoints: p.talentPoints || 0,
