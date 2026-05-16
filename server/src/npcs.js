@@ -2828,6 +2828,22 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
   }
 }
 
+function getWorldTimeSnapshot() {
+  const hour = ((hubGameHour % 24) + 24) % 24;
+  let phase = "day";
+  if (isNightHour(hour)) {
+    phase = "night";
+  } else if (hour >= 6 && hour < 8) {
+    phase = "dawn";
+  } else if (hour >= 18 && hour < 22) {
+    phase = "dusk";
+  }
+  return {
+    hour: Number(hour.toFixed(3)),
+    phase
+  };
+}
+
 function getNpcSnapshot() {
   return npcs
     .filter((npc) => !soldCompanionNpcIds.has(npc.id))
@@ -2912,5 +2928,6 @@ module.exports = {
   unregisterCompanionSold,
   pickHouseCompanionComplimentLine,
   getCompanionNpcTemplate,
-  pickPubDreamGirlfriendNpcId
+  pickPubDreamGirlfriendNpcId,
+  getWorldTimeSnapshot
 };

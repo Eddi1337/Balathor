@@ -41,6 +41,7 @@ const {
   pickHouseCompanionComplimentLine,
   getCompanionNpcTemplate,
   pickPubDreamGirlfriendNpcId,
+  getWorldTimeSnapshot,
   syncNpcHubHomesFromBuildings
 } = require("./npcs");
 const {
@@ -2790,6 +2791,7 @@ function joinWorld(client, message, savedCharacter = null) {
     tileSize: 32,
     chunkSize: CHUNK_SIZE,
     theme: getWorldThemeAt(spawn.x, spawn.y),
+    worldTime: getWorldTimeSnapshot(),
     spawn
   });
 
@@ -4419,6 +4421,7 @@ function broadcastSnapshot() {
     send(client, {
       type: "snapshot",
       serverTime: Date.now(),
+      worldTime: getWorldTimeSnapshot(),
       tick,
       population: totalOnline,
       players: playersVisible,

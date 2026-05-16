@@ -25,6 +25,9 @@ const nameInput = document.querySelector("#nameInput");
 const menuServerLabel = document.querySelector("#menuServerLabel");
 const menuPopulation = document.querySelector("#menuPopulation");
 const menuPosition = document.querySelector("#menuPosition");
+const menuTime = document.querySelector("#menuTime");
+const menuTimeLabel = document.querySelector("#menuTimeLabel");
+const menuTimeClock = document.querySelector("#menuTimeClock");
 const logoutButton = document.querySelector("#logoutButton");
 const progression = document.querySelector("#progression");
 const progressionToggle = document.querySelector("#progressionToggle");
@@ -702,6 +705,7 @@ const state = {
   fountainToss: null,
   requestedChunks: new Set(),
   population: 0,
+  worldTime: { hour: 8, phase: "day" },
   input: { up: false, down: false, left: false, right: false, engage: false },
   inputSeq: 0,
   camera: { x: 0, y: 0 },
@@ -1106,6 +1110,7 @@ function handleServerMessage(message) {
     if (typeof message.snapshotRate === "number") {
       state.debugSnapshotRate = message.snapshotRate;
     }
+    applyWorldTime(message.worldTime);
     bootPanel.classList.add("hidden");
     accountForm.classList.add("hidden");
     form.classList.add("hidden");
@@ -1210,6 +1215,7 @@ function handleServerMessage(message) {
     if (typeof message.tick === "number") {
       state.debugServerTick = message.tick;
     }
+    applyWorldTime(message.worldTime);
     state.population = message.population;
     applySnapshot(message.players);
     applyNpcSnapshot(message.npcs || []);
@@ -4583,6 +4589,59 @@ function formatServerDisplay(url) {
   }
 }
 
+function applyWorldTime(worldTime) {
+  if (!worldTime || typeof worldTime !== "object") {
+    return;
+  }
+  const hour = Number(worldTime.hour);
+  if (!Number.isFinite(hour)) {
+    return;
+  }
+  const phase = typeof worldTime.phase === "string" ? worldTime.phase : phaseForWorldHour(hour);
+  state.worldTime = {
+    hour: ((hour % 24) + 24) % 24,
+    phase
+  };
+}
+
+function phaseForWorldHour(hour) {
+  const h = ((hour % 24) + 24) % 24;
+  if (h < 6 || h >= 22) return "night";
+  if (h < 8) return "dawn";
+  if (h >= 18) return "dusk";
+  return "day";
+}
+
+function formatWorldClock(hour) {
+  const h = ((hour % 24) + 24) % 24;
+  const wholeHour = Math.floor(h);
+  const minutes = Math.floor((h - wholeHour) * 60);
+  return `${String(wholeHour).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+function worldTimeLabel(phase) {
+  if (phase === "night") return "Night";
+  if (phase === "dawn") return "Dawn";
+  if (phase === "dusk") return "Dusk";
+  return "Day";
+}
+
+function syncMenuWorldTime() {
+  if (!menuTime || !menuTimeLabel || !menuTimeClock) {
+    return;
+  }
+  const hour = Number(state.worldTime?.hour);
+  const h = Number.isFinite(hour) ? ((hour % 24) + 24) % 24 : 8;
+  const phase = state.worldTime?.phase || phaseForWorldHour(h);
+  const dayProgress = Math.max(0, Math.min(1, (h - 6) / 16));
+  const nightProgress = h >= 22 ? (h - 22) / 8 : (h + 2) / 8;
+  menuTime.style.setProperty("--sun-x", `${Math.max(0, Math.min(1, dayProgress)) * 100}%`);
+  menuTime.style.setProperty("--moon-x", `${Math.max(0, Math.min(1, nightProgress)) * 100}%`);
+  menuTime.dataset.phase = phase;
+  menuTimeLabel.textContent = worldTimeLabel(phase);
+  menuTimeClock.textContent = formatWorldClock(h);
+}
+
 function syncMenuSessionInfo() {
   if (!state.joined) {
     return;
@@ -4591,6 +4650,7 @@ function syncMenuSessionInfo() {
   menuPopulation.textContent = `${state.population} online`;
   const self = state.players.get(state.selfId);
   menuPosition.textContent = self ? `${Math.round(self.renderX)}, ${Math.round(self.renderY)}` : "—";
+  syncMenuWorldTime();
 }
 
 function resetToConnection(message) {
@@ -4686,6 +4746,7 @@ function clearWorldState() {
   state.spaceObjects.clear();
   state.requestedChunks.clear();
   state.population = 0;
+  state.worldTime = { hour: 8, phase: "day" };
   state.hoverTooltipText = "";
   state.pubPassoutUntil = 0;
   state.intimateBlackoutUntil = 0;

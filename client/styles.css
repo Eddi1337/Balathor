@@ -1243,6 +1243,111 @@ button:focus-visible {
   opacity: 0.5;
 }
 
+.menu-time {
+  --sun-x: 12.5%;
+  --moon-x: 0%;
+  margin-top: 12px;
+  display: grid;
+  gap: 7px;
+}
+
+.menu-time-track {
+  position: relative;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(19, 28, 47, 0.96), rgba(86, 126, 156, 0.82) 32%, rgba(203, 152, 80, 0.86) 68%, rgba(11, 16, 34, 0.96)),
+    #172033;
+}
+
+.menu-time-track::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 18% 36%, rgba(255, 255, 255, 0.35) 0 1px, transparent 2px),
+    radial-gradient(circle at 82% 30%, rgba(255, 255, 255, 0.28) 0 1px, transparent 2px),
+    linear-gradient(90deg, rgba(6, 8, 18, 0.42), transparent 38%, transparent 62%, rgba(6, 8, 18, 0.5));
+  opacity: 0.72;
+}
+
+.menu-time-icon {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  transform: translate(calc(var(--sun-x) - 9px), -50%);
+  transition: transform 0.22s linear, opacity 0.22s ease;
+}
+
+.menu-time-sun {
+  border-radius: 50%;
+  background: #ffd166;
+  box-shadow:
+    0 0 0 3px rgba(255, 209, 102, 0.22),
+    0 0 16px rgba(255, 209, 102, 0.72);
+}
+
+.menu-time-sun::before,
+.menu-time-sun::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border-top: 2px solid rgba(255, 236, 166, 0.85);
+  border-bottom: 2px solid rgba(255, 236, 166, 0.85);
+}
+
+.menu-time-sun::after {
+  transform: rotate(90deg);
+}
+
+.menu-time-moon {
+  transform: translate(calc(var(--moon-x) - 9px), -50%);
+  border-radius: 50%;
+  background: #d7e8ff;
+  box-shadow: 0 0 14px rgba(162, 200, 255, 0.68);
+}
+
+.menu-time-moon::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  right: -3px;
+  width: 16px;
+  height: 20px;
+  border-radius: 50%;
+  background: #182032;
+}
+
+.menu-time[data-phase="night"] .menu-time-sun {
+  opacity: 0.16;
+}
+
+.menu-time:not([data-phase="night"]) .menu-time-moon {
+  opacity: 0.18;
+}
+
+.menu-time-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+#menuTimeLabel {
+  color: var(--text);
+  font-weight: 700;
+}
+
+#menuTimeClock {
+  font-variant-numeric: tabular-nums;
+}
+
 .menu-head {
   display: flex;
   align-items: center;
