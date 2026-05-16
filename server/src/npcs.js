@@ -16,11 +16,12 @@ const HUB_PATH_MOVE_INTERVAL_MAX = 1100;
 const HUB_NAV_PATH_BFS_CAP = 4500;
 const HUB_NAV_TILE_ARRIVE = 0.11;
 
-/** Hub villager routine: doorstep → commute into town → several stroll waypoints → mingle → walk home → repeat */
+/** Hub villager routine: doorstep -> commute into town -> stroll waypoints -> mingle -> walk home -> repeat */
 const SCHED_HOME   = "home";
 const SCHED_TO_TOWN = "to_town";
 const SCHED_TOWN   = "town";
 const SCHED_RETURN = "return";
+/** Kept as the wire/debug value, but night now means quiet local patrol instead of standing asleep. */
 const SCHED_SLEEP  = "sleep";
 const SCHED_PUB    = "pub";
 
@@ -138,6 +139,25 @@ function pickTownRoamWaypointForSchedule(npc, navSet) {
   return p;
 }
 
+function pickNightRoamWaypoint(npc, navSet) {
+  const savedR = npc.patrolRadius;
+  npc.patrolRadius = Math.max(savedR, 5);
+  let p = null;
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    p = sampleHubPatrolWaypoint(npc, navSet);
+    if (!p) {
+      break;
+    }
+    const d = Math.hypot((p.tx ?? 0) - npc.x, (p.ty ?? 0) - npc.y);
+    if (d >= 0.55) {
+      break;
+    }
+    npc._hubWalkSalt = (((npc._hubWalkSalt ?? 0) + 424243) >>> 0) >>> 0;
+  }
+  npc.patrolRadius = savedR;
+  return p;
+}
+
 function pickHomeNavTarget(npc, navSet) {
   if (!(navSet instanceof Set)) {
     return null;
@@ -161,7 +181,7 @@ function pickPubWaypoint(npc, navSet) {
 
 /**
  * Advance the daily routine when the NPC has reached its current waypoint.
- * Time-of-day aware: night=sleep at home, 18-22=pub, daytime=street roam.
+ * Time-of-day aware: night=quiet local patrol, 18-22=pub, daytime=street roam.
  */
 function hubScheduleAdvance(npc, now, navSet) {
   if (!navSet || navSet.size < 96 || !hubScheduleEligible(npc)) {
@@ -171,15 +191,23 @@ function hubScheduleAdvance(npc, now, navSet) {
 
   const h = hubGameHour;
 
-  // ---- Night (22-06): sleep at home ----
+  // ---- Night (22-06): keep the town alive with quieter patrols near home. ----
   if (isNightHour(h)) {
     if (npc._schedPhase !== SCHED_SLEEP) {
       npc._schedPhase = SCHED_SLEEP;
-      assignScheduleNavTarget(npc, pickHomeNavTarget(npc, navSet), navSet, now);
-      npc._schedUntil = now + 25000;
-    } else if (now >= npc._schedUntil) {
-      assignScheduleNavTarget(npc, pickHomeNavTarget(npc, navSet), navSet, now);
-      npc._schedUntil = now + 25000;
+      npc._schedUntil = 0;
+      npc._schedMingleUntil = 0;
+    }
+    if (now >= npc._schedUntil) {
+      const pt = pickNightRoamWaypoint(npc, navSet) || pickHomeNavTarget(npc, navSet);
+      if (assignScheduleNavTarget(npc, pt, navSet, now)) {
+        npc._schedUntil =
+          now +
+          250 +
+          (((npcIdHashSeed(`${String(npc.id)}|nt${now >>> 11}`) >>> 0) % 650));
+      } else {
+        npc._schedUntil = now + 400;
+      }
     }
     return;
   }
@@ -605,7 +633,6 @@ function stopNpcAfterBlockedStep(npc) {
 /** If an NPC hasn't moved for 3 s, snap to nearest road tile and force a new goal. */
 function tickNpcStuckCheck(npc, now, navSet) {
   if (!npc._followHubPaths || !(navSet instanceof Set)) return;
-  if (npc._schedPhase === SCHED_SLEEP) return;
   if (npc._meetPhase === "talk") return;
   if (npc._schedPhase === SCHED_TOWN && (npc._schedMingleUntil || 0) > now) return;
 
