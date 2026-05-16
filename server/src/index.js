@@ -1100,13 +1100,19 @@ function serializeQuestLog(quests) {
 
 function serializePlayer(player) {
   const ownedShip = getOwnedActiveShip(player);
-  const savedShips = Array.isArray(player.ships) ? player.ships.map((ship) => serializeShip({
-    ...ship,
-    boarded: false,
-    deckMode: false,
-    stationRole: null,
-    stationId: null
-  })) : [];
+  const savedShips = Array.isArray(player.ships) ? player.ships.map((ship) => {
+    // The active ship persists its boarded / deckMode / world position so the player
+    // wakes up inside the ship right where they left off (the gunner / pilot seat is
+    // cleared so they need to re-take their station after reconnecting).
+    const isActive = ship === ownedShip;
+    return serializeShip({
+      ...ship,
+      boarded: isActive ? Boolean(ship.boarded) : false,
+      deckMode: isActive ? Boolean(ship.deckMode) : false,
+      stationRole: null,
+      stationId: null
+    });
+  }) : [];
   return {
     name: player.name,
     classId: player.classId,
@@ -1142,7 +1148,7 @@ function serializePlayer(player) {
     ...(savedShips.length
       ? { ships: savedShips, activeShipId: player.activeShipId || ownedShip?.id || null }
       : {}),
-    ...(ownedShip && typeof ownedShip === "object" ? { ship: serializeShip({ ...ownedShip, boarded: false, deckMode: false, stationRole: null, stationId: null }) } : {}),
+    ...(ownedShip && typeof ownedShip === "object" ? { ship: serializeShip({ ...ownedShip, stationRole: null, stationId: null }) } : {}),
     ...(typeof player.aboardShipId === "string" && player.aboardShipId ? { aboardShipId: player.aboardShipId } : {})
   };
 }
@@ -1226,6 +1232,27 @@ function serializeShipForPlayer(player, ship = player?.ship) {
   snap.stationRole = typeof player?.shipStationRole === "string" ? player.shipStationRole : snap.stationRole;
   snap.stationId = typeof player?.shipStationId === "string" ? player.shipStationId : snap.stationId;
   return snap;
+}
+
+function getShipTurrets(shipOrClass) {
+  const hullClass = typeof shipOrClass === "string" ? shipOrClass : shipOrClass?.hullClass;
+  // Turret anchors are offsets (in tiles) from the ship center. The gunner fires one bolt
+  // from every anchor when they click, and all bolts converge on the target.
+  if (hullClass === "crew4" || hullClass === "frigate" || hullClass === "freighter") {
+    return [
+      { x: 1.6, y: -0.9 },
+      { x: 1.6, y: 0.9 },
+      { x: -1.6, y: -0.9 },
+      { x: -1.6, y: 0.9 }
+    ];
+  }
+  if (hullClass === "crew2" || hullClass === "corvette" || hullClass === "hauler" || hullClass === "yacht") {
+    return [
+      { x: 1.2, y: -0.7 },
+      { x: 1.2, y: 0.7 }
+    ];
+  }
+  return [{ x: 1.1, y: 0 }];
 }
 
 function getShipLayout(shipOrClass = "skiff") {
@@ -2937,6 +2964,11 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "shipFire") {
+    handleShipFire(client, message);
+    return;
+  }
+
   if (message.type === "shopBuy") {
     handleShopBuy(client, message);
     return;
@@ -4043,6 +4075,64 @@ function sendShipTerminalWindow(client, port) {
 }
 
 const SHIP_DOCK_PROMPT_RANGE = 8;
+const SHIP_GUNNER_COOLDOWN_MS = 350;
+
+function handleShipFire(client, message = {}) {
+  const ship = client.player?.ship;
+  if (!ship?.boarded || ship.stationRole !== "gunner") {
+    return;
+  }
+  const now = Date.now();
+  if (now - (client.lastShipFireAt || 0) < SHIP_GUNNER_COOLDOWN_MS) {
+    return;
+  }
+  client.lastShipFireAt = now;
+
+  const center = shipCenter(ship);
+  const tx = Number.isFinite(Number(message.targetX)) ? Number(message.targetX) : center.x + Math.cos(client.player.facing) * 8;
+  const ty = Number.isFinite(Number(message.targetY)) ? Number(message.targetY) : center.y + Math.sin(client.player.facing) * 8;
+
+  const tier = Math.max(1, Number(ship.laserTier) || 1);
+  const baseRange = 9 + tier * 2;
+  const turrets = getShipTurrets(ship);
+
+  // Update the gunner's facing toward the click so the visual orientation tracks
+  // their last shot and the turret seat indicator looks correct.
+  const aimDx = tx - center.x;
+  const aimDy = ty - center.y;
+  if (aimDx * aimDx + aimDy * aimDy > 0.0001) {
+    client.player.facing = Math.atan2(aimDy, aimDx);
+  }
+
+  for (const turret of turrets) {
+    const ox = center.x + turret.x;
+    const oy = center.y + turret.y;
+    const dxs = tx - ox;
+    const dys = ty - oy;
+    const dist = Math.hypot(dxs, dys);
+    const reach = Math.min(baseRange, dist || baseRange) || baseRange;
+    const facing = Math.atan2(dys, dxs);
+    const endX = ox + Math.cos(facing) * reach;
+    const endY = oy + Math.sin(facing) * reach;
+    broadcastCombat({
+      type: "combat",
+      kind: "projectile",
+      weapon: "ship_turret",
+      projectileKind: "laser_bolt",
+      weaponStyle: "ship_laser",
+      weaponColor: ship.color || "#67f0ff",
+      attackerId: client.player.id,
+      x: Number(ox.toFixed(3)),
+      y: Number(oy.toFixed(3)),
+      facing: Number(facing.toFixed(3)),
+      range: reach,
+      hit: false,
+      endX: Number(endX.toFixed(3)),
+      endY: Number(endY.toFixed(3))
+    });
+  }
+  client.player.moving = true;
+}
 
 function handleShipDockRequest(client) {
   const ship = client.player?.ship;

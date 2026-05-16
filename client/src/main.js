@@ -5144,6 +5144,23 @@ function sendAttack() {
   const self = state.players.get(state.selfId);
   let payload = { type: "attack" };
 
+  // Optional target world coords come in as arguments; we want them for ship gunner too.
+  const args = Array.from(arguments);
+  const targetX = args.length >= 1 && Number.isFinite(args[0]) ? Number(args[0]) : null;
+  const targetY = args.length >= 2 && Number.isFinite(args[1]) ? Number(args[1]) : null;
+
+  // Ship gunner — fire bolts from every turret toward the clicked target.
+  if (self?.ship?.boarded && self.ship.stationRole === "gunner") {
+    const tx = Number.isFinite(targetX) ? targetX : state.lastPointerWorldX;
+    const ty = Number.isFinite(targetY) ? targetY : state.lastPointerWorldY;
+    send({
+      type: "shipFire",
+      ...(Number.isFinite(tx) ? { targetX: tx } : {}),
+      ...(Number.isFinite(ty) ? { targetY: ty } : {})
+    });
+    return;
+  }
+
   // When piloting a ship, always fire forward in the ship's facing direction
   if (self?.ship?.boarded) {
     if (Number.isFinite(self.facing)) {
@@ -5154,13 +5171,10 @@ function sendAttack() {
   }
 
   // Allow optional target world coords (x,y) and compute facing client-side.
-  const args = Array.from(arguments);
-  if (args.length >= 2 && Number.isFinite(args[0]) && Number.isFinite(args[1])) {
-    const tx = Number(args[0]);
-    const ty = Number(args[1]);
-    payload.targetX = tx;
-    payload.targetY = ty;
-    payload.facing = Number(Math.atan2(ty - (self?.y || 0), tx - (self?.x || 0)).toFixed(6));
+  if (Number.isFinite(targetX) && Number.isFinite(targetY)) {
+    payload.targetX = targetX;
+    payload.targetY = targetY;
+    payload.facing = Number(Math.atan2(targetY - (self?.y || 0), targetX - (self?.x || 0)).toFixed(6));
     // Also set local facing for immediate feedback
     if (self) self.facing = payload.facing;
   } else {
