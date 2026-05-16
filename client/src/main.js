@@ -1455,6 +1455,12 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: "That ship cannot host additional crew." });
     } else if (message.message === "party_disembarked") {
       appendChat({ kind: "system", name: "Realm", text: "Disembarked from crewmate's ship" });
+    } else if (message.message === "ship_dock_engaged") {
+      appendChat({ kind: "system", name: "Realm", text: "Auto-dock engaged" });
+    } else if (message.message === "ship_dock_not_nearby") {
+      appendChat({ kind: "system", name: "Realm", text: "No dock port within range" });
+    } else if (message.message === "ship_dock_not_piloting") {
+      appendChat({ kind: "system", name: "Realm", text: "Take a pilot station to dock" });
     } else if (message.message === "ship_station_entered") {
       appendChat({ kind: "system", name: "Realm", text: `Entered ${message.stationName || "ship station"}` });
     } else if (message.message === "ship_station_left") {
@@ -2771,6 +2777,15 @@ function wireUi() {
         if (active) sendInteract();
         return;
       }
+      // If we're showing the contextual "Dock" action and the player tapped it, fire the dock request once.
+      if (active && shipEngageEl.dataset.dockAction === "dock") {
+        send({ type: "shipDockRequest" });
+        return;
+      }
+      // Ignore presses while a docking animation is in progress.
+      if (shipEngageEl.dataset.dockAction === "docking") {
+        return;
+      }
       state.input.engage = Boolean(active && isPilotShipRole(role));
       state.input.fire = Boolean(active && role === "gunner");
       state.input.repair = Boolean(active && role === "engineer");
@@ -3193,6 +3208,12 @@ function wireUi() {
       event.preventDefault();
       if (isSelfOnShip()) {
         const role = selfShipStationRole();
+        const self = state.players.get(state.selfId);
+        if (isPilotShipRole(role) && self?.ship && !self.ship.docking && isShipNearAnyDockPort(self.ship)) {
+          send({ type: "shipDockRequest" });
+          return;
+        }
+        if (self?.ship?.docking) return;
         state.input.engage = Boolean(isPilotShipRole(role) || (isSelfFlyingShip() && !role));
         state.input.fire = Boolean(role === "gunner");
         state.input.repair = Boolean(role === "engineer");
@@ -3570,14 +3591,21 @@ function renderAbilityBar() {
     const button = document.getElementById("shipEngageBtn");
     const key = engageEl.querySelector(".ship-engage-key");
     const role = selfShipStationRole();
+    const pilotNearDock = isPilotShipRole(role) && self.ship && isShipNearAnyDockPort(self.ship);
+    const docking = isPilotShipRole(role) && Boolean(self.ship?.docking?.portId);
     if (button) {
+      button.dataset.dockAction = docking ? "docking" : pilotNearDock ? "dock" : "";
       button.textContent = role === "gunner"
         ? "Fire"
         : role === "engineer"
           ? "Repair"
-          : isPilotShipRole(role) || !self.ship?.deckMode
-            ? "Engage"
-            : "Station";
+          : docking
+            ? "Docking…"
+            : pilotNearDock
+              ? "Dock"
+              : isPilotShipRole(role) || !self.ship?.deckMode
+                ? "Engage"
+                : "Station";
     }
     if (key) {
       key.textContent = role ? "Space" : "E";
@@ -7435,6 +7463,23 @@ function nearestShipStationForPlayer(player) {
     }
   }
   return best;
+}
+
+const SHIP_DOCK_PROMPT_RANGE = 8;
+
+function isShipNearAnyDockPort(ship) {
+  if (!ship) return false;
+  const cx = Number.isFinite(ship.worldX) ? ship.worldX : ship.dockX;
+  const cy = Number.isFinite(ship.worldY) ? ship.worldY : ship.dockY;
+  if (!Number.isFinite(cx) || !Number.isFinite(cy)) return false;
+  if (!state.spaceObjects) return false;
+  for (const obj of state.spaceObjects.values()) {
+    if (obj?.kind !== "ship-port") continue;
+    const dx = Number(obj.x) - cx;
+    const dy = Number(obj.y) - cy;
+    if (Math.hypot(dx, dy) <= SHIP_DOCK_PROMPT_RANGE) return true;
+  }
+  return false;
 }
 
 function isEntityInsideAnyShipDeck(entity) {
