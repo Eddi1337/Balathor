@@ -1312,12 +1312,12 @@ function getShipLayout(shipOrClass = "skiff") {
       deckW: 18,
       deckH: 10,
       entry: { x: -7, y: 0 },
-      teleporter: { x: -4, y: 0 },
+      teleporter: { x: -2.5, y: 0 },
       stations: [
         { id: "captain", role: "captain", name: "Captain Seat", x: 3.2, y: 0 },
         { id: "pilot", role: "pilot", name: "Pilot Seat", x: 5.1, y: -1 },
         { id: "copilot", role: "copilot", name: "Co-Pilot Seat", x: 5.1, y: 1 },
-        { id: "gunner_aft", role: "gunner", name: "Aft Gunner", x: -5.2, y: 0 },
+        { id: "gunner_aft", role: "gunner", name: "Aft Gunner", x: -6.5, y: 0 },
         { id: "engineer_mid", role: "engineer", name: "Forward Engineering", x: -1.2, y: -2, defaultShieldFacing: "front" },
         { id: "engineer_aux", role: "engineer", name: "Aft Engineering", x: -1.6, y: 2, defaultShieldFacing: "back" }
       ]
@@ -1329,11 +1329,11 @@ function getShipLayout(shipOrClass = "skiff") {
       deckW: 14,
       deckH: 8,
       entry: { x: -5, y: 0 },
-      teleporter: { x: -3, y: 0 },
+      teleporter: { x: -1.5, y: 0 },
       stations: [
         { id: "pilot", role: "pilot", name: "Pilot Seat", x: 3.4, y: -1 },
         { id: "copilot", role: "copilot", name: "Co-Pilot Seat", x: 3.4, y: 1 },
-        { id: "gunner_aft", role: "gunner", name: "Aft Gunner", x: -4.1, y: 0 },
+        { id: "gunner_aft", role: "gunner", name: "Aft Gunner", x: -5.5, y: 0 },
         { id: "engineer_mid", role: "engineer", name: "Engineering", x: -0.7, y: 0, defaultShieldFacing: "front" }
       ]
     };
@@ -2532,25 +2532,20 @@ function simulate() {
         if (Math.hypot(dx, dy) > 0) {
           client.player.facing = Math.atan2(dy, dx);
         }
-        if (input.fire && Date.now() - client.lastAttackAt > 420) {
-          client.lastAttackAt = Date.now();
-          const center = shipCenter(ship);
-          const tier = Math.max(1, Number(ship.laserTier) || 1);
-          const range = 9 + tier * 2;
-          broadcastCombat({
-            type: "combat",
-            kind: "projectile",
-            weapon: "ship_turret",
-            projectileKind: "arcane",
-            attackerId: client.player.id,
-            x: Number(center.x.toFixed(3)),
-            y: Number(center.y.toFixed(3)),
-            facing: Number(client.player.facing.toFixed(3)),
-            range,
-            hit: false,
-            endX: Number((center.x + Math.cos(client.player.facing) * range).toFixed(3)),
-            endY: Number((center.y + Math.sin(client.player.facing) * range).toFixed(3))
-          });
+        if (input.fire) {
+          if (input.weaponMode === "missile") {
+            if (Date.now() - (client.lastShipMissileAt || 0) > SHIP_MISSILE_COOLDOWN_MS) {
+              handleShipMissile(client);
+            }
+          } else {
+            if (Date.now() - (client.lastShipFireAt || 0) > SHIP_GUNNER_COOLDOWN_MS) {
+              const center = shipCenter(ship);
+              handleShipFire(client, {
+                targetX: center.x + Math.cos(client.player.facing) * 24,
+                targetY: center.y + Math.sin(client.player.facing) * 24
+              });
+            }
+          }
         }
         client.player.moving = Boolean(input.fire);
       } else {
@@ -4392,10 +4387,17 @@ function sendShipTerminalWindow(client, port) {
 
 const SHIP_DOCK_PROMPT_RANGE = 8;
 const SHIP_GUNNER_COOLDOWN_MS = 350;
+const SHIP_MISSILE_COOLDOWN_MS = 1500;
 
 function handleShipFire(client, message = {}) {
   const ship = client.player?.ship;
   if (!ship?.boarded || ship.stationRole !== "gunner") {
+    return;
+  }
+  if (message.weaponMode === "missile") {
+    if (Date.now() - (client.lastShipMissileAt || 0) > SHIP_MISSILE_COOLDOWN_MS) {
+      handleShipMissile(client);
+    }
     return;
   }
   const now = Date.now();
@@ -4498,6 +4500,75 @@ function handleShipFire(client, message = {}) {
 
     broadcastCombat(event);
   }
+  client.player.moving = true;
+}
+
+function handleShipMissile(client) {
+  const ship = client.player?.ship;
+  if (!ship?.boarded || ship.stationRole !== "gunner") return;
+  client.lastShipMissileAt = Date.now();
+
+  const center = shipCenter(ship);
+  const tier = Math.max(1, Number(ship.laserTier) || 1);
+  const missileDamage = Math.round((12 + tier * 6) * 3);
+  const missileRange = (9 + tier * 2) * 2;
+
+  // Find nearest mob — prefer ship pirates but fall back to any mob.
+  let target = null;
+  let bestDist = Infinity;
+  for (const mob of mobs) {
+    if (mob.dead) continue;
+    const dx = mob.x - center.x;
+    const dy = mob.y - center.y;
+    const d = Math.hypot(dx, dy);
+    if (d > missileRange) continue;
+    if (target === null || (mob.isShipPirate && !target.isShipPirate) || d < bestDist) {
+      target = mob;
+      bestDist = d;
+    }
+  }
+
+  if (!target) return;
+
+  const facing = Math.atan2(target.y - center.y, target.x - center.x);
+  const event = {
+    type: "combat",
+    kind: "projectile",
+    weapon: "ship_missile",
+    projectileKind: "ship_missile",
+    weaponColor: "#ff7b3a",
+    attackerId: client.player.id,
+    x: Number(center.x.toFixed(3)),
+    y: Number(center.y.toFixed(3)),
+    facing: Number(facing.toFixed(3)),
+    range: Number(bestDist.toFixed(3)),
+    hit: true,
+    endX: Number(target.x.toFixed(3)),
+    endY: Number(target.y.toFixed(3)),
+    targetId: target.id,
+    targetKind: "mob",
+    damage: missileDamage,
+    targetHp: Math.max(0, target.hp - missileDamage)
+  };
+
+  target.hp = Math.max(0, target.hp - missileDamage);
+  event.targetHp = target.hp;
+  if (target.isShipPirate) alertPirateFleet(target);
+  if (target.hp <= 0) {
+    target.dead = true;
+    target.respawnAt = Date.now() + MOB_RESPAWN_MS;
+    event.defeated = true;
+    const progress = awardXp(client.player, xpForMob(target));
+    event.xpGained = progress.xpGained;
+    event.levelsGained = progress.levelsGained;
+    const goldReward = goldForMob(target);
+    client.player.gold += goldReward;
+    event.goldGained = goldReward;
+    dropLootForMob(target);
+    recordMobDefeatForQuests(client, target);
+  }
+
+  broadcastCombat(event);
   client.player.moving = true;
 }
 
@@ -8394,7 +8465,8 @@ function normalizeInput(keys = {}) {
     right: Boolean(keys.right),
     engage: Boolean(keys.engage),
     fire: Boolean(keys.fire),
-    repair: Boolean(keys.repair)
+    repair: Boolean(keys.repair),
+    weaponMode: keys.weaponMode === "missile" ? "missile" : "laser"
   };
 }
 

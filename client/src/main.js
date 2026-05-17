@@ -743,7 +743,7 @@ const state = {
   requestedChunks: new Set(),
   population: 0,
   worldTime: { hour: 8, phase: "day" },
-  input: { up: false, down: false, left: false, right: false, engage: false, fire: false, repair: false },
+  input: { up: false, down: false, left: false, right: false, engage: false, fire: false, repair: false, weaponMode: "laser" },
   inputSeq: 0,
   camera: { x: 0, y: 0, rotation: 0 },
   zoom: 1,
@@ -2078,7 +2078,10 @@ function getInteriorShipView(player = state.players.get(state.selfId)) {
 
 function getEffectiveWorldZoom(player = state.players.get(state.selfId)) {
   const baseZoom = state.zoom || 1;
-  return baseZoom * (selfIsInPilotSeat(player) ? 0.7 : 1);
+  const role = player?.ship?.stationRole;
+  if (selfIsInPilotSeat(player)) return baseZoom * 0.7;
+  if (role === "gunner" || role === "engineer") return baseZoom * 0.5;
+  return baseZoom;
 }
 
 function sciFiFeatureAtClient(x, y, kind = null) {
@@ -3425,6 +3428,14 @@ function wireUi() {
       return;
     }
 
+    // Toggle gunner weapon mode with Tab
+    if (event.key === "Tab" && state.joined && selfShipStationRole() === "gunner" && !isTextEntryTarget(event.target)) {
+      event.preventDefault();
+      state.input.weaponMode = state.input.weaponMode === "missile" ? "laser" : "missile";
+      sendInput();
+      return;
+    }
+
     // Attack — F key fires
     if (event.key.toLowerCase() === "f" && state.joined && !isTextEntryTarget(event.target)) {
       event.preventDefault();
@@ -3797,6 +3808,9 @@ function renderAbilityBar() {
     const button = document.getElementById("shipEngageBtn");
     const key = engageEl.querySelector(".ship-engage-key");
     const role = selfShipStationRole();
+    if (role !== "gunner" && state.input.weaponMode !== "laser") {
+      state.input.weaponMode = "laser";
+    }
     if (button) {
       button.dataset.dockAction = "";
       button.textContent = role === "gunner"
@@ -3819,7 +3833,7 @@ function renderAbilityBar() {
       const shieldSections = self.ship?.shieldSections && typeof self.ship.shieldSections === "object" ? self.ship.shieldSections : {};
       const stationId = String(self.ship?.stationId || "engineer_mid");
       const shieldDir = String(shieldSections[stationId] || self.ship?.shieldFacing || "front");
-      stats.classList.toggle("hidden", !shipMode || role !== "engineer");
+      stats.classList.toggle("hidden", !shipMode || (role !== "engineer" && role !== "gunner"));
       if (shipMode && role === "engineer") {
         stats.replaceChildren();
         const title = document.createElement("strong");
@@ -3829,6 +3843,15 @@ function renderAbilityBar() {
         const shield = document.createElement("span");
         shield.textContent = `Shield ${shields}/${maxShields} ${shieldDir}`;
         stats.append(title, hull, shield);
+      } else if (shipMode && role === "gunner") {
+        stats.replaceChildren();
+        const title = document.createElement("strong");
+        title.textContent = "Gunner";
+        const mode = document.createElement("span");
+        const isMissile = state.input.weaponMode === "missile";
+        mode.textContent = isMissile ? "Missiles  [Tab to switch]" : "Lasers  [Tab to switch]";
+        mode.style.color = isMissile ? "#ff7b3a" : "#67f0ff";
+        stats.append(title, mode);
       }
     }
   }
@@ -5402,15 +5425,19 @@ function sendAttack() {
   const targetX = args.length >= 1 && Number.isFinite(args[0]) ? Number(args[0]) : null;
   const targetY = args.length >= 2 && Number.isFinite(args[1]) ? Number(args[1]) : null;
 
-  // Ship gunner — fire bolts from every turret toward the clicked target.
+  // Ship gunner — missiles auto-target; lasers fire toward clicked/aimed point.
   if (self?.ship?.boarded && self.ship.stationRole === "gunner") {
-    const tx = Number.isFinite(targetX) ? targetX : state.lastPointerWorldX;
-    const ty = Number.isFinite(targetY) ? targetY : state.lastPointerWorldY;
-    send({
-      type: "shipFire",
-      ...(Number.isFinite(tx) ? { targetX: tx } : {}),
-      ...(Number.isFinite(ty) ? { targetY: ty } : {})
-    });
+    if (state.input.weaponMode === "missile") {
+      send({ type: "shipFire", weaponMode: "missile" });
+    } else {
+      const tx = Number.isFinite(targetX) ? targetX : state.lastPointerWorldX;
+      const ty = Number.isFinite(targetY) ? targetY : state.lastPointerWorldY;
+      send({
+        type: "shipFire",
+        ...(Number.isFinite(tx) ? { targetX: tx } : {}),
+        ...(Number.isFinite(ty) ? { targetY: ty } : {})
+      });
+    }
     return;
   }
 
@@ -6905,6 +6932,58 @@ function radarPoint(cx, cy, x, y, radius) {
   };
 }
 
+function drawGunnerMissileTarget() {
+  const self = state.players.get(state.selfId);
+  if (!self?.ship?.boarded || self.ship.stationRole !== "gunner") return;
+  if (state.input.weaponMode !== "missile") return;
+
+  // Find nearest mob visible on screen — prefer ship pirates.
+  let target = null;
+  let bestDist = Infinity;
+  const sx = self.ship.worldX ?? self.x;
+  const sy = self.ship.worldY ?? self.y;
+  for (const mob of state.mobs.values()) {
+    if (!mob) continue;
+    const mx = mob.renderX ?? mob.x;
+    const my = mob.renderY ?? mob.y;
+    const d = Math.hypot(mx - sx, my - sy);
+    if (target === null || (mob.isShipPirate && !target.isShipPirate) || d < bestDist) {
+      target = mob;
+      bestDist = d;
+    }
+  }
+  if (!target) return;
+
+  const pt = worldToScreenPoint(target.renderX ?? target.x, target.renderY ?? target.y);
+  const now = performance.now();
+  const pulse = 0.65 + Math.sin(now / 180) * 0.35;
+  const r = 20 + Math.sin(now / 220) * 4;
+  ctx.save();
+  ctx.translate(pt.x, pt.y);
+  ctx.globalAlpha = pulse;
+  ctx.strokeStyle = "#ff7b3a";
+  ctx.lineWidth = 2;
+  // Diamond reticle
+  ctx.beginPath();
+  ctx.moveTo(0, -r);
+  ctx.lineTo(r, 0);
+  ctx.lineTo(0, r);
+  ctx.lineTo(-r, 0);
+  ctx.closePath();
+  ctx.stroke();
+  // Corner ticks
+  const tick = 6;
+  const g = r * 0.7;
+  for (const [dx, dy] of [[-g, -g], [g, -g], [g, g], [-g, g]]) {
+    ctx.beginPath();
+    ctx.moveTo(dx - tick * Math.sign(dx), dy);
+    ctx.lineTo(dx, dy);
+    ctx.lineTo(dx, dy - tick * Math.sign(dy));
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawRadarBlip(cx, cy, x, y, radius, draw) {
   if (!Number.isFinite(Number(x)) || !Number.isFinite(Number(y))) return;
   const p = radarPoint(cx, cy, Number(x), Number(y), radius);
@@ -7080,6 +7159,7 @@ function draw() {
   drawPubPassoutOverlay();
   drawIntimateBlackoutOverlay();
   drawShipRadar();
+  drawGunnerMissileTarget();
   drawWorldHoverTooltip();
   if (state.menuOpen) {
     syncMenuSessionInfo();
@@ -7948,12 +8028,12 @@ function getShipLayout(shipOrClass = "skiff") {
       deckW: 18,
       deckH: 10,
       entry: { x: -7, y: 0 },
-      teleporter: { x: -4, y: 0 },
+      teleporter: { x: -2.5, y: 0 },
       stations: [
         { id: "captain", role: "captain", name: "Captain", x: 3.2, y: 0 },
         { id: "pilot", role: "pilot", name: "Pilot", x: 5.1, y: -1 },
         { id: "copilot", role: "copilot", name: "Co-Pilot", x: 5.1, y: 1 },
-        { id: "gunner_aft", role: "gunner", name: "Gunner", x: -5.2, y: 0 },
+        { id: "gunner_aft", role: "gunner", name: "Gunner", x: -6.5, y: 0 },
         { id: "engineer_mid", role: "engineer", name: "Forward Engineering", x: -1.2, y: -2, defaultShieldFacing: "front" },
         { id: "engineer_aux", role: "engineer", name: "Aft Engineering", x: -1.6, y: 2, defaultShieldFacing: "back" }
       ],
@@ -7971,11 +8051,11 @@ function getShipLayout(shipOrClass = "skiff") {
       deckW: 14,
       deckH: 8,
       entry: { x: -5, y: 0 },
-      teleporter: { x: -3, y: 0 },
+      teleporter: { x: -1.5, y: 0 },
       stations: [
         { id: "pilot", role: "pilot", name: "Pilot", x: 3.4, y: -1 },
         { id: "copilot", role: "copilot", name: "Co-Pilot", x: 3.4, y: 1 },
-        { id: "gunner_aft", role: "gunner", name: "Gunner", x: -4.1, y: 0 },
+        { id: "gunner_aft", role: "gunner", name: "Gunner", x: -5.5, y: 0 },
         { id: "engineer_mid", role: "engineer", name: "Engineering", x: -0.7, y: 0, defaultShieldFacing: "front" }
       ],
       amenities: [
@@ -11618,7 +11698,36 @@ function drawProjectileFx(fx, sx, sy, pct, halfW, halfH) {
   ctx.translate(px, py);
   ctx.rotate(angle);
 
-  if (fx.projectileKind === "laser_bolt") {
+  if (fx.projectileKind === "ship_missile") {
+    ctx.globalAlpha = Math.max(0, 1 - pct * 0.2);
+    // Exhaust trail
+    const trailLen = 28;
+    const trail = ctx.createLinearGradient(-trailLen, 0, 0, 0);
+    trail.addColorStop(0, "rgba(255, 123, 58, 0)");
+    trail.addColorStop(0.6, "rgba(255, 200, 80, 0.7)");
+    trail.addColorStop(1, "rgba(255, 255, 200, 0.9)");
+    ctx.strokeStyle = trail;
+    ctx.lineWidth = 5;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-trailLen, 0);
+    ctx.lineTo(0, 0);
+    ctx.stroke();
+    // Missile body
+    ctx.fillStyle = "#ff7b3a";
+    ctx.fillRect(0, -3, 14, 6);
+    ctx.fillStyle = "#ffcf6b";
+    ctx.fillRect(10, -2, 6, 4);
+    // Nose
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.moveTo(16, 0);
+    ctx.lineTo(10, -3);
+    ctx.lineTo(10, 3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.lineCap = "butt";
+  } else if (fx.projectileKind === "laser_bolt") {
     const boltColor = typeof fx.weaponColor === "string" ? fx.weaponColor : "#67f0ff";
     const style = fx.weaponStyle || "";
     // Pulse / plasma → fat short bolt. Ion → thinner with crackle. Rail → long streak.
