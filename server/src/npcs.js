@@ -33,6 +33,8 @@ const GAME_HOURS_PER_SEC = 24 / 600;
 const HUB_PUB_X      = 11;
 const HUB_PUB_Y      = -65;
 const HUB_PUB_RADIUS = 12;
+const NPC_SPATIAL_CELL_SIZE = 24;
+const NPC_SPATIAL_QUERY_PAD = 18;
 const TOWN_ARCHER_COUNT = 50;
 const TOWN_ARCHER_AMMO_MAX = 24;
 const TOWN_ARCHER_LOW_AMMO = 8;
@@ -55,6 +57,12 @@ function hubScheduleEligible(npc) {
     !npc.isArrowCourier &&
     !soldCompanionNpcIds.has(npc.id)
   );
+}
+
+function npcSpatialKeyFor(x, y, cellSize = NPC_SPATIAL_CELL_SIZE) {
+  const cx = Math.floor(x / cellSize);
+  const cy = Math.floor(y / cellSize);
+  return `${cx},${cy}`;
 }
 
 function hubScheduleEnsureInit(npc, now = Date.now()) {
@@ -219,6 +227,27 @@ function buildTownWallArcherSpecs(navSet) {
     });
   }
   return specs;
+}
+
+function addNpcToSpatialBuckets(buckets, npc) {
+  if (!buckets || !npc) {
+    return;
+  }
+  const key = npcSpatialKeyFor(npc.homeX, npc.homeY);
+  let bucket = buckets.get(key);
+  if (!bucket) {
+    bucket = [];
+    buckets.set(key, bucket);
+  }
+  bucket.push(npc);
+}
+
+function buildNpcSpatialBuckets(list) {
+  const buckets = new Map();
+  for (const npc of list || []) {
+    addNpcToSpatialBuckets(buckets, npc);
+  }
+  return buckets;
 }
 
 /**
@@ -2344,6 +2373,34 @@ const npcs = DEFINITIONS.map((def) => {
   }
   return npc;
 });
+const npcById = new Map(npcs.map((npc) => [npc.id, npc]));
+let npcSpatialBuckets = buildNpcSpatialBuckets(npcs);
+
+function rebuildNpcSpatialBuckets() {
+  npcSpatialBuckets = buildNpcSpatialBuckets(npcs);
+}
+
+function forEachNpcNearBounds(bounds, visitor, pad = NPC_SPATIAL_QUERY_PAD) {
+  if (!bounds || typeof visitor !== "function") {
+    return;
+  }
+  const minCx = Math.floor((bounds.minX - pad) / NPC_SPATIAL_CELL_SIZE);
+  const maxCx = Math.floor((bounds.maxX + pad) / NPC_SPATIAL_CELL_SIZE);
+  const minCy = Math.floor((bounds.minY - pad) / NPC_SPATIAL_CELL_SIZE);
+  const maxCy = Math.floor((bounds.maxY + pad) / NPC_SPATIAL_CELL_SIZE);
+  const seen = new Set();
+  for (let cx = minCx; cx <= maxCx; cx += 1) {
+    for (let cy = minCy; cy <= maxCy; cy += 1) {
+      const bucket = npcSpatialBuckets.get(`${cx},${cy}`);
+      if (!bucket) continue;
+      for (const npc of bucket) {
+        if (seen.has(npc.id)) continue;
+        seen.add(npc.id);
+        visitor(npc);
+      }
+    }
+  }
+}
 
 const hubLinkedNpcIds = new Set(HUB_NPC_ORDER.map((entry) => entry.id));
 
@@ -2431,6 +2488,7 @@ function syncNpcHubHomesFromBuildings(buildings, southDoorAnchorWorldXFn) {
       snapNpcOntoHubNavIfNeeded(n, navSnap);
     }
   }
+  rebuildNpcSpatialBuckets();
 }
 
 function syncSoldCompanionIdsFromAccounts(accountsRoot) {
@@ -2475,11 +2533,11 @@ function getNpcBuddy(npc) {
   if (!npc?._meetPeerId) {
     return null;
   }
-  return npcs.find((n) => n.id === npc._meetPeerId) || null;
+  return npcById.get(npc._meetPeerId) || null;
 }
 
 /** Try to arrange a short meet-up dialogue between two patrolling villagers. */
-function maybeStartNpcMeeting(now, activationBounds) {
+function maybeStartNpcMeeting(now, activationBounds, activeNpcs = null) {
   if (!activationBounds || now - lastNpcSocialAttempt < SOCIAL_PAIR_INTERVAL_MS) {
     return;
   }
@@ -2488,7 +2546,8 @@ function maybeStartNpcMeeting(now, activationBounds) {
     return;
   }
 
-  const cand = npcs.filter(
+  const source = Array.isArray(activeNpcs) && activeNpcs.length ? activeNpcs : npcs;
+  const cand = source.filter(
     (n) =>
       npcPatrolIntersectsBounds(n, activationBounds) &&
       !n.isTrader &&
@@ -3029,19 +3088,36 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
 
   const now = Date.now();
   /** Social pairing checks _schedPhase; ensure schedules exist before maybeStartNpcMeeting runs. */
-  for (const n of npcs) {
-    if (npcPatrolIntersectsBounds(n, activationBounds) && hubScheduleEligible(n)) {
-      hubScheduleEnsureInit(n, now);
+  const activeNpcs = [];
+  const activeNpcIds = new Set();
+  forEachNpcNearBounds(activationBounds, (n) => {
+    if (npcPatrolIntersectsBounds(n, activationBounds)) {
+      activeNpcIds.add(n.id);
+      activeNpcs.push(n);
+      if (hubScheduleEligible(n)) {
+        hubScheduleEnsureInit(n, now);
+      }
     }
-  }
-  maybeStartNpcMeeting(now, activationBounds);
-
-  const navSetStatic = WORLD.HUB_NAV_PATH_KEYS instanceof Set ? WORLD.HUB_NAV_PATH_KEYS : null;
-
+  });
   for (const npc of npcs) {
+    if (
+      !npc ||
+      activeNpcIds.has(npc.id) ||
+      (!npc.wandersToPlayer && !npc.wandersToFlirt && !npc.courtPlayer && !npc.isArrowCourier && !npc.sciFiShipTraffic)
+    ) {
+      continue;
+    }
     if (!npcPatrolIntersectsBounds(npc, activationBounds)) {
       continue;
     }
+    activeNpcIds.add(npc.id);
+    activeNpcs.push(npc);
+  }
+  maybeStartNpcMeeting(now, activationBounds, activeNpcs);
+
+  const navSetStatic = WORLD.HUB_NAV_PATH_KEYS instanceof Set ? WORLD.HUB_NAV_PATH_KEYS : null;
+
+  for (const npc of activeNpcs) {
 
     if (npc.isGateKeeper) {
       npc.x = npc.homeX;
@@ -3400,7 +3476,7 @@ function getNpcSnapshot() {
 }
 
 function getNpcById(id) {
-  return npcs.find((npc) => npc.id === id) || null;
+  return npcById.get(id) || null;
 }
 
 /** Template for romance NPCs — works even after that NPC is retired from world patrol. */
