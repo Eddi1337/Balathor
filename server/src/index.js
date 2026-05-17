@@ -175,9 +175,11 @@ const TOWN_ARCHER_AMMO_LOW_WATERMARK = 8;
 const TOWN_COURIER_IDS = Object.freeze(
   Array.from({ length: 50 }, (_, i) => `hub_arrow_courier_${i}`)
 );
-const FLETCHER_ID = "hub_fletcher_main";
+const FLETCHER_COUNT = 5;
+const FLETCHER_IDS = Object.freeze(Array.from({ length: FLETCHER_COUNT }, (_, i) => `hub_fletcher_${i}`));
 const FLETCHER_ARROW_STOCK_MAX = 9999;
 const FLETCHER_COURIER_CARRY_MAX = 16;
+const FLETCHER_QUEUE_SPACING = 1.6; // tiles between queue slots
 const FANTASY_ASSAULT_INTERVAL_MS = 15000;
 const SCI_FI_ASSAULT_INTERVAL_MS = 30000;
 const MAX_ACTIVE_FANTASY_ASSAULT_MOBS = 128;
@@ -8375,7 +8377,6 @@ function processGatekeeperArchers(now = Date.now()) {
 }
 
 function processTownArrowSupply(now = Date.now(), dt = 0.05) {
-  const fletcher = getNpcById(FLETCHER_ID);
   const archers = TOWN_ARCHER_IDS.map((id) => getNpcById(id)).filter((npc) => npc && typeof npc.ammo === "number");
   const archerNeeds = archers
     .map((npc) => ({
@@ -8387,33 +8388,50 @@ function processTownArrowSupply(now = Date.now(), dt = 0.05) {
     .sort((a, b) => b.need - a.need || (Number(a.npc.ammo) || 0) - (Number(b.npc.ammo) || 0));
 
   const courierRows = TOWN_COURIER_IDS.map((id) => getNpcById(id)).filter(Boolean);
+
+  // ── Assign delivery targets ───────────────────────────────────────────────
   const assigned = new Set();
   for (const courier of courierRows) {
-    if (!Number.isFinite(courier.carryMax)) {
-      courier.carryMax = FLETCHER_COURIER_CARRY_MAX;
-    }
+    if (!Number.isFinite(courier.carryMax)) courier.carryMax = FLETCHER_COURIER_CARRY_MAX;
     if (!courier._deliveryTargetId || assigned.has(courier._deliveryTargetId)) {
       courier._deliveryTargetId = null;
     }
     const currentTarget = courier._deliveryTargetId
       ? archers.find((npc) => npc.id === courier._deliveryTargetId && (Number(npc.ammoMax) || 24) > (Number(npc.ammo) || 0))
       : null;
-    if (currentTarget) {
-      assigned.add(currentTarget.id);
-      continue;
-    }
+    if (currentTarget) { assigned.add(currentTarget.id); continue; }
     const nextTarget = archerNeeds.find((row) => !assigned.has(row.npc.id))?.npc || null;
-    if (nextTarget) {
-      courier._deliveryTargetId = nextTarget.id;
-      assigned.add(nextTarget.id);
-    }
+    if (nextTarget) { courier._deliveryTargetId = nextTarget.id; assigned.add(nextTarget.id); }
   }
 
+  // ── Build queue slots per fletcher ───────────────────────────────────────
+  // Couriers heading back to reload (carryAmount==0, have a delivery target) queue
+  // up in a line extending from their assigned fletcher toward the town centre so
+  // they don't all pile onto the same tile.
+  const fletcherQueueMap = new Map(); // fletcherId → [{courier, dist}]
   for (const courier of courierRows) {
-    const target = courier._deliveryTargetId ? getNpcById(courier._deliveryTargetId) : null;
-    const home = fletcher || null;
+    if ((Number(courier.carryAmount) || 0) > 0) continue; // already loaded, heading to archer
+    if (!courier._deliveryTargetId) continue;             // no work, idling
+    const fid = courier.assignedFletcherId || FLETCHER_IDS[0];
+    if (!fletcherQueueMap.has(fid)) fletcherQueueMap.set(fid, []);
+    const home = getNpcById(fid);
+    const hx = Number(home?.x ?? home?.homeX);
+    const hy = Number(home?.y ?? home?.homeY);
+    fletcherQueueMap.get(fid).push({ courier, dist: Math.hypot(courier.x - hx, courier.y - hy) });
+  }
+  // Sort each fletcher's waiters closest-first and assign _queueSlot
+  for (const [, waiters] of fletcherQueueMap) {
+    waiters.sort((a, b) => a.dist - b.dist);
+    for (let qi = 0; qi < waiters.length; qi++) waiters[qi].courier._queueSlot = qi;
+  }
+
+  // ── Move couriers and handle pickup/delivery ──────────────────────────────
+  for (const courier of courierRows) {
+    const fid = courier.assignedFletcherId || FLETCHER_IDS[0];
+    const home = getNpcById(fid);
     const fletcherX = Number(home?.x ?? home?.homeX);
     const fletcherY = Number(home?.y ?? home?.homeY);
+    const target = courier._deliveryTargetId ? getNpcById(courier._deliveryTargetId) : null;
     const targetX = Number.isFinite(target?.supplyX) ? Number(target.supplyX) : Number(target?.homeX);
     const targetY = Number.isFinite(target?.supplyY) ? Number(target.supplyY) : Number(target?.homeY);
     const carryAmount = Math.max(0, Number(courier.carryAmount) || 0);
@@ -8423,20 +8441,31 @@ function processTownArrowSupply(now = Date.now(), dt = 0.05) {
     if (!target || !Number.isFinite(targetX) || !Number.isFinite(targetY)) {
       courier._deliveryTargetId = null;
       courier.carryAmount = 0;
+      courier._queueSlot = null;
       courier._targetX = Number.isFinite(fletcherX) ? fletcherX : courier.homeX;
       courier._targetY = Number.isFinite(fletcherY) ? fletcherY : courier.homeY;
       continue;
     }
 
     if (carryAmount <= 0) {
-      courier._targetX = Number.isFinite(fletcherX) ? fletcherX : courier.homeX;
-      courier._targetY = Number.isFinite(fletcherY) ? fletcherY : courier.homeY;
-      if (home && Math.hypot(courier.x - courier._targetX, courier.y - courier._targetY) <= 1.4 && stock > 0) {
+      // Queue position: slot 0 = pickup point, slots 1+ extend toward town centre
+      const slot = courier._queueSlot ?? 0;
+      const qDist = Math.hypot(fletcherX, fletcherY);
+      const qDirX = qDist > 0.1 ? -fletcherX / qDist : 0;
+      const qDirY = qDist > 0.1 ? -fletcherY / qDist : 1;
+      const qx = fletcherX + qDirX * slot * FLETCHER_QUEUE_SPACING;
+      const qy = fletcherY + qDirY * slot * FLETCHER_QUEUE_SPACING;
+      courier._targetX = qx;
+      courier._targetY = qy;
+
+      // Only the front-of-queue courier (slot 0) can load up
+      if (slot === 0 && home && Math.hypot(courier.x - fletcherX, courier.y - fletcherY) <= 1.5 && stock > 0) {
         const targetNeed = Math.max(0, (Number(target.ammoMax) || 24) - (Number(target.ammo) || 0));
         const load = Math.min(carryMax, stock, targetNeed > 0 ? targetNeed : carryMax);
         if (load > 0) {
           courier.carryAmount = load;
           home.arrowStock = Math.max(0, stock - load);
+          courier._queueSlot = null;
           courier._targetX = targetX;
           courier._targetY = targetY;
         }

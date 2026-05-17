@@ -1299,55 +1299,57 @@ function buildHydratedHubNpcExtras() {
     });
   }
 
-  const fletcherStand = roadside.find((rs) => rs?.vendorNpcId === "hub_fletcher_main") || null;
-  const fletcherHomeX = Number(fletcherStand?.x) + 1 || 0;
-  const fletcherHomeY = Number(fletcherStand?.y) + 0.38 || 0;
+  const fletcherSheds = roadside.filter((rs) => rs?.kind === "fletcher_shed");
+  const FLETCHER_NPC_COUNT = Math.max(1, fletcherSheds.length);
 
-  out.push({
-    id: "hub_fletcher_main",
-    name: "Master Fletcher",
-    classId: "ranger",
-    primary: "#5f472b",
-    accent: "#e8c86a",
-    homeX: fletcherHomeX,
-    homeY: fletcherHomeY,
-    patrolRadius: 0,
-    isTrader: true,
-    isFletcher: true,
-    shopType: "fletcher",
-    arrowStock: FLETCHER_ARROW_STOCK_MAX,
-    arrowStockMax: FLETCHER_ARROW_STOCK_MAX,
-    craftRate: FLETCHER_CRAFT_PER_SEC,
-    dialogue: [
-      "Feathers, shafts, and a steady hand. That is the trade.",
-      "Fresh arrows for the wall. I keep the stock moving.",
-      "The town sleeps easier when the quivers stay full.",
-      "Take care of the finish — a clean shaft flies true."
-    ]
-  });
-
-  const FLETCHER_WORKERS = [
-    { id: "hub_fletcher_worker_0", name: "Arrow Maker",  dx: -0.75, dy: 0.88, accent: "#c7a96a" },
-    { id: "hub_fletcher_worker_1", name: "Arrow Maker",  dx: 0.82,  dy: 0.88, accent: "#d2b57a" }
-  ];
-  for (const worker of FLETCHER_WORKERS) {
+  for (let fi = 0; fi < FLETCHER_NPC_COUNT; fi++) {
+    const shed = fletcherSheds[fi];
+    const fhx = shed ? Number(shed.x) + (Number(shed.footprintW) || 2) / 2 : fi * 20;
+    const fhy = shed ? Number(shed.y) + 0.38 : 0;
+    const fletcherId = `hub_fletcher_${fi}`;
     out.push({
-      id: worker.id,
-      name: worker.name,
-      classId: "knight",
-      primary: "#6d5c46",
-      accent: worker.accent,
-      homeX: fletcherHomeX + worker.dx,
-      homeY: fletcherHomeY + worker.dy,
+      id: fletcherId,
+      name: fi === 0 ? "Master Fletcher" : "Fletcher",
+      classId: "ranger",
+      primary: "#5f472b",
+      accent: "#e8c86a",
+      homeX: fhx,
+      homeY: fhy,
       patrolRadius: 0,
-      isFletcherWorker: true,
-      craftRate: FLETCHER_WORKER_CRAFT_PER_SEC,
+      isTrader: true,
+      isFletcher: true,
+      shopType: "fletcher",
+      arrowStock: FLETCHER_ARROW_STOCK_MAX,
+      arrowStockMax: FLETCHER_ARROW_STOCK_MAX,
+      craftRate: FLETCHER_CRAFT_PER_SEC,
       dialogue: [
-        "Cut true, sand smooth, stack straight.",
-        "Every shaft here has a purpose.",
-        "Keep the quivers full and the wall stays standing."
+        "Feathers, shafts, and a steady hand. That is the trade.",
+        "Fresh arrows for the wall. I keep the stock moving.",
+        "The town sleeps easier when the quivers stay full.",
+        "Take care of the finish — a clean shaft flies true."
       ]
     });
+    // Two arrow-maker workers per shed
+    for (let wi = 0; wi < 2; wi++) {
+      out.push({
+        id: `hub_fletcher_worker_${fi}_${wi}`,
+        name: "Arrow Maker",
+        classId: "knight",
+        primary: "#6d5c46",
+        accent: wi === 0 ? "#c7a96a" : "#d2b57a",
+        homeX: fhx + (wi === 0 ? -0.75 : 0.82),
+        homeY: fhy + 0.88,
+        patrolRadius: 0,
+        isFletcherWorker: true,
+        fletcherNpcId: fletcherId,
+        craftRate: FLETCHER_WORKER_CRAFT_PER_SEC,
+        dialogue: [
+          "Cut true, sand smooth, stack straight.",
+          "Every shaft here has a purpose.",
+          "Keep the quivers full and the wall stays standing."
+        ]
+      });
+    }
   }
 
   const wallArchers = buildTownWallArcherSpecs(navKeys);
@@ -1385,19 +1387,27 @@ function buildHydratedHubNpcExtras() {
     "Arrow Bearer", "Supply Runner", "Shaft Carrier", "Quiver Hand"
   ];
   for (let ci = 0; ci < TOWN_COURIER_COUNT; ci += 1) {
-    // Spread spawn positions in a 5-column grid around the fletcher
-    const col = (ci % 5) - 2;
-    const row = Math.floor(ci / 5);
+    // Distribute couriers evenly across the 5 fletchers
+    const fi = ci % FLETCHER_NPC_COUNT;
+    const fletcherId = `hub_fletcher_${fi}`;
+    const shed = fletcherSheds[fi];
+    const fhx = shed ? Number(shed.x) + (Number(shed.footprintW) || 2) / 2 : fi * 20;
+    const fhy = shed ? Number(shed.y) + 0.38 : 0;
+    // Spread spawn positions in a small cluster around each fletcher
+    const localIdx = Math.floor(ci / FLETCHER_NPC_COUNT);
+    const col = (localIdx % 3) - 1;
+    const row = Math.floor(localIdx / 3);
     out.push({
       id: `hub_arrow_courier_${ci}`,
       name: courierNamePool[ci % courierNamePool.length],
       classId: "ranger",
       primary: "#6d5c46",
       accent: ci % 3 === 0 ? "#e8c86a" : ci % 3 === 1 ? "#d2b57a" : "#c8a050",
-      homeX: fletcherHomeX + col * 0.9,
-      homeY: fletcherHomeY + 0.5 + row * 0.8,
+      homeX: fhx + col * 0.9,
+      homeY: fhy + 0.5 + row * 0.8,
       patrolRadius: 0,
       isArrowCourier: true,
+      assignedFletcherId: fletcherId,
       carryAmount: 0,
       carryMax: TOWN_COURIER_CARRY_MAX,
       deliveryTargetId: null,
@@ -3021,7 +3031,7 @@ function applyHawkerApproach(npc, companionCtx, onChat, now) {
 }
 
 function tickArrowFletcher(npc, dt, now) {
-  const main = npc.isFletcherWorker ? getNpcById("hub_fletcher_main") : npc;
+  const main = npc.isFletcherWorker ? getNpcById(npc.fletcherNpcId || "hub_fletcher_0") : npc;
   if (!main) {
     return;
   }

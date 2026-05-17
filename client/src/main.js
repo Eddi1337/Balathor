@@ -7453,11 +7453,11 @@ function drawRoadsideFeatures(minTileX, maxTileX, minTileY, maxTileY) {
   };
 
   /** Cute arrow-making workshop shed for the fletcher NPC. */
-  const drawFletcherShedLocal = (fw = 3) => {
+  const drawFletcherShedLocal = (fw = 4) => {
     const wpx = TILE_SIZE * fw;
     const half = Math.round(wpx / 2);
-    const wallH = 56;
-    const roofH = 26;
+    const wallH = 62;
+    const roofH = 30;
 
     // Ground shadow
     drawEllipseShadow(-half + 4, 10, wpx - 6, 14, 0.32);

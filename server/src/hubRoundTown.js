@@ -602,7 +602,8 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
 
   /** Upright 2×1 stalls on flat grass with path along the south edge (customer side). */
   const limS = Math.ceil(HUB_WALL_R_IN_MAIN + 4);
-  let fletcherStand = null;
+  /** Candidates for fletcher sheds: all valid market-stand spots, tagged with angle+radius. */
+  const fletcherCandidates = [];
   for (let ny = -limS; ny <= limS; ny += 1) {
     for (let nx = -limS; nx <= limS - 1; nx += 1) {
       if (plazaTree(nx, ny) || plazaTree(nx + 1, ny) || nearListedPortal(nx, ny, 110) || nearListedPortal(nx + 1, ny, 110)) {
@@ -624,7 +625,7 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
       stampUsed(nx, ny);
       stampUsed(nx + 1, ny);
       const vid = `hub_vendor_${nx}_${ny}`;
-      list.push({
+      const stand = {
         id: `hub_stand_${nx}_${ny}`,
         x: nx,
         y: ny,
@@ -633,23 +634,41 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
         footprintH: 1,
         facing: 0,
         vendorNpcId: vid
-      });
-      const distSq = nx * nx + ny * ny;
-      if (!fletcherStand || distSq < fletcherStand.distSq) {
-        fletcherStand = list[list.length - 1];
-        fletcherStand.distSq = distSq;
-      }
+      };
+      list.push(stand);
+      fletcherCandidates.push({ stand, cx: nx + 1, cy: ny + 0.5 });
     }
   }
 
-  if (fletcherStand) {
-    fletcherStand.vendorNpcId = "hub_fletcher_main";
-    fletcherStand.shopType = "fletcher";
-    fletcherStand.shopName = "Fletcher's Store";
-    fletcherStand.kind = "fletcher_shed";
-    fletcherStand.footprintW = 3;
-    fletcherStand.footprintH = 2;
-    delete fletcherStand.distSq;
+  // Pick 5 fletcher sheds spread across 5 equal angular sectors, preferring
+  // stands near radius 55 tiles (well inside the walls, close to the roads).
+  const FLETCHER_COUNT = 5;
+  const TARGET_RADIUS = 55;
+  const pickedStands = [];
+  for (let fi = 0; fi < FLETCHER_COUNT; fi++) {
+    const sMin = (fi / FLETCHER_COUNT) * Math.PI * 2 - Math.PI;
+    const sMax = ((fi + 1) / FLETCHER_COUNT) * Math.PI * 2 - Math.PI;
+    let best = null;
+    let bestScore = Infinity;
+    for (const { stand, cx, cy } of fletcherCandidates) {
+      if (pickedStands.includes(stand)) continue;
+      const angle = Math.atan2(cy, cx);
+      const normAngle = angle < sMin ? angle + Math.PI * 2 : angle;
+      const normMax = sMax < sMin ? sMax + Math.PI * 2 : sMax;
+      if (normAngle < sMin || normAngle >= normMax) continue;
+      const score = Math.abs(Math.hypot(cx, cy) - TARGET_RADIUS);
+      if (score < bestScore) { bestScore = score; best = stand; }
+    }
+    if (best) {
+      best.vendorNpcId = `hub_fletcher_${fi}`;
+      best.shopType = "fletcher";
+      best.shopName = "Fletcher's Store";
+      best.kind = "fletcher_shed";
+      best.footprintW = 4;
+      best.footprintH = 2;
+      best.fletcherIndex = fi;
+      pickedStands.push(best);
+    }
   }
 
   const bound = Math.ceil(HUB_WALL_R_IN_MAIN + 2);
