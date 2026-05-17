@@ -7062,45 +7062,45 @@ function findOpenMobHome(x, y, fallbackX, fallbackY) {
 // Wagons that ferry players between hub towns. Pay the fare and you ride on
 // the back; the caravan moves itself, dragging you to the destination.
 
-const CARAVAN_DEFINITIONS = [
-  {
-    id: "caravan_oasis",
-    name: "Oasis Caravan",
-    fromName: "Hub",
-    toName: "Oasis Keep",
-    fare: 25,
-    speed: 2.6,
-    color: "#d4a55b",
-    route: [{ x: 0, y: -30 }, { x: 240, y: 220 }, { x: 560, y: 480 }]
-  },
-  {
-    id: "caravan_frost",
-    name: "Frost Caravan",
-    fromName: "Hub",
-    toName: "Frost Keep",
-    fare: 25,
-    speed: 2.6,
-    color: "#9ee7ff",
-    route: [{ x: 0, y: -30 }, { x: -240, y: -200 }, { x: -560, y: -420 }]
-  },
-  {
-    id: "caravan_ember",
-    name: "Ember Caravan",
-    fromName: "Hub",
-    toName: "Ember Citadel",
-    fare: 30,
-    speed: 2.6,
-    color: "#ff8f4a",
-    route: [{ x: 0, y: -30 }, { x: 240, y: -220 }, { x: 540, y: -470 }]
-  }
-];
-
-// Lazy-initialised so the simulate loop (which runs at module load) doesn't
-// hit a temporal dead zone before this declaration is evaluated.
-let _caravansCache = null;
+// Caravan defs + state live entirely inside getCaravans() so nothing here is
+// in a temporal dead zone when the simulate loop kicks off at module load.
+// (simulate() is invoked synchronously near the top of this file, well before
+// any const/let declared after it has been evaluated.)
 function getCaravans() {
-  if (_caravansCache) return _caravansCache;
-  _caravansCache = CARAVAN_DEFINITIONS.map((def) => ({
+  if (getCaravans._cache) return getCaravans._cache;
+  const defs = [
+    {
+      id: "caravan_oasis",
+      name: "Oasis Caravan",
+      fromName: "Hub",
+      toName: "Oasis Keep",
+      fare: 25,
+      speed: 2.6,
+      color: "#d4a55b",
+      route: [{ x: 0, y: -30 }, { x: 240, y: 220 }, { x: 560, y: 480 }]
+    },
+    {
+      id: "caravan_frost",
+      name: "Frost Caravan",
+      fromName: "Hub",
+      toName: "Frost Keep",
+      fare: 25,
+      speed: 2.6,
+      color: "#9ee7ff",
+      route: [{ x: 0, y: -30 }, { x: -240, y: -200 }, { x: -560, y: -420 }]
+    },
+    {
+      id: "caravan_ember",
+      name: "Ember Caravan",
+      fromName: "Hub",
+      toName: "Ember Citadel",
+      fare: 30,
+      speed: 2.6,
+      color: "#ff8f4a",
+      route: [{ x: 0, y: -30 }, { x: 240, y: -220 }, { x: 540, y: -470 }]
+    }
+  ];
+  getCaravans._cache = defs.map((def) => ({
     ...def,
     x: def.route[0].x,
     y: def.route[0].y,
@@ -7110,7 +7110,7 @@ function getCaravans() {
     pauseUntil: Date.now() + 3000,
     passengers: new Set()
   }));
-  return _caravansCache;
+  return getCaravans._cache;
 }
 
 function getCaravanById(id) {
