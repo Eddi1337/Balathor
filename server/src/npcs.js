@@ -1299,13 +1299,13 @@ function buildHydratedHubNpcExtras() {
     });
   }
 
-  const fletcherSheds = roadside.filter((rs) => rs?.kind === "fletcher_shed");
-  const FLETCHER_NPC_COUNT = Math.max(1, fletcherSheds.length);
+  const fletcherBuildings = (WORLD.BUILDINGS || []).filter((b) => b?.type === "fletcher");
+  const FLETCHER_NPC_COUNT = Math.max(1, fletcherBuildings.length);
 
   for (let fi = 0; fi < FLETCHER_NPC_COUNT; fi++) {
-    const shed = fletcherSheds[fi];
-    const fhx = shed ? Number(shed.x) + (Number(shed.footprintW) || 2) / 2 : fi * 20;
-    const fhy = shed ? Number(shed.y) + 0.38 : 0;
+    const bld = fletcherBuildings[fi];
+    const fhx = bld ? Number(bld.x) + Number(bld.w) / 2 : fi * 20;
+    const fhy = bld ? Number(bld.y) + 0.5 : 0;
     const fletcherId = `hub_fletcher_${fi}`;
     out.push({
       id: fletcherId,
@@ -1390,9 +1390,9 @@ function buildHydratedHubNpcExtras() {
     // Distribute couriers evenly across the 5 fletchers
     const fi = ci % FLETCHER_NPC_COUNT;
     const fletcherId = `hub_fletcher_${fi}`;
-    const shed = fletcherSheds[fi];
-    const fhx = shed ? Number(shed.x) + (Number(shed.footprintW) || 2) / 2 : fi * 20;
-    const fhy = shed ? Number(shed.y) + 0.38 : 0;
+    const bldC = fletcherBuildings[fi];
+    const fhx = bldC ? Number(bldC.x) + Number(bldC.w) / 2 : fi * 20;
+    const fhy = bldC ? Number(bldC.y) + 0.5 : 0;
     // Spread spawn positions in a small cluster around each fletcher
     const localIdx = Math.floor(ci / FLETCHER_NPC_COUNT);
     const col = (localIdx % 3) - 1;
@@ -3539,6 +3539,7 @@ function getNpcSnapshot() {
       ...(npc.isFletcher ? { isFletcher: true } : {}),
       ...(npc.isFletcherWorker ? { isFletcherWorker: true } : {}),
       ...(npc.isArrowCourier ? { isArrowCourier: true } : {}),
+      ...(npc.isArrowCourier && npc.assignedFletcherId ? { assignedFletcherId: npc.assignedFletcherId } : {}),
       ...(npc.questGiver ? { questGiver: true, questIds: Array.isArray(npc.questIds) ? npc.questIds : [] } : {}),
       ...(npc.bondTag ? { bondTag: npc.bondTag } : {}),
       ...(npc.longHair ? { longHair: true } : {}),

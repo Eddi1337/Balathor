@@ -45,6 +45,18 @@ const HUB_NPC_ORDER = [
   { id: "npc_nara", label: "Nara", cottage: "Nara's Cabin" }
 ];
 
+/**
+ * Five Fletcher workshop buildings — real buildings at ~80-tile radius,
+ * one per 72° sector. Roads connect to them automatically via connectHouseDoorways().
+ */
+const HUB_FLETCHER_RECTS = Object.freeze([
+  [65, 36, 8, 7],   // sector E
+  [-28, 72, 8, 7],  // sector S
+  [-86, -4, 8, 7],  // sector W
+  [-28, -80, 8, 7], // sector N
+  [54, -60, 8, 7],  // sector NE
+]);
+
 /** Civic + dwellings — deterministic. */
 const HUB_BLUEPRINT_RECT = [
   [-10, -78, 20, 16],
@@ -602,8 +614,6 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
 
   /** Upright 2×1 stalls on flat grass with path along the south edge (customer side). */
   const limS = Math.ceil(HUB_WALL_R_IN_MAIN + 4);
-  /** Candidates for fletcher sheds: all valid market-stand spots, tagged with angle+radius. */
-  const fletcherCandidates = [];
   for (let ny = -limS; ny <= limS; ny += 1) {
     for (let nx = -limS; nx <= limS - 1; nx += 1) {
       if (plazaTree(nx, ny) || plazaTree(nx + 1, ny) || nearListedPortal(nx, ny, 110) || nearListedPortal(nx + 1, ny, 110)) {
@@ -625,7 +635,7 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
       stampUsed(nx, ny);
       stampUsed(nx + 1, ny);
       const vid = `hub_vendor_${nx}_${ny}`;
-      const stand = {
+      list.push({
         id: `hub_stand_${nx}_${ny}`,
         x: nx,
         y: ny,
@@ -634,40 +644,7 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
         footprintH: 1,
         facing: 0,
         vendorNpcId: vid
-      };
-      list.push(stand);
-      fletcherCandidates.push({ stand, cx: nx + 1, cy: ny + 0.5 });
-    }
-  }
-
-  // Pick 5 fletcher sheds spread across 5 equal angular sectors, preferring
-  // stands near radius 55 tiles (well inside the walls, close to the roads).
-  const FLETCHER_COUNT = 5;
-  const TARGET_RADIUS = 55;
-  const pickedStands = [];
-  for (let fi = 0; fi < FLETCHER_COUNT; fi++) {
-    const sMin = (fi / FLETCHER_COUNT) * Math.PI * 2 - Math.PI;
-    const sMax = ((fi + 1) / FLETCHER_COUNT) * Math.PI * 2 - Math.PI;
-    let best = null;
-    let bestScore = Infinity;
-    for (const { stand, cx, cy } of fletcherCandidates) {
-      if (pickedStands.includes(stand)) continue;
-      const angle = Math.atan2(cy, cx);
-      const normAngle = angle < sMin ? angle + Math.PI * 2 : angle;
-      const normMax = sMax < sMin ? sMax + Math.PI * 2 : sMax;
-      if (normAngle < sMin || normAngle >= normMax) continue;
-      const score = Math.abs(Math.hypot(cx, cy) - TARGET_RADIUS);
-      if (score < bestScore) { bestScore = score; best = stand; }
-    }
-    if (best) {
-      best.vendorNpcId = `hub_fletcher_${fi}`;
-      best.shopType = "fletcher";
-      best.shopName = "Fletcher's Store";
-      best.kind = "fletcher_shed";
-      best.footprintW = 4;
-      best.footprintH = 2;
-      best.fletcherIndex = fi;
-      pickedStands.push(best);
+      });
     }
   }
 
@@ -768,6 +745,11 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
 function computeHubDistrict() {
   /** @type {{x:number,y:number,w:number,h:number}[]} */
   const rects = HUB_BLUEPRINT_RECT.map(([x, y, w, h]) => ({ x, y, w, h }));
+
+  /** Append fletcher workshop footprints so path-building avoids them and doors get carved. */
+  for (const [x, y, w, h] of HUB_FLETCHER_RECTS) {
+    rects.push({ x, y, w, h });
+  }
 
   /** Assign NPC lots by angular sweep from east */
   /** @type {{r:{x:number,y:number,w:number,h:number}, angle:number}[]} */
@@ -893,6 +875,25 @@ function computeHubDistrict() {
     });
   }
 
+  /** Fletcher workshops — added to hubBuildings with type "fletcher" so NPCs and client can locate them. */
+  const FLETCHER_NAMES = [
+    "East Fletching House",
+    "South Fletching House",
+    "West Fletching House",
+    "North Fletching House",
+    "Northeast Fletching House",
+  ];
+  for (let fi = 0; fi < HUB_FLETCHER_RECTS.length; fi++) {
+    const [x, y, w, h] = HUB_FLETCHER_RECTS[fi];
+    hubBuildings.push({
+      x, y, w, h,
+      name: FLETCHER_NAMES[fi] || "Fletching House",
+      type: "fletcher",
+      forSale: false,
+      fletcherIndex: fi,
+    });
+  }
+
   const wallKeys = new Set();
   const pathKeys = new Set();
   const gardenKeys = new Set();
@@ -939,6 +940,7 @@ function computeHubDistrict() {
 module.exports = {
   computeHubDistrict,
   HUB_CLEARING_RADIUS,
+  HUB_FLETCHER_RECTS,
   /** Read-only roster used to tag hub-bound NPCs without circular imports through world.js */
   HUB_NPC_ORDER
 };

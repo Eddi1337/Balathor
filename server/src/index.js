@@ -1248,7 +1248,8 @@ function serializePlayer(player) {
       ? { ships: savedShips, activeShipId: player.activeShipId || ownedShip?.id || null }
       : {}),
     ...(ownedShip && typeof ownedShip === "object" ? { ship: serializeShip({ ...ownedShip, stationRole: null, stationId: null }) } : {}),
-    ...(typeof player.aboardShipId === "string" && player.aboardShipId ? { aboardShipId: player.aboardShipId } : {})
+    ...(typeof player.aboardShipId === "string" && player.aboardShipId ? { aboardShipId: player.aboardShipId } : {}),
+    ...(player.carryingArrows > 0 ? { carryingArrows: Math.max(0, Math.round(player.carryingArrows)) } : {})
   };
 }
 
@@ -3351,6 +3352,11 @@ function handleMessage(client, raw) {
 
   if (message.type === "interact") {
     handleInteract(client, message);
+    return;
+  }
+
+  if (message.type === "fletchingTap") {
+    handleFletchingTap(client, message);
     return;
   }
 
@@ -5477,6 +5483,16 @@ function handleInteract(client, message = {}) {
     return;
   }
 
+  // Fletcher building interactions: arrow pickup or mini-game
+  if (handleFletcherBuildingInteract(client, message)) {
+    return;
+  }
+
+  // Archer delivery: player carrying arrows walks to wall archer
+  if (handleArrowDelivery(client, message)) {
+    return;
+  }
+
   const shop = nearestShopFixture(client.player, message);
   if (shop) {
     sendShopWindow(client, shop);
@@ -5566,6 +5582,172 @@ function handleInteract(client, message = {}) {
   }
 
   pickupGroundItem(client, ground);
+}
+
+// ── Fletching mini-game constants ─────────────────────────────────────────────
+const FLETCHING_GAME_SHAFTS = 6;       // number of timing beats per session
+const FLETCHING_BEAT_INTERVAL_MS = 1600; // ms between beats
+const FLETCHING_WINDOW_MS = 320;        // ms of green zone either side of center
+const FLETCHING_GOLD_PERFECT = 3;
+const FLETCHING_GOLD_OK = 1;
+const FLETCHING_GAME_COOLDOWN_MS = 3000; // ms before player can start another session
+
+const FLETCHER_INTERACT_RADIUS = 5.5; // tiles — generous so player can stand near door
+const FLETCHER_ARROW_PICKUP_COUNT = 10; // arrows given per visit
+const FLETCHER_PICKUP_COOLDOWN_MS = 8000; // prevent instant re-pickup
+
+const ARCHER_DELIVER_RADIUS = 3.0;
+const ARROW_DELIVER_GOLD_PER_ARROW = 2; // gold earned per arrow delivered
+
+function nearestFletcherBuilding(player) {
+  let best = null;
+  let bd = Infinity;
+  for (const b of BUILDING_LIST) {
+    if (b.type !== "fletcher") continue;
+    const cx = b.x + b.w / 2;
+    const cy = b.y + b.h / 2;
+    const d = Math.hypot(player.x - cx, player.y - cy);
+    if (d < bd && d <= FLETCHER_INTERACT_RADIUS) {
+      bd = d;
+      best = b;
+    }
+  }
+  return best;
+}
+
+function nearestNeedyArcher(player) {
+  let best = null;
+  let bd = Infinity;
+  for (const id of TOWN_ARCHER_IDS) {
+    const npc = getNpcById(id);
+    if (!npc) continue;
+    const ax = Number.isFinite(npc.supplyX) ? npc.supplyX : npc.homeX;
+    const ay = Number.isFinite(npc.supplyY) ? npc.supplyY : npc.homeY;
+    const d = Math.hypot(player.x - ax, player.y - ay);
+    if (d < bd && d <= ARCHER_DELIVER_RADIUS) {
+      bd = d;
+      best = npc;
+    }
+  }
+  return best;
+}
+
+function handleFletcherBuildingInteract(client, message) {
+  if (!client.player) return false;
+  const player = client.player;
+
+  const bld = nearestFletcherBuilding(player);
+  if (!bld) return false;
+
+  const now = Date.now();
+
+  // If player is carrying arrows, just remind them to deliver
+  if ((player.carryingArrows || 0) > 0) {
+    send(client, { type: "serverMessage", message: "fletcher_carrying_already" });
+    pushChat({ kind: "system", name: "Realm", text: `You're already carrying ${player.carryingArrows} arrows. Deliver them to wall archers first!` });
+    return true;
+  }
+
+  // If active fletching game, don't start a new one
+  if (player._fletchingGame && player._fletchingGame.active) {
+    return true;
+  }
+
+  // Cooldown check
+  if ((player._fletcherPickupAt || 0) + FLETCHER_PICKUP_COOLDOWN_MS > now) {
+    const secsLeft = Math.ceil(((player._fletcherPickupAt || 0) + FLETCHER_PICKUP_COOLDOWN_MS - now) / 1000);
+    pushChat({ kind: "system", name: "Realm", text: `The fletcher needs ${secsLeft}s to prepare more arrows.` });
+    return true;
+  }
+
+  // Start fletching mini-game
+  const sessionId = Math.random().toString(36).slice(2, 10);
+  player._fletchingGame = {
+    sessionId,
+    active: true,
+    shaft: 0,
+    totalShafts: FLETCHING_GAME_SHAFTS,
+    startedAt: now,
+    beatStartedAt: now,
+    goldEarned: 0
+  };
+  send(client, {
+    type: "fletchingMinigame",
+    sessionId,
+    totalShafts: FLETCHING_GAME_SHAFTS,
+    beatIntervalMs: FLETCHING_BEAT_INTERVAL_MS,
+    windowMs: FLETCHING_WINDOW_MS
+  });
+  return true;
+}
+
+function handleFletchingTap(client, message) {
+  if (!client.player) return;
+  const player = client.player;
+  const game = player._fletchingGame;
+  if (!game || !game.active || game.sessionId !== message.sessionId) return;
+
+  const now = Date.now();
+  const elapsed = now - game.beatStartedAt;
+  const center = FLETCHING_BEAT_INTERVAL_MS / 2;
+  const dist = Math.abs(elapsed - center);
+  let quality = "miss";
+  let gold = 0;
+  if (dist <= FLETCHING_WINDOW_MS / 4) {
+    quality = "perfect";
+    gold = FLETCHING_GOLD_PERFECT;
+  } else if (dist <= FLETCHING_WINDOW_MS / 2) {
+    quality = "good";
+    gold = FLETCHING_GOLD_OK;
+  }
+
+  game.goldEarned += gold;
+  game.shaft += 1;
+  game.beatStartedAt = now;
+
+  const done = game.shaft >= game.totalShafts;
+  if (done) {
+    game.active = false;
+    player.carryingArrows = FLETCHER_ARROW_PICKUP_COUNT;
+    player._fletcherPickupAt = now;
+    if (game.goldEarned > 0) {
+      player.gold = Math.min(100000000, (player.gold || 0) + game.goldEarned);
+      saveClientCharacter(client);
+    }
+    send(client, { type: "fletchingResult", sessionId: game.sessionId, quality, gold, totalGold: game.goldEarned, arrows: FLETCHER_ARROW_PICKUP_COUNT, done: true });
+    pushChat({ kind: "system", name: "Realm", text: `Fletching done! Earned ${game.goldEarned} gold. You have ${FLETCHER_ARROW_PICKUP_COUNT} arrows — deliver them to wall archers!` });
+    broadcastSnapshot();
+  } else {
+    send(client, { type: "fletchingResult", sessionId: game.sessionId, quality, gold, shaft: game.shaft, totalShafts: game.totalShafts, done: false });
+  }
+}
+
+function handleArrowDelivery(client, message) {
+  if (!client.player) return false;
+  const player = client.player;
+  if (!(player.carryingArrows > 0)) return false;
+
+  const archer = nearestNeedyArcher(player);
+  if (!archer) return false;
+
+  const need = Math.max(0, (Number(archer.ammoMax) || 24) - (Number(archer.ammo) || 0));
+  if (need <= 0) {
+    send(client, { type: "serverMessage", message: "archer_full" });
+    return true;
+  }
+
+  const deliver = Math.min(player.carryingArrows, need);
+  archer.ammo = Math.min(Number(archer.ammoMax) || 24, (Number(archer.ammo) || 0) + deliver);
+  player.carryingArrows -= deliver;
+
+  const goldEarned = deliver * ARROW_DELIVER_GOLD_PER_ARROW;
+  player.gold = Math.min(100000000, (player.gold || 0) + goldEarned);
+  saveClientCharacter(client);
+
+  send(client, { type: "arrowDelivered", delivered: deliver, goldEarned, remaining: player.carryingArrows });
+  pushChat({ kind: "system", name: "Realm", text: `Delivered ${deliver} arrows → +${goldEarned} gold! ${player.carryingArrows > 0 ? `${player.carryingArrows} arrows left to deliver.` : "Quiver empty — pick up more from a fletcher."}` });
+  broadcastSnapshot();
+  return true;
 }
 
 function handlePickupGroundItem(client, message) {

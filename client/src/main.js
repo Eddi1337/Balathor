@@ -783,7 +783,9 @@ const state = {
   /** Full-screen blackout after choosing “make rumpi pumpi” with your partner at home */
   intimateBlackoutUntil: 0,
   /** After waking, keep the companion posed in bed for a short beat */
-  morningAfterCompanionBedUntil: 0
+  morningAfterCompanionBedUntil: 0,
+  /** @type {{ sessionId: string, totalShafts: number, beatIntervalMs: number, windowMs: number, shaft: number, beatStartedAt: number, done: boolean, lastQuality: string|null, lastGold: number } | null} */
+  fletchingGame: null
 };
 
 const SPEECH_BUBBLE_MS = 5200;
@@ -1629,6 +1631,44 @@ function handleServerMessage(message) {
     } else if (message.itemName) {
       appendChat({ kind: "system", name: "Realm", text: `${message.itemName}` });
     }
+  }
+
+  if (message.type === "arrowPickup") {
+    state.fletchingGame = null;
+    broadcastSnapshot();
+    return;
+  }
+
+  if (message.type === "arrowDelivered") {
+    return;
+  }
+
+  if (message.type === "fletchingMinigame") {
+    state.fletchingGame = {
+      sessionId: message.sessionId,
+      totalShafts: message.totalShafts || 6,
+      beatIntervalMs: message.beatIntervalMs || 1600,
+      windowMs: message.windowMs || 320,
+      shaft: 0,
+      beatStartedAt: performance.now(),
+      done: false,
+      lastQuality: null,
+      lastGold: 0
+    };
+    return;
+  }
+
+  if (message.type === "fletchingResult") {
+    if (!state.fletchingGame) return;
+    state.fletchingGame.lastQuality = message.quality;
+    state.fletchingGame.lastGold = message.gold || 0;
+    state.fletchingGame.shaft = message.shaft || state.fletchingGame.shaft + 1;
+    state.fletchingGame.beatStartedAt = performance.now();
+    if (message.done) {
+      state.fletchingGame.done = true;
+      setTimeout(() => { state.fletchingGame = null; }, 2000);
+    }
+    return;
   }
 
   if (message.type === "buildingOwnership") {
@@ -3458,6 +3498,11 @@ function wireUi() {
     // Ship engage — Space thrusts forward when flying; attacks when on ground
     if (event.code === "Space" && state.joined && !isTextEntryTarget(event.target)) {
       event.preventDefault();
+      // Fletching mini-game tap
+      if (state.fletchingGame && !state.fletchingGame.done) {
+        send({ type: "fletchingTap", sessionId: state.fletchingGame.sessionId });
+        return;
+      }
       if (isSelfOnShip()) {
         const role = selfShipStationRole();
         state.input.engage = Boolean(isPilotShipRole(role) || (isSelfFlyingShip() && !role));
@@ -3497,6 +3542,11 @@ function wireUi() {
 
     if (event.key.toLowerCase() === "e" && state.joined && !isTextEntryTarget(event.target)) {
       event.preventDefault();
+      // If fletching mini-game is active, tap it
+      if (state.fletchingGame && !state.fletchingGame.done) {
+        send({ type: "fletchingTap", sessionId: state.fletchingGame.sessionId });
+        return;
+      }
       const self = state.players.get(state.selfId);
       if (!self || !tryOpenBuyHouseNearPlayer()) {
         sendInteract();
@@ -7237,6 +7287,8 @@ function draw() {
   // even when the player has zoomed out and the scaled world doesn't fill the canvas.
   drawLighting();
   drawQuestHelperArrow();
+  drawFletchingMinigameOverlay();
+  drawArrowCarryHud();
   drawPortalTransitionOverlay();
   drawPubPassoutOverlay();
   drawIntimateBlackoutOverlay();
@@ -7620,11 +7672,6 @@ function drawRoadsideFeatures(minTileX, maxTileX, minTileY, maxTileY) {
       ctx.translate(0, 12);
       drawBenchLocal();
       ctx.restore();
-    } else if (f.kind === "fletcher_shed") {
-      ctx.save();
-      ctx.translate(cx, gy - 2);
-      drawFletcherShedLocal(fw);
-      ctx.restore();
     } else if (f.kind === "market_stand") {
       const ftw = fw;
       ctx.save();
@@ -7681,6 +7728,130 @@ function drawPubPassoutOverlay() {
   ctx.fillStyle = "rgba(240, 232, 255, 0.5)";
   ctx.fillText("…heavy boots and distant laughter …", canvas.width / 2, canvas.height * 0.48);
   ctx.restore();
+}
+
+function drawFletchingMinigameOverlay() {
+  const game = state.fletchingGame;
+  if (!game) return;
+
+  const now = performance.now();
+  const W = canvas.width;
+  const H = canvas.height;
+  const cx = W / 2;
+  const cy = H * 0.78;
+  const barW = Math.min(280, W * 0.55);
+  const barH = 24;
+  const bx = cx - barW / 2;
+  const by = cy - barH / 2;
+
+  // Background panel
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "rgba(20,12,4,0.82)";
+  roundRect(ctx, bx - 18, by - 34, barW + 36, barH + 56, 8);
+  ctx.fill();
+  ctx.strokeStyle = "#c89040";
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, bx - 18, by - 34, barW + 36, barH + 56, 8);
+  ctx.stroke();
+
+  // Title
+  ctx.fillStyle = "#e8c060";
+  ctx.font = "bold 12px monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.fillText(`Fletching — shaft ${Math.min(game.shaft + 1, game.totalShafts)} / ${game.totalShafts}`, cx, by - 28);
+
+  // Track background
+  ctx.fillStyle = "#3a2008";
+  ctx.fillRect(bx, by, barW, barH);
+
+  // Green zone (middle window)
+  const winFrac = game.windowMs / game.beatIntervalMs;
+  const greenW = barW * winFrac;
+  ctx.fillStyle = "rgba(60,200,80,0.55)";
+  ctx.fillRect(bx + barW / 2 - greenW / 2, by, greenW, barH);
+  // Perfect zone (middle half of window)
+  ctx.fillStyle = "rgba(100,240,100,0.35)";
+  ctx.fillRect(bx + barW / 2 - greenW / 4, by, greenW / 2, barH);
+
+  // Needle — oscillates over beatIntervalMs
+  const elapsed = now - game.beatStartedAt;
+  const t = (elapsed % game.beatIntervalMs) / game.beatIntervalMs; // 0→1
+  const needleX = bx + t * barW;
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(needleX - 2, by - 2, 4, barH + 4);
+
+  // Instruction
+  ctx.fillStyle = "#c8a050";
+  ctx.font = "10px monospace";
+  ctx.fillText("Press [E] or [Space] in the green zone", cx, by + barH + 5);
+
+  // Last result flash
+  if (game.lastQuality) {
+    const col = game.lastQuality === "perfect" ? "#80ff80" : game.lastQuality === "good" ? "#e8e060" : "#ff6060";
+    const text = game.lastQuality === "perfect" ? `PERFECT! +${game.lastGold}g` : game.lastQuality === "good" ? `Good! +${game.lastGold}g` : "Miss…";
+    ctx.fillStyle = col;
+    ctx.font = "bold 13px monospace";
+    ctx.fillText(text, cx, by - 14);
+  }
+
+  if (game.done) {
+    ctx.fillStyle = "rgba(20,12,4,0.7)";
+    ctx.fillRect(bx, by, barW, barH);
+    ctx.fillStyle = "#80ff80";
+    ctx.font = "bold 14px monospace";
+    ctx.fillText("Done! Arrows ready.", cx, by + barH / 2 - 6);
+  }
+
+  ctx.restore();
+}
+
+function drawArrowCarryHud() {
+  const self = state.players.get(state.selfId);
+  if (!self || !(self.carryingArrows > 0)) return;
+
+  const W = canvas.width;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "rgba(20,12,4,0.78)";
+  const panelW = 170;
+  const panelH = 28;
+  const px = W / 2 - panelW / 2;
+  const py = canvas.height * 0.88;
+  roundRect(ctx, px, py, panelW, panelH, 6);
+  ctx.fill();
+  ctx.strokeStyle = "#c8a050";
+  ctx.lineWidth = 1.2;
+  roundRect(ctx, px, py, panelW, panelH, 6);
+  ctx.stroke();
+
+  // Arrow icon + count
+  ctx.fillStyle = "#c88830";
+  for (let ai = 0; ai < Math.min(self.carryingArrows, 5); ai++) {
+    ctx.fillRect(px + 8 + ai * 7, py + 10, 2, 10);
+    ctx.fillRect(px + 7 + ai * 7, py + 8, 4, 2);
+  }
+  ctx.fillStyle = "#e8c060";
+  ctx.font = "bold 11px monospace";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(`${self.carryingArrows}x arrows — deliver to archers`, px + 48, py + panelH / 2);
+  ctx.restore();
+}
+
+function roundRect(ctx2, x, y, w, h, r) {
+  ctx2.beginPath();
+  ctx2.moveTo(x + r, y);
+  ctx2.lineTo(x + w - r, y);
+  ctx2.arcTo(x + w, y, x + w, y + r, r);
+  ctx2.lineTo(x + w, y + h - r);
+  ctx2.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx2.lineTo(x + r, y + h);
+  ctx2.arcTo(x, y + h, x, y + h - r, r);
+  ctx2.lineTo(x, y + r);
+  ctx2.arcTo(x, y, x + r, y, r);
+  ctx2.closePath();
 }
 
 function drawTraderCaravans(minTileX, maxTileX, minTileY, maxTileY) {
@@ -10663,6 +10834,23 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
     ctx.fillRect(rAX, rAY, 2 * s, 4 * s);
   }
 
+  // Held arrow bundle for player carrying arrows
+  if (!isNpc && Number(entity.carryingArrows) > 0) {
+    const bundleCount = Math.min(7, Math.max(1, Math.ceil(Number(entity.carryingArrows) / 2)));
+    const bundleY = by - 2 * s;
+    ctx.save();
+    for (let i = 0; i < bundleCount; i++) {
+      const yo = Math.round((i - (bundleCount - 1) / 2) * (s + 1));
+      ctx.fillStyle = "#d4a840";
+      ctx.fillRect(bx - 8 * s, bundleY + yo, 14 * s, Math.max(1, s - 1));
+      ctx.fillStyle = "#4a2a10";
+      ctx.fillRect(bx + 6 * s, bundleY + yo - 1, Math.round(2 * s), Math.max(2, s + 1));
+      ctx.fillStyle = "#e8c060";
+      ctx.fillRect(bx - 10 * s, bundleY + yo, Math.round(2 * s), Math.max(1, s - 1));
+    }
+    ctx.restore();
+  }
+
   // Held arrow bundle for courier NPCs
   if (isNpc && entity.isArrowCourier && Number(entity.carryAmount) > 0) {
     const bundleCount = Math.min(7, Math.max(1, Math.ceil(Number(entity.carryAmount) / 3)));
@@ -13428,6 +13616,7 @@ function drawBuildingSprite(building, sx, sy, roofless) {
   else if (type === "big_house") drawBigHouse(building, sx, sy, w, h, variant, roofless);
   else if (type === "treehouse") drawTreehouse(building, sx, sy, w, h, variant, roofless);
   else if (type === "castle") drawCastle(building, sx, sy, w, h, variant, roofless);
+  else if (type === "fletcher") drawFletcherBuilding(building, sx, sy, w, h, roofless);
   else drawHouse(building, sx, sy, w, h, variant, roofless);
 
   // Owner name or for-sale sign
@@ -13779,6 +13968,119 @@ function drawHut(building, sx, sy, w, h, variant, roofless) {
 
   ctx.restore();
   drawBuildingFrontDetail(sx + 2, sx + w - 2, sy + h, variant, p);
+}
+
+function drawFletcherBuilding(building, sx, sy, w, h, roofless) {
+  const wallH = Math.max(44, Math.min(64, Math.round(h * 0.30)));
+  const roofH = h - wallH;
+  const wallY = sy + roofH;
+  const wallCol = "#8b6a3a";
+  const wallLt = "#a07a48";
+  const wallDk = "#5a3e1a";
+  const roofBase = "#5c3d1a";
+  const roofMid = "#7a5228";
+  const roofRidge = "#3a2008";
+
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.32)";
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetX = 4;
+  ctx.shadowOffsetY = 6;
+
+  if (!roofless) {
+    // Pitched roof — warm dark brown
+    const ridgeY = sy + Math.round(roofH * 0.28);
+    ctx.fillStyle = roofRidge;
+    ctx.fillRect(sx - 4, sy, w + 8, ridgeY - sy + 1);
+    ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+    ctx.fillStyle = roofBase;
+    ctx.fillRect(sx - 4, ridgeY, w + 8, wallY - ridgeY);
+    const sh = 5;
+    for (let ly = 3; ly < wallY - ridgeY - 2; ly += sh + 2) {
+      ctx.fillStyle = roofMid;
+      ctx.fillRect(sx - 4, ridgeY + ly, w + 8, sh);
+      ctx.fillStyle = roofRidge;
+      ctx.fillRect(sx - 4, ridgeY + ly + sh, w + 8, 1);
+    }
+    ctx.fillStyle = "#c8a060";
+    ctx.fillRect(sx - 4, ridgeY - 2, w + 8, 4);
+
+    // Small chimney on left side
+    ctx.fillStyle = "#6a5040";
+    ctx.fillRect(sx + Math.round(w * 0.18), ridgeY - 10, 8, 14);
+    ctx.fillStyle = "#4a3020";
+    ctx.fillRect(sx + Math.round(w * 0.18) - 1, ridgeY - 12, 10, 4);
+    // Smoke puff hint
+    ctx.fillStyle = "rgba(180,160,140,0.3)";
+    ctx.beginPath();
+    ctx.arc(sx + Math.round(w * 0.18) + 4, ridgeY - 16, 5, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+  }
+
+  if (!roofless) {
+    // Wall — warm timber planks
+    ctx.fillStyle = wallCol;
+    ctx.fillRect(sx + 2, wallY, w - 4, wallH);
+    // Plank lines
+    ctx.fillStyle = wallDk;
+    for (let px = 4; px < wallH; px += 8) {
+      ctx.fillRect(sx + 2, wallY + px, w - 4, 1);
+    }
+    ctx.fillStyle = wallLt;
+    ctx.fillRect(sx + 2, wallY, w - 4, 3);
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.fillRect(sx + 2, wallY, 3, wallH);
+    ctx.fillRect(sx + w - 5, wallY, 3, wallH);
+  }
+
+  // Door
+  const doorW = Math.max(12, Math.round(w * 0.22));
+  const doorH = wallH - 4;
+  const doorX = sx + Math.round(w / 2) - Math.round(doorW / 2);
+  const doorY = wallY + wallH - doorH;
+  if (!roofless) {
+    const doorOpen = getFrontDoorOpenFactor(building, roofless);
+    drawSplitWoodenDoor({ door: "#6b4820", doorFrame: "#3a2008", doorDark: "#2a1404", doorKnob: "#d4a030", wallDark: wallDk }, doorX, doorY, doorW, doorH, doorOpen, 2, false);
+
+    // Arrow-bundle decoration on right wall beside door
+    const bx = doorX + doorW + 5;
+    const by = wallY + 6;
+    ctx.fillStyle = "#4a3010";
+    ctx.fillRect(bx, by, 4, wallH - 10); // quiver
+    ctx.fillStyle = "#c88830";
+    for (let ai = 0; ai < 4; ai++) {
+      ctx.fillRect(bx + 1, by - 3 - ai * 2, 2, 6);
+    }
+
+    // FLETCHER sign on the wall
+    ctx.save();
+    ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+    const signY = wallY + 8;
+    ctx.fillStyle = "#3a2008";
+    ctx.fillRect(sx + Math.round(w * 0.12), signY - 2, Math.round(w * 0.56), 13);
+    ctx.fillStyle = "#e8c060";
+    ctx.font = "bold 8px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("FLETCHER", sx + w / 2, signY + 8);
+    ctx.restore();
+
+    // Left window showing arrow shaft work
+    const winW = 11; const winH = Math.max(8, wallH - 22);
+    drawHouseWindow(sx + Math.round(w * 0.10), wallY + 12, winW, winH, { wallDark: "#3a2008", win: "rgba(180,220,255,0.55)" });
+  }
+
+  ctx.restore();
+  // Ground detail: wood shavings scatter
+  ctx.save();
+  ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+  ctx.fillStyle = "rgba(180,140,70,0.35)";
+  for (let gi = 0; gi < 6; gi++) {
+    const gx2 = sx + 8 + (gi * 19) % (w - 16);
+    ctx.fillRect(gx2, sy + h + 1, 5, 2);
+  }
+  ctx.restore();
 }
 
 function drawBigHouse(building, sx, sy, w, h, variant, roofless) {
