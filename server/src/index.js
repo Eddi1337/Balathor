@@ -776,6 +776,11 @@ let lastSimulateWallMs = Date.now();
 const simulateWallIntervals = [];
 const SIM_WALL_SAMPLES_MAX = 60;
 
+/** Per-section timing accumulators (microseconds, reset every PERF_LOG_INTERVAL ticks). */
+const PERF_LOG_INTERVAL = 300;
+const perfAcc = { players: 0, npcs: 0, assaults: 0, mobs: 0, archers: 0, defenses: 0, caravans: 0, consecration: 0, snapshot: 0 };
+let perfLastSnapshot = null;
+
 const worldDb = openWorldDb();
 const ownedBuildings = loadBuildingOwnership(worldDb); // key: "x,y" → { ownerAccountKey, ownerName, price }
 {
@@ -2427,6 +2432,7 @@ function simulate() {
   recordSimulateWallInterval();
   tick += 1;
   const dt = 1 / TICK_RATE;
+  const _perfT0 = process.hrtime.bigint();
 
   for (const client of clients.values()) {
     if (!client.player) {
@@ -2633,6 +2639,8 @@ function simulate() {
     handlePortalTravel(client);
   }
 
+  perfAcc.players += Number(process.hrtime.bigint() - _perfT0) / 1e3;
+
   const companionAiTargets = [];
   const allNpcPlayers = [];
   for (const c of clients.values()) {
@@ -2649,6 +2657,7 @@ function simulate() {
     });
   }
 
+  let _pt = process.hrtime.bigint();
   updateNpcs(dt, pushChat, computeNpcActivationBounds(), {
     targets: companionAiTargets,
     allPlayers: allNpcPlayers,
@@ -2658,18 +2667,49 @@ function simulate() {
       }
     }
   });
-  processAssaultWaves(Date.now());
-  updateMobs(dt, computePlayerViewBoundsArray(CHAT_VIEW_MARGIN_TILES + MOB_ACTIVITY_MARGIN_TILES));
-  processGatekeeperArchers(Date.now());
-  processStationDefenses(Date.now());
-  updateCaravans(dt);
+  perfAcc.npcs += Number(process.hrtime.bigint() - _pt) / 1e3;
 
+  _pt = process.hrtime.bigint();
+  processAssaultWaves(Date.now());
+  perfAcc.assaults += Number(process.hrtime.bigint() - _pt) / 1e3;
+
+  _pt = process.hrtime.bigint();
+  updateMobs(dt, computePlayerViewBoundsArray(CHAT_VIEW_MARGIN_TILES + MOB_ACTIVITY_MARGIN_TILES));
+  perfAcc.mobs += Number(process.hrtime.bigint() - _pt) / 1e3;
+
+  _pt = process.hrtime.bigint();
+  processGatekeeperArchers(Date.now());
+  perfAcc.archers += Number(process.hrtime.bigint() - _pt) / 1e3;
+
+  _pt = process.hrtime.bigint();
+  processStationDefenses(Date.now());
+  perfAcc.defenses += Number(process.hrtime.bigint() - _pt) / 1e3;
+
+  _pt = process.hrtime.bigint();
+  updateCaravans(dt);
+  perfAcc.caravans += Number(process.hrtime.bigint() - _pt) / 1e3;
+
+  _pt = process.hrtime.bigint();
   processConsecrationZones(Date.now());
+  perfAcc.consecration += Number(process.hrtime.bigint() - _pt) / 1e3;
 
   snapshotAccumulator += SNAPSHOT_RATE;
+  _pt = process.hrtime.bigint();
   if (snapshotAccumulator >= TICK_RATE) {
     snapshotAccumulator -= TICK_RATE;
     broadcastSnapshot();
+  }
+  perfAcc.snapshot += Number(process.hrtime.bigint() - _pt) / 1e3;
+
+  if (tick % PERF_LOG_INTERVAL === 0) {
+    const total = Object.values(perfAcc).reduce((a, b) => a + b, 0);
+    const fmt = (us) => `${(us / PERF_LOG_INTERVAL / 1e3).toFixed(3)}ms`;
+    const pct = (us) => `${((us / total) * 100).toFixed(1)}%`;
+    const sorted = Object.entries(perfAcc).sort((a, b) => b[1] - a[1]);
+    perfLastSnapshot = Object.fromEntries(sorted.map(([k, v]) => [k, { avgMs: parseFloat((v / PERF_LOG_INTERVAL / 1e3).toFixed(3)), pct: parseFloat(((v / total) * 100).toFixed(1)) }]));
+    const lines = sorted.map(([k, v]) => `  ${k.padEnd(14)} ${fmt(v).padStart(9)}  ${pct(v).padStart(6)}`).join("\n");
+    console.log(`[perf] tick=${tick} total=${fmt(total)}/tick players=${clients.size}\n${lines}`);
+    for (const k of Object.keys(perfAcc)) perfAcc[k] = 0;
   }
 }
 
@@ -3052,7 +3092,8 @@ function handleMessage(client, raw) {
       tick,
       tickRate: TICK_RATE,
       snapshotRate: SNAPSHOT_RATE,
-      simHz: getMeasuredSimHz()
+      simHz: getMeasuredSimHz(),
+      perf: perfLastSnapshot
     });
     return;
   }
