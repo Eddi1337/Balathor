@@ -8028,12 +8028,12 @@ function getShipLayout(shipOrClass = "skiff") {
       deckW: 18,
       deckH: 10,
       entry: { x: -7, y: 0 },
-      teleporter: { x: -2.5, y: 0 },
+      teleporter: { x: -2.0, y: 0 },
       stations: [
         { id: "captain", role: "captain", name: "Captain", x: 3.2, y: 0 },
         { id: "pilot", role: "pilot", name: "Pilot", x: 5.1, y: -1 },
         { id: "copilot", role: "copilot", name: "Co-Pilot", x: 5.1, y: 1 },
-        { id: "gunner_aft", role: "gunner", name: "Gunner", x: -6.5, y: 0 },
+        { id: "gunner_aft", role: "gunner", name: "Gunner", x: -5.5, y: 0 },
         { id: "engineer_mid", role: "engineer", name: "Forward Engineering", x: -1.2, y: -2, defaultShieldFacing: "front" },
         { id: "engineer_aux", role: "engineer", name: "Aft Engineering", x: -1.6, y: 2, defaultShieldFacing: "back" }
       ],
@@ -8051,11 +8051,11 @@ function getShipLayout(shipOrClass = "skiff") {
       deckW: 14,
       deckH: 8,
       entry: { x: -5, y: 0 },
-      teleporter: { x: -1.5, y: 0 },
+      teleporter: { x: -1.0, y: 0 },
       stations: [
         { id: "pilot", role: "pilot", name: "Pilot", x: 3.4, y: -1 },
         { id: "copilot", role: "copilot", name: "Co-Pilot", x: 3.4, y: 1 },
-        { id: "gunner_aft", role: "gunner", name: "Gunner", x: -5.5, y: 0 },
+        { id: "gunner_aft", role: "gunner", name: "Gunner", x: -4.2, y: 0 },
         { id: "engineer_mid", role: "engineer", name: "Engineering", x: -0.7, y: 0, defaultShieldFacing: "front" }
       ],
       amenities: [
