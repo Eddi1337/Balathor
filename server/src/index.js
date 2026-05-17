@@ -97,9 +97,12 @@ function readIntEnv(name, fallback, min, max) {
 
 const TICK_RATE = readRateEnv("TICK_RATE", 60, 20, 120);
 const SNAPSHOT_RATE = Math.min(TICK_RATE, readRateEnv("SNAPSHOT_RATE", 20, 5, 60));
+const AI_TICK_DIVISOR = readIntEnv("AI_TICK_DIVISOR", 3, 1, 6);
 const CPU_COUNT = typeof os.availableParallelism === "function" ? os.availableParallelism() : os.cpus().length;
 const CHUNK_WORKER_COUNT = readIntEnv("CHUNK_WORKERS", Math.max(1, Math.min(4, CPU_COUNT - 1)), 0, Math.max(1, CPU_COUNT));
-const MAX_CONNECTED_CLIENTS = Number(process.env.MAX_CLIENTS || 180);
+const MAX_CONNECTED_CLIENTS = Number(process.env.MAX_CLIENTS || 500);
+const LISTEN_BACKLOG = readIntEnv("LISTEN_BACKLOG", 1024, 128, 8192);
+const MAX_SOCKET_BUFFER_BYTES = readIntEnv("MAX_SOCKET_BUFFER_BYTES", 1_000_000, 64_000, 16_000_000);
 const MSG_RATE_LIMIT = 240; // max messages per second per client before dropping
 // Base player movement speed (tiles per second).
 const PLAYER_SPEED = 5.2;
@@ -117,6 +120,7 @@ const CHAT_COOLDOWN_MS = 800;
 const CHAT_VIEW_MARGIN_TILES = 4;
 /** Extra tiles beyond snapshot view union — mob AI + roam so critters/off-screen camps still simulate near players */
 const MOB_ACTIVITY_MARGIN_TILES = 52;
+const PLAYER_TARGET_BUCKET_SIZE = 24;
 /** Always tick NPC AI across the walled hub so crowd NPCs roam even far from players. */
 const NPC_HUB_AI_PAD_TILES = 125;
 const PORTAL_COOLDOWN_MS = 2400;
@@ -884,7 +888,11 @@ const server = http.createServer((req, res) => {
     sendJson(res, 200, {
       ok: true,
       players: [...clients.values()].filter((client) => client.player).length,
+      connections: clients.size,
+      maxClients: MAX_CONNECTED_CLIENTS,
       tickRate: TICK_RATE,
+      snapshotRate: SNAPSHOT_RATE,
+      aiTickDivisor: AI_TICK_DIVISOR,
       chunkWorkers: chunkWorkerPool.length,
       chunkQueue: chunkGenQueue.length,
       chunkSize: CHUNK_SIZE
@@ -959,7 +967,7 @@ server.on("upgrade", (req, socket) => {
   socket.on("close", () => disconnect(client));
 });
 
-server.listen(PORT, HOST, () => {
+server.listen(PORT, HOST, LISTEN_BACKLOG, () => {
   console.log(`Balathor server listening on ${HOST}:${PORT}`);
   if (DISCORD_AUTH_WEBHOOK_URL && isAllowedDiscordWebhookUrl(DISCORD_AUTH_WEBHOOK_URL)) {
     console.log("Balathor: Discord auth webhook enabled");
@@ -2428,11 +2436,29 @@ function mobShouldSimulateAny(mob, boundsArray) {
   return false;
 }
 
+function buildAboardShipClientIndex() {
+  const out = new Map();
+  for (const passengerClient of clients.values()) {
+    const passenger = passengerClient.player;
+    if (!passenger || typeof passenger.aboardShipId !== "string" || !passenger.aboardShipId) {
+      continue;
+    }
+    let list = out.get(passenger.aboardShipId);
+    if (!list) {
+      list = [];
+      out.set(passenger.aboardShipId, list);
+    }
+    list.push(passengerClient);
+  }
+  return out;
+}
+
 function simulate() {
   recordSimulateWallInterval();
   tick += 1;
   const dt = 1 / TICK_RATE;
   const _perfT0 = process.hrtime.bigint();
+  const aboardShipClients = buildAboardShipClientIndex();
 
   for (const client of clients.values()) {
     if (!client.player) {
@@ -2491,9 +2517,10 @@ function simulate() {
         const shipDx = (ship.worldX ?? prevShipX) - prevShipX;
         const shipDy = (ship.worldY ?? prevShipY) - prevShipY;
         if (shipDx !== 0 || shipDy !== 0) {
-          for (const passengerClient of clients.values()) {
+          const passengers = aboardShipClients.get(ship.id) || [];
+          for (const passengerClient of passengers) {
             const passenger = passengerClient.player;
-            if (!passenger || passenger.aboardShipId !== ship.id) continue;
+            if (!passenger) continue;
             passenger.x += shipDx;
             passenger.y += shipDy;
           }
@@ -2641,60 +2668,64 @@ function simulate() {
 
   perfAcc.players += Number(process.hrtime.bigint() - _perfT0) / 1e3;
 
-  const companionAiTargets = [];
-  const allNpcPlayers = [];
-  for (const c of clients.values()) {
-    const p = c.player;
-    if (!p) continue;
-    allNpcPlayers.push({ player: p, client: c });
-    if (!p.homeBuildingKey || p.houseCompanion) continue;
-    const own = ownedBuildings.get(String(p.homeBuildingKey));
-    if (!own || !c.account || own.ownerAccountKey !== c.account.key) continue;
-    companionAiTargets.push({
-      player: p,
-      client: c,
-      stillAccumulator: p._stillAccumulator || 0
+  const runWorldAi = tick % AI_TICK_DIVISOR === 0;
+  const aiDt = dt * AI_TICK_DIVISOR;
+  if (runWorldAi) {
+    const companionAiTargets = [];
+    const allNpcPlayers = [];
+    for (const c of clients.values()) {
+      const p = c.player;
+      if (!p) continue;
+      allNpcPlayers.push({ player: p, client: c });
+      if (!p.homeBuildingKey || p.houseCompanion) continue;
+      const own = ownedBuildings.get(String(p.homeBuildingKey));
+      if (!own || !c.account || own.ownerAccountKey !== c.account.key) continue;
+      companionAiTargets.push({
+        player: p,
+        client: c,
+        stillAccumulator: p._stillAccumulator || 0
+      });
+    }
+
+    let _pt = process.hrtime.bigint();
+    updateNpcs(aiDt, pushChat, computeNpcActivationBounds(), {
+      targets: companionAiTargets,
+      allPlayers: allNpcPlayers,
+      tryOffer(npc, buddyRow) {
+        if (buddyRow?.client) {
+          sendCompanionPurchaseOffer(npc, buddyRow.client, Date.now());
+        }
+      }
     });
+    perfAcc.npcs += Number(process.hrtime.bigint() - _pt) / 1e3;
+
+    _pt = process.hrtime.bigint();
+    processAssaultWaves(Date.now());
+    perfAcc.assaults += Number(process.hrtime.bigint() - _pt) / 1e3;
+
+    _pt = process.hrtime.bigint();
+    updateMobs(aiDt, computePlayerViewBoundsArray(CHAT_VIEW_MARGIN_TILES + MOB_ACTIVITY_MARGIN_TILES));
+    perfAcc.mobs += Number(process.hrtime.bigint() - _pt) / 1e3;
+
+    _pt = process.hrtime.bigint();
+    processGatekeeperArchers(Date.now());
+    perfAcc.archers += Number(process.hrtime.bigint() - _pt) / 1e3;
+
+    _pt = process.hrtime.bigint();
+    processStationDefenses(Date.now());
+    perfAcc.defenses += Number(process.hrtime.bigint() - _pt) / 1e3;
+
+    _pt = process.hrtime.bigint();
+    updateCaravans(aiDt);
+    perfAcc.caravans += Number(process.hrtime.bigint() - _pt) / 1e3;
+
+    _pt = process.hrtime.bigint();
+    processConsecrationZones(Date.now());
+    perfAcc.consecration += Number(process.hrtime.bigint() - _pt) / 1e3;
   }
 
-  let _pt = process.hrtime.bigint();
-  updateNpcs(dt, pushChat, computeNpcActivationBounds(), {
-    targets: companionAiTargets,
-    allPlayers: allNpcPlayers,
-    tryOffer(npc, buddyRow) {
-      if (buddyRow?.client) {
-        sendCompanionPurchaseOffer(npc, buddyRow.client, Date.now());
-      }
-    }
-  });
-  perfAcc.npcs += Number(process.hrtime.bigint() - _pt) / 1e3;
-
-  _pt = process.hrtime.bigint();
-  processAssaultWaves(Date.now());
-  perfAcc.assaults += Number(process.hrtime.bigint() - _pt) / 1e3;
-
-  _pt = process.hrtime.bigint();
-  updateMobs(dt, computePlayerViewBoundsArray(CHAT_VIEW_MARGIN_TILES + MOB_ACTIVITY_MARGIN_TILES));
-  perfAcc.mobs += Number(process.hrtime.bigint() - _pt) / 1e3;
-
-  _pt = process.hrtime.bigint();
-  processGatekeeperArchers(Date.now());
-  perfAcc.archers += Number(process.hrtime.bigint() - _pt) / 1e3;
-
-  _pt = process.hrtime.bigint();
-  processStationDefenses(Date.now());
-  perfAcc.defenses += Number(process.hrtime.bigint() - _pt) / 1e3;
-
-  _pt = process.hrtime.bigint();
-  updateCaravans(dt);
-  perfAcc.caravans += Number(process.hrtime.bigint() - _pt) / 1e3;
-
-  _pt = process.hrtime.bigint();
-  processConsecrationZones(Date.now());
-  perfAcc.consecration += Number(process.hrtime.bigint() - _pt) / 1e3;
-
   snapshotAccumulator += SNAPSHOT_RATE;
-  _pt = process.hrtime.bigint();
+  let _pt = process.hrtime.bigint();
   if (snapshotAccumulator >= TICK_RATE) {
     snapshotAccumulator -= TICK_RATE;
     broadcastSnapshot();
@@ -6427,7 +6458,10 @@ function broadcastSnapshot() {
   }
 
   for (const client of clients.values()) {
-    const view = client.player ? client.view || defaultViewForPlayer(client.player) : { x: 0, y: 0, halfW: 40, halfH: 25 };
+    if (!client.player) {
+      continue;
+    }
+    const view = client.view || defaultViewForPlayer(client.player);
 
     const minX = view.x - view.halfW - margin;
     const maxX = view.x + view.halfW + margin;
@@ -6437,51 +6471,32 @@ function broadcastSnapshot() {
     // Each viewer only sees entities sharing the same world (fantasy / sci-fi
     // sector / a specific planet surface). Worlds are otherwise completely
     // isolated — the only crossover is a portal teleport.
-    const viewerWorld = client.player ? worldForPosition(client.player.x, client.player.y) : null;
+    const viewerWorld = worldForPosition(client.player.x, client.player.y);
 
     const playersVisible = [];
     const seenPid = new Set();
 
-    if (client.player) {
-      playersVisible.push(playerSnapshot(client.player, client.player.id));
-      seenPid.add(client.player.id);
-      snapshotForEachCellInWorldRect(minX, maxX, minY, maxY, cellSize, (key) => {
-        const arr = playerBuckets.get(key);
-        if (!arr) {
-          return;
+    playersVisible.push(playerSnapshot(client.player, client.player.id));
+    seenPid.add(client.player.id);
+    snapshotForEachCellInWorldRect(minX, maxX, minY, maxY, cellSize, (key) => {
+      const arr = playerBuckets.get(key);
+      if (!arr) {
+        return;
+      }
+      for (const cli of arr) {
+        const p = cli.player;
+        if (!p || seenPid.has(p.id) || cli === client) {
+          continue;
         }
-        for (const cli of arr) {
-          const p = cli.player;
-          if (!p || seenPid.has(p.id) || cli === client) {
-            continue;
-          }
-          if (viewerWorld && worldForPosition(p.x, p.y) !== viewerWorld) {
-            continue;
-          }
-          if (isInView(view, p.x, p.y)) {
-            seenPid.add(p.id);
-            playersVisible.push(playerSnapshot(p, client.player.id));
-          }
+        if (worldForPosition(p.x, p.y) !== viewerWorld) {
+          continue;
         }
-      });
-    } else {
-      snapshotForEachCellInWorldRect(minX, maxX, minY, maxY, cellSize, (key) => {
-        const arr = playerBuckets.get(key);
-        if (!arr) {
-          return;
+        if (isInView(view, p.x, p.y)) {
+          seenPid.add(p.id);
+          playersVisible.push(playerSnapshot(p, client.player.id));
         }
-        for (const cli of arr) {
-          const p = cli.player;
-          if (!p || seenPid.has(p.id)) {
-            continue;
-          }
-          if (isInView(view, p.x, p.y)) {
-            seenPid.add(p.id);
-            playersVisible.push(playerSnapshot(p, null));
-          }
-        }
-      });
-    }
+      }
+    });
 
     const npcs = [];
     const seenNpc = new Set();
@@ -6494,7 +6509,7 @@ function broadcastSnapshot() {
         if (seenNpc.has(n.id)) {
           continue;
         }
-        if (viewerWorld && worldForPosition(n.x, n.y) !== viewerWorld) {
+        if (worldForPosition(n.x, n.y) !== viewerWorld) {
           continue;
         }
         if (isInView(view, n.x, n.y, npcMargin)) {
@@ -6515,7 +6530,7 @@ function broadcastSnapshot() {
         if (seenMob.has(m.id)) {
           continue;
         }
-        if (viewerWorld && worldForPosition(m.x, m.y) !== viewerWorld) {
+        if (worldForPosition(m.x, m.y) !== viewerWorld) {
           continue;
         }
         if (isInView(view, m.x, m.y)) {
@@ -7970,8 +7985,64 @@ function getCaravansSnapshotForViewer(view) {
   return out;
 }
 
+function addPlayerTargetBucket(index, row) {
+  const cx = Math.floor(row.player.x / index.cellSize);
+  const cy = Math.floor(row.player.y / index.cellSize);
+  const key = `${row.world}|${cx},${cy}`;
+  let bucket = index.buckets.get(key);
+  if (!bucket) {
+    bucket = [];
+    index.buckets.set(key, bucket);
+  }
+  bucket.push(row);
+}
+
+function buildAttackablePlayerTargetIndex() {
+  const index = {
+    cellSize: PLAYER_TARGET_BUCKET_SIZE,
+    buckets: new Map(),
+    byWorld: new Map()
+  };
+
+  for (const client of clients.values()) {
+    const player = client.player;
+    if (!player || player.hp <= 0 || !canAttackAt(player.x, player.y)) {
+      continue;
+    }
+    const world = worldForPosition(player.x, player.y);
+    const row = { player, world };
+    let worldRows = index.byWorld.get(world);
+    if (!worldRows) {
+      worldRows = [];
+      index.byWorld.set(world, worldRows);
+    }
+    worldRows.push(row);
+    addPlayerTargetBucket(index, row);
+  }
+
+  return index;
+}
+
+function forEachPlayerTargetNear(index, world, x, y, radius, visitor) {
+  const cellSize = index.cellSize;
+  const minCx = Math.floor((x - radius) / cellSize);
+  const maxCx = Math.floor((x + radius) / cellSize);
+  const minCy = Math.floor((y - radius) / cellSize);
+  const maxCy = Math.floor((y + radius) / cellSize);
+  for (let cx = minCx; cx <= maxCx; cx += 1) {
+    for (let cy = minCy; cy <= maxCy; cy += 1) {
+      const bucket = index.buckets.get(`${world}|${cx},${cy}`);
+      if (!bucket) continue;
+      for (const row of bucket) {
+        visitor(row.player);
+      }
+    }
+  }
+}
+
 function updateMobs(dt, boundsArray) {
   const now = Date.now();
+  const playerTargets = buildAttackablePlayerTargetIndex();
 
   for (const mob of mobs) {
     if (mob.dead) {
@@ -7991,7 +8062,7 @@ function updateMobs(dt, boundsArray) {
       continue;
     }
 
-    const targetPlayer = nearestAttackablePlayer(mob);
+    const targetPlayer = nearestAttackablePlayer(mob, playerTargets, now);
     if (targetPlayer) {
       mob._targetX = targetPlayer.x;
       mob._targetY = targetPlayer.y;
@@ -8170,7 +8241,7 @@ const PIRATE_ATTACK_RANGE = 14;
 const PIRATE_ATTACK_COOLDOWN_MS = 1400;
 const PIRATE_ALERTED_MS = 30000;
 
-function nearestAttackablePlayer(mob) {
+function nearestAttackablePlayer(mob, playerTargets = null, now = Date.now()) {
   if (mob.isCritter) {
     return null;
   }
@@ -8179,11 +8250,39 @@ function nearestAttackablePlayer(mob) {
   const isPirate = Boolean(mob.isShipPirate);
   const aggroRange = isPirate ? PIRATE_AGGRO_RADIUS : MOB_AGGRO_RADIUS;
   const aggroSq = aggroRange * aggroRange;
-  const now = Date.now();
   // Alerted pirates aggro from anywhere on the map for a window after taking damage.
   const alerted = isPirate && mob._alertedUntil && mob._alertedUntil > now;
 
   const mobWorld = worldForPosition(mob.x, mob.y);
+
+  function consider(player, requireRange) {
+    // Pirates never attack a player who is inside the station safe zone.
+    if (isPirate && isInsideSciFiSafeZone(player.x, player.y)) {
+      return;
+    }
+    const ddx = mob.x - player.x;
+    const ddy = mob.y - player.y;
+    const distSq = ddx * ddx + ddy * ddy;
+    if ((!requireRange || distSq <= aggroSq) && distSq < nearestDistance) {
+      nearest = player;
+      nearestDistance = distSq;
+    }
+  }
+
+  if (playerTargets) {
+    if (alerted) {
+      const rows = playerTargets.byWorld.get(mobWorld) || [];
+      for (const row of rows) {
+        consider(row.player, false);
+      }
+    } else {
+      forEachPlayerTargetNear(playerTargets, mobWorld, mob.x, mob.y, aggroRange, (player) => {
+        consider(player, true);
+      });
+    }
+    return nearest;
+  }
+
   for (const client of clients.values()) {
     const player = client.player;
     if (!player || player.hp <= 0 || !canAttackAt(player.x, player.y)) {
@@ -8194,17 +8293,7 @@ function nearestAttackablePlayer(mob) {
     if (mobWorld !== worldForPosition(player.x, player.y)) {
       continue;
     }
-    // Pirates never attack a player who is inside the station safe zone.
-    if (isPirate && isInsideSciFiSafeZone(player.x, player.y)) {
-      continue;
-    }
-    const ddx = mob.x - player.x;
-    const ddy = mob.y - player.y;
-    const distSq = ddx * ddx + ddy * ddy;
-    if ((alerted || distSq <= aggroSq) && distSq < nearestDistance) {
-      nearest = player;
-      nearestDistance = distSq;
-    }
+    consider(player, !alerted);
   }
 
   return nearest;
@@ -8393,6 +8482,9 @@ function getMobSnapshot(viewBounds) {
 
 function send(client, message) {
   if (!client.alive || client.socket.destroyed) {
+    return;
+  }
+  if (message?.type === "snapshot" && client.socket.writableLength > MAX_SOCKET_BUFFER_BYTES) {
     return;
   }
 
