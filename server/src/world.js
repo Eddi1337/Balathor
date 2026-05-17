@@ -236,6 +236,14 @@ function getPlanetSurfaceTile(planet, x, y) {
 // Safe zone around the station — no pirate spawns or aggro within this radius.
 const SCI_FI_STATION_CENTER = { x: 1920, y: 0 };
 const SCI_FI_SAFE_RADIUS = 60;
+const SCI_FI_DEFENSES = Object.freeze([
+  { id: "ringforge_turret_n", kind: "defense-turret", name: "North Defense Turret", x: SCI_FI_STATION_CENTER.x, y: SCI_FI_STATION_CENTER.y - 48, range: 96 },
+  { id: "ringforge_turret_e", kind: "defense-turret", name: "East Defense Turret", x: SCI_FI_STATION_CENTER.x + 48, y: SCI_FI_STATION_CENTER.y, range: 96 },
+  { id: "ringforge_turret_s", kind: "defense-turret", name: "South Defense Turret", x: SCI_FI_STATION_CENTER.x, y: SCI_FI_STATION_CENTER.y + 48, range: 96 },
+  { id: "ringforge_turret_w", kind: "defense-turret", name: "West Defense Turret", x: SCI_FI_STATION_CENTER.x - 48, y: SCI_FI_STATION_CENTER.y, range: 96 },
+  { id: "ringforge_cannon_alpha", kind: "orbital-cannon", name: "Orbital Cannon Alpha", x: SCI_FI_STATION_CENTER.x - 34, y: SCI_FI_STATION_CENTER.y - 34, range: 138 },
+  { id: "ringforge_cannon_beta", kind: "orbital-cannon", name: "Orbital Cannon Beta", x: SCI_FI_STATION_CENTER.x + 34, y: SCI_FI_STATION_CENTER.y + 34, range: 138 }
+]);
 
 // Asteroid fields scattered around the sector. Each cluster is a circular area
 // with a seeded layout the client renders, and rocks act as ship-blocking hazards.
@@ -651,6 +659,13 @@ function getSciFiObjectsInChunk(cx, cy) {
 
   for (const cluster of SCI_FI_ASTEROIDS) {
     const obj = { ...cluster, kind: "asteroid_field", rocks: getAsteroidRocks(cluster) };
+    if (sciFiObjectTouchesChunk(obj, startX, startY, endX, endY)) {
+      out.push(obj);
+    }
+  }
+
+  for (const defense of SCI_FI_DEFENSES) {
+    const obj = { ...defense, w: defense.kind === "orbital-cannon" ? 4 : 2, h: defense.kind === "orbital-cannon" ? 4 : 2 };
     if (sciFiObjectTouchesChunk(obj, startX, startY, endX, endY)) {
       out.push(obj);
     }
@@ -2608,6 +2623,7 @@ module.exports = {
   getSciFiAsteroids,
   SCI_FI_STATION_CENTER,
   SCI_FI_SAFE_RADIUS,
+  SCI_FI_DEFENSES,
   SCI_FI_PLANETS,
   getPlanetById,
   getPlanetBySurfacePoint,

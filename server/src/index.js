@@ -32,6 +32,7 @@ const {
   isInsideSciFiSafeZone,
   SCI_FI_STATION_CENTER,
   SCI_FI_SAFE_RADIUS,
+  SCI_FI_DEFENSES,
   getPlanetById,
   getPlanetBySpacePoint,
   PLANET_SURFACE_LANDING_OFFSET,
@@ -126,6 +127,13 @@ const GATEKEEPER_RANGE = 46;
 const GATEKEEPER_NEAR_TOWN_RADIUS = HUB_TOWN_GRASS_RADIUS + 84;
 const GATEKEEPER_ATTACK_COOLDOWN_MS = 1150;
 const GATEKEEPER_ARROW_DAMAGE = 34;
+const FANTASY_ASSAULT_INTERVAL_MS = 90000;
+const SCI_FI_ASSAULT_INTERVAL_MS = 105000;
+const MAX_ACTIVE_FANTASY_ASSAULT_MOBS = 28;
+const MAX_ACTIVE_SCI_FI_ASSAULT_MOBS = 24;
+const STATION_DEFENSE_ATTACK_COOLDOWN_MS = 900;
+const STATION_TURRET_DAMAGE = 42;
+const ORBITAL_CANNON_DAMAGE = 82;
 const XP_BASE_TO_LEVEL = 100;
 const XP_LEVEL_STEP = 55;
 const STARTING_TALENT_POINTS = 1;
@@ -833,6 +841,10 @@ function persistOwnedHouseChest(buildingKey) {
 }
 
 const mobs = createMobs();
+let nextAssaultMobId = 1;
+let nextFantasyAssaultAt = Date.now() + 22000;
+let nextSciFiAssaultAt = Date.now() + 30000;
+const stationDefenseLastShotAt = new Map();
 const traderStocks = new Map();
 for (const def of getTraderDefinitions()) {
   traderStocks.set(def.id, createTraderStock(def.id, def.homeX * 100 + def.homeY));
@@ -2616,8 +2628,10 @@ function simulate() {
       }
     }
   });
+  processAssaultWaves(Date.now());
   updateMobs(dt, computePlayerViewBoundsArray(CHAT_VIEW_MARGIN_TILES + MOB_ACTIVITY_MARGIN_TILES));
   processGatekeeperArchers(Date.now());
+  processStationDefenses(Date.now());
   updateCaravans(dt);
 
   processConsecrationZones(Date.now());
@@ -6944,10 +6958,12 @@ function createSciFiPirateMobs() {
   // Declared inside the function so it's evaluated lazily and avoids a temporal dead zone
   // when createMobs() runs at module top-level startup.
   const fleets = [
-    { id: "pirate_eclipse", name: "Eclipse Raider", x: 1740, y: -180, size: 3, color: "#ff6b8a", level: 8 },
-    { id: "pirate_blacksun", name: "Blacksun Corsair", x: 2240, y: 250, size: 4, color: "#c084fc", level: 10 },
-    { id: "pirate_redclaw", name: "Redclaw Marauder", x: 1660, y: 350, size: 3, color: "#f97316", level: 9 },
-    { id: "pirate_void", name: "Void Stalker", x: 2200, y: -420, size: 4, color: "#22d3ee", level: 11 }
+    { id: "pirate_eclipse", name: "Eclipse Raider", x: 1740, y: -180, size: 5, color: "#ff6b8a", level: 8 },
+    { id: "pirate_blacksun", name: "Blacksun Corsair", x: 2240, y: 250, size: 6, color: "#c084fc", level: 10 },
+    { id: "pirate_redclaw", name: "Redclaw Marauder", x: 1660, y: 350, size: 5, color: "#f97316", level: 9 },
+    { id: "pirate_void", name: "Void Stalker", x: 2200, y: -420, size: 6, color: "#22d3ee", level: 11 },
+    { id: "pirate_ironwake", name: "Ironwake Reaver", x: 2080, y: -255, size: 5, color: "#facc15", level: 9 },
+    { id: "pirate_nullfang", name: "Nullfang Skiff", x: 1780, y: 265, size: 4, color: "#38bdf8", level: 7 }
   ];
   const out = [];
   for (const fleet of fleets) {
@@ -7019,7 +7035,7 @@ function createWildernessMobs() {
     const biome = camp.biome || getBiome(camp.x, camp.y);
     const faction = camp.faction;
     const type = (faction && MOB_TYPES[faction]) ? MOB_TYPES[faction] : (MOB_TYPES[biome] || MOB_TYPES.forest);
-    const count = scaledCampEncounterSize(camp.size, camp);
+    const count = Math.ceil(scaledCampEncounterSize(camp.size, camp) * 1.35);
     const tier = camp.tier || Math.max(1, Math.floor(Math.hypot(camp.x, camp.y) / 90));
 
     for (let i = 0; i < count; i += 1) {
@@ -7103,6 +7119,150 @@ function createWildernessMobs() {
   }
 
   return mobs;
+}
+
+function createRuntimeMob(def) {
+  return {
+    ...def,
+    x: def.homeX,
+    y: def.homeY,
+    hp: def.maxHp || 60,
+    maxHp: def.maxHp || 60,
+    level: def.level || 1,
+    attackDamage: "attackDamage" in def ? def.attackDamage : MOB_ATTACK_DAMAGE,
+    dead: false,
+    respawnAt: 0,
+    lastAttackAt: 0,
+    facing: Number.isFinite(def.facing) ? def.facing : Math.random() * Math.PI * 2,
+    _targetX: Number.isFinite(def.targetX) ? def.targetX : def.homeX,
+    _targetY: Number.isFinite(def.targetY) ? def.targetY : def.homeY,
+    _nextMoveAt: Date.now() + Math.random() * 900,
+    roamRadius: def.roamRadius || 5,
+    speed: def.speed || 1.7
+  };
+}
+
+const FANTASY_ASSAULT_SPAWNS = Object.freeze([
+  { id: "north", x: 12, y: -178, targetX: 0, targetY: -105, faction: "sludge" },
+  { id: "east", x: 178, y: 12, targetX: 105, targetY: 0, faction: "bandit" },
+  { id: "south", x: -12, y: 178, targetX: 0, targetY: 105, faction: "undead" },
+  { id: "west", x: -178, y: -12, targetX: -105, targetY: 0, faction: "sludge" }
+]);
+
+const SCI_FI_ASSAULT_SPAWNS = Object.freeze([
+  { id: "north", x: SCI_FI_STATION_CENTER.x, y: SCI_FI_STATION_CENTER.y - 185, color: "#ff6b8a", faction: "assault_eclipse" },
+  { id: "east", x: SCI_FI_STATION_CENTER.x + 185, y: SCI_FI_STATION_CENTER.y + 16, color: "#c084fc", faction: "assault_blackstar" },
+  { id: "south", x: SCI_FI_STATION_CENTER.x - 16, y: SCI_FI_STATION_CENTER.y + 185, color: "#f97316", faction: "assault_redwake" },
+  { id: "west", x: SCI_FI_STATION_CENTER.x - 185, y: SCI_FI_STATION_CENTER.y - 16, color: "#22d3ee", faction: "assault_nullwake" }
+]);
+
+function countActiveAssaultMobs(theme) {
+  return mobs.reduce((count, mob) => {
+    if (mob.dead || !mob.isAssaultWave) return count;
+    if (theme === "sci-fi") return count + (mob.isShipPirate ? 1 : 0);
+    return count + (!mob.isShipPirate ? 1 : 0);
+  }, 0);
+}
+
+function cleanupExpiredAssaultMobs(now) {
+  for (let i = mobs.length - 1; i >= 0; i -= 1) {
+    const mob = mobs[i];
+    if (!mob?.isAssaultWave) continue;
+    const expiredDead = mob.dead && now >= (mob.respawnAt || 0);
+    const expiredLive = Number.isFinite(mob.spawnedAt) && now - mob.spawnedAt > 8 * 60 * 1000;
+    const reachedTarget =
+      !mob.dead &&
+      Number.isFinite(mob.assaultTargetX) &&
+      Number.isFinite(mob.assaultTargetY) &&
+      Math.hypot(mob.x - mob.assaultTargetX, mob.y - mob.assaultTargetY) < 2.4;
+    if (expiredDead || expiredLive || reachedTarget) {
+      mobs.splice(i, 1);
+    }
+  }
+}
+
+function processAssaultWaves(now = Date.now()) {
+  cleanupExpiredAssaultMobs(now);
+  if (now >= nextFantasyAssaultAt && countActiveAssaultMobs("fantasy") < MAX_ACTIVE_FANTASY_ASSAULT_MOBS) {
+    spawnFantasyAssaultWave(now);
+    nextFantasyAssaultAt = now + FANTASY_ASSAULT_INTERVAL_MS + Math.floor(Math.random() * 25000);
+  }
+  if (now >= nextSciFiAssaultAt && countActiveAssaultMobs("sci-fi") < MAX_ACTIVE_SCI_FI_ASSAULT_MOBS) {
+    spawnSciFiAssaultWave(now);
+    nextSciFiAssaultAt = now + SCI_FI_ASSAULT_INTERVAL_MS + Math.floor(Math.random() * 28000);
+  }
+}
+
+function spawnFantasyAssaultWave(now) {
+  const route = FANTASY_ASSAULT_SPAWNS[Math.floor(Math.random() * FANTASY_ASSAULT_SPAWNS.length)];
+  const type = MOB_TYPES[route.faction] || MOB_TYPES.forest;
+  const count = 4 + Math.floor(Math.random() * 4);
+  for (let i = 0; i < count && countActiveAssaultMobs("fantasy") < MAX_ACTIVE_FANTASY_ASSAULT_MOBS; i += 1) {
+    const enemy = type.enemies[i % type.enemies.length];
+    const spread = (i - (count - 1) / 2) * 1.7;
+    const sideAngle = Math.atan2(route.targetY - route.y, route.targetX - route.x) + Math.PI / 2;
+    const homeX = route.x + Math.cos(sideAngle) * spread + (Math.random() - 0.5) * 1.2;
+    const homeY = route.y + Math.sin(sideAngle) * spread + (Math.random() - 0.5) * 1.2;
+    const level = Math.max(2, enemy.level + 1 + Math.floor(Math.random() * 3));
+    mobs.push(createRuntimeMob({
+      id: `mob_assault_fantasy_${nextAssaultMobId++}`,
+      name: `${enemy.name} Raider`,
+      level,
+      homeX,
+      homeY,
+      targetX: route.targetX,
+      targetY: route.targetY,
+      assaultTargetX: route.targetX,
+      assaultTargetY: route.targetY,
+      primary: type.primary,
+      accent: type.accent,
+      faction: route.faction,
+      campId: `assault_${route.id}`,
+      isAssaultWave: true,
+      noRespawn: true,
+      forceSimulate: true,
+      spawnedAt: now,
+      maxHp: enemy.hp + level * 8,
+      attackDamage: enemy.damage + Math.floor(level * 1.25),
+      roamRadius: 1,
+      speed: enemy.speed + 0.34
+    }));
+  }
+}
+
+function spawnSciFiAssaultWave(now) {
+  const route = SCI_FI_ASSAULT_SPAWNS[Math.floor(Math.random() * SCI_FI_ASSAULT_SPAWNS.length)];
+  const count = 3 + Math.floor(Math.random() * 4);
+  for (let i = 0; i < count && countActiveAssaultMobs("sci-fi") < MAX_ACTIVE_SCI_FI_ASSAULT_MOBS; i += 1) {
+    const angle = (i / Math.max(1, count)) * Math.PI * 2;
+    const homeX = route.x + Math.cos(angle) * (4 + i * 0.8);
+    const homeY = route.y + Math.sin(angle) * (4 + i * 0.8);
+    const level = 7 + Math.floor(Math.random() * 5);
+    mobs.push(createRuntimeMob({
+      id: `mob_assault_scifi_${nextAssaultMobId++}`,
+      name: i === 0 ? "Raid Captain" : "Pirate Interceptor",
+      level,
+      homeX,
+      homeY,
+      targetX: SCI_FI_STATION_CENTER.x,
+      targetY: SCI_FI_STATION_CENTER.y,
+      assaultTargetX: SCI_FI_STATION_CENTER.x,
+      assaultTargetY: SCI_FI_STATION_CENTER.y,
+      primary: route.color,
+      accent: "#080a14",
+      faction: route.faction,
+      isShipPirate: true,
+      isAssaultWave: true,
+      noRespawn: true,
+      forceSimulate: true,
+      spawnedAt: now,
+      hullClass: i === 0 ? "interceptor" : "fighter",
+      maxHp: 95 + level * 13,
+      attackDamage: 7 + Math.floor(level * 0.9),
+      roamRadius: 2,
+      speed: 2.45 + Math.random() * 0.28
+    }));
+  }
 }
 
 function createRoamingMobs() {
@@ -7502,6 +7662,9 @@ function updateMobs(dt, boundsArray) {
 
   for (const mob of mobs) {
     if (mob.dead) {
+      if (mob.noRespawn) {
+        continue;
+      }
       if (now >= mob.respawnAt) {
         mob.dead = false;
         mob.hp = mob.maxHp;
@@ -7511,7 +7674,7 @@ function updateMobs(dt, boundsArray) {
       continue;
     }
 
-    if (!mobShouldSimulateAny(mob, boundsArray)) {
+    if (!mob.forceSimulate && !mobShouldSimulateAny(mob, boundsArray)) {
       continue;
     }
 
@@ -7532,6 +7695,13 @@ function updateMobs(dt, boundsArray) {
         attackPlayerWithMob(mob, targetPlayer, now);
         continue;
       }
+    } else if (
+      mob.isAssaultWave &&
+      Number.isFinite(mob.assaultTargetX) &&
+      Number.isFinite(mob.assaultTargetY)
+    ) {
+      mob._targetX = mob.assaultTargetX;
+      mob._targetY = mob.assaultTargetY;
     }
 
     const dx = mob._targetX - mob.x;
@@ -7618,10 +7788,66 @@ function processGatekeeperArchers(now = Date.now()) {
 
     if (target.hp <= 0 && !target.dead) {
       target.dead = true;
-      target.respawnAt = now + (target.isCritter ? 4200 : MOB_RESPAWN_MS);
+      target.respawnAt = now + (target.noRespawn ? 9000 : target.isCritter ? 4200 : MOB_RESPAWN_MS);
       event.defeated = true;
     }
 
+    broadcastCombat(event);
+  }
+}
+
+function processStationDefenses(now = Date.now()) {
+  for (const defense of SCI_FI_DEFENSES) {
+    const cooldown = STATION_DEFENSE_ATTACK_COOLDOWN_MS * (defense.kind === "orbital-cannon" ? 2.4 : 1);
+    if (now - (stationDefenseLastShotAt.get(defense.id) || 0) < cooldown) {
+      continue;
+    }
+    const range = Number(defense.range) || (defense.kind === "orbital-cannon" ? 138 : 96);
+    let target = null;
+    let bestDist = Infinity;
+    for (const mob of mobs) {
+      if (mob.dead || !mob.isShipPirate) continue;
+      const stationDist = Math.hypot(mob.x - SCI_FI_STATION_CENTER.x, mob.y - SCI_FI_STATION_CENTER.y);
+      if (stationDist > SCI_FI_SAFE_RADIUS + 130) continue;
+      const d = Math.hypot(mob.x - defense.x, mob.y - defense.y);
+      if (d <= range && d < bestDist) {
+        bestDist = d;
+        target = mob;
+      }
+    }
+    if (!target) continue;
+
+    stationDefenseLastShotAt.set(defense.id, now);
+    const isCannon = defense.kind === "orbital-cannon";
+    const damage = Math.max(1, Math.round((isCannon ? ORBITAL_CANNON_DAMAGE : STATION_TURRET_DAMAGE) + (Number(target.level) || 1) * 1.2));
+    const facing = Math.atan2(target.y - defense.y, target.x - defense.x);
+    target.hp = Math.max(0, target.hp - damage);
+    const event = {
+      type: "combat",
+      kind: "projectile",
+      weapon: isCannon ? "orbital_cannon" : "station_turret",
+      projectileKind: "laser_bolt",
+      weaponStyle: isCannon ? "orbital_cannon" : "station_laser",
+      weaponColor: isCannon ? "#ffd166" : "#67f0ff",
+      attackerId: defense.id,
+      x: Number(defense.x.toFixed(3)),
+      y: Number(defense.y.toFixed(3)),
+      facing: Number(facing.toFixed(3)),
+      range,
+      hit: true,
+      targetId: target.id,
+      targetKind: "mob",
+      damage,
+      targetHp: target.hp,
+      endX: Number(target.x.toFixed(3)),
+      endY: Number(target.y.toFixed(3))
+    };
+
+    if (target.hp <= 0 && !target.dead) {
+      target.dead = true;
+      target.respawnAt = now + (target.noRespawn ? 9000 : MOB_RESPAWN_MS);
+      event.defeated = true;
+    }
     broadcastCombat(event);
   }
 }

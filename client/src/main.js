@@ -7285,6 +7285,8 @@ function drawSpaceObjects() {
       drawSciFiShopTerminalObject(obj, sx, sy);
     } else if (obj.kind === "station-module" || obj.kind === "station-kiosk") {
       drawStationModuleObject(obj, sx, sy);
+    } else if (obj.kind === "defense-turret" || obj.kind === "orbital-cannon") {
+      drawSciFiDefenseObject(obj, sx, sy);
     } else if (obj.kind === "cargo-crate" || obj.kind === "shipping-crate" || obj.kind === "container-box") {
       drawCargoCrateObject(obj, sx, sy);
     } else if (obj.kind === "shop-bay" || obj.kind === "ship-shop") {
@@ -7309,6 +7311,7 @@ function spaceObjectDrawOrder(obj) {
   if (kind === "ship-bay" || kind === "shop-bay" || kind === "ship-shop" || kind === "station-module") return 4;
   if (kind === "cargo-crate" || kind === "shipping-crate" || kind === "container-box") return 5;
   if (kind === "sci-shop" || kind === "station-kiosk") return 6;
+  if (kind === "defense-turret" || kind === "orbital-cannon") return 6;
   if (kind === "ship-port") return 7;
   if (kind === "ship-console" || kind === "sci-shop-terminal") return 8;
   return 5;
@@ -7412,6 +7415,30 @@ function drawShipBayObject(obj, sx, sy) {
   ctx.fillRect(x + w * 0.48, y + h * 0.38, 5, h * 0.22);
   ctx.fillStyle = "rgba(103,240,255,0.3)";
   ctx.fillRect(x + w * 0.22, y + h * 0.58, w * 0.5, 4);
+  ctx.restore();
+}
+
+function drawSciFiDefenseObject(obj, sx, sy) {
+  const isCannon = obj.kind === "orbital-cannon";
+  const t = performance.now() / 1000;
+  const pulse = 0.55 + Math.sin(t * (isCannon ? 2.2 : 3.8) + sx * 0.01) * 0.18;
+  ctx.save();
+  drawEllipseShadow(sx - 18, sy + 14, 36, 10, 0.28);
+  ctx.translate(sx, sy);
+  ctx.fillStyle = isCannon ? "rgba(32, 24, 12, 0.96)" : "rgba(10, 22, 32, 0.96)";
+  ctx.strokeStyle = isCannon ? "#ffd166" : "#67f0ff";
+  ctx.lineWidth = 2;
+  roundedRect(isCannon ? -18 : -12, isCannon ? -14 : -10, isCannon ? 36 : 24, isCannon ? 28 : 20, 4);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = isCannon ? `rgba(255, 209, 102, ${pulse})` : `rgba(103, 240, 255, ${pulse})`;
+  ctx.fillRect(isCannon ? -5 : -3, isCannon ? -22 : -17, isCannon ? 10 : 6, isCannon ? 28 : 22);
+  ctx.fillStyle = "rgba(255,255,255,0.78)";
+  ctx.fillRect(isCannon ? -2 : -1, isCannon ? -24 : -19, isCannon ? 4 : 2, isCannon ? 8 : 6);
+  ctx.strokeStyle = isCannon ? "rgba(255, 209, 102, 0.35)" : "rgba(103, 240, 255, 0.32)";
+  ctx.beginPath();
+  ctx.arc(0, 0, isCannon ? 24 : 17, 0, Math.PI * 2);
+  ctx.stroke();
   ctx.restore();
 }
 
