@@ -6,6 +6,9 @@ const { SCI_FI_DOCK_PORTS, SCI_FI_STATION_FEATURES, RINGFORGE_CENTER } = require
 const NPC_SPEED = 2.0;
 const NPC_STOP_DISTANCE = 0.08;
 const NPC_STUCK_EPSILON = 0.001;
+const NPC_SEP_CELL = 2;       // tiles per separation grid cell
+const NPC_SEP_RADIUS = 0.70;  // tiles — push apart within this distance
+const NPC_SEP_STRENGTH = 0.55; // max nudge per second
 const NPC_PATROL_TARGET_ATTEMPTS = 8;
 const MOVE_INTERVAL_MIN = 3000;
 const MOVE_INTERVAL_MAX = 9000;
@@ -3087,6 +3090,48 @@ function tickArrowCourier(npc, dt, now, navSet) {
   }
 }
 
+function buildNpcPosGrid(npcList) {
+  const grid = new Map();
+  for (const n of npcList) {
+    const key = `${Math.floor(n.x / NPC_SEP_CELL)},${Math.floor(n.y / NPC_SEP_CELL)}`;
+    let b = grid.get(key);
+    if (!b) { b = []; grid.set(key, b); }
+    b.push(n);
+  }
+  return grid;
+}
+
+function applyNpcSeparation(npc, posGrid, dt) {
+  const cx = Math.floor(npc.x / NPC_SEP_CELL);
+  const cy = Math.floor(npc.y / NPC_SEP_CELL);
+  let fx = 0, fy = 0;
+  for (let dcx = -1; dcx <= 1; dcx++) {
+    for (let dcy = -1; dcy <= 1; dcy++) {
+      const bucket = posGrid.get(`${cx + dcx},${cy + dcy}`);
+      if (!bucket) continue;
+      for (const other of bucket) {
+        if (other === npc) continue;
+        const dx = npc.x - other.x;
+        const dy = npc.y - other.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < NPC_SEP_RADIUS * NPC_SEP_RADIUS && d2 > 0.0001) {
+          const d = Math.sqrt(d2);
+          const force = (NPC_SEP_RADIUS - d) / NPC_SEP_RADIUS;
+          fx += (dx / d) * force;
+          fy += (dy / d) * force;
+        }
+      }
+    }
+  }
+  if (fx === 0 && fy === 0) return;
+  const mag = Math.hypot(fx, fy);
+  const push = NPC_SEP_STRENGTH * dt;
+  const nx = npc.x + (fx / mag) * push;
+  const ny = npc.y + (fy / mag) * push;
+  if (!isBlockedCircle(nx, npc.y)) npc.x = nx;
+  if (!isBlockedCircle(npc.x, ny)) npc.y = ny;
+}
+
 function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
   if (!activationBounds) {
     return;
@@ -3125,6 +3170,8 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
   maybeStartNpcMeeting(now, activationBounds, activeNpcs);
 
   const navSetStatic = WORLD.HUB_NAV_PATH_KEYS instanceof Set ? WORLD.HUB_NAV_PATH_KEYS : null;
+  // Snapshot positions before movement for separation (use last-frame positions — stable)
+  const npcPosGrid = buildNpcPosGrid(activeNpcs);
 
   for (const npc of activeNpcs) {
 
@@ -3386,6 +3433,13 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
         CHAT_INTERVAL_MIN +
         Math.random() * (CHAT_INTERVAL_MAX - CHAT_INTERVAL_MIN);
     }
+  }
+
+  // Separation pass: push NPCs apart so they walk around each other instead of through each other.
+  // Anchored NPCs (archers, gatekeepers) are excluded — they snap back to fixed positions anyway.
+  for (const npc of activeNpcs) {
+    if (npc.isTownArcher || npc.isGateKeeper || npc.isFletcher || npc.isFletcherWorker) continue;
+    applyNpcSeparation(npc, npcPosGrid, dt);
   }
 }
 

@@ -646,6 +646,9 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
     fletcherStand.vendorNpcId = "hub_fletcher_main";
     fletcherStand.shopType = "fletcher";
     fletcherStand.shopName = "Fletcher's Store";
+    fletcherStand.kind = "fletcher_shed";
+    fletcherStand.footprintW = 3;
+    fletcherStand.footprintH = 2;
     delete fletcherStand.distSq;
   }
 

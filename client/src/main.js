@@ -7452,6 +7452,143 @@ function drawRoadsideFeatures(minTileX, maxTileX, minTileY, maxTileY) {
     ctx.restore();
   };
 
+  /** Cute arrow-making workshop shed for the fletcher NPC. */
+  const drawFletcherShedLocal = (fw = 3) => {
+    const wpx = TILE_SIZE * fw;
+    const half = Math.round(wpx / 2);
+    const wallH = 56;
+    const roofH = 26;
+
+    // Ground shadow
+    drawEllipseShadow(-half + 4, 10, wpx - 6, 14, 0.32);
+
+    // ── Walls ────────────────────────────────────────────────────────────────
+    // Back wall (plank texture)
+    ctx.fillStyle = "#7a5230";
+    ctx.fillRect(-half, -wallH, wpx, wallH);
+    // Horizontal plank lines
+    ctx.fillStyle = "#5c3d20";
+    for (let row = 1; row < 5; row++) {
+      ctx.fillRect(-half, -wallH + row * 13, wpx, 2);
+    }
+    // Subtle vertical grain highlights
+    ctx.fillStyle = "rgba(255,190,110,0.07)";
+    for (let col = 0; col < 7; col++) {
+      ctx.fillRect(-half + 5 + col * 14, -wallH, 5, wallH);
+    }
+
+    // ── Door (left-centre) ────────────────────────────────────────────────────
+    ctx.fillStyle = "#2e1a0a";
+    ctx.fillRect(-18, -wallH + 14, 20, wallH - 14);
+    ctx.fillStyle = "#4a2e10";
+    ctx.fillRect(-17, -wallH + 15, 9, wallH - 16);
+    ctx.fillStyle = "#c8a050";
+    ctx.fillRect(-9, -wallH + 30, 3, 4); // door handle
+
+    // ── Window (right) ────────────────────────────────────────────────────────
+    const wx = half - 30;
+    ctx.fillStyle = "#3a5c7a";
+    ctx.fillRect(wx, -wallH + 14, 22, 18);
+    ctx.fillStyle = "rgba(200,230,255,0.18)";
+    ctx.fillRect(wx + 1, -wallH + 15, 20, 16);
+    ctx.fillStyle = "#3a2818";
+    ctx.fillRect(wx + 10, -wallH + 14, 2, 18); // cross
+    ctx.fillRect(wx, -wallH + 22, 22, 2);
+
+    // ── Roof (pitched) ────────────────────────────────────────────────────────
+    ctx.fillStyle = "#3a2010";
+    ctx.beginPath();
+    ctx.moveTo(-half - 8, -wallH + 2);
+    ctx.lineTo(0, -wallH - roofH);
+    ctx.lineTo(half + 8, -wallH + 2);
+    ctx.lineTo(half + 8, -wallH + 9);
+    ctx.lineTo(0, -wallH - roofH + 7);
+    ctx.lineTo(-half - 8, -wallH + 9);
+    ctx.closePath();
+    ctx.fill();
+    // Roof shingle lines
+    ctx.strokeStyle = "#281508";
+    ctx.lineWidth = 1;
+    for (let r = 1; r <= 3; r++) {
+      const pct = r / 4;
+      const lx = -half - 8 + (half + 8) * pct;
+      const rx = half + 8 - (half + 8) * pct;
+      const y = -wallH + 2 - (roofH - 2) * pct;
+      ctx.beginPath();
+      ctx.moveTo(lx, y + pct * 7);
+      ctx.lineTo(rx, y + pct * 7);
+      ctx.stroke();
+    }
+    // Ridge cap
+    ctx.fillStyle = "#5c3a1c";
+    ctx.fillRect(-6, -wallH - roofH - 1, 12, 4);
+
+    // ── Sign above door ────────────────────────────────────────────────────────
+    ctx.fillStyle = "#d4a052";
+    ctx.fillRect(-22, -wallH - 2, 40, 11);
+    ctx.strokeStyle = "#7a4c1a";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(-22, -wallH - 2, 40, 11);
+    ctx.fillStyle = "#3a1e08";
+    ctx.font = "bold 7px serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("FLETCHER", -2, -wallH + 3.5);
+
+    // ── Workbench (front, left half) ──────────────────────────────────────────
+    ctx.fillStyle = "#9a7040";
+    ctx.fillRect(-half + 4, -16, Math.round(wpx * 0.48), 9);
+    ctx.fillStyle = "#7a5428";
+    ctx.fillRect(-half + 6, -7, 8, 8);
+    ctx.fillRect(-half + 4 + Math.round(wpx * 0.48) - 10, -7, 8, 8);
+    // Arrow shafts on workbench
+    ctx.fillStyle = "#c8a856";
+    ctx.fillRect(-half + 8, -20, 34, 2);
+    ctx.fillRect(-half + 8, -17, 28, 2);
+    ctx.fillStyle = "#3a2010";
+    ctx.fillRect(-half + 8 + 34, -21, 5, 4);
+    ctx.fillRect(-half + 8 + 28, -18, 5, 4);
+    // Small tool/knife on bench
+    ctx.fillStyle = "#888";
+    ctx.fillRect(-half + 44, -20, 10, 2);
+    ctx.fillStyle = "#5a3820";
+    ctx.fillRect(-half + 52, -21, 5, 4);
+
+    // ── Arrow bundle leaning on left wall ─────────────────────────────────────
+    ctx.fillStyle = "#c8a856";
+    for (let i = 0; i < 6; i++) {
+      ctx.fillRect(-half + 2 + i * 3, -48, 2, 34);
+    }
+    // Twine wrap
+    ctx.fillStyle = "#8a5c28";
+    ctx.fillRect(-half + 2, -38, 19, 3);
+    ctx.fillRect(-half + 2, -26, 19, 3);
+    // Arrowheads
+    ctx.fillStyle = "#2a1a08";
+    for (let i = 0; i < 6; i++) {
+      ctx.fillRect(-half + 2 + i * 3, -48, 2, 3);
+    }
+
+    // ── Barrel of arrow shafts (front-right) ──────────────────────────────────
+    const bx = half - 18;
+    const by = -3;
+    ctx.fillStyle = "#6b4020";
+    ctx.fillRect(bx, by - 18, 14, 18);
+    ctx.fillStyle = "#4a2c10";
+    ctx.fillRect(bx - 1, by - 20, 16, 3);
+    ctx.fillRect(bx - 1, by - 10, 16, 2);
+    ctx.fillRect(bx - 1, by - 3, 16, 2);
+    // Arrow shafts sticking up
+    ctx.fillStyle = "#c8a856";
+    for (let i = 0; i < 5; i++) {
+      ctx.fillRect(bx + 1 + i * 2, by - 30, 1, 14);
+    }
+    ctx.fillStyle = "#2a1a08";
+    for (let i = 0; i < 5; i++) {
+      ctx.fillRect(bx + 1 + i * 2, by - 31, 1, 2);
+    }
+  };
+
   const drawTableOutline = (cx, gy, w, shade) => {
     ctx.save();
     drawEllipseShadow(cx - w / 2, gy + 2, w + 8, 10, 0.24);
@@ -7482,6 +7619,11 @@ function drawRoadsideFeatures(minTileX, maxTileX, minTileY, maxTileY) {
       ctx.scale(1, -1);
       ctx.translate(0, 12);
       drawBenchLocal();
+      ctx.restore();
+    } else if (f.kind === "fletcher_shed") {
+      ctx.save();
+      ctx.translate(cx, gy - 2);
+      drawFletcherShedLocal(fw);
       ctx.restore();
     } else if (f.kind === "market_stand") {
       const ftw = fw;
