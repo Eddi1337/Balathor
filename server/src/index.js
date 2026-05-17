@@ -129,10 +129,11 @@ const GATEKEEPER_RANGE = 46;
 const GATEKEEPER_NEAR_TOWN_RADIUS = HUB_TOWN_GRASS_RADIUS + 84;
 const GATEKEEPER_ATTACK_COOLDOWN_MS = 1150;
 const GATEKEEPER_ARROW_DAMAGE = 34;
-const FANTASY_ASSAULT_INTERVAL_MS = 26000;
+const FANTASY_ASSAULT_INTERVAL_MS = 15000;
 const SCI_FI_ASSAULT_INTERVAL_MS = 30000;
-const MAX_ACTIVE_FANTASY_ASSAULT_MOBS = 72;
+const MAX_ACTIVE_FANTASY_ASSAULT_MOBS = 128;
 const MAX_ACTIVE_SCI_FI_ASSAULT_MOBS = 60;
+const FANTASY_NIGHT_RAID_CAMPS_PER_WAVE = 3;
 const STATION_DEFENSE_ATTACK_COOLDOWN_MS = 900;
 const STATION_TURRET_DAMAGE = 42;
 const ORBITAL_CANNON_DAMAGE = 82;
@@ -7232,8 +7233,8 @@ function processAssaultWaves(now = Date.now()) {
   cleanupExpiredAssaultMobs(now);
   if (isNightTime()) {
     if (now >= nextFantasyAssaultAt && countActiveAssaultMobs("fantasy") < MAX_ACTIVE_FANTASY_ASSAULT_MOBS) {
-      spawnFantasyAssaultWave(now);
-      nextFantasyAssaultAt = now + FANTASY_ASSAULT_INTERVAL_MS + Math.floor(Math.random() * 9000);
+      spawnFantasyAssaultWave(now, FANTASY_NIGHT_RAID_CAMPS_PER_WAVE);
+      nextFantasyAssaultAt = now + FANTASY_ASSAULT_INTERVAL_MS + Math.floor(Math.random() * 5000);
     }
   } else {
     nextFantasyAssaultAt = Math.max(nextFantasyAssaultAt, now + 4000);
@@ -7248,10 +7249,21 @@ function isNightTime() {
   return getWorldTimeSnapshot().phase === "night";
 }
 
-function spawnFantasyAssaultWave(now) {
+function spawnFantasyAssaultWave(now, campCount = 1) {
   const eligibleCamps = ENEMY_CAMPS.filter((camp) => Math.hypot(camp.x, camp.y) > PRIMARY_HUB_MOBS_CLEAR_RADIUS);
-  const camp = eligibleCamps[Math.floor(Math.random() * eligibleCamps.length)] || ENEMY_CAMPS[Math.floor(Math.random() * ENEMY_CAMPS.length)];
-  if (!camp) return;
+  const shuffled = eligibleCamps
+    .map((camp) => ({ camp, roll: Math.random() }))
+    .sort((a, b) => a.roll - b.roll)
+    .map((entry) => entry.camp);
+  const camps = shuffled.slice(0, Math.max(1, campCount));
+  if (!camps.length) return;
+  for (const camp of camps) {
+    spawnFantasyCampAssault(now, camp);
+    if (countActiveAssaultMobs("fantasy") >= MAX_ACTIVE_FANTASY_ASSAULT_MOBS) break;
+  }
+}
+
+function spawnFantasyCampAssault(now, camp) {
   const biome = camp.biome || getBiome(camp.x, camp.y);
   const faction = camp.faction;
   const type = (faction && MOB_TYPES[faction]) ? MOB_TYPES[faction] : (MOB_TYPES[biome] || MOB_TYPES.forest);
@@ -7259,14 +7271,14 @@ function spawnFantasyAssaultWave(now) {
   const targetRadius = 104;
   const targetX = Math.cos(routeAngle) * targetRadius;
   const targetY = Math.sin(routeAngle) * targetRadius;
-  const count = 5 + Math.floor(Math.random() * 5);
+  const tier = camp.tier || Math.max(1, Math.floor(Math.hypot(camp.x, camp.y) / 90));
+  const count = Math.max(4, Math.min(12, Math.ceil((camp.size || 4) * 0.9) + Math.floor(Math.random() * 4)));
   for (let i = 0; i < count && countActiveAssaultMobs("fantasy") < MAX_ACTIVE_FANTASY_ASSAULT_MOBS; i += 1) {
     const enemy = type.enemies[i % type.enemies.length];
     const spread = (i - (count - 1) / 2) * 1.7;
     const sideAngle = routeAngle + Math.PI / 2;
     const homeX = camp.x + Math.cos(sideAngle) * spread + (Math.random() - 0.5) * 1.2;
     const homeY = camp.y + Math.sin(sideAngle) * spread + (Math.random() - 0.5) * 1.2;
-    const tier = camp.tier || Math.max(1, Math.floor(Math.hypot(camp.x, camp.y) / 90));
     const level = Math.max(2, enemy.level + Math.max(0, tier - 1) + Math.floor(Math.random() * 2));
     mobs.push(createRuntimeMob({
       id: `mob_assault_fantasy_${nextAssaultMobId++}`,
