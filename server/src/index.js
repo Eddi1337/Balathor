@@ -31,7 +31,10 @@ const {
   STARGATE_LANDING,
   isInsideSciFiSafeZone,
   SCI_FI_STATION_CENTER,
-  SCI_FI_SAFE_RADIUS
+  SCI_FI_SAFE_RADIUS,
+  getPlanetById,
+  getPlanetBySpacePoint,
+  PLANET_SURFACE_LANDING_OFFSET
 } = require("./world");
 const {
   updateNpcs,
@@ -2790,6 +2793,25 @@ function handlePortalTravel(client) {
   if (client.player.ship && getWorldThemeAt(client.player.x, client.player.y) !== "sci-fi") {
     clearPlayerBoardedShips(client.player);
   }
+  // Returning from a planet surface re-boards the player's ship in orbit.
+  if (portal.kind === "planet_return" && client.player.ship) {
+    const ship = client.player.ship;
+    ship.worldX = portal.targetX;
+    ship.worldY = portal.targetY;
+    ship.boarded = true;
+    ship.deckMode = (getShipLayout(ship).crewCapacity > 1);
+    ship.stationRole = ship.deckMode ? null : "pilot";
+    ship.stationId = ship.deckMode ? null : "pilot";
+    if (ship.deckMode) {
+      const layout = getShipLayout(ship);
+      client.player.x = ship.worldX + (layout?.entry?.x || 0);
+      client.player.y = ship.worldY + (layout?.entry?.y || 0);
+    } else {
+      client.player.x = ship.worldX;
+      client.player.y = ship.worldY;
+    }
+    saveClientCharacter(client);
+  }
   client.input = normalizeInput();
 
   send(client, {
@@ -2969,6 +2991,11 @@ function handleMessage(client, raw) {
 
   if (message.type === "shipFire") {
     handleShipFire(client, message);
+    return;
+  }
+
+  if (message.type === "travelToPlanet") {
+    handleTravelToPlanet(client, message);
     return;
   }
 
@@ -4192,6 +4219,81 @@ function handleShipFire(client, message = {}) {
     broadcastCombat(event);
   }
   client.player.moving = true;
+}
+
+function handleTravelToPlanet(client, message = {}) {
+  const player = client.player;
+  const ship = player?.ship;
+  if (!player || !ship) {
+    return;
+  }
+  // Only valid when the player is in space (boarded or near a sci-fi dock).
+  if (!ship.boarded && getWorldThemeAt(player.x, player.y) !== "sci-fi") {
+    send(client, { type: "serverMessage", message: "planet_travel_not_in_space" });
+    return;
+  }
+  let planet = null;
+  if (typeof message.planetId === "string") {
+    planet = getPlanetById(message.planetId);
+  }
+  // Fallback: if a world-space target was clicked, find the planet covering it.
+  if (!planet && Number.isFinite(Number(message.targetX)) && Number.isFinite(Number(message.targetY))) {
+    planet = getPlanetBySpacePoint(Number(message.targetX), Number(message.targetY));
+  }
+  if (!planet) {
+    send(client, { type: "serverMessage", message: "planet_travel_unknown" });
+    return;
+  }
+
+  // Park the ship in orbit at the planet's space coords. Player will pop back
+  // here when they step on the return portal on the surface.
+  ship.boarded = false;
+  ship.deckMode = false;
+  ship.stationRole = null;
+  ship.stationId = null;
+  ship.docking = null;
+  ship.worldX = planet.x;
+  ship.worldY = planet.y;
+  ship.dockX = planet.x;
+  ship.dockY = planet.y;
+  ship.dockStationId = `orbit_${planet.id}`;
+  ship.dockPortId = null;
+
+  // Drop the player onto the surface a tile south of the return portal so
+  // they don't immediately step back through it.
+  player.x = planet.surfaceX;
+  player.y = planet.surfaceY + PLANET_SURFACE_LANDING_OFFSET;
+  player.facing = -Math.PI / 2;
+  player.moving = false;
+  player._stillAccumulator = 0;
+  player.aboardShipId = null;
+
+  // Disembark any passengers that were aboard; they land at the planet too.
+  for (const other of clients.values()) {
+    const o = other.player;
+    if (!o || o.aboardShipId !== ship.id) continue;
+    o.aboardShipId = null;
+    o.x = planet.surfaceX + (Math.random() * 2 - 1);
+    o.y = planet.surfaceY + PLANET_SURFACE_LANDING_OFFSET + (Math.random() * 2 - 1);
+    o.facing = -Math.PI / 2;
+    o.moving = false;
+    saveClientCharacter(other);
+    send(other, { type: "serverMessage", message: "party_disembarked", shipName: ship.name });
+  }
+
+  saveClientCharacter(client);
+  send(client, {
+    type: "teleport",
+    portalId: `planet_${planet.id}_descent`,
+    name: planet.name,
+    color: planet.surfacePrimary || "#67f0ff",
+    style: "stargate",
+    theme: getWorldThemeAt(player.x, player.y),
+    x: player.x,
+    y: player.y
+  });
+  send(client, { type: "serverMessage", message: "planet_arrived", planetName: planet.name });
+  broadcastSnapshot();
 }
 
 function handleShipDockRequest(client) {

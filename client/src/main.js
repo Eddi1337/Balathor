@@ -1476,6 +1476,12 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: "No dock port within range" });
     } else if (message.message === "ship_dock_not_piloting") {
       appendChat({ kind: "system", name: "Realm", text: "Take a pilot station to dock" });
+    } else if (message.message === "planet_arrived") {
+      appendChat({ kind: "system", name: "Realm", text: `Landed on ${message.planetName || "planet"}` });
+    } else if (message.message === "planet_travel_not_in_space") {
+      appendChat({ kind: "system", name: "Realm", text: "Board your ship before travelling to a planet" });
+    } else if (message.message === "planet_travel_unknown") {
+      appendChat({ kind: "system", name: "Realm", text: "Unknown planet" });
     } else if (message.message === "ship_station_entered") {
       appendChat({ kind: "system", name: "Realm", text: `Entered ${message.stationName || "ship station"}` });
     } else if (message.message === "ship_station_left") {
@@ -3142,6 +3148,9 @@ function wireUi() {
       return;
     }
     if (tryOpenPlayerContextMenuFromCanvas(event, world.x, world.y)) {
+      return;
+    }
+    if (tryTravelToPlanetAtClick(world.x, world.y)) {
       return;
     }
     if (!playerAttackBlockedBySafeZone()) {
@@ -7559,6 +7568,42 @@ function nearestShipStationForPlayer(player) {
 const SHIP_DOCK_PROMPT_RANGE = 8;
 const SHIELD_HIT_GLOW_MS = 600;
 
+function planetAtWorldPoint(wx, wy) {
+  if (!state.spaceObjects) return null;
+  let best = null;
+  let bestDistSq = Infinity;
+  for (const obj of state.spaceObjects.values()) {
+    if (obj?.kind !== "planet") continue;
+    const dx = wx - Number(obj.x);
+    const dy = wy - Number(obj.y);
+    const r = Number(obj.radius) || 30;
+    const padded = r + 2;
+    const distSq = dx * dx + dy * dy;
+    if (distSq <= padded * padded && distSq < bestDistSq) {
+      best = obj;
+      bestDistSq = distSq;
+    }
+  }
+  return best;
+}
+
+function tryTravelToPlanetAtClick(wx, wy) {
+  if (!isSciFiWorld()) return false;
+  const self = state.players.get(state.selfId);
+  // Only piloting (or otherwise in space, not on a planet surface) can travel.
+  if (!self?.ship?.boarded) return false;
+  const planet = planetAtWorldPoint(wx, wy);
+  if (!planet) return false;
+  send({
+    type: "travelToPlanet",
+    planetId: planet.id,
+    targetX: Number(planet.x),
+    targetY: Number(planet.y)
+  });
+  appendChat({ kind: "system", name: "Realm", text: `Setting course for ${planet.name || "planet"}…` });
+  return true;
+}
+
 function drawShieldBuff(player, sx, sy) {
   const buff = player?.shieldBuff;
   if (!buff) return;
@@ -8387,18 +8432,69 @@ function drawAsteroidFieldObject(obj, sx, sy) {
 function drawPlanetObject(obj, sx, sy) {
   const radius = Math.max(20, Number(obj.radius || 48)) * TILE_SIZE;
   const gradient = ctx.createRadialGradient(sx - radius * 0.28, sy - radius * 0.34, radius * 0.14, sx, sy, radius);
-  if ((obj.type || "").toLowerCase() === "ice") {
-    gradient.addColorStop(0, "#f8fdff");
-    gradient.addColorStop(0.52, "#9fd8ff");
-    gradient.addColorStop(1, "#335a7d");
-  } else if ((obj.type || "").toLowerCase() === "desert") {
-    gradient.addColorStop(0, "#ffe0a6");
-    gradient.addColorStop(0.52, "#d3a15b");
-    gradient.addColorStop(1, "#7c4e2c");
-  } else {
-    gradient.addColorStop(0, "#daf7b0");
-    gradient.addColorStop(0.45, "#7ecf8d");
-    gradient.addColorStop(1, "#244d3b");
+  const type = String(obj.type || "").toLowerCase();
+  switch (type) {
+    case "ice":
+      gradient.addColorStop(0, "#f8fdff");
+      gradient.addColorStop(0.52, "#9fd8ff");
+      gradient.addColorStop(1, "#335a7d");
+      break;
+    case "desert":
+      gradient.addColorStop(0, "#ffe0a6");
+      gradient.addColorStop(0.52, "#d3a15b");
+      gradient.addColorStop(1, "#7c4e2c");
+      break;
+    case "volcanic":
+      gradient.addColorStop(0, "#ffe2a8");
+      gradient.addColorStop(0.5, "#ef4444");
+      gradient.addColorStop(1, "#3f1313");
+      break;
+    case "ocean":
+      gradient.addColorStop(0, "#cdebff");
+      gradient.addColorStop(0.55, "#2bb3ff");
+      gradient.addColorStop(1, "#0b3b66");
+      break;
+    case "jungle":
+      gradient.addColorStop(0, "#bbf7d0");
+      gradient.addColorStop(0.5, "#16a34a");
+      gradient.addColorStop(1, "#14532d");
+      break;
+    case "crystal":
+      gradient.addColorStop(0, "#ede9fe");
+      gradient.addColorStop(0.5, "#a78bfa");
+      gradient.addColorStop(1, "#3a1d80");
+      break;
+    case "fungal":
+      gradient.addColorStop(0, "#fce7f3");
+      gradient.addColorStop(0.5, "#d946ef");
+      gradient.addColorStop(1, "#3b0a45");
+      break;
+    case "barren":
+      gradient.addColorStop(0, "#cbd5e1");
+      gradient.addColorStop(0.5, "#64748b");
+      gradient.addColorStop(1, "#1e293b");
+      break;
+    case "toxic":
+      gradient.addColorStop(0, "#ecfccb");
+      gradient.addColorStop(0.5, "#84cc16");
+      gradient.addColorStop(1, "#2a3d10");
+      break;
+    case "aether":
+      gradient.addColorStop(0, "#cffafe");
+      gradient.addColorStop(0.5, "#22d3ee");
+      gradient.addColorStop(1, "#0e3a47");
+      break;
+    case "ashland":
+      gradient.addColorStop(0, "#fafaf9");
+      gradient.addColorStop(0.5, "#a8a29e");
+      gradient.addColorStop(1, "#1c1917");
+      break;
+    case "lush":
+    default:
+      gradient.addColorStop(0, "#daf7b0");
+      gradient.addColorStop(0.45, "#7ecf8d");
+      gradient.addColorStop(1, "#244d3b");
+      break;
   }
 
   ctx.save();
