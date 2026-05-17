@@ -38,10 +38,11 @@ const NPC_SPATIAL_QUERY_PAD = 18;
 const TOWN_ARCHER_COUNT = 50;
 const TOWN_ARCHER_AMMO_MAX = 24;
 const TOWN_ARCHER_LOW_AMMO = 8;
+const TOWN_COURIER_COUNT = 50;
 const TOWN_COURIER_CARRY_MAX = 16;
-const FLETCHER_ARROW_STOCK_MAX = 960;
-const FLETCHER_CRAFT_PER_SEC = 18;
-const FLETCHER_WORKER_CRAFT_PER_SEC = 7;
+const FLETCHER_ARROW_STOCK_MAX = 9999;
+const FLETCHER_CRAFT_PER_SEC = 180;
+const FLETCHER_WORKER_CRAFT_PER_SEC = 60;
 
 function isNightHour(h) { return h < 6 || h >= 22; }
 function isPubHour(h)   { return h >= 18 && h < 22; }
@@ -1311,7 +1312,7 @@ function buildHydratedHubNpcExtras() {
     isTrader: true,
     isFletcher: true,
     shopType: "fletcher",
-    arrowStock: 240,
+    arrowStock: FLETCHER_ARROW_STOCK_MAX,
     arrowStockMax: FLETCHER_ARROW_STOCK_MAX,
     craftRate: FLETCHER_CRAFT_PER_SEC,
     dialogue: [
@@ -1376,16 +1377,22 @@ function buildHydratedHubNpcExtras() {
       });
   }
 
-  const courierNames = ["Arrow Runner", "Arrow Porter", "Arrow Hand", "Arrow Runner"];
-  for (let ci = 0; ci < 4; ci += 1) {
+  const courierNamePool = [
+    "Arrow Runner", "Arrow Porter", "Arrow Hand", "Arrow Carrier",
+    "Arrow Bearer", "Supply Runner", "Shaft Carrier", "Quiver Hand"
+  ];
+  for (let ci = 0; ci < TOWN_COURIER_COUNT; ci += 1) {
+    // Spread spawn positions in a 5-column grid around the fletcher
+    const col = (ci % 5) - 2;
+    const row = Math.floor(ci / 5);
     out.push({
       id: `hub_arrow_courier_${ci}`,
-      name: courierNames[ci] || "Arrow Courier",
+      name: courierNamePool[ci % courierNamePool.length],
       classId: "ranger",
       primary: "#6d5c46",
-      accent: ci % 2 === 0 ? "#e8c86a" : "#d2b57a",
-      homeX: fletcherHomeX + (ci % 2 === 0 ? -0.75 : 0.85),
-      homeY: fletcherHomeY + (ci < 2 ? 0.55 : 1.0),
+      accent: ci % 3 === 0 ? "#e8c86a" : ci % 3 === 1 ? "#d2b57a" : "#c8a050",
+      homeX: fletcherHomeX + col * 0.9,
+      homeY: fletcherHomeY + 0.5 + row * 0.8,
       patrolRadius: 0,
       isArrowCourier: true,
       carryAmount: 0,
@@ -1394,7 +1401,9 @@ function buildHydratedHubNpcExtras() {
       dialogue: [
         "Arrows on the move.",
         "Wall first, then back for more.",
-        "Keep the quivers topped up."
+        "Keep the quivers topped up.",
+        "Every archer needs a steady supply.",
+        "Fletchers make them, I deliver them."
       ]
     });
   }

@@ -9693,6 +9693,53 @@ function npcQuestMarkerKind(npc) {
   return null;
 }
 
+function drawArcherAmmoBucket(entity, sx, sy) {
+  const ammo = Number(entity.ammo);
+  if (!Number.isFinite(ammo)) return;
+  const ammoMax = Number(entity.ammoMax) || 24;
+  // Scale 0–ammoMax to 0–5 displayed arrows
+  const count = Math.min(5, Math.ceil((ammo / ammoMax) * 5));
+
+  // Bucket positioned to the right of the character at ground level
+  const bx = sx + 15;
+  const by = sy + 4;
+  const bw = 9;
+  const bh = 7;
+
+  ctx.save();
+  // Bucket body (wood)
+  ctx.fillStyle = "#6b4c28";
+  ctx.fillRect(bx, by, bw, bh);
+  // Bucket top rim
+  ctx.fillStyle = "#4a3218";
+  ctx.fillRect(bx - 1, by, bw + 2, 2);
+  // Bucket bottom (slightly narrower)
+  ctx.fillStyle = "#4a3218";
+  ctx.fillRect(bx + 1, by + bh - 1, bw - 2, 1);
+  // Metal band around middle
+  ctx.fillStyle = "#888";
+  ctx.fillRect(bx - 1, by + 3, bw + 2, 1);
+
+  // Arrow shafts sticking up — always draw 5 slots, grey out empty ones
+  const spacing = Math.floor(bw / 5);
+  for (let i = 0; i < 5; i++) {
+    const ax = bx + 1 + i * spacing;
+    if (i < count) {
+      // Shaft
+      ctx.fillStyle = "#c8a856";
+      ctx.fillRect(ax, by - 6, 1, 7);
+      // Arrowhead tip
+      ctx.fillStyle = "#3a2a14";
+      ctx.fillRect(ax, by - 7, 1, 1);
+    } else {
+      // Empty slot hint
+      ctx.fillStyle = "rgba(0,0,0,0.18)";
+      ctx.fillRect(ax, by - 3, 1, 4);
+    }
+  }
+  ctx.restore();
+}
+
 function drawQuestMarker(npc, sx, sy) {
   const kind = npcQuestMarkerKind(npc);
   if (!kind) return;
@@ -9924,6 +9971,9 @@ function drawPlayers() {
       }
       if (isNpc) {
         drawQuestMarker(entity, sx, sy);
+        if (typeof entity.ammo === "number") {
+          drawArcherAmmoBucket(entity, sx, sy);
+        }
       }
     }
   }
@@ -10469,6 +10519,23 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
     rAY = by - 2 * s + armSwing;
     ctx.fillRect(lAX, lAY, 2 * s, 4 * s);
     ctx.fillRect(rAX, rAY, 2 * s, 4 * s);
+  }
+
+  // Held arrow bundle for courier NPCs
+  if (isNpc && entity.isArrowCourier && Number(entity.carryAmount) > 0) {
+    const bundleCount = Math.min(7, Math.max(1, Math.ceil(Number(entity.carryAmount) / 3)));
+    const bundleY = by - 2 * s;
+    ctx.save();
+    for (let i = 0; i < bundleCount; i++) {
+      const yo = Math.round((i - (bundleCount - 1) / 2) * (s + 1));
+      ctx.fillStyle = "#c8a856";
+      ctx.fillRect(bx - 7 * s, bundleY + yo, 13 * s, Math.max(1, s - 1));
+      ctx.fillStyle = "#3a2a14";
+      ctx.fillRect(bx + 6 * s, bundleY + yo - 1, Math.round(2 * s), Math.max(2, s + 1));
+      ctx.fillStyle = entity.accent || "#d2885a";
+      ctx.fillRect(bx - 9 * s, bundleY + yo, Math.round(2 * s), Math.max(1, s - 1));
+    }
+    ctx.restore();
   }
 
   // Head / hood

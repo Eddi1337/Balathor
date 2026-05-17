@@ -172,14 +172,11 @@ const GATEKEEPER_NEAR_TOWN_RADIUS = HUB_TOWN_GRASS_RADIUS + 84;
 const GATEKEEPER_ATTACK_COOLDOWN_MS = 1150;
 const GATEKEEPER_ARROW_DAMAGE = 34;
 const TOWN_ARCHER_AMMO_LOW_WATERMARK = 8;
-const TOWN_COURIER_IDS = Object.freeze([
-  "hub_arrow_courier_0",
-  "hub_arrow_courier_1",
-  "hub_arrow_courier_2",
-  "hub_arrow_courier_3"
-]);
+const TOWN_COURIER_IDS = Object.freeze(
+  Array.from({ length: 50 }, (_, i) => `hub_arrow_courier_${i}`)
+);
 const FLETCHER_ID = "hub_fletcher_main";
-const FLETCHER_ARROW_STOCK_MAX = 960;
+const FLETCHER_ARROW_STOCK_MAX = 9999;
 const FLETCHER_COURIER_CARRY_MAX = 16;
 const FANTASY_ASSAULT_INTERVAL_MS = 15000;
 const SCI_FI_ASSAULT_INTERVAL_MS = 30000;
