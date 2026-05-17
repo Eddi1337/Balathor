@@ -104,6 +104,7 @@ const SCI_FI_STARGATE_PORTAL = Object.freeze({
   style: "stargate"
 });
 const { computeHubDistrict, HUB_CLEARING_RADIUS: HUB_TOWN_GRASS_RADIUS } = require("./hubRoundTown.js");
+const { getMinigameSitesInChunk } = require("./minigameSites.js");
 /** Walled procedural hub + arterial sets (paths never overlap building rects). */
 const _hubDistrict = computeHubDistrict();
 const HUB_PATH_TILE_KEYS = _hubDistrict.pathTileKeys;
@@ -2221,6 +2222,7 @@ function generateChunk(cx, cy) {
     portals: getPortalsInChunk(cx, cy),
     buildings: getBuildingsInChunk(cx, cy),
     roadsides: getRoadsideFeaturesInChunk(cx, cy),
+    minigameSites: getMinigameSitesInChunk(cx, cy),
     spaceObjects
   };
 }

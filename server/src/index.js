@@ -72,6 +72,7 @@ const {
   getWorldDatabasePath
 } = require("./worldStore");
 const { createSocialSystem } = require("./social.js");
+const { createMinigameSystem } = require("./minigames.js");
 const { postAuthEventToDiscord, isAllowedDiscordWebhookUrl, resolveDiscordAuthWebhookUrl } = require("./discordWebhook");
 
 const HOST = process.env.HOST || "127.0.0.1";
@@ -834,6 +835,7 @@ seedModAccounts();
 const clients = new Map();
 /** @type {ReturnType<typeof createSocialSystem> | null} */
 let social = null;
+let minigames = null;
 const chunkCache = new Map();
 const chatHistory = [];
 const itemDatabase = createItemDatabase();
@@ -1042,6 +1044,59 @@ function initSocialModule() {
   });
 }
 initSocialModule();
+
+function getPartyMemberClients(client) {
+  const view = social?.getPartyView(client);
+  if (!view?.members?.length) return [client];
+  const out = [];
+  for (const m of view.members) {
+    if (!m?.id) continue;
+    const c = findClientByPlayerIdInternal(m.id);
+    if (c) out.push(c);
+  }
+  return out.length ? out : [client];
+}
+
+function spawnMinigameAmbush(x, y) {
+  const jitter = () => (Math.random() - 0.5) * 5;
+  addRuntimeMob({
+    id: `mg_amb_${Date.now()}_${Math.floor(Math.random() * 9999)}`,
+    name: "Raider",
+    homeX: x + jitter(),
+    homeY: y + jitter(),
+    x: x + jitter(),
+    y: y + jitter(),
+    maxHp: 42,
+    level: 2,
+    attackDamage: 8,
+    roamRadius: 6,
+    speed: 1.5,
+    forceSimulate: true
+  });
+  broadcastSnapshot();
+}
+
+function initMinigameModule() {
+  minigames = createMinigameSystem({
+    send,
+    pushChat,
+    broadcastSnapshot,
+    saveClientCharacter,
+    clients,
+    awardXp,
+    worldForPosition,
+    isSwimmingAt,
+    getWorldHour: () => getWorldTimeSnapshot().hour,
+    getCampById: (id) => ENEMY_CAMPS.find((c) => c.id === id) || null,
+    getOwnedShip: getOwnedActiveShip,
+    getPartyView: (client) => social?.getPartyView(client) || null,
+    getPartyMemberClients,
+    spawnEscortAmbush: spawnMinigameAmbush,
+    tickRate: TICK_RATE
+  });
+}
+initMinigameModule();
+
 queueSimulate();
 
 function clearSimulateTimer() {
@@ -1248,7 +1303,8 @@ function serializePlayer(player) {
       ? { ships: savedShips, activeShipId: player.activeShipId || ownedShip?.id || null }
       : {}),
     ...(ownedShip && typeof ownedShip === "object" ? { ship: serializeShip({ ...ownedShip, stationRole: null, stationId: null }) } : {}),
-    ...(typeof player.aboardShipId === "string" && player.aboardShipId ? { aboardShipId: player.aboardShipId } : {})
+    ...(typeof player.aboardShipId === "string" && player.aboardShipId ? { aboardShipId: player.aboardShipId } : {}),
+    ...(minigames ? { minigameStats: minigames.serializeMinigameStats(player) } : {})
   };
 }
 
@@ -2870,6 +2926,10 @@ function simulate() {
     perfAcc.consecration += Number(process.hrtime.bigint() - _pt) / 1e3;
   }
 
+  if (minigames) {
+    minigames.tick(Date.now());
+  }
+
   snapshotAccumulator += SNAPSHOT_RATE;
   let _pt = process.hrtime.bigint();
   if (snapshotAccumulator >= TICK_RATE) {
@@ -3399,6 +3459,13 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "minigameAction") {
+    if (minigames) {
+      minigames.handleAction(client, message);
+    }
+    return;
+  }
+
   if (message.type === "teleportMenuOpen") {
     handleTeleportMenuOpen(client);
     return;
@@ -3831,6 +3898,11 @@ function joinWorld(client, message, savedCharacter = null) {
     ? Math.min(client.player.maxHp, clampInteger(savedCharacter.hp ?? client.player.maxHp, 0, client.player.maxHp))
     : client.player.maxHp;
 
+  if (savedCharacter?.minigameStats && minigames) {
+    client.player.minigameStats = savedCharacter.minigameStats;
+    minigames.ensureMinigameStats(client.player);
+  }
+
   if (client.account && !savedCharacter) {
     saveClientCharacter(client);
   }
@@ -3985,6 +4057,14 @@ function handleAttack(client, message = {}) {
     if (hitKind === "player" && hit.hp <= 0) {
       respawnPlayer(hit);
       event.defeated = true;
+    }
+  }
+
+  if (!target && minigames) {
+    const nearDummy = Math.hypot(client.player.x - 43.5, client.player.y - (-17)) < 4.2;
+    if (nearDummy) {
+      const dmg = getAttackDamage(client.player, loadout);
+      minigames.onAttackDamage(client, dmg, "dummy", 43.5, -17);
     }
   }
 
@@ -4151,6 +4231,9 @@ function lootWorldChest(client, chest) {
     return true;
   }
   chest.opened = true;
+  if (minigames) {
+    minigames.onChestLoot(client, chest);
+  }
   send(client, { type: "serverMessage", message: "chest_looted", itemName: chest.item.name });
   broadcastSnapshot();
   return true;
@@ -5436,6 +5519,9 @@ function mobMatchesQuestStep(mob, step) {
 }
 
 function recordMobDefeatForQuests(client, mob) {
+  if (minigames && client?.player) {
+    minigames.onMobDefeat(client, mob);
+  }
   const player = client?.player || client;
   if (!player?.quests) return;
   let changed = false;
@@ -5556,6 +5642,11 @@ function handleInteract(client, message = {}) {
       name: "Realm",
       text: vibe
     });
+    return;
+  }
+
+  const minigameSite = minigames?.findSiteNear(client.player, message);
+  if (minigameSite && minigames.handleInteract(client, minigameSite)) {
     return;
   }
 
@@ -6536,7 +6627,8 @@ function broadcastSnapshot() {
         ? {
             ships: Array.isArray(p.ships) ? p.ships.map(serializeShip) : [],
             activeShipId: p.activeShipId || getOwnedActiveShip(p)?.id || null,
-            quests: buildQuestSnapshot(p)
+            quests: buildQuestSnapshot(p),
+            minigameStats: minigames ? minigames.serializeMinigameStats(p) : null
           }
         : {}),
       talentPoints: p.talentPoints || 0,
@@ -8084,6 +8176,10 @@ function updateCaravans(dt) {
     for (const pid of caravan.passengers) {
       const passenger = getPlayerById(pid);
       if (!passenger) continue;
+      const passengerClient = findClientByPlayerIdInternal(pid);
+      if (passengerClient && minigames) {
+        minigames.onCaravanPassengerTick(passengerClient, caravan);
+      }
       passenger.x += mx;
       passenger.y += my;
       passenger.facing = caravan.facing;

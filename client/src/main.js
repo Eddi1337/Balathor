@@ -960,6 +960,34 @@ function getTileColors(tile, theme = state.worldTheme) {
 
 resize();
 wireUi();
+if (globalThis.BalathorMinigames) {
+  BalathorMinigames.init({
+    ctx,
+    canvas,
+    TILE_SIZE,
+    camera: state.camera,
+    worldToScreenPoint,
+    screenEventToWorld,
+    send,
+    sendInteract,
+    appendChat,
+    getSelf: () => state.players.get(state.selfId),
+    getJoined: () => state.joined,
+    getWorldId: () => {
+      const self = state.players.get(state.selfId);
+      if (!self) return isSciFiWorld() ? "scifi" : "fantasy";
+      if (self.x >= 4900 && self.x <= 6800 && Math.abs(self.y) < 80) {
+        if (Math.hypot(self.x - 5300, self.y) < 45) return "planet:planet_rust";
+      }
+      if (isSciFiWorld() || (self.x > 1500 && self.x < 2500 && Math.abs(self.y) < 200)) return "scifi";
+      return "fantasy";
+    },
+    setTooltip: (text, small) => {
+      state.hoverTooltipText = text;
+      state.hoverTooltipSmall = small;
+    }
+  });
+}
 start();
 requestAnimationFrame(frame);
 setInterval(sendInput, 33);
@@ -1235,6 +1263,15 @@ function handleServerMessage(message) {
     indexChunkRoadsides(message);
     indexChunkSpaceObjects(message);
     state.requestedChunks.delete(key);
+    return;
+  }
+
+  if (globalThis.BalathorMinigames && (
+    message.type === "minigameState" ||
+    message.type === "minigameEnd" ||
+    message.type === "minigameDebuff"
+  )) {
+    BalathorMinigames.onMessage(message);
     return;
   }
 
@@ -1618,6 +1655,20 @@ function handleServerMessage(message) {
         name: "Realm",
         text: `${message.name || "Someone"} wants to trade with you.`
       });
+    } else if (message.message === "minigame_need_gold") {
+      appendChat({ kind: "system", name: "Realm", text: `You need at least ${message.amount || 1} gold.` });
+    } else if (message.message === "minigame_busy") {
+      appendChat({ kind: "system", name: "Realm", text: "Finish your current activity first." });
+    } else if (message.message === "minigame_party_only") {
+      appendChat({ kind: "system", name: "Realm", text: "Party relay needs at least two members." });
+    } else if (message.message === "minigame_knight_only") {
+      appendChat({ kind: "system", name: "Realm", text: "Only knights may trial the sanctum ring." });
+    } else if (message.message === "minigame_night_only") {
+      appendChat({ kind: "system", name: "Realm", text: "The hollow stone only answers at night." });
+    } else if (message.message === "minigame_need_ship") {
+      appendChat({ kind: "system", name: "Realm", text: "Board your ship to run the asteroid lane." });
+    } else if (message.message === "minigame_swim_only") {
+      appendChat({ kind: "system", name: "Realm", text: "You must be swimming to tag a buoy." });
     } else if (message.message === "fountain_no_gold") {
       appendChat({ kind: "system", name: "Realm", text: "You need at least 1 gold to toss into the fountain." });
     } else if (message.message === "pub_need_house") {
@@ -1773,6 +1824,9 @@ function updateSelfInventory() {
   state.ships = Array.isArray(self.ships) ? self.ships : (self.ship ? [self.ship] : []);
   state.quests = Array.isArray(self.quests) ? self.quests : [];
   state.gold = Number.isFinite(self.gold) ? self.gold : state.gold;
+  if (self.minigameStats && globalThis.BalathorMinigames) {
+    BalathorMinigames.state.stats = self.minigameStats;
+  }
   if (state.shop?.open) {
     state.shop.gold = state.gold;
   }
@@ -3210,6 +3264,10 @@ function wireUi() {
       return;
     }
     hideCmdPalette();
+    if (globalThis.BalathorMinigames && BalathorMinigames.handleChatCommand(text)) {
+      chatInput.value = "";
+      return;
+    }
     if (text.startsWith("/")) {
       const cmd = text.toLowerCase();
       if (cmd === "/sci") {
@@ -3310,6 +3368,9 @@ function wireUi() {
       return;
     }
     event.preventDefault();
+    if (globalThis.BalathorMinigames && BalathorMinigames.tryClick(event)) {
+      return;
+    }
     if (tryInteractClickedFixture(event)) {
       return;
     }
@@ -3452,6 +3513,10 @@ function wireUi() {
     }
 
     if (state.menuOpen) {
+      return;
+    }
+
+    if (globalThis.BalathorMinigames && BalathorMinigames.onKeyDown(event)) {
       return;
     }
 
@@ -4764,6 +4829,10 @@ function refreshWorldHoverTooltip(event) {
     }
   }
 
+  if (globalThis.BalathorMinigames && BalathorMinigames.refreshTooltip(world)) {
+    return;
+  }
+
   let bestNpc = null;
   let bestNpcDist = NPC_CTX_HIT_RADIUS;
   for (const npc of state.npcs.values()) {
@@ -5606,6 +5675,9 @@ function indexChunkRoadsides(chunk) {
     if (feat && feat.id) {
       state.roadsides.set(String(feat.id), feat);
     }
+  }
+  if (globalThis.BalathorMinigames) {
+    BalathorMinigames.onChunk(chunk);
   }
 }
 
@@ -7243,6 +7315,9 @@ function draw() {
   drawShipRadar();
   drawGunnerMissileTarget();
   drawWorldHoverTooltip();
+  if (globalThis.BalathorMinigames) {
+    BalathorMinigames.drawOverlay();
+  }
   if (state.menuOpen) {
     syncMenuSessionInfo();
   }
@@ -7773,6 +7848,9 @@ function drawWorld() {
   drawWorldLoot();
   drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY);
   drawRoadsideFeatures(minTileX, maxTileX, minTileY, maxTileY);
+  if (globalThis.BalathorMinigames) {
+    BalathorMinigames.drawMinigameSites(minTileX, maxTileX, minTileY, maxTileY);
+  }
   drawTraderCaravans(minTileX, maxTileX, minTileY, maxTileY);
 }
 
