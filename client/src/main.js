@@ -1989,18 +1989,40 @@ function normalizeAngle(value) {
   return angle;
 }
 
+// True when the viewer is sitting in a pilot / captain / copilot seat —
+// either on their own boarded ship or as a passenger on someone else's.
+function selfIsInPilotSeat(player = state.players.get(state.selfId)) {
+  const role = player?.ship?.stationRole || null;
+  if (!isPilotShipRole(role)) return false;
+  // The snapshot copies player.shipStationRole into ship.stationRole, so the
+  // role is set for both ship owners (boarded ship) and passengers (aboardShipId).
+  return Boolean(player.ship?.boarded || player.aboardShipId);
+}
+
 function getInteriorShipView(player = state.players.get(state.selfId)) {
-  const ship = player?.ship;
-  if (!ship?.boarded || !ship.deckMode) {
+  if (!player) return null;
+  if (selfIsInPilotSeat(player)) {
+    // Pilots and captains see the exterior view, not the locked interior camera.
     return null;
   }
-  if (isPilotShipRole(ship.stationRole)) {
-    return null;
+  // Owners walking around their own deck.
+  const ownShip = player.ship?.boarded && player.ship.deckMode ? player.ship : null;
+  // Passengers riding inside someone else's ship.
+  const aboardShipId = typeof player.aboardShipId === "string" ? player.aboardShipId : null;
+  let hostShip = ownShip;
+  if (!hostShip && aboardShipId) {
+    for (const other of state.players.values()) {
+      if (other.ship?.id === aboardShipId && other.ship?.boarded && other.ship.deckMode) {
+        hostShip = other.ship;
+        break;
+      }
+    }
   }
-  const center = shipCenter(ship, player);
-  const facing = Number.isFinite(Number(ship.facing)) ? Number(ship.facing) : Number(player?.facing) || 0;
+  if (!hostShip) return null;
+  const center = shipCenter(hostShip, player);
+  const facing = Number.isFinite(Number(hostShip.facing)) ? Number(hostShip.facing) : Number(player?.facing) || 0;
   return {
-    ship,
+    ship: hostShip,
     center,
     rotation: normalizeAngle(-facing)
   };
@@ -2008,8 +2030,7 @@ function getInteriorShipView(player = state.players.get(state.selfId)) {
 
 function getEffectiveWorldZoom(player = state.players.get(state.selfId)) {
   const baseZoom = state.zoom || 1;
-  const pilotingForZoom = Boolean(player?.ship?.boarded && isPilotShipRole(player.ship?.stationRole));
-  return baseZoom * (pilotingForZoom ? 0.7 : 1);
+  return baseZoom * (selfIsInPilotSeat(player) ? 0.7 : 1);
 }
 
 function predictLocalPlayer(player, dt) {
@@ -7846,14 +7867,85 @@ function findShipDeckInteractionAt(wx, wy) {
   return best;
 }
 
+function getShipHullPolygonClient(hullClass) {
+  if (hullClass === "hauler" || hullClass === "freighter") {
+    return [[-0.90,0.24],[-0.60,-0.62],[0.56,-0.62],[0.94,-0.04],[0.56,0.62],[-0.60,0.62]];
+  }
+  if (hullClass === "fighter" || hullClass === "interceptor" || hullClass === "needle") {
+    return [[-0.94,0],[-0.32,-0.70],[0.94,0],[-0.32,0.70]];
+  }
+  if (hullClass === "yacht") {
+    const pts = [];
+    const sample = (p0, p1, p2, p3, steps = 14) => {
+      for (let i = 1; i <= steps; i += 1) {
+        const t = i / steps;
+        const u = 1 - t;
+        pts.push([
+          u*u*u*p0[0] + 3*u*u*t*p1[0] + 3*u*t*t*p2[0] + t*t*t*p3[0],
+          u*u*u*p0[1] + 3*u*u*t*p1[1] + 3*u*t*t*p2[1] + t*t*t*p3[1]
+        ]);
+      }
+    };
+    pts.push([-0.86, 0.16]);
+    sample([-0.86, 0.16], [-0.50,-0.90], [0.44,-0.90], [0.92, 0]);
+    sample([0.92, 0],     [0.48, 0.94], [-0.56, 0.94], [-0.86, 0.16]);
+    return pts;
+  }
+  return [[-0.82,0.36],[-0.50,-0.34],[0.20,-0.62],[0.88,0.04],[0.40,0.78],[-0.44,0.56]];
+}
+
+function clientPointInPolygon(px, py, polygon) {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const [xi, yi] = polygon[i];
+    const [xj, yj] = polygon[j];
+    if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / ((yj - yi) || 1e-9) + xi)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function clientProjectPointToPolygonEdge(px, py, polygon) {
+  let bestX = polygon[0][0], bestY = polygon[0][1];
+  let bestDist = Infinity;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const x1 = polygon[j][0], y1 = polygon[j][1];
+    const x2 = polygon[i][0], y2 = polygon[i][1];
+    const dx = x2 - x1, dy = y2 - y1;
+    const len2 = dx * dx + dy * dy;
+    let t = len2 > 0 ? ((px - x1) * dx + (py - y1) * dy) / len2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    const projX = x1 + t * dx;
+    const projY = y1 + t * dy;
+    const d2 = (projX - px) * (projX - px) + (projY - py) * (projY - py);
+    if (d2 < bestDist) {
+      bestDist = d2;
+      bestX = projX;
+      bestY = projY;
+    }
+  }
+  return [bestX, bestY];
+}
+
 function clampPointToShipDeck(ship, x, y) {
   const layout = getShipLayout(ship);
   const center = shipCenter(ship, { x, y });
-  const halfW = Math.max(1, layout.deckW / 2 - 0.9);
-  const halfH = Math.max(1, layout.deckH / 2 - 0.9);
+  const halfW = Math.max(0.5, layout.deckW / 2);
+  const halfH = Math.max(0.5, layout.deckH / 2);
+  let nx = (x - center.x) / halfW;
+  let ny = (y - center.y) / halfH;
+  const polygon = getShipHullPolygonClient(ship?.hullClass || "skiff");
+  const margin = 0.12;
+  if (!clientPointInPolygon(nx, ny, polygon)) {
+    const [ex, ey] = clientProjectPointToPolygonEdge(nx, ny, polygon);
+    const len = Math.hypot(ex, ey) || 1;
+    nx = ex - (ex / len) * margin;
+    ny = ey - (ey / len) * margin;
+  }
   return {
-    x: Math.max(center.x - halfW, Math.min(center.x + halfW, x)),
-    y: Math.max(center.y - halfH, Math.min(center.y + halfH, y))
+    x: center.x + nx * halfW,
+    y: center.y + ny * halfH
   };
 }
 
@@ -8953,12 +9045,18 @@ function drawPlayers() {
   //     see the interior of that ship regardless of what the pilot is doing.
   //   - Everyone else (including other players) sees the small exterior view of any boarded ship.
   const selfShip = self?.ship?.boarded ? self.ship : null;
-  const selfPiloting = Boolean(selfShip && isPilotShipRole(selfShip.stationRole));
   const selfAboardShipId = typeof self?.aboardShipId === "string" ? self.aboardShipId : null;
+  // The snapshot overrides ship.stationRole/stationId with the player's per-player
+  // shipStationRole so this works for both ship owners and party-teleport passengers.
+  const selfStationRole = self?.ship?.stationRole || null;
+  const selfPiloting = Boolean(selfStationRole && isPilotShipRole(selfStationRole));
   let viewerInteriorShipId = null;
-  if (selfAboardShipId) {
+  if (selfPiloting) {
+    // Sitting in a pilot/captain seat — get the exterior view of the host ship.
+    viewerInteriorShipId = null;
+  } else if (selfAboardShipId) {
     viewerInteriorShipId = selfAboardShipId;
-  } else if (selfShip && selfShip.deckMode && !selfPiloting) {
+  } else if (selfShip && selfShip.deckMode) {
     viewerInteriorShipId = selfShip.id;
   }
   const renderedShips = new Set();

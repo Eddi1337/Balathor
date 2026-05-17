@@ -1357,14 +1357,118 @@ function shipStationWorld(ship, station) {
   return { x: center.x + Number(station?.x || 0), y: center.y + Number(station?.y || 0) };
 }
 
+// Polygon points in normalised [-1..1] space relative to the deck centre,
+// mirroring the visual hull silhouette drawn by buildShipHullPath on the client.
+function getShipHullPolygon(hullClass) {
+  if (hullClass === "hauler" || hullClass === "freighter") {
+    return [[-0.90, 0.24],[-0.60,-0.62],[0.56,-0.62],[0.94,-0.04],[0.56,0.62],[-0.60,0.62]];
+  }
+  if (hullClass === "fighter" || hullClass === "interceptor" || hullClass === "needle") {
+    return [[-0.94, 0],[-0.32,-0.70],[0.94, 0],[-0.32, 0.70]];
+  }
+  if (hullClass === "yacht") {
+    // Cubic-bezier silhouette approximated with sampled points.
+    const pts = [];
+    const sample = (p0, p1, p2, p3, steps = 14) => {
+      for (let i = 1; i <= steps; i += 1) {
+        const t = i / steps;
+        const u = 1 - t;
+        pts.push([
+          u*u*u*p0[0] + 3*u*u*t*p1[0] + 3*u*t*t*p2[0] + t*t*t*p3[0],
+          u*u*u*p0[1] + 3*u*u*t*p1[1] + 3*u*t*t*p2[1] + t*t*t*p3[1]
+        ]);
+      }
+    };
+    pts.push([-0.86, 0.16]);
+    sample([-0.86, 0.16], [-0.50,-0.90], [0.44,-0.90], [0.92, 0]);
+    sample([0.92, 0],     [0.48, 0.94], [-0.56, 0.94], [-0.86, 0.16]);
+    return pts;
+  }
+  return [[-0.82, 0.36],[-0.50,-0.34],[0.20,-0.62],[0.88, 0.04],[0.40, 0.78],[-0.44, 0.56]];
+}
+
+function pointInPolygon(px, py, polygon) {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const [xi, yi] = polygon[i];
+    const [xj, yj] = polygon[j];
+    if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / ((yj - yi) || 1e-9) + xi)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function projectPointToPolygonEdge(px, py, polygon) {
+  let bestX = polygon[0][0];
+  let bestY = polygon[0][1];
+  let bestDist = Infinity;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const x1 = polygon[j][0], y1 = polygon[j][1];
+    const x2 = polygon[i][0], y2 = polygon[i][1];
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len2 = dx * dx + dy * dy;
+    let t = len2 > 0 ? ((px - x1) * dx + (py - y1) * dy) / len2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    const projX = x1 + t * dx;
+    const projY = y1 + t * dy;
+    const d2 = (projX - px) * (projX - px) + (projY - py) * (projY - py);
+    if (d2 < bestDist) {
+      bestDist = d2;
+      bestX = projX;
+      bestY = projY;
+    }
+  }
+  return [bestX, bestY];
+}
+
+function clampShipLocalToHull(localX, localY, ship, layout = getShipLayout(ship)) {
+  const halfW = Math.max(0.5, layout.deckW / 2);
+  const halfH = Math.max(0.5, layout.deckH / 2);
+  // Convert ship-local tile coords to the normalised hull space.
+  let nx = localX / halfW;
+  let ny = localY / halfH;
+  const polygon = getShipHullPolygon(ship?.hullClass || "skiff");
+  // Margin keeps the player a tile shy of the visible hull edge.
+  const margin = 0.12;
+  if (pointInPolygon(nx, ny, polygon)) {
+    // Even when inside, refuse to stand within `margin` of the closest edge so the
+    // collision feels like a wall rather than a sticky boundary.
+    const [ex, ey] = projectPointToPolygonEdge(nx, ny, polygon);
+    const dx = nx - ex;
+    const dy = ny - ey;
+    const dist = Math.hypot(dx, dy);
+    if (dist < margin && dist > 1e-4) {
+      const push = (margin - dist);
+      nx -= (dx / dist) * push * -1; // push back inward
+      ny -= (dy / dist) * push * -1;
+    }
+  } else {
+    const [ex, ey] = projectPointToPolygonEdge(nx, ny, polygon);
+    // Pull a hair inside the edge so we don't oscillate on the boundary.
+    const cx = 0, cy = 0;
+    const tx = ex - cx;
+    const ty = ey - cy;
+    const len = Math.hypot(tx, ty) || 1;
+    nx = ex - (tx / len) * margin;
+    ny = ey - (ty / len) * margin;
+  }
+  return [nx * halfW, ny * halfH];
+}
+
 function clampPlayerToShipDeck(player) {
   const ship = player?.ship;
   if (!ship) return;
   const layout = getShipLayout(ship);
-  const halfW = Math.max(1, layout.deckW / 2 - 0.9);
-  const halfH = Math.max(1, layout.deckH / 2 - 0.9);
-  player.shipLocalX = Math.max(-halfW, Math.min(halfW, Number(player.shipLocalX) || 0));
-  player.shipLocalY = Math.max(-halfH, Math.min(halfH, Number(player.shipLocalY) || 0));
+  const [clampedX, clampedY] = clampShipLocalToHull(
+    Number(player.shipLocalX) || 0,
+    Number(player.shipLocalY) || 0,
+    ship,
+    layout
+  );
+  player.shipLocalX = clampedX;
+  player.shipLocalY = clampedY;
   syncPlayerToShipLocal(player);
 }
 
@@ -4038,38 +4142,77 @@ function targetInsideActiveShipDeck(player, message = {}) {
 }
 
 function handleShipInteract(client, message = {}) {
-  const ship = client.player?.ship;
-  if (!ship?.boarded) {
-    return false;
+  const player = client.player;
+  if (!player) return false;
+  const ownShip = player.ship?.boarded ? player.ship : null;
+
+  // Passengers (aboardShipId set) can interact with stations on the host ship,
+  // not their own (unboarded) ship. Resolve the right ship to drive the rest of
+  // the interaction.
+  let hostShip = ownShip;
+  if (!hostShip && typeof player.aboardShipId === "string" && player.aboardShipId) {
+    const found = findShipById(player.aboardShipId);
+    if (found?.ship?.boarded && found.ship.deckMode) {
+      hostShip = found.ship;
+    }
   }
-  if (ship.deckMode) {
-    if (client.player.shipStationRole || ship.stationRole) {
-      client.player.shipStationRole = null;
-      client.player.shipStationId = null;
+  if (!hostShip) return false;
+
+  if (hostShip.deckMode) {
+    if (player.shipStationRole) {
+      player.shipStationRole = null;
+      player.shipStationId = null;
       client.input = normalizeInput();
       send(client, { type: "serverMessage", message: "ship_station_left" });
       broadcastSnapshot();
       return true;
     }
-    const station = nearestShipStation(client.player, message);
+    const station = nearestShipStationOn(hostShip, player, message);
     if (station) {
-      client.player.shipStationRole = station.role;
-      client.player.shipStationId = station.id;
-      setPlayerShipLocal(client.player, Number(station.x) || 0, Number(station.y) || 0);
-      client.player.x = station.worldX;
-      client.player.y = station.worldY;
-      client.player.moving = false;
+      player.shipStationRole = station.role;
+      player.shipStationId = station.id;
+      if (hostShip === ownShip) {
+        setPlayerShipLocal(player, Number(station.x) || 0, Number(station.y) || 0);
+      }
+      player.x = station.worldX;
+      player.y = station.worldY;
+      player.moving = false;
       client.input = normalizeInput();
       send(client, { type: "serverMessage", message: "ship_station_entered", stationName: station.name, stationRole: station.role });
       broadcastSnapshot();
       return true;
     }
-    if (targetInsideActiveShipDeck(client.player, message)) {
+    if (hostShip === ownShip && targetInsideActiveShipDeck(player, message)) {
       send(client, { type: "serverMessage", message: "ship_fixture_used" });
       return true;
     }
   }
-  return dockPlayerShipAtStation(client);
+  // Only the owner can trigger landing.
+  if (hostShip === ownShip) {
+    return dockPlayerShipAtStation(client);
+  }
+  return false;
+}
+
+function nearestShipStationOn(ship, player, message = {}) {
+  if (!ship?.boarded || !ship.deckMode) return null;
+  const layout = getShipLayout(ship);
+  const tx = Number(message.x);
+  const ty = Number(message.y);
+  const useTarget = Number.isFinite(tx) && Number.isFinite(ty);
+  let best = null;
+  let bestDist = Infinity;
+  for (const station of layout.stations) {
+    const p = shipStationWorld(ship, station);
+    const dist = Math.hypot((useTarget ? tx : player.x) - p.x, (useTarget ? ty : player.y) - p.y);
+    const playerReach = Math.hypot(player.x - p.x, player.y - p.y);
+    const clickReach = useTarget ? 1.15 : SHIP_STATION_INTERACT_RADIUS;
+    if (dist <= clickReach && playerReach <= 6.5 && dist < bestDist) {
+      bestDist = dist;
+      best = { ...station, worldX: p.x, worldY: p.y };
+    }
+  }
+  return best;
 }
 
 function publicTerminalShip(ship, activeShipId, port) {
