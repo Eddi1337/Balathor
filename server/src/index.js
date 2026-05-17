@@ -35,6 +35,7 @@ const {
   SCI_FI_DEFENSES,
   getPlanetById,
   getPlanetBySpacePoint,
+  SCI_FI_PLANETS,
   PLANET_SURFACE_LANDING_OFFSET,
   worldForPosition
 } = require("./world");
