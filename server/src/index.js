@@ -145,6 +145,10 @@ const MOB_ATTACK_RADIUS = 1.15;
 const MOB_ATTACK_COOLDOWN_MS = 1300;
 const MOB_ATTACK_DAMAGE = 13;
 const BOSS_ATTACK_DAMAGE = 26;
+const ENEMY_DENSITY_MULTIPLIER = readIntEnv("ENEMY_DENSITY_MULTIPLIER", 100, 1, 100);
+const MOB_SPATIAL_CELL_SIZE = 32;
+const MOB_SPATIAL_QUERY_PAD = 96;
+const WORLD_IDS_WITH_MOBS = ["fantasy", "scifi", ...SCI_FI_PLANETS.map((planet) => `planet:${planet.id}`)];
 const GATEKEEPER_IDS = Object.freeze(["hub_g_n", "hub_g_ne", "hub_g_e", "hub_g_se", "hub_g_s", "hub_g_sw", "hub_g_w", "hub_g_nw"]);
 const GATEKEEPER_RANGE = 46;
 const GATEKEEPER_NEAR_TOWN_RADIUS = HUB_TOWN_GRASS_RADIUS + 84;
@@ -870,11 +874,13 @@ function persistOwnedHouseChest(buildingKey) {
   saveHouseChestSlots(worldDb, buildingKey, slots);
 }
 
-const mobs = createMobs();
 let nextAssaultMobId = 1;
 let nextFantasyAssaultAt = Date.now() + 22000;
 let nextSciFiAssaultAt = Date.now() + 30000;
 const stationDefenseLastShotAt = new Map();
+const mobs = createMobs();
+const mobHomeBuckets = buildMobHomeBuckets(mobs);
+const forceSimulateMobs = new Set(mobs.filter((mob) => mob.forceSimulate));
 const traderStocks = new Map();
 for (const def of getTraderDefinitions()) {
   traderStocks.set(def.id, createTraderStock(def.id, def.homeX * 100 + def.homeY));
@@ -893,6 +899,8 @@ const server = http.createServer((req, res) => {
       tickRate: TICK_RATE,
       snapshotRate: SNAPSHOT_RATE,
       aiTickDivisor: AI_TICK_DIVISOR,
+      enemyDensityMultiplier: ENEMY_DENSITY_MULTIPLIER,
+      enemies: mobs.length,
       chunkWorkers: chunkWorkerPool.length,
       chunkQueue: chunkGenQueue.length,
       chunkSize: CHUNK_SIZE
@@ -2434,6 +2442,83 @@ function mobShouldSimulateAny(mob, boundsArray) {
     if (mobShouldSimulate(mob, b)) return true;
   }
   return false;
+}
+
+function mobSpatialKeyFor(world, x, y, cellSize = MOB_SPATIAL_CELL_SIZE) {
+  const cx = Math.floor(x / cellSize);
+  const cy = Math.floor(y / cellSize);
+  return `${world}|${cx},${cy}`;
+}
+
+function buildMobHomeBuckets(list) {
+  const buckets = new Map();
+  for (const mob of list) {
+    addMobToHomeBuckets(buckets, mob);
+  }
+  return buckets;
+}
+
+function addMobToHomeBuckets(buckets, mob) {
+  const world = worldForPosition(mob.homeX, mob.homeY);
+  const key = mobSpatialKeyFor(world, mob.homeX, mob.homeY);
+  let bucket = buckets.get(key);
+  if (!bucket) {
+    bucket = [];
+    buckets.set(key, bucket);
+  }
+  bucket.push(mob);
+}
+
+function forEachMobHomeInBounds(bounds, visitor) {
+  if (!bounds) return;
+  const cellSize = MOB_SPATIAL_CELL_SIZE;
+  const minCx = Math.floor((bounds.minX - MOB_SPATIAL_QUERY_PAD) / cellSize);
+  const maxCx = Math.floor((bounds.maxX + MOB_SPATIAL_QUERY_PAD) / cellSize);
+  const minCy = Math.floor((bounds.minY - MOB_SPATIAL_QUERY_PAD) / cellSize);
+  const maxCy = Math.floor((bounds.maxY + MOB_SPATIAL_QUERY_PAD) / cellSize);
+  for (let cx = minCx; cx <= maxCx; cx += 1) {
+    for (let cy = minCy; cy <= maxCy; cy += 1) {
+      for (const world of WORLD_IDS_WITH_MOBS) {
+        const bucket = mobHomeBuckets.get(`${world}|${cx},${cy}`);
+        if (!bucket) continue;
+        for (const mob of bucket) {
+          visitor(mob);
+        }
+      }
+    }
+  }
+}
+
+function forEachMobCandidate(boundsArray, visitor) {
+  const seen = new Set();
+  for (const bounds of boundsArray || []) {
+    forEachMobHomeInBounds(bounds, (mob) => {
+      if (seen.has(mob.id)) return;
+      seen.add(mob.id);
+      visitor(mob);
+    });
+  }
+  for (const mob of forceSimulateMobs) {
+    if (seen.has(mob.id)) continue;
+    seen.add(mob.id);
+    visitor(mob);
+  }
+}
+
+function forEachMobNear(x, y, radius, visitor) {
+  const bounds = { minX: x - radius, maxX: x + radius, minY: y - radius, maxY: y + radius };
+  const seen = new Set();
+  forEachMobHomeInBounds(bounds, (mob) => {
+    if (seen.has(mob.id)) return;
+    seen.add(mob.id);
+    visitor(mob);
+  });
+  for (const mob of forceSimulateMobs) {
+    if (seen.has(mob.id)) continue;
+    if (Math.abs(mob.x - x) > radius + MOB_SPATIAL_QUERY_PAD || Math.abs(mob.y - y) > radius + MOB_SPATIAL_QUERY_PAD) continue;
+    seen.add(mob.id);
+    visitor(mob);
+  }
 }
 
 function buildAboardShipClientIndex() {
@@ -4509,21 +4594,21 @@ function handleShipFire(client, message = {}) {
     let bestT = reach;
     const beamCos = Math.cos(facing);
     const beamSin = Math.sin(facing);
-    for (const mob of mobs) {
-      if (mob.dead) continue;
+    forEachMobNear(ox, oy, reach + 4, (mob) => {
+      if (mob.dead) return;
       const mx = mob.x - ox;
       const my = mob.y - oy;
       const t = mx * beamCos + my * beamSin;
-      if (t < 0 || t > reach) continue;
+      if (t < 0 || t > reach) return;
       const perpX = mx - beamCos * t;
       const perpY = my - beamSin * t;
       const perpDist = Math.hypot(perpX, perpY);
-      if (perpDist > 1.6) continue;
+      if (perpDist > 1.6) return;
       if (t < bestT) {
         bestT = t;
         bestMob = mob;
       }
-    }
+    });
 
     const endX = bestMob ? bestMob.x : ox + beamCos * reach;
     const endY = bestMob ? bestMob.y : oy + beamSin * reach;
@@ -4588,17 +4673,17 @@ function handleShipMissile(client) {
   // Find nearest mob — prefer ship pirates but fall back to any mob.
   let target = null;
   let bestDist = Infinity;
-  for (const mob of mobs) {
-    if (mob.dead) continue;
+  forEachMobNear(center.x, center.y, missileRange + 4, (mob) => {
+    if (mob.dead) return;
     const dx = mob.x - center.x;
     const dy = mob.y - center.y;
     const d = Math.hypot(dx, dy);
-    if (d > missileRange) continue;
+    if (d > missileRange) return;
     if (target === null || (mob.isShipPirate && !target.isShipPirate) || d < bestDist) {
       target = mob;
       bestDist = d;
     }
-  }
+  });
 
   if (!target) return;
 
@@ -5809,9 +5894,9 @@ function processConsecrationZones(now) {
       Math.round(baseDamage * 0.11 * (1 + (spec.consecrationPower || 0)))
     );
 
-    for (const mob of mobs) {
-      if (mob.dead) continue;
-      if (Math.hypot(mob.x - z.gx, mob.y - z.gy) > z.radius) continue;
+    forEachMobNear(z.gx, z.gy, z.radius + 4, (mob) => {
+      if (mob.dead) return;
+      if (Math.hypot(mob.x - z.gx, mob.y - z.gy) > z.radius) return;
 
       const damage = Math.max(1, Math.round(tickDamage + mob.level * 3));
       mob.hp = Math.max(0, mob.hp - damage);
@@ -5850,7 +5935,7 @@ function processConsecrationZones(now) {
       }
 
       broadcastCombat(event);
-    }
+    });
 
     const healAmt = Math.max(
       3,
@@ -5973,18 +6058,18 @@ function findAttackTarget(client, loadout) {
   let hit = null;
   let hitKind = null;
 
-  for (const mob of mobs) {
+  forEachMobNear(client.player.x, client.player.y, Math.max(loadout.range + 4, 12), (mob) => {
     if (mob.dead) {
-      continue;
+      return;
     }
     if (!isAttackTarget(client.player, mob, loadout)) {
-      continue;
+      return;
     }
     if (!hit || distance(client.player, mob) < distance(client.player, hit)) {
       hit = mob;
       hitKind = "mob";
     }
-  }
+  });
 
   for (const other of clients.values()) {
     if (!other.player || other === client || other.player.hp <= 0) {
@@ -7270,11 +7355,11 @@ function createSciFiPirateMobs() {
   ];
   const out = [];
   for (const fleet of fleets) {
-    const count = Math.max(1, fleet.size | 0);
+    const count = Math.max(1, (fleet.size | 0) * ENEMY_DENSITY_MULTIPLIER);
     for (let i = 0; i < count; i += 1) {
       // Stagger fleet members in a small ring around the anchor point.
       const angle = (i / count) * Math.PI * 2 + (i * 0.37);
-      const ringR = 4 + i * 1.4;
+      const ringR = 4 + Math.sqrt(i + 1) * 1.8;
       const homeX = fleet.x + Math.cos(angle) * ringR;
       const homeY = fleet.y + Math.sin(angle) * ringR;
       const lvl = fleet.level + (i === 0 ? 1 : 0); // lead ship is a touch tougher
@@ -7288,11 +7373,11 @@ function createSciFiPirateMobs() {
         accent: "#0a0613",
         faction: fleet.id,
         isShipPirate: true,
-        hullClass: i === 0 ? "interceptor" : "fighter",
+        hullClass: i % Math.max(1, fleet.size | 0) === 0 ? "interceptor" : "fighter",
         maxHp: 90 + lvl * 14,
         attackDamage: 6 + Math.floor(lvl * 0.9),
         roamRadius: 7 + (i % 2) * 3,
-        speed: 1.9 + Math.random() * 0.4
+        speed: 1.9 + hash2(fleet.x, fleet.y, 700 + i) * 0.4
       });
     }
   }
@@ -7335,20 +7420,20 @@ function createWildernessMobs() {
     const biome = camp.biome || getBiome(camp.x, camp.y);
     const faction = camp.faction;
     const type = (faction && MOB_TYPES[faction]) ? MOB_TYPES[faction] : (MOB_TYPES[biome] || MOB_TYPES.forest);
-    const count = Math.ceil(scaledCampEncounterSize(camp.size, camp) * 2.25);
+    const baseCount = Math.ceil(scaledCampEncounterSize(camp.size, camp) * 2.25);
+    const count = baseCount * ENEMY_DENSITY_MULTIPLIER;
     const tier = camp.tier || Math.max(1, Math.floor(Math.hypot(camp.x, camp.y) / 90));
 
     for (let i = 0; i < count; i += 1) {
       const enemy = type.enemies[i % type.enemies.length];
       const level = enemy.level + Math.max(0, tier - 1);
       const angle = hash2(camp.x, camp.y, 300 + i) * Math.PI * 2;
-      const radius = 2 + hash2(camp.x, camp.y, 400 + i) * 5;
-      const home = findOpenMobHome(
-        camp.x + Math.cos(angle) * radius,
-        camp.y + Math.sin(angle) * radius,
-        camp.x,
-        camp.y
-      );
+      const radius = 2 + Math.sqrt(i + 1) * 0.62 + hash2(camp.x, camp.y, 400 + i) * 5;
+      const rawX = camp.x + Math.cos(angle) * radius;
+      const rawY = camp.y + Math.sin(angle) * radius;
+      const home = i < baseCount
+        ? findOpenMobHome(rawX, rawY, camp.x, camp.y)
+        : { x: Number(rawX.toFixed(3)), y: Number(rawY.toFixed(3)) };
       mobs.push({
         id: `mob_camp_${camp.id}_${i + 1}`,
         name: enemy.name,
@@ -7442,6 +7527,16 @@ function createRuntimeMob(def) {
   };
 }
 
+function addRuntimeMob(def) {
+  const mob = createRuntimeMob(def);
+  mobs.push(mob);
+  addMobToHomeBuckets(mobHomeBuckets, mob);
+  if (mob.forceSimulate) {
+    forceSimulateMobs.add(mob);
+  }
+  return mob;
+}
+
 const FANTASY_ASSAULT_SPAWNS = Object.freeze([
   { id: "north", x: 12, y: -178, targetX: 0, targetY: -105, faction: "sludge" },
   { id: "east", x: 178, y: 12, targetX: 105, targetY: 0, faction: "bandit" },
@@ -7457,16 +7552,20 @@ const SCI_FI_ASSAULT_SPAWNS = Object.freeze([
 ]);
 
 function countActiveAssaultMobs(theme) {
-  return mobs.reduce((count, mob) => {
-    if (mob.dead || !mob.isAssaultWave) return count;
-    if (theme === "sci-fi") return count + (mob.isShipPirate ? 1 : 0);
-    return count + (!mob.isShipPirate ? 1 : 0);
-  }, 0);
+  let count = 0;
+  for (const mob of forceSimulateMobs) {
+    if (mob.dead || !mob.isAssaultWave) continue;
+    if (theme === "sci-fi") {
+      count += mob.isShipPirate ? 1 : 0;
+    } else {
+      count += !mob.isShipPirate ? 1 : 0;
+    }
+  }
+  return count;
 }
 
 function cleanupExpiredAssaultMobs(now) {
-  for (let i = mobs.length - 1; i >= 0; i -= 1) {
-    const mob = mobs[i];
+  for (const mob of Array.from(forceSimulateMobs)) {
     if (!mob?.isAssaultWave) continue;
     const expiredDead = mob.dead && now >= (mob.respawnAt || 0);
     const expiredLive = Number.isFinite(mob.spawnedAt) && now - mob.spawnedAt > 12 * 60 * 1000;
@@ -7476,7 +7575,8 @@ function cleanupExpiredAssaultMobs(now) {
       Number.isFinite(mob.assaultTargetY) &&
       Math.hypot(mob.x - mob.assaultTargetX, mob.y - mob.assaultTargetY) < 2.4;
     if (expiredDead || expiredLive || reachedTarget) {
-      mobs.splice(i, 1);
+      mob.dead = true;
+      forceSimulateMobs.delete(mob);
     }
   }
 }
@@ -7532,7 +7632,7 @@ function spawnFantasyCampAssault(now, camp) {
     const homeX = camp.x + Math.cos(sideAngle) * spread + (Math.random() - 0.5) * 1.2;
     const homeY = camp.y + Math.sin(sideAngle) * spread + (Math.random() - 0.5) * 1.2;
     const level = Math.max(2, enemy.level + Math.max(0, tier - 1) + Math.floor(Math.random() * 2));
-    mobs.push(createRuntimeMob({
+    addRuntimeMob({
       id: `mob_assault_fantasy_${nextAssaultMobId++}`,
       name: `${enemy.name} Raider`,
       level,
@@ -7554,7 +7654,7 @@ function spawnFantasyCampAssault(now, camp) {
       attackDamage: enemy.damage + Math.floor(level * 1.25),
       roamRadius: 1,
       speed: enemy.speed + 0.42
-    }));
+    });
   }
 }
 
@@ -7566,7 +7666,7 @@ function spawnSciFiAssaultWave(now) {
     const homeX = route.x + Math.cos(angle) * (4 + i * 0.8);
     const homeY = route.y + Math.sin(angle) * (4 + i * 0.8);
     const level = 7 + Math.floor(Math.random() * 5);
-    mobs.push(createRuntimeMob({
+    addRuntimeMob({
       id: `mob_assault_scifi_${nextAssaultMobId++}`,
       name: i === 0 ? "Raid Captain" : "Pirate Interceptor",
       level,
@@ -7589,7 +7689,7 @@ function spawnSciFiAssaultWave(now) {
       attackDamage: 7 + Math.floor(level * 0.9),
       roamRadius: 2,
       speed: 2.62 + Math.random() * 0.32
-    }));
+    });
   }
 }
 
@@ -7620,7 +7720,8 @@ function createRoamingMobs() {
       const type   = MOB_TYPES[biome] || MOB_TYPES.forest;
       const dist   = Math.hypot(cx, cy);
       const tier   = Math.min(6, Math.max(1, Math.floor(dist / 100)));
-      const count  = (tier >= 3 && hash2(gx, gy, 9450) > 0.46) ? 2 : 1;
+      const baseCount = (tier >= 3 && hash2(gx, gy, 9450) > 0.46) ? 2 : 1;
+      const count = baseCount * ENEMY_DENSITY_MULTIPLIER;
 
       for (let i = 0; i < count; i++) {
         const ox = (hash2(gx, gy, 9500 + i) - 0.5) * (ROAM_CELL - 5);
@@ -7632,7 +7733,9 @@ function createRoamingMobs() {
         const eIdx  = Math.floor(hash2(gx, gy, 9700 + i) * type.enemies.length);
         const enemy = type.enemies[eIdx];
         const level = enemy.level + Math.max(0, tier - 1);
-        const home  = findOpenMobHomeFromCandidates(hx, hy);
+        const home = i < baseCount
+          ? findOpenMobHomeFromCandidates(hx, hy)
+          : { x: Number(hx.toFixed(3)), y: Number(hy.toFixed(3)) };
 
         seq++;
         list.push({
@@ -8044,10 +8147,10 @@ function updateMobs(dt, boundsArray) {
   const now = Date.now();
   const playerTargets = buildAttackablePlayerTargetIndex();
 
-  for (const mob of mobs) {
+  forEachMobCandidate(boundsArray, (mob) => {
     if (mob.dead) {
       if (mob.noRespawn) {
-        continue;
+        return;
       }
       if (now >= mob.respawnAt) {
         mob.dead = false;
@@ -8055,11 +8158,11 @@ function updateMobs(dt, boundsArray) {
         mob.x = mob.homeX;
         mob.y = mob.homeY;
       }
-      continue;
+      return;
     }
 
     if (!mob.forceSimulate && !mobShouldSimulateAny(mob, boundsArray)) {
-      continue;
+      return;
     }
 
     const targetPlayer = nearestAttackablePlayer(mob, playerTargets, now);
@@ -8077,7 +8180,7 @@ function updateMobs(dt, boundsArray) {
         // Don't `continue` — let movement code below close the gap toward the player.
       } else if (distToPlayer <= MOB_ATTACK_RADIUS) {
         attackPlayerWithMob(mob, targetPlayer, now);
-        continue;
+        return;
       }
     } else if (
       mob.isAssaultWave &&
@@ -8100,7 +8203,7 @@ function updateMobs(dt, boundsArray) {
         mob._targetY = mob.homeY + Math.sin(angle) * radius;
         mob._nextMoveAt = now + 1500 + Math.random() * 3500;
       }
-      continue;
+      return;
     }
 
     const nx = dx / dist;
@@ -8116,7 +8219,7 @@ function updateMobs(dt, boundsArray) {
       mob.y = nextY;
     }
     mob.facing = Math.atan2(ny, nx);
-  }
+  });
 }
 
 function processGatekeeperArchers(now = Date.now()) {
@@ -8134,16 +8237,16 @@ function processGatekeeperArchers(now = Date.now()) {
 
     let target = null;
     let bestDist = Infinity;
-    for (const mob of mobs) {
-      if (mob.dead || mob.isCritter) continue;
+    forEachMobNear(guard.x, guard.y, GATEKEEPER_RANGE + 6, (mob) => {
+      if (mob.dead || mob.isCritter) return;
       const townDist = Math.hypot(mob.x, mob.y);
-      if (townDist > GATEKEEPER_NEAR_TOWN_RADIUS) continue;
+      if (townDist > GATEKEEPER_NEAR_TOWN_RADIUS) return;
       const d = Math.hypot(mob.x - guard.x, mob.y - guard.y);
       if (d <= GATEKEEPER_RANGE && d < bestDist) {
         bestDist = d;
         target = mob;
       }
-    }
+    });
     if (!target) continue;
 
     const damage = Math.max(1, Math.round(GATEKEEPER_ARROW_DAMAGE + (Number(target.level) || 1) * 1.5));
@@ -8189,16 +8292,16 @@ function processStationDefenses(now = Date.now()) {
     const range = Number(defense.range) || (defense.kind === "orbital-cannon" ? 138 : 96);
     let target = null;
     let bestDist = Infinity;
-    for (const mob of mobs) {
-      if (mob.dead || !mob.isShipPirate) continue;
+    forEachMobNear(defense.x, defense.y, range + 8, (mob) => {
+      if (mob.dead || !mob.isShipPirate) return;
       const stationDist = Math.hypot(mob.x - SCI_FI_STATION_CENTER.x, mob.y - SCI_FI_STATION_CENTER.y);
-      if (stationDist > SCI_FI_SAFE_RADIUS + 130) continue;
+      if (stationDist > SCI_FI_SAFE_RADIUS + 130) return;
       const d = Math.hypot(mob.x - defense.x, mob.y - defense.y);
       if (d <= range && d < bestDist) {
         bestDist = d;
         target = mob;
       }
-    }
+    });
     if (!target) continue;
 
     stationDefenseLastShotAt.set(defense.id, now);
@@ -8357,15 +8460,15 @@ function alertPirateFleet(triggerMob, alertRadius = 28) {
   if (!triggerMob?.faction) return;
   const until = Date.now() + PIRATE_ALERTED_MS;
   const r2 = alertRadius * alertRadius;
-  for (const other of mobs) {
-    if (other === triggerMob) continue;
-    if (!other.isShipPirate || other.faction !== triggerMob.faction || other.dead) continue;
+  forEachMobNear(triggerMob.x, triggerMob.y, alertRadius + 4, (other) => {
+    if (other === triggerMob) return;
+    if (!other.isShipPirate || other.faction !== triggerMob.faction || other.dead) return;
     const ddx = other.x - triggerMob.x;
     const ddy = other.y - triggerMob.y;
     if (ddx * ddx + ddy * ddy <= r2) {
       other._alertedUntil = until;
     }
-  }
+  });
   triggerMob._alertedUntil = until;
 }
 
@@ -8443,9 +8546,9 @@ function getMobSnapshot(viewBounds) {
     return [];
   }
   const out = [];
-  for (const mob of mobs) {
+  forEachMobCandidate([viewBounds], (mob) => {
     if (mob.dead) {
-      continue;
+      return;
     }
     if (
       viewBounds &&
@@ -8454,7 +8557,7 @@ function getMobSnapshot(viewBounds) {
         mob.y < viewBounds.minY ||
         mob.y > viewBounds.maxY)
     ) {
-      continue;
+      return;
     }
     out.push({
       id: mob.id,
@@ -8476,7 +8579,7 @@ function getMobSnapshot(viewBounds) {
       y: Number(mob.y.toFixed(3)),
       facing: Number(mob.facing.toFixed(3))
     });
-  }
+  });
   return out;
 }
 
@@ -8918,21 +9021,22 @@ function applySpellDamage(client, spellId, now) {
 
 function findSpellTargets(player, profile) {
   const targets = [];
-  for (const mob of mobs) {
-    if (mob.dead) continue;
+  const searchRadius = profile.radius || profile.range || 12;
+  forEachMobNear(player.x, player.y, searchRadius + 4, (mob) => {
+    if (mob.dead) return;
     const dx = mob.x - player.x;
     const dy = mob.y - player.y;
     const dist = Math.hypot(dx, dy);
     if (profile.radius) {
-      if (dist > profile.radius) continue;
+      if (dist > profile.radius) return;
     } else {
-      if (dist > profile.range || dist < 0.01) continue;
+      if (dist > profile.range || dist < 0.01) return;
       const targetAngle = Math.atan2(dy, dx);
       const delta = Math.abs(normalizeAngle(targetAngle - player.facing));
-      if (delta > profile.arc / 2) continue;
+      if (delta > profile.arc / 2) return;
     }
     targets.push(mob);
-  }
+  });
 
   targets.sort((a, b) => distance(player, a) - distance(player, b));
   return typeof profile.maxTargets === "number" ? targets.slice(0, profile.maxTargets) : targets;
