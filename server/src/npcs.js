@@ -3073,6 +3073,15 @@ function getWorldTimeSnapshot() {
   };
 }
 
+function setWorldTimeHour(hour) {
+  const value = Number(hour);
+  if (!Number.isFinite(value)) {
+    return getWorldTimeSnapshot();
+  }
+  hubGameHour = ((value % 24) + 24) % 24;
+  return getWorldTimeSnapshot();
+}
+
 function getNpcSnapshot() {
   return npcs
     .filter((npc) => !soldCompanionNpcIds.has(npc.id))
@@ -3162,5 +3171,6 @@ module.exports = {
   pickHouseCompanionComplimentLine,
   getCompanionNpcTemplate,
   pickPubDreamGirlfriendNpcId,
-  getWorldTimeSnapshot
+  getWorldTimeSnapshot,
+  setWorldTimeHour
 };

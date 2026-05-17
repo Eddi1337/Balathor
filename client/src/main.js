@@ -5,6 +5,7 @@ const canvas = document.querySelector("#game");
 let ctx = canvas.getContext("2d", {
   alpha: false,
   desynchronized: true,
+  powerPreference: "high-performance",
   willReadFrequently: false
 });
 const bootPanel = document.querySelector("#boot");
@@ -28,6 +29,9 @@ const menuPosition = document.querySelector("#menuPosition");
 const menuTime = document.querySelector("#menuTime");
 const menuTimeLabel = document.querySelector("#menuTimeLabel");
 const menuTimeClock = document.querySelector("#menuTimeClock");
+const modTimeControls = document.querySelector("#modTimeControls");
+const modTimeHourInput = document.querySelector("#modTimeHourInput");
+const modTimeApply = document.querySelector("#modTimeApply");
 const logoutButton = document.querySelector("#logoutButton");
 const progression = document.querySelector("#progression");
 const progressionToggle = document.querySelector("#progressionToggle");
@@ -1453,6 +1457,18 @@ function handleServerMessage(message) {
         name: "Realm",
         text: `Added a point to ${message.stat}`
       });
+    } else if (message.message === "mod_time_set") {
+      appendChat({
+        kind: "system",
+        name: "Realm",
+        text: `World time set to ${formatWorldClock(Number(message.hour) || 0)}`
+      });
+    } else if (message.message === "mod_time_denied") {
+      appendChat({
+        kind: "system",
+        name: "Realm",
+        text: "Only mod_ed can change world time"
+      });
     } else if (message.message === "inventory_full") {
       appendChat({ kind: "system", name: "Realm", text: "Inventory is full" });
     } else if (message.message === "house_chest_full") {
@@ -2653,6 +2669,18 @@ function wireUi() {
   serverForm.addEventListener("submit", (event) => {
     event.preventDefault();
     changeServer(menuServerUrlInput.value);
+  });
+
+  modTimeApply?.addEventListener("click", () => {
+    setWorldTimeFromMenu(modTimeHourInput?.value);
+  });
+  document.querySelectorAll("[data-mod-time]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if (modTimeHourInput) {
+        modTimeHourInput.value = button.dataset.modTime;
+      }
+      setWorldTimeFromMenu(button.dataset.modTime);
+    });
   });
 
   // Delegated handler for the Character window
@@ -5209,6 +5237,36 @@ function syncMenuWorldTime() {
   menuTimeClock.textContent = formatWorldClock(h);
 }
 
+function canSelfEditWorldTime() {
+  const self = state.players.get(state.selfId);
+  return Boolean(self?.isMod && self.name === "ed");
+}
+
+function syncModTimeControls() {
+  if (!modTimeControls) {
+    return;
+  }
+  const enabled = canSelfEditWorldTime();
+  modTimeControls.classList.toggle("hidden", !enabled);
+  if (!enabled || !modTimeHourInput || document.activeElement === modTimeHourInput) {
+    return;
+  }
+  const hour = Number(state.worldTime?.hour);
+  const value = Number.isFinite(hour) ? ((hour % 24) + 24) % 24 : 8;
+  modTimeHourInput.value = String(Math.round(value * 4) / 4);
+}
+
+function setWorldTimeFromMenu(hour) {
+  if (!canSelfEditWorldTime()) {
+    return;
+  }
+  const value = Number(hour);
+  if (!Number.isFinite(value)) {
+    return;
+  }
+  send({ type: "modSetWorldTime", hour: value });
+}
+
 function syncMenuSessionInfo() {
   if (!state.joined) {
     return;
@@ -5218,6 +5276,7 @@ function syncMenuSessionInfo() {
   const self = state.players.get(state.selfId);
   menuPosition.textContent = self ? `${Math.round(self.renderX)}, ${Math.round(self.renderY)}` : "—";
   syncMenuWorldTime();
+  syncModTimeControls();
 }
 
 function resetToConnection(message) {
@@ -5235,6 +5294,7 @@ function resetToConnection(message) {
   setStatus(message);
   bootPanel.classList.remove("hidden");
   accountForm.classList.add("hidden");
+  modTimeControls?.classList.add("hidden");
   form.classList.add("hidden");
   progression.classList.add("hidden");
   equipmentPanel.classList.add("hidden");
@@ -5275,6 +5335,7 @@ function logout() {
   state.menuOpen = false;
   menu.classList.add("hidden");
   menu.setAttribute("aria-hidden", "true");
+  modTimeControls?.classList.add("hidden");
   bootPanel.classList.remove("hidden");
   accountForm.classList.remove("hidden");
   form.classList.add("hidden");

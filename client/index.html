@@ -413,6 +413,20 @@
           <button id="resumeButton" class="menu-close" type="button">Resume</button>
         </div>
 
+        <div id="modTimeControls" class="menu-section mod-time-controls hidden">
+          <label>
+            <span>World time</span>
+            <input id="modTimeHourInput" type="range" min="0" max="23.75" step="0.25" value="8">
+          </label>
+          <div class="mod-time-row">
+            <button type="button" data-mod-time="6">Dawn</button>
+            <button type="button" data-mod-time="12">Day</button>
+            <button type="button" data-mod-time="18">Dusk</button>
+            <button type="button" data-mod-time="22">Night</button>
+            <button id="modTimeApply" class="menu-apply" type="button">Set Time</button>
+          </div>
+        </div>
+
         <div class="menu-section">
           <button id="logoutButton" class="menu-apply" type="button">Logout</button>
         </div>

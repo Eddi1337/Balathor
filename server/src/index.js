@@ -1,7 +1,9 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const http = require("node:http");
+const os = require("node:os");
 const path = require("node:path");
+const { Worker } = require("node:worker_threads");
 const {
   CHUNK_SIZE,
   BUILDINGS: BUILDING_LIST,
@@ -52,6 +54,7 @@ const {
   getCompanionNpcTemplate,
   pickPubDreamGirlfriendNpcId,
   getWorldTimeSnapshot,
+  setWorldTimeHour,
   syncNpcHubHomesFromBuildings
 } = require("./npcs");
 const {
@@ -82,8 +85,19 @@ function readRateEnv(name, fallback, min, max) {
   }
   return Math.max(min, Math.min(max, Math.round(value)));
 }
+
+function readIntEnv(name, fallback, min, max) {
+  const value = Number(process.env[name]);
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, Math.floor(value)));
+}
+
 const TICK_RATE = readRateEnv("TICK_RATE", 60, 20, 120);
 const SNAPSHOT_RATE = Math.min(TICK_RATE, readRateEnv("SNAPSHOT_RATE", 20, 5, 60));
+const CPU_COUNT = typeof os.availableParallelism === "function" ? os.availableParallelism() : os.cpus().length;
+const CHUNK_WORKER_COUNT = readIntEnv("CHUNK_WORKERS", Math.max(1, Math.min(4, CPU_COUNT - 1)), 0, Math.max(1, CPU_COUNT));
 const MAX_CONNECTED_CLIENTS = Number(process.env.MAX_CLIENTS || 180);
 const MSG_RATE_LIMIT = 240; // max messages per second per client before dropping
 // Base player movement speed (tiles per second).
@@ -863,6 +877,8 @@ const server = http.createServer((req, res) => {
       ok: true,
       players: [...clients.values()].filter((client) => client.player).length,
       tickRate: TICK_RATE,
+      chunkWorkers: chunkWorkerPool.length,
+      chunkQueue: chunkGenQueue.length,
       chunkSize: CHUNK_SIZE
     });
     return;
@@ -984,6 +1000,7 @@ function clearSimulateTimer() {
 
 process.on("SIGTERM", () => {
   clearSimulateTimer();
+  shutdownChunkWorkers();
   saveAllActiveCharacters();
   closeWorldDb(worldDb);
   process.exit(0);
@@ -991,6 +1008,7 @@ process.on("SIGTERM", () => {
 
 process.on("SIGINT", () => {
   clearSimulateTimer();
+  shutdownChunkWorkers();
   saveAllActiveCharacters();
   closeWorldDb(worldDb);
   process.exit(0);
@@ -3098,6 +3116,11 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "modSetWorldTime") {
+    handleModSetWorldTime(client, message);
+    return;
+  }
+
   if (message.type === "chat") {
     handleChat(client, message);
     return;
@@ -3891,6 +3914,34 @@ function handleSpendStat(client, message) {
     stat
   });
   saveClientCharacter(client);
+  broadcastSnapshot();
+}
+
+function canEditWorldTime(client) {
+  return Boolean(
+    client?.player?.isMod &&
+    client?.account?.username === "mod_ed"
+  );
+}
+
+function handleModSetWorldTime(client, message) {
+  if (!canEditWorldTime(client)) {
+    send(client, { type: "serverMessage", message: "mod_time_denied" });
+    return;
+  }
+
+  const hour = Number(message.hour);
+  if (!Number.isFinite(hour)) {
+    return;
+  }
+
+  const snapshot = setWorldTimeHour(Math.max(0, Math.min(23.999, hour)));
+  send(client, {
+    type: "serverMessage",
+    message: "mod_time_set",
+    hour: snapshot.hour,
+    phase: snapshot.phase
+  });
   broadcastSnapshot();
 }
 
@@ -5973,24 +6024,135 @@ function nearbyChunks(x, y, radius) {
 
 /** Queue of {client, cx, cy, key} for chunks that need first-time generation off the hot tick path. */
 const chunkGenQueue = [];
-let chunkGenScheduled = false;
+const pendingChunkClients = new Map();
+const chunkWorkerPool = [];
+let chunkGenFallbackScheduled = false;
+let nextChunkJobId = 1;
 
-function drainChunkGenQueue() {
-  chunkGenScheduled = false;
-  // Process up to 6 uncached chunks per drain so we don't starve I/O
-  const batch = chunkGenQueue.splice(0, 6);
-  for (const { client, cx, cy, key } of batch) {
-    if (!client.socket || client.socket.destroyed) continue; // disconnected
-    if (!chunkCache.has(key)) {
-      chunkCache.set(key, generateChunk(cx, cy));
-    }
-    send(client, { type: "chunk", ...chunkCache.get(key) });
+function createChunkWorker(index) {
+  const worker = new Worker(path.join(__dirname, "chunkWorker.js"));
+  if (typeof worker.unref === "function") {
+    worker.unref();
   }
-  if (chunkGenQueue.length > 0) {
-    chunkGenScheduled = true;
-    setImmediate(drainChunkGenQueue);
+  const slot = { worker, index, busy: false, job: null };
+  worker.on("message", (message) => handleChunkWorkerMessage(slot, message));
+  worker.on("error", (error) => handleChunkWorkerFailure(slot, error));
+  worker.on("exit", (code) => {
+    if (code !== 0) {
+      handleChunkWorkerFailure(slot, new Error(`chunk worker exited with code ${code}`));
+    }
+  });
+  return slot;
+}
+
+function initChunkWorkers() {
+  for (let i = 0; i < CHUNK_WORKER_COUNT; i += 1) {
+    chunkWorkerPool.push(createChunkWorker(i));
+  }
+  if (chunkWorkerPool.length) {
+    console.log(`Balathor chunk workers: ${chunkWorkerPool.length}`);
+  } else {
+    console.log("Balathor chunk workers disabled; using main-thread chunk fallback");
   }
 }
+
+function shutdownChunkWorkers() {
+  for (const slot of chunkWorkerPool.splice(0)) {
+    slot.busy = false;
+    slot.job = null;
+    slot._failed = true;
+    slot.worker.terminate().catch(() => {});
+  }
+}
+
+function deliverGeneratedChunk(key, chunk) {
+  chunkCache.set(key, chunk);
+  const waiters = pendingChunkClients.get(key);
+  pendingChunkClients.delete(key);
+  if (!waiters) return;
+  for (const client of waiters) {
+    if (!client.socket || client.socket.destroyed) continue;
+    send(client, { type: "chunk", ...chunk });
+  }
+}
+
+function generateChunkFallback(job) {
+  try {
+    deliverGeneratedChunk(job.key, generateChunk(job.cx, job.cy));
+  } catch (error) {
+    pendingChunkClients.delete(job.key);
+    console.warn(`[chunk] failed to generate ${job.key}:`, error instanceof Error ? error.message : error);
+  }
+}
+
+function handleChunkWorkerMessage(slot, message) {
+  const job = slot.job;
+  slot.busy = false;
+  slot.job = null;
+  if (message?.error) {
+    console.warn(`[chunk-worker:${slot.index}] ${message.error}`);
+    if (job) generateChunkFallback(job);
+  } else if (message?.chunk && typeof message.key === "string") {
+    deliverGeneratedChunk(message.key, message.chunk);
+  } else if (job) {
+    generateChunkFallback(job);
+  }
+  dispatchChunkWork();
+}
+
+function handleChunkWorkerFailure(slot, error) {
+  if (slot._failed) return;
+  slot._failed = true;
+  console.warn(`[chunk-worker:${slot.index}] disabled:`, error instanceof Error ? error.message : error);
+  const job = slot.job;
+  slot.busy = false;
+  slot.job = null;
+  const index = chunkWorkerPool.indexOf(slot);
+  if (index !== -1) {
+    chunkWorkerPool.splice(index, 1);
+  }
+  if (job) {
+    generateChunkFallback(job);
+  }
+  dispatchChunkWork();
+}
+
+function dispatchChunkWork() {
+  for (const slot of chunkWorkerPool) {
+    if (slot.busy) continue;
+    const job = chunkGenQueue.shift();
+    if (!job) break;
+    if (chunkCache.has(job.key)) {
+      deliverGeneratedChunk(job.key, chunkCache.get(job.key));
+      continue;
+    }
+    slot.busy = true;
+    slot.job = { ...job, id: nextChunkJobId++ };
+    slot.worker.postMessage(slot.job);
+  }
+  if (chunkGenQueue.length > 0 && !chunkWorkerPool.length && !chunkGenFallbackScheduled) {
+    chunkGenFallbackScheduled = true;
+    setImmediate(drainChunkGenFallbackQueue);
+  }
+}
+
+function drainChunkGenFallbackQueue() {
+  chunkGenFallbackScheduled = false;
+  const batch = chunkGenQueue.splice(0, 4);
+  for (const job of batch) {
+    if (chunkCache.has(job.key)) {
+      deliverGeneratedChunk(job.key, chunkCache.get(job.key));
+    } else {
+      generateChunkFallback(job);
+    }
+  }
+  if (chunkGenQueue.length > 0) {
+    chunkGenFallbackScheduled = true;
+    setImmediate(drainChunkGenFallbackQueue);
+  }
+}
+
+initChunkWorkers();
 
 function chunkInClientWorld(client, cx, cy) {
   if (!client.player) return true;
@@ -6033,13 +6195,13 @@ function streamChunks(client, chunks) {
     if (chunkCache.has(key)) {
       // Already cached — send immediately, no tick cost
       send(client, { type: "chunk", ...chunkCache.get(key) });
+    } else if (pendingChunkClients.has(key)) {
+      pendingChunkClients.get(key).add(client);
     } else {
-      // First-time generation is expensive; defer off the tick path
-      chunkGenQueue.push({ client, cx, cy, key });
-      if (!chunkGenScheduled) {
-        chunkGenScheduled = true;
-        setImmediate(drainChunkGenQueue);
-      }
+      // First-time generation is expensive; run it in the chunk worker pool.
+      pendingChunkClients.set(key, new Set([client]));
+      chunkGenQueue.push({ cx, cy, key });
+      dispatchChunkWork();
     }
   }
 }

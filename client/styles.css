@@ -1584,6 +1584,37 @@ button:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
+.mod-time-controls {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 14px;
+}
+
+.mod-time-controls input[type="range"] {
+  width: 100%;
+}
+
+.mod-time-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mod-time-row button {
+  min-width: 0;
+  padding: 9px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mod-time-row .menu-apply {
+  padding: 9px 8px;
+}
+
 .menu-head {
   display: flex;
   align-items: center;
