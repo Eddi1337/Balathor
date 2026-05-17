@@ -433,17 +433,17 @@ function sciFiStationTileForFeature(feature, x, y) {
   }
 
   if (feature.kind === "corridor") {
-    if (edge) return TILE.METAL;
+    if (edge) return TILE.WALKWAY;
     if (fw >= fh) {
       const mid = Math.floor(fh / 2);
       if (Math.abs(ly - mid) <= 1) return TILE.WALKWAY;
       if (Math.abs(ly - mid) === 2) return TILE.ENERGY;
-      return TILE.METAL;
+      return TILE.WALKWAY;
     }
     const mid = Math.floor(fw / 2);
     if (Math.abs(lx - mid) <= 1) return TILE.WALKWAY;
     if (Math.abs(lx - mid) === 2) return TILE.ENERGY;
-    return TILE.METAL;
+    return TILE.WALKWAY;
   }
 
   if (edge) return TILE.HULL;

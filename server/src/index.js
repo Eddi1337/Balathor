@@ -7079,9 +7079,6 @@ function createWildernessMobs() {
   const mobs = [];
 
   for (const camp of ENEMY_CAMPS) {
-    if (!shouldSpawnWildMobCamp(camp)) {
-      continue;
-    }
     const biome = camp.biome || getBiome(camp.x, camp.y);
     const faction = camp.faction;
     const type = (faction && MOB_TYPES[faction]) ? MOB_TYPES[faction] : (MOB_TYPES[biome] || MOB_TYPES.forest);
@@ -7233,9 +7230,13 @@ function cleanupExpiredAssaultMobs(now) {
 
 function processAssaultWaves(now = Date.now()) {
   cleanupExpiredAssaultMobs(now);
-  if (now >= nextFantasyAssaultAt && countActiveAssaultMobs("fantasy") < MAX_ACTIVE_FANTASY_ASSAULT_MOBS) {
-    spawnFantasyAssaultWave(now);
-    nextFantasyAssaultAt = now + FANTASY_ASSAULT_INTERVAL_MS + Math.floor(Math.random() * 9000);
+  if (isNightTime()) {
+    if (now >= nextFantasyAssaultAt && countActiveAssaultMobs("fantasy") < MAX_ACTIVE_FANTASY_ASSAULT_MOBS) {
+      spawnFantasyAssaultWave(now);
+      nextFantasyAssaultAt = now + FANTASY_ASSAULT_INTERVAL_MS + Math.floor(Math.random() * 9000);
+    }
+  } else {
+    nextFantasyAssaultAt = Math.max(nextFantasyAssaultAt, now + 4000);
   }
   if (now >= nextSciFiAssaultAt && countActiveAssaultMobs("sci-fi") < MAX_ACTIVE_SCI_FI_ASSAULT_MOBS) {
     spawnSciFiAssaultWave(now);
@@ -7243,31 +7244,44 @@ function processAssaultWaves(now = Date.now()) {
   }
 }
 
+function isNightTime() {
+  return getWorldTimeSnapshot().phase === "night";
+}
+
 function spawnFantasyAssaultWave(now) {
-  const route = FANTASY_ASSAULT_SPAWNS[Math.floor(Math.random() * FANTASY_ASSAULT_SPAWNS.length)];
-  const type = MOB_TYPES[route.faction] || MOB_TYPES.forest;
-  const count = 7 + Math.floor(Math.random() * 5);
+  const eligibleCamps = ENEMY_CAMPS.filter((camp) => Math.hypot(camp.x, camp.y) > PRIMARY_HUB_MOBS_CLEAR_RADIUS);
+  const camp = eligibleCamps[Math.floor(Math.random() * eligibleCamps.length)] || ENEMY_CAMPS[Math.floor(Math.random() * ENEMY_CAMPS.length)];
+  if (!camp) return;
+  const biome = camp.biome || getBiome(camp.x, camp.y);
+  const faction = camp.faction;
+  const type = (faction && MOB_TYPES[faction]) ? MOB_TYPES[faction] : (MOB_TYPES[biome] || MOB_TYPES.forest);
+  const routeAngle = Math.atan2(-camp.y, -camp.x);
+  const targetRadius = 104;
+  const targetX = Math.cos(routeAngle) * targetRadius;
+  const targetY = Math.sin(routeAngle) * targetRadius;
+  const count = 5 + Math.floor(Math.random() * 5);
   for (let i = 0; i < count && countActiveAssaultMobs("fantasy") < MAX_ACTIVE_FANTASY_ASSAULT_MOBS; i += 1) {
     const enemy = type.enemies[i % type.enemies.length];
     const spread = (i - (count - 1) / 2) * 1.7;
-    const sideAngle = Math.atan2(route.targetY - route.y, route.targetX - route.x) + Math.PI / 2;
-    const homeX = route.x + Math.cos(sideAngle) * spread + (Math.random() - 0.5) * 1.2;
-    const homeY = route.y + Math.sin(sideAngle) * spread + (Math.random() - 0.5) * 1.2;
-    const level = Math.max(2, enemy.level + 1 + Math.floor(Math.random() * 3));
+    const sideAngle = routeAngle + Math.PI / 2;
+    const homeX = camp.x + Math.cos(sideAngle) * spread + (Math.random() - 0.5) * 1.2;
+    const homeY = camp.y + Math.sin(sideAngle) * spread + (Math.random() - 0.5) * 1.2;
+    const tier = camp.tier || Math.max(1, Math.floor(Math.hypot(camp.x, camp.y) / 90));
+    const level = Math.max(2, enemy.level + Math.max(0, tier - 1) + Math.floor(Math.random() * 2));
     mobs.push(createRuntimeMob({
       id: `mob_assault_fantasy_${nextAssaultMobId++}`,
       name: `${enemy.name} Raider`,
       level,
       homeX,
       homeY,
-      targetX: route.targetX,
-      targetY: route.targetY,
-      assaultTargetX: route.targetX,
-      assaultTargetY: route.targetY,
+      targetX,
+      targetY,
+      assaultTargetX: targetX,
+      assaultTargetY: targetY,
       primary: type.primary,
       accent: type.accent,
-      faction: route.faction,
-      campId: `assault_${route.id}`,
+      faction: faction || biome,
+      campId: `night_assault_${camp.id}`,
       isAssaultWave: true,
       noRespawn: true,
       forceSimulate: true,

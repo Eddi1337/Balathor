@@ -352,7 +352,7 @@ function sciFiDockPortForPlayerId(playerId) {
 
 module.exports = {
   RINGFORGE_CENTER: Object.freeze({ x: CX, y: CY }),
-  STARGATE_LANDING: Object.freeze({ x: CX, y: CY + 22 }),
+  STARGATE_LANDING: Object.freeze({ x: CX, y: CY }),
   SCI_FI_STATIONS,
   SCI_FI_STATION_FEATURES,
   SCI_FI_DOCK_PORTS,

@@ -19,12 +19,12 @@ const SCI_FI_STATION_CENTER = Object.freeze({ x: 1920, y: 0 });
 const SCI_FI_SAFE_RADIUS = 34;
 
 const SCI_FI_DEFENSES = Object.freeze([
-  { id: "ringforge_turret_n", kind: "defense-turret", name: "North Defense Turret", x: SCI_FI_STATION_CENTER.x, y: SCI_FI_STATION_CENTER.y - 28, range: 82 },
-  { id: "ringforge_turret_e", kind: "defense-turret", name: "East Defense Turret", x: SCI_FI_STATION_CENTER.x + 28, y: SCI_FI_STATION_CENTER.y, range: 82 },
-  { id: "ringforge_turret_s", kind: "defense-turret", name: "South Defense Turret", x: SCI_FI_STATION_CENTER.x, y: SCI_FI_STATION_CENTER.y + 28, range: 82 },
-  { id: "ringforge_turret_w", kind: "defense-turret", name: "West Defense Turret", x: SCI_FI_STATION_CENTER.x - 28, y: SCI_FI_STATION_CENTER.y, range: 82 },
-  { id: "ringforge_cannon_alpha", kind: "orbital-cannon", name: "Orbital Cannon Alpha", x: SCI_FI_STATION_CENTER.x - 20, y: SCI_FI_STATION_CENTER.y - 20, range: 112 },
-  { id: "ringforge_cannon_beta", kind: "orbital-cannon", name: "Orbital Cannon Beta", x: SCI_FI_STATION_CENTER.x + 20, y: SCI_FI_STATION_CENTER.y + 20, range: 112 }
+  { id: "ringforge_turret_n", kind: "defense-turret", name: "North Defense Turret", x: SCI_FI_STATION_CENTER.x, y: SCI_FI_STATION_CENTER.y - 43, range: 104 },
+  { id: "ringforge_turret_e", kind: "defense-turret", name: "East Defense Turret", x: SCI_FI_STATION_CENTER.x + 48, y: SCI_FI_STATION_CENTER.y, range: 104 },
+  { id: "ringforge_turret_s", kind: "defense-turret", name: "South Defense Turret", x: SCI_FI_STATION_CENTER.x, y: SCI_FI_STATION_CENTER.y + 43, range: 104 },
+  { id: "ringforge_turret_w", kind: "defense-turret", name: "West Defense Turret", x: SCI_FI_STATION_CENTER.x - 48, y: SCI_FI_STATION_CENTER.y, range: 104 },
+  { id: "ringforge_cannon_alpha", kind: "orbital-cannon", name: "Orbital Cannon Alpha", x: SCI_FI_STATION_CENTER.x - 45, y: SCI_FI_STATION_CENTER.y - 38, range: 146 },
+  { id: "ringforge_cannon_beta", kind: "orbital-cannon", name: "Orbital Cannon Beta", x: SCI_FI_STATION_CENTER.x + 45, y: SCI_FI_STATION_CENTER.y + 38, range: 146 }
 ]);
 
 const SCI_FI_ASTEROIDS = Object.freeze([
