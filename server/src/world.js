@@ -59,12 +59,26 @@ const PROCEDURAL_INTERIOR_GRID_OFFSET = 512;
 const STARTING_AREA = { x: 0, y: 0, radius: 26 };
 const START_SPAWN = { x: 0, y: 0 };
 const SCI_FI_THEME = "sci-fi";
-const SCI_FI_SECTOR = Object.freeze({
-  xMin: 1500,
-  xMax: 2340,
-  yMin: -560,
-  yMax: 560
-});
+const {
+  SCI_FI_SECTOR,
+  SCI_FI_STATION_CENTER,
+  SCI_FI_SAFE_RADIUS,
+  SCI_FI_DEFENSES,
+  SCI_FI_ASTEROIDS,
+  getAsteroidRocks: buildSciFiAsteroidRocks,
+  getSciFiAsteroids,
+  isInsideSciFiSafeZone,
+  isBlockedByAsteroid: isBlockedBySciFiAsteroid
+} = require("./worlds/sciFiWorld.js");
+const {
+  SCI_FI_PLANETS,
+  PLANET_SURFACE_LANDING_OFFSET,
+  PLANET_SURFACE_EDGE_MARGIN,
+  getPlanetById,
+  getPlanetBySurfacePoint,
+  getPlanetBySpacePoint,
+  getPlanetSurfaceTile: getPlanetWorldSurfaceTile
+} = require("./worlds/planetWorlds.js");
 const {
   SCI_FI_STATIONS,
   SCI_FI_STATION_FEATURES,
@@ -90,212 +104,6 @@ const SCI_FI_STARGATE_PORTAL = Object.freeze({
   color: "#67f0ff",
   style: "stargate"
 });
-/**
- * Each planet has a small explorable surface placed in a remote world region.
- * Surfaces are spaced 150 tiles apart starting at x=5000 so they don't collide
- * with the fantasy world (-650..+650), the sci-fi sector (1500..2340), or
- * procedural building interiors (10000+).
- */
-const SCI_FI_PLANETS = Object.freeze([
-  { id: "planet_aurelia",   name: "Aurelia",   x: 2142, y: -382, radius: 60, seed: 8128, type: "lush",     surfaceX: 5000, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#3aa46c", surfaceAccent: "#daf7b0" },
-  { id: "planet_icefall",   name: "Icefall",   x: 2214, y: 180,  radius: 52, seed: 9181, type: "ice",      surfaceX: 5150, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#9fd8ff", surfaceAccent: "#f8fdff" },
-  { id: "planet_rust",      name: "Rust",      x: 2050, y: 416,  radius: 46, seed: 10201,type: "desert",   surfaceX: 5300, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#d3a15b", surfaceAccent: "#ffe0a6" },
-  { id: "planet_pyros",     name: "Pyros",     x: 1640, y: -260, radius: 48, seed: 11329,type: "volcanic", surfaceX: 5450, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#ef4444", surfaceAccent: "#fb923c" },
-  { id: "planet_thalas",    name: "Thalas",    x: 1560, y: 240,  radius: 56, seed: 12347,type: "ocean",    surfaceX: 5600, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#2bb3ff", surfaceAccent: "#a0e7ff" },
-  { id: "planet_velm",      name: "Velm",      x: 2306, y: -120, radius: 42, seed: 13441,type: "jungle",   surfaceX: 5750, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#16a34a", surfaceAccent: "#86efac" },
-  { id: "planet_kryon",     name: "Kryon",     x: 2280, y: 400,  radius: 50, seed: 14557,type: "crystal",  surfaceX: 5900, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#a78bfa", surfaceAccent: "#ddd6fe" },
-  { id: "planet_mycelia",   name: "Mycelia",   x: 1520, y: -360, radius: 44, seed: 15661,type: "fungal",   surfaceX: 6050, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#d946ef", surfaceAccent: "#fbcfe8" },
-  { id: "planet_obsidian",  name: "Obsidian",  x: 1820, y: 470,  radius: 40, seed: 16783,type: "barren",   surfaceX: 6200, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#475569", surfaceAccent: "#94a3b8" },
-  { id: "planet_xelune",    name: "Xelune",    x: 1900, y: -510, radius: 38, seed: 17893,type: "toxic",    surfaceX: 6350, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#84cc16", surfaceAccent: "#bef264" },
-  { id: "planet_aether",    name: "Aether",    x: 2160, y: 60,   radius: 36, seed: 18997,type: "aether",   surfaceX: 6500, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#22d3ee", surfaceAccent: "#cffafe" },
-  { id: "planet_dustcairn", name: "Dustcairn", x: 1640, y: 380,  radius: 34, seed: 20011,type: "ashland",  surfaceX: 6650, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#a8a29e", surfaceAccent: "#f5f5f4" }
-]);
-
-const PLANET_SURFACE_LANDING_OFFSET = 6;
-const PLANET_SURFACE_EDGE_MARGIN = 1.5;
-
-function getPlanetById(id) {
-  if (typeof id !== "string") return null;
-  return SCI_FI_PLANETS.find((p) => p.id === id) || null;
-}
-
-function getPlanetBySurfacePoint(x, y) {
-  for (const planet of SCI_FI_PLANETS) {
-    const dx = x - planet.surfaceX;
-    const dy = y - planet.surfaceY;
-    const r = planet.surfaceRadius + PLANET_SURFACE_EDGE_MARGIN;
-    if (dx * dx + dy * dy <= r * r) return planet;
-  }
-  return null;
-}
-
-function getPlanetBySpacePoint(x, y) {
-  for (const planet of SCI_FI_PLANETS) {
-    const dx = x - planet.x;
-    const dy = y - planet.y;
-    const r = planet.radius + 2;
-    if (dx * dx + dy * dy <= r * r) return planet;
-  }
-  return null;
-}
-
-function biomeTileMix(biome, h) {
-  // Each branch returns a tile id based on the hash sample h ∈ [0,1).
-  switch (biome) {
-    case "ice":
-      if (h < 0.06) return TILE.WATER;
-      if (h < 0.16) return TILE.STONE;
-      if (h < 0.28) return TILE.TREE;
-      return TILE.SNOW;
-    case "desert":
-      if (h < 0.04) return TILE.FLOWERS;
-      if (h < 0.18) return TILE.STONE;
-      if (h < 0.24) return TILE.TREE;
-      return TILE.SAND;
-    case "volcanic":
-      if (h < 0.18) return TILE.LAVA;
-      if (h < 0.36) return TILE.STONE;
-      if (h < 0.44) return TILE.SAND;
-      return TILE.DARK_GRASS;
-    case "ocean":
-      if (h < 0.78) return TILE.WATER;
-      if (h < 0.86) return TILE.SAND;
-      if (h < 0.92) return TILE.FLOWERS;
-      return TILE.DARK_GRASS;
-    case "jungle":
-      if (h < 0.42) return TILE.TREE;
-      if (h < 0.54) return TILE.FLOWERS;
-      if (h < 0.7) return TILE.DARK_GRASS;
-      if (h < 0.78) return TILE.WATER;
-      return TILE.GRASS;
-    case "crystal":
-      if (h < 0.20) return TILE.ENERGY;
-      if (h < 0.55) return TILE.STONE;
-      if (h < 0.7) return TILE.FLOWERS;
-      return TILE.DARK_GRASS;
-    case "fungal":
-      if (h < 0.32) return TILE.FLOWERS;
-      if (h < 0.5) return TILE.TREE;
-      if (h < 0.6) return TILE.WATER;
-      return TILE.DARK_GRASS;
-    case "barren":
-      if (h < 0.55) return TILE.STONE;
-      if (h < 0.7) return TILE.SAND;
-      return TILE.DARK_GRASS;
-    case "toxic":
-      if (h < 0.22) return TILE.WATER;
-      if (h < 0.36) return TILE.FLOWERS;
-      if (h < 0.5) return TILE.TREE;
-      return TILE.DARK_GRASS;
-    case "aether":
-      if (h < 0.16) return TILE.ENERGY;
-      if (h < 0.34) return TILE.WATER;
-      if (h < 0.5) return TILE.FLOWERS;
-      return TILE.SNOW;
-    case "ashland":
-      if (h < 0.12) return TILE.LAVA;
-      if (h < 0.34) return TILE.STONE;
-      if (h < 0.5) return TILE.SAND;
-      return TILE.DARK_GRASS;
-    case "lush":
-    default:
-      if (h < 0.05) return TILE.WATER;
-      if (h < 0.22) return TILE.TREE;
-      if (h < 0.34) return TILE.FLOWERS;
-      if (h < 0.58) return TILE.DARK_GRASS;
-      return TILE.GRASS;
-  }
-}
-
-function getPlanetSurfaceTile(planet, x, y) {
-  const dx = x - planet.surfaceX;
-  const dy = y - planet.surfaceY;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  if (dist > planet.surfaceRadius) return TILE.VOID;
-  // Return portal sits one tile north of the surface center so it isn't
-  // obscured by the player's spawn position.
-  if (Math.round(x - planet.surfaceX) === 0 && Math.round(y - planet.surfaceY) === -3) {
-    return TILE.PORTAL;
-  }
-  // Stone ring along the rim so the world reads as a circular disc.
-  if (dist > planet.surfaceRadius - 1.2) {
-    return TILE.STONE;
-  }
-  const h = hash2(x, y, planet.seed | 0);
-  // Carve a small clear plaza around the spawn / portal.
-  if (dist < 4) {
-    if (planet.type === "ocean" || planet.type === "toxic") return TILE.SAND;
-    if (planet.type === "ice" || planet.type === "aether") return TILE.SNOW;
-    if (planet.type === "volcanic" || planet.type === "ashland" || planet.type === "barren") return TILE.STONE;
-    if (planet.type === "desert") return TILE.SAND;
-    return TILE.GRASS;
-  }
-  return biomeTileMix(planet.type, h);
-}
-
-// Safe zone around the station — no pirate spawns or aggro within this radius.
-const SCI_FI_STATION_CENTER = { x: 1920, y: 0 };
-const SCI_FI_SAFE_RADIUS = 34;
-const SCI_FI_DEFENSES = Object.freeze([
-  { id: "ringforge_turret_n", kind: "defense-turret", name: "North Defense Turret", x: SCI_FI_STATION_CENTER.x, y: SCI_FI_STATION_CENTER.y - 28, range: 82 },
-  { id: "ringforge_turret_e", kind: "defense-turret", name: "East Defense Turret", x: SCI_FI_STATION_CENTER.x + 28, y: SCI_FI_STATION_CENTER.y, range: 82 },
-  { id: "ringforge_turret_s", kind: "defense-turret", name: "South Defense Turret", x: SCI_FI_STATION_CENTER.x, y: SCI_FI_STATION_CENTER.y + 28, range: 82 },
-  { id: "ringforge_turret_w", kind: "defense-turret", name: "West Defense Turret", x: SCI_FI_STATION_CENTER.x - 28, y: SCI_FI_STATION_CENTER.y, range: 82 },
-  { id: "ringforge_cannon_alpha", kind: "orbital-cannon", name: "Orbital Cannon Alpha", x: SCI_FI_STATION_CENTER.x - 20, y: SCI_FI_STATION_CENTER.y - 20, range: 112 },
-  { id: "ringforge_cannon_beta", kind: "orbital-cannon", name: "Orbital Cannon Beta", x: SCI_FI_STATION_CENTER.x + 20, y: SCI_FI_STATION_CENTER.y + 20, range: 112 }
-]);
-
-// Asteroid fields scattered around the sector. Each cluster is a circular area
-// with a seeded layout the client renders, and rocks act as ship-blocking hazards.
-const SCI_FI_ASTEROIDS = Object.freeze([
-  { id: "asteroid_belt_north", x: 1820, y: -260, radius: 18, density: 14, seed: 3201 },
-  { id: "asteroid_belt_south", x: 1990, y: 290, radius: 22, density: 18, seed: 4117 },
-  { id: "asteroid_belt_east_outer", x: 2280, y: -90, radius: 16, density: 12, seed: 5293 },
-  { id: "asteroid_belt_west_outer", x: 1620, y: 90, radius: 20, density: 16, seed: 6418 },
-  { id: "asteroid_belt_far_north", x: 1740, y: -450, radius: 14, density: 10, seed: 7102 }
-]);
-
-function getAsteroidRocks(cluster) {
-  const rocks = [];
-  const count = Math.max(4, Number(cluster.density) || 10);
-  for (let i = 0; i < count; i += 1) {
-    const a = hash2(cluster.seed, i, 17) * Math.PI * 2;
-    const r = Math.sqrt(hash2(cluster.seed, i, 29)) * cluster.radius;
-    const size = 0.9 + hash2(cluster.seed, i, 43) * 1.6;
-    rocks.push({
-      x: cluster.x + Math.cos(a) * r,
-      y: cluster.y + Math.sin(a) * r,
-      radius: size
-    });
-  }
-  return rocks;
-}
-
-function getSciFiAsteroids() {
-  return SCI_FI_ASTEROIDS;
-}
-
-function isInsideSciFiSafeZone(x, y) {
-  const dx = x - SCI_FI_STATION_CENTER.x;
-  const dy = y - SCI_FI_STATION_CENTER.y;
-  return dx * dx + dy * dy <= SCI_FI_SAFE_RADIUS * SCI_FI_SAFE_RADIUS;
-}
-
-function isBlockedByAsteroid(x, y, radius = 0.34) {
-  for (const cluster of SCI_FI_ASTEROIDS) {
-    const dx = x - cluster.x;
-    const dy = y - cluster.y;
-    const reach = cluster.radius + radius + 1;
-    if (dx * dx + dy * dy > reach * reach) continue;
-    for (const rock of getAsteroidRocks(cluster)) {
-      const rdx = x - rock.x;
-      const rdy = y - rock.y;
-      const ar = rock.radius + radius;
-      if (rdx * rdx + rdy * rdy < ar * ar) return true;
-    }
-  }
-  return false;
-}
 const { computeHubDistrict, HUB_CLEARING_RADIUS: HUB_TOWN_GRASS_RADIUS } = require("./hubRoundTown.js");
 /** Walled procedural hub + arterial sets (paths never overlap building rects). */
 const _hubDistrict = computeHubDistrict();
@@ -311,6 +119,18 @@ function hash2(x, y, seed = 1337) {
   h = (h ^ (h >>> 13)) >>> 0;
   h = Math.imul(h, 1274126177) >>> 0;
   return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+}
+
+function getPlanetSurfaceTile(planet, x, y) {
+  return getPlanetWorldSurfaceTile(planet, x, y, TILE, hash2);
+}
+
+function getAsteroidRocks(cluster) {
+  return buildSciFiAsteroidRocks(cluster, hash2);
+}
+
+function isBlockedByAsteroid(x, y, radius = 0.34) {
+  return isBlockedBySciFiAsteroid(x, y, radius, hash2);
 }
 
 /** Same grass mix as the inner plaza clearing around the landmark tree (hash2 seed 44). */
@@ -335,7 +155,8 @@ function isSciFiSector(x, y) {
  *  - "void"             → nowhere; off-limits to everyone
  */
 function worldForPosition(x, y) {
-  // Procedural alien planet surfaces sit in a remote band at x >= ~5000.
+  // Planet surfaces are authored in server/src/worlds/planetWorlds.js and
+  // exposed as separate `planet:<id>` planes through the current chunk protocol.
   for (const planet of SCI_FI_PLANETS) {
     const dx = x - planet.surfaceX;
     const dy = y - planet.surfaceY;
