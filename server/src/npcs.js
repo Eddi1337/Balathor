@@ -1332,6 +1332,10 @@ function buildHydratedHubNpcExtras() {
     { id: "hub_g_sw", homeX: -74,  homeY: 74,   facing: Math.PI * 0.75 },
     { id: "hub_g_w",  homeX: -105, homeY: 0,    facing: Math.PI },
     { id: "hub_g_nw", homeX: -74,  homeY: -74,  facing: -Math.PI * 0.75 },
+    { id: "hub_g_in_n", homeX: 0,    homeY: -86,  facing: -Math.PI / 2 },
+    { id: "hub_g_in_e", homeX: 86,   homeY: 0,    facing: 0 },
+    { id: "hub_g_in_s", homeX: 0,    homeY: 86,   facing: Math.PI / 2 },
+    { id: "hub_g_in_w", homeX: -86,  homeY: 0,    facing: Math.PI },
   ];
   for (const gs of GATE_GUARD_SPECS) {
     out.push({

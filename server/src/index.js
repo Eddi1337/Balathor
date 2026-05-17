@@ -145,11 +145,24 @@ const MOB_ATTACK_RADIUS = 1.15;
 const MOB_ATTACK_COOLDOWN_MS = 1300;
 const MOB_ATTACK_DAMAGE = 13;
 const BOSS_ATTACK_DAMAGE = 26;
-const ENEMY_DENSITY_MULTIPLIER = readIntEnv("ENEMY_DENSITY_MULTIPLIER", 50, 1, 100);
+const ENEMY_DENSITY_MULTIPLIER = readIntEnv("ENEMY_DENSITY_MULTIPLIER", 25, 1, 100);
 const MOB_SPATIAL_CELL_SIZE = 32;
 const MOB_SPATIAL_QUERY_PAD = 96;
 const WORLD_IDS_WITH_MOBS = ["fantasy", "scifi", ...SCI_FI_PLANETS.map((planet) => `planet:${planet.id}`)];
-const GATEKEEPER_IDS = Object.freeze(["hub_g_n", "hub_g_ne", "hub_g_e", "hub_g_se", "hub_g_s", "hub_g_sw", "hub_g_w", "hub_g_nw"]);
+const GATEKEEPER_IDS = Object.freeze([
+  "hub_g_n",
+  "hub_g_ne",
+  "hub_g_e",
+  "hub_g_se",
+  "hub_g_s",
+  "hub_g_sw",
+  "hub_g_w",
+  "hub_g_nw",
+  "hub_g_in_n",
+  "hub_g_in_e",
+  "hub_g_in_s",
+  "hub_g_in_w"
+]);
 const GATEKEEPER_RANGE = 46;
 const GATEKEEPER_NEAR_TOWN_RADIUS = HUB_TOWN_GRASS_RADIUS + 84;
 const GATEKEEPER_ATTACK_COOLDOWN_MS = 1150;
