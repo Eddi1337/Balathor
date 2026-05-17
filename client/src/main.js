@@ -115,6 +115,11 @@ const partyPanel = document.querySelector("#partyPanel");
 const partyMembersEl = document.querySelector("#partyMembers");
 const partyPanelMin = document.querySelector("#partyPanelMin");
 const playerContextMenu = document.querySelector("#playerContextMenu");
+const teleportMenuPanel = document.querySelector("#teleportMenuPanel");
+const teleportMenuTitle = document.querySelector("#teleportMenuTitle");
+const teleportMenuList = document.querySelector("#teleportMenuList");
+const teleportMenuCloseBtn = document.querySelector("#teleportMenuClose");
+const teleportHotbarBtn = document.querySelector("#teleportHotbarBtn");
 const questOfferPanel = document.querySelector("#questOfferPanel");
 const questOfferTitle = document.querySelector("#questOfferTitle");
 const questOfferGiver = document.querySelector("#questOfferGiver");
@@ -692,6 +697,7 @@ const state = {
   ship: null,
   ships: [],
   shipTerminal: null,
+  teleportMenu: null,
   questOffer: null,
   gold: 0,
   shop: null,
@@ -1306,6 +1312,11 @@ function handleServerMessage(message) {
     return;
   }
 
+  if (message.type === "teleportMenu") {
+    showTeleportMenu(message);
+    return;
+  }
+
   if (message.type === "combat") {
     applyCombatEvent(message);
     if (message.attackerId === state.selfId && message.xpGained) {
@@ -1496,6 +1507,12 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: `Caravan fare is ${message.fare || 0}g — you can't afford it.` });
     } else if (message.message === "caravan_unknown") {
       appendChat({ kind: "system", name: "Realm", text: "That caravan isn't here" });
+    } else if (message.message === "teleport_not_here") {
+      appendChat({ kind: "system", name: "Realm", text: "No teleporter active here" });
+    } else if (message.message === "teleport_unknown") {
+      appendChat({ kind: "system", name: "Realm", text: "That destination is offline" });
+    } else if (message.message === "teleport_arrived") {
+      appendChat({ kind: "system", name: "Realm", text: `Teleported to ${message.destination || "destination"}` });
     } else if (message.message === "ship_station_entered") {
       appendChat({ kind: "system", name: "Realm", text: `Entered ${message.stationName || "ship station"}` });
     } else if (message.message === "ship_station_left") {
@@ -2701,6 +2718,24 @@ function wireUi() {
     closeShipTerminal();
   });
 
+  teleportMenuCloseBtn?.addEventListener("click", () => closeTeleportMenu());
+  teleportHotbarBtn?.addEventListener("click", () => {
+    if (!state.joined || state.menuOpen) return;
+    send({ type: "teleportMenuOpen" });
+  });
+  teleportMenuPanel?.addEventListener("pointerdown", (event) => {
+    const row = event.target.closest("[data-teleport-kind]");
+    if (!row || !state.teleportMenu?.open) return;
+    event.preventDefault();
+    event.stopPropagation();
+    send({
+      type: "teleportMenuTravel",
+      kind: row.dataset.teleportKind,
+      id: row.dataset.teleportId
+    });
+    closeTeleportMenu();
+  });
+
   questOfferAcceptBtn?.addEventListener("click", () => {
     if (!state.questOffer?.quest?.id) return;
     send({ type: "questAccept", questId: state.questOffer.quest.id, npcId: state.questOffer.npcId });
@@ -3686,6 +3721,13 @@ function renderAbilityBar() {
   const bar = self.abilityBar || [null, null, null, null, null];
   abilityBar.classList.remove("hidden");
 
+  // Teleport button shows whenever the player is somewhere a teleport menu makes sense:
+  // any sci-fi context (in space, on a ship deck) or on a planet surface.
+  if (teleportHotbarBtn) {
+    const showTeleport = isSciFiWorld();
+    teleportHotbarBtn.classList.toggle("hidden", !showTeleport);
+  }
+
   // Ship mode: replace spell slots with the active ship-station control.
   const shipMode = isSelfOnShip();
   abilitySlotsEl.classList.toggle("hidden", shipMode);
@@ -4253,12 +4295,28 @@ function sendInteract(target = null) {
   send(target ? { type: "interact", ...target } : { type: "interact" });
 }
 
+function isSelfInsideShipInterior(player = state.players.get(state.selfId)) {
+  if (!player) return false;
+  if (selfIsInPilotSeat(player)) return false;
+  if (player.ship?.boarded && player.ship?.deckMode) return true;
+  if (typeof player.aboardShipId === "string" && player.aboardShipId) return true;
+  return false;
+}
+
 function screenPointToWorld(cx, cy) {
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
   const zoom = getEffectiveWorldZoom();
   const dx = (cx - halfW) / (zoom || 1);
   const dy = (cy - halfH) / (zoom || 1);
+  // Interior view counter-rotates the deck and crew so they read screen-static;
+  // clicks on stations/fixtures therefore need to skip the camera rotation undo.
+  if (isSelfInsideShipInterior()) {
+    return {
+      x: (state.camera.x + dx) / TILE_SIZE,
+      y: (state.camera.y + dy) / TILE_SIZE
+    };
+  }
   const rotation = Number(state.camera.rotation) || 0;
   const cos = Math.cos(-rotation);
   const sin = Math.sin(-rotation);
@@ -6226,6 +6284,49 @@ function closeQuestOffer() {
   questOfferPanel?.classList.add("hidden");
 }
 
+function showTeleportMenu(payload) {
+  if (!teleportMenuPanel || !teleportMenuList) return;
+  const destinations = Array.isArray(payload?.destinations) ? payload.destinations : [];
+  state.teleportMenu = { open: true, destinations };
+  if (teleportMenuTitle) teleportMenuTitle.textContent = payload?.title || "Teleport";
+  teleportMenuList.replaceChildren();
+  if (!destinations.length) {
+    const empty = document.createElement("div");
+    empty.className = "ship-terminal-empty";
+    empty.textContent = "No destinations available from here.";
+    teleportMenuList.append(empty);
+  } else {
+    for (const dest of destinations) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "teleport-menu-row";
+      row.dataset.teleportKind = dest.kind || "";
+      row.dataset.teleportId = dest.id || "";
+      const swatch = document.createElement("span");
+      swatch.className = "teleport-menu-swatch";
+      swatch.style.background = dest.color || "#67f0ff";
+      const label = document.createElement("div");
+      label.className = "teleport-menu-label";
+      const strong = document.createElement("strong");
+      strong.textContent = dest.label || "Destination";
+      const sub = document.createElement("span");
+      sub.textContent = dest.sublabel || "";
+      label.append(strong, sub);
+      const dist = document.createElement("span");
+      dist.className = "teleport-menu-dist";
+      dist.textContent = Number.isFinite(Number(dest.dist)) && dest.dist > 0 ? `${dest.dist} tiles` : "";
+      row.append(swatch, label, dist);
+      teleportMenuList.append(row);
+    }
+  }
+  teleportMenuPanel.classList.remove("hidden");
+}
+
+function closeTeleportMenu() {
+  state.teleportMenu = null;
+  teleportMenuPanel?.classList.add("hidden");
+}
+
 function renderShop() {
   if (!shopPanel || !shopBuyList || !shopSellList || !shopGold || !shopTitle) {
     return;
@@ -7551,6 +7652,7 @@ function getShipLayout(shipOrClass = "skiff") {
       deckW: 18,
       deckH: 10,
       entry: { x: -7, y: 0 },
+      teleporter: { x: -4, y: 0 },
       stations: [
         { id: "captain", role: "captain", name: "Captain", x: 5, y: -1 },
         { id: "pilot", role: "pilot", name: "Pilot", x: 6, y: 1 },
@@ -7573,6 +7675,7 @@ function getShipLayout(shipOrClass = "skiff") {
       deckW: 14,
       deckH: 8,
       entry: { x: -5, y: 0 },
+      teleporter: { x: -3, y: 0 },
       stations: [
         { id: "pilot", role: "pilot", name: "Pilot", x: 4, y: -1 },
         { id: "copilot", role: "copilot", name: "Co-Pilot", x: 4, y: 1 },
@@ -8113,6 +8216,43 @@ function drawShipDeckObject(ship, sx, sy) {
       ctx.lineWidth = 1.5;
       ctx.strokeRect(ax - 26, ay - 14, 52, 28);
     }
+  }
+
+  // Teleporter pad — animated cyan disc; clicking it opens the teleport menu.
+  if (layout.teleporter) {
+    const tx = sx + Number(layout.teleporter.x) * TILE_SIZE;
+    const ty = sy + Number(layout.teleporter.y) * TILE_SIZE;
+    const t = performance.now() / 1000;
+    const pulse = 0.55 + Math.sin(t * 2.4) * 0.18;
+    ctx.save();
+    // Floor pad
+    ctx.fillStyle = "rgba(10, 18, 30, 0.95)";
+    ctx.beginPath();
+    ctx.arc(tx, ty, 18, 0, Math.PI * 2);
+    ctx.fill();
+    // Inner glow rings
+    for (let i = 0; i < 3; i += 1) {
+      ctx.strokeStyle = `rgba(103, 240, 255, ${pulse - i * 0.16})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(tx, ty, 16 - i * 4, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // Central beam
+    const beam = ctx.createRadialGradient(tx, ty - 12, 0, tx, ty - 12, 12);
+    beam.addColorStop(0, `rgba(180, 240, 255, ${pulse})`);
+    beam.addColorStop(1, "rgba(103, 240, 255, 0)");
+    ctx.fillStyle = beam;
+    ctx.fillRect(tx - 12, ty - 24, 24, 24);
+    // Label
+    ctx.font = "bold 9px ui-sans-serif, system-ui";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#67f0ff";
+    ctx.strokeStyle = "rgba(4,8,16,0.85)";
+    ctx.lineWidth = 3;
+    ctx.strokeText("TELEPORTER", tx, ty + 28);
+    ctx.fillText("TELEPORTER", tx, ty + 28);
+    ctx.restore();
   }
 
   // Stations - drawn as crew chairs/consoles at full tile scale

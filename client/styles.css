@@ -557,6 +557,89 @@ button:focus-visible {
   z-index: 90;
 }
 
+.teleport-menu-window {
+  left: 50%;
+  right: auto;
+  top: 96px;
+  transform: translateX(-50%);
+  width: min(380px, calc(100vw - 32px));
+  max-height: calc(100vh - 132px);
+  overflow-y: auto;
+  z-index: 90;
+}
+
+.teleport-menu-list {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.teleport-menu-row {
+  display: grid;
+  grid-template-columns: 8px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid rgba(232, 200, 106, 0.32);
+  border-radius: 4px;
+  background: rgba(34, 23, 10, 0.72);
+  cursor: pointer;
+  text-align: left;
+  color: var(--text);
+  font-family: inherit;
+}
+
+.teleport-menu-row:hover {
+  border-color: #ffd166;
+  background: rgba(58, 38, 12, 0.85);
+}
+
+.teleport-menu-swatch {
+  width: 8px;
+  height: 100%;
+  min-height: 28px;
+  border-radius: 2px;
+}
+
+.teleport-menu-label {
+  display: grid;
+  gap: 2px;
+}
+
+.teleport-menu-label strong {
+  color: #ffe6a8;
+  font-size: 13px;
+}
+
+.teleport-menu-label span {
+  color: #c2a875;
+  font-size: 11px;
+}
+
+.teleport-menu-dist {
+  font-size: 11px;
+  color: #c2a875;
+}
+
+.hotbar-teleport-btn {
+  margin-left: 6px;
+  padding: 0 12px;
+  min-height: 44px;
+  border: 1px solid rgba(103, 240, 255, 0.55);
+  border-radius: 4px;
+  background: linear-gradient(180deg, rgba(18, 32, 51, 0.95) 0%, rgba(8, 16, 29, 0.95) 100%);
+  color: #cffaff;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(103, 240, 255, 0.18) inset, 0 0 12px rgba(103, 240, 255, 0.18);
+}
+
+.hotbar-teleport-btn:hover {
+  border-color: #67f0ff;
+  background: linear-gradient(180deg, rgba(28, 50, 78, 0.95) 0%, rgba(12, 22, 40, 0.95) 100%);
+}
+
 .quest-offer-body {
   display: grid;
   gap: 10px;

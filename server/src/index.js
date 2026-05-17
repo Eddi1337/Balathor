@@ -1270,6 +1270,7 @@ function getShipLayout(shipOrClass = "skiff") {
       deckW: 18,
       deckH: 10,
       entry: { x: -7, y: 0 },
+      teleporter: { x: -4, y: 0 },
       stations: [
         { id: "captain", role: "captain", name: "Captain Seat", x: 5, y: -1 },
         { id: "pilot", role: "pilot", name: "Pilot Seat", x: 6, y: 1 },
@@ -1286,6 +1287,7 @@ function getShipLayout(shipOrClass = "skiff") {
       deckW: 14,
       deckH: 8,
       entry: { x: -5, y: 0 },
+      teleporter: { x: -3, y: 0 },
       stations: [
         { id: "pilot", role: "pilot", name: "Pilot Seat", x: 4, y: -1 },
         { id: "copilot", role: "copilot", name: "Co-Pilot Seat", x: 4, y: 1 },
@@ -3124,6 +3126,16 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "teleportMenuOpen") {
+    handleTeleportMenuOpen(client);
+    return;
+  }
+
+  if (message.type === "teleportMenuTravel") {
+    handleTeleportMenuTravel(client, message);
+    return;
+  }
+
   if (message.type === "shopBuy") {
     handleShopBuy(client, message);
     return;
@@ -4182,6 +4194,22 @@ function handleShipInteract(client, message = {}) {
       broadcastSnapshot();
       return true;
     }
+    // Teleporter fixture on multi-crew decks.
+    const layout = getShipLayout(hostShip);
+    if (layout?.teleporter) {
+      const center = shipCenter(hostShip);
+      const tx = center.x + (Number(layout.teleporter.x) || 0);
+      const ty = center.y + (Number(layout.teleporter.y) || 0);
+      const tgtX = Number(message.x);
+      const tgtY = Number(message.y);
+      const useTarget = Number.isFinite(tgtX) && Number.isFinite(tgtY);
+      const clickDist = useTarget ? Math.hypot(tgtX - tx, tgtY - ty) : Number.POSITIVE_INFINITY;
+      const playerDist = Math.hypot(player.x - tx, player.y - ty);
+      if ((useTarget && clickDist <= 1.4) || playerDist <= 1.8) {
+        handleTeleportMenuOpen(client);
+        return true;
+      }
+    }
     if (hostShip === ownShip && targetInsideActiveShipDeck(player, message)) {
       send(client, { type: "serverMessage", message: "ship_fixture_used" });
       return true;
@@ -4383,6 +4411,189 @@ function handleShipFire(client, message = {}) {
     broadcastCombat(event);
   }
   client.player.moving = true;
+}
+
+// ── Teleport menu ───────────────────────────────────────────────────────────
+// Surfaces a list of nearby destinations the player can warp to. Available
+// inside any multi-crew ship (teleporter fixture / hotbar button) and on the
+// main station. Destinations include the closest planet, the player's current
+// home dock, and the main Orbital Square station as a fallback.
+
+const TELEPORT_NEAR_RANGE = 220; // tiles — used to decide "nearby" planets / stations.
+
+function buildTeleportDestinations(player) {
+  const destinations = [];
+  const px = Number(player.x) || 0;
+  const py = Number(player.y) || 0;
+  const world = worldForPosition(px, py);
+
+  if (world === "scifi") {
+    // Sort planets by distance from current ship position.
+    const ranked = SCI_FI_PLANETS.slice().sort((a, b) => {
+      const da = Math.hypot(a.x - px, a.y - py);
+      const db = Math.hypot(b.x - px, b.y - py);
+      return da - db;
+    });
+    for (const planet of ranked) {
+      const dist = Math.hypot(planet.x - px, planet.y - py);
+      destinations.push({
+        kind: "planet",
+        id: planet.id,
+        label: planet.name,
+        sublabel: dist <= TELEPORT_NEAR_RANGE ? "Nearby planet" : "Distant planet",
+        color: planet.surfacePrimary || "#67f0ff",
+        dist: Math.round(dist)
+      });
+    }
+  } else if (world && world.startsWith("planet:")) {
+    const id = world.slice("planet:".length);
+    const here = getPlanetById(id);
+    if (here) {
+      destinations.push({
+        kind: "return_to_orbit",
+        id: `orbit_${here.id}`,
+        label: `${here.name} Orbit`,
+        sublabel: "Return to your ship",
+        color: here.surfacePrimary || "#67f0ff",
+        dist: 0
+      });
+    }
+  }
+
+  // Always offer the main station so players can fast-travel home.
+  destinations.push({
+    kind: "station",
+    id: "station_ringforge",
+    label: "Orbital Square",
+    sublabel: "Main hub station",
+    color: "#67f0ff",
+    dist: world === "scifi" ? Math.round(Math.hypot(SCI_FI_STATION_CENTER.x - px, SCI_FI_STATION_CENTER.y - py)) : 0
+  });
+
+  return destinations;
+}
+
+function handleTeleportMenuOpen(client) {
+  const player = client.player;
+  if (!player) return;
+  const world = worldForPosition(player.x, player.y);
+  if (world !== "scifi" && !world?.startsWith("planet:")) {
+    send(client, { type: "serverMessage", message: "teleport_not_here" });
+    return;
+  }
+  send(client, {
+    type: "teleportMenu",
+    title: world?.startsWith("planet:") ? "Planet Teleporter" : "Ship Teleporter",
+    destinations: buildTeleportDestinations(player)
+  });
+}
+
+function handleTeleportMenuTravel(client, message = {}) {
+  const player = client.player;
+  if (!player) return;
+  const kind = String(message.kind || "");
+  const id = typeof message.id === "string" ? message.id : "";
+  if (kind === "planet") {
+    handleTravelToPlanet(client, { planetId: id });
+    return;
+  }
+  if (kind === "return_to_orbit") {
+    // Use the existing planet-return portal logic: place the player at the
+    // planet's orbit point and re-board their ship.
+    const planetId = id.replace(/^orbit_/, "");
+    const planet = getPlanetById(planetId);
+    if (!planet) {
+      send(client, { type: "serverMessage", message: "teleport_unknown" });
+      return;
+    }
+    const fakePortal = {
+      id: `portal_${planet.id}_return`,
+      kind: "planet_return",
+      targetX: planet.x,
+      targetY: planet.y,
+      color: planet.surfacePrimary || "#67f0ff",
+      style: "stargate",
+      name: `${planet.name} Orbit`,
+      planetId: planet.id
+    };
+    teleportPlayerToPortal(client, fakePortal);
+    return;
+  }
+  if (kind === "station") {
+    // Drop the player at the main station landing terminal.
+    const landing = STARGATE_LANDING;
+    if (player.ship) {
+      // Park the ship at the player's saved dock if available, otherwise the landing pad.
+      player.ship.boarded = false;
+      player.ship.deckMode = false;
+      player.ship.stationRole = null;
+      player.ship.stationId = null;
+      player.ship.docking = null;
+      player.ship.worldX = landing.x;
+      player.ship.worldY = landing.y;
+      player.ship.dockX = landing.x;
+      player.ship.dockY = landing.y;
+    }
+    player.shipStationRole = null;
+    player.shipStationId = null;
+    player.aboardShipId = null;
+    player.x = landing.x;
+    player.y = landing.y;
+    player.facing = -Math.PI / 2;
+    player.moving = false;
+    saveClientCharacter(client);
+    send(client, {
+      type: "teleport",
+      portalId: "teleport_to_station",
+      name: "Orbital Square",
+      color: "#67f0ff",
+      style: "stargate",
+      theme: getWorldThemeAt(player.x, player.y),
+      x: player.x,
+      y: player.y
+    });
+    send(client, { type: "serverMessage", message: "teleport_arrived", destination: "Orbital Square" });
+    broadcastSnapshot();
+    return;
+  }
+  send(client, { type: "serverMessage", message: "teleport_unknown" });
+}
+
+function teleportPlayerToPortal(client, portal) {
+  const player = client.player;
+  if (!player) return;
+  player.x = portal.targetX;
+  player.y = portal.targetY + 3.2;
+  player.moving = false;
+  if (portal.kind === "planet_return" && player.ship) {
+    const ship = player.ship;
+    ship.worldX = portal.targetX;
+    ship.worldY = portal.targetY;
+    ship.boarded = true;
+    ship.deckMode = (getShipLayout(ship).crewCapacity > 1);
+    ship.stationRole = ship.deckMode ? null : "pilot";
+    ship.stationId = ship.deckMode ? null : "pilot";
+    if (ship.deckMode) {
+      const layout = getShipLayout(ship);
+      player.x = ship.worldX + (layout?.entry?.x || 0);
+      player.y = ship.worldY + (layout?.entry?.y || 0);
+    } else {
+      player.x = ship.worldX;
+      player.y = ship.worldY;
+    }
+    saveClientCharacter(client);
+  }
+  send(client, {
+    type: "teleport",
+    portalId: portal.id,
+    name: portal.name,
+    color: portal.color,
+    style: portal.style || "arch",
+    theme: getWorldThemeAt(player.x, player.y),
+    x: player.x,
+    y: player.y
+  });
+  broadcastSnapshot();
 }
 
 function handleTravelToPlanet(client, message = {}) {

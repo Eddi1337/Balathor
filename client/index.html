@@ -167,6 +167,14 @@
       <div id="questList" class="quest-list"></div>
     </aside>
 
+    <aside id="teleportMenuPanel" class="game-window teleport-menu-window hidden" aria-label="Teleport menu">
+      <div class="window-head">
+        <strong id="teleportMenuTitle">Teleport</strong>
+        <button id="teleportMenuClose" class="window-close" type="button" aria-label="Close teleport">Close</button>
+      </div>
+      <div id="teleportMenuList" class="teleport-menu-list"></div>
+    </aside>
+
     <aside id="questOfferPanel" class="game-window quest-offer-window hidden" aria-label="Quest offer">
       <div class="window-head">
         <strong id="questOfferTitle">Quest Offer</strong>
@@ -198,6 +206,7 @@
         <span class="ship-engage-key">Space</span>
         <div id="shipStationStats" class="ship-station-stats hidden"></div>
       </div>
+      <button type="button" id="teleportHotbarBtn" class="hotbar-teleport-btn hidden" title="Teleport menu">Teleport</button>
       <div class="ability-bar-divider"></div>
       <div id="safeZoneIndicator" class="safe-zone-indicator hidden" role="group" aria-label="Safe zone" title="Safe zone" tabindex="0">
         <span class="safe-zone-icon" aria-hidden="true">🛡</span>
