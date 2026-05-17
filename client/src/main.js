@@ -3762,7 +3762,9 @@ function renderAbilityBar() {
       const maxHp = Math.round(Number(self.ship?.maxHealth) || 0);
       const shields = Math.round(Number(self.ship?.shields) || 0);
       const maxShields = Math.round(Number(self.ship?.maxShields) || 0);
-      const shieldDir = String(self.ship?.shieldFacing || "front");
+      const shieldSections = self.ship?.shieldSections && typeof self.ship.shieldSections === "object" ? self.ship.shieldSections : {};
+      const stationId = String(self.ship?.stationId || "engineer_mid");
+      const shieldDir = String(shieldSections[stationId] || self.ship?.shieldFacing || "front");
       stats.classList.toggle("hidden", !shipMode || role !== "engineer");
       if (shipMode && role === "engineer") {
         stats.replaceChildren();
@@ -3771,7 +3773,7 @@ function renderAbilityBar() {
         const hull = document.createElement("span");
         hull.textContent = `Hull ${hp}/${maxHp}`;
         const shield = document.createElement("span");
-        shield.textContent = `Shields ${shields}/${maxShields} ${shieldDir}`;
+        shield.textContent = `Shield ${shields}/${maxShields} ${shieldDir}`;
         stats.append(title, hull, shield);
       }
     }
@@ -7681,12 +7683,12 @@ function getShipLayout(shipOrClass = "skiff") {
       entry: { x: -7, y: 0 },
       teleporter: { x: -4, y: 0 },
       stations: [
-        { id: "captain", role: "captain", name: "Captain", x: 5, y: -1 },
-        { id: "pilot", role: "pilot", name: "Pilot", x: 6, y: 1 },
-        { id: "copilot", role: "copilot", name: "Co-Pilot", x: 3, y: 1 },
+        { id: "captain", role: "captain", name: "Captain", x: 4, y: 0 },
+        { id: "pilot", role: "pilot", name: "Pilot", x: 6, y: -1 },
+        { id: "copilot", role: "copilot", name: "Co-Pilot", x: 6, y: 1 },
         { id: "gunner_aft", role: "gunner", name: "Gunner", x: -6, y: 0 },
-        { id: "engineer_mid", role: "engineer", name: "Engineering", x: -1, y: -2 },
-        { id: "engineer_aux", role: "engineer", name: "Engineering", x: -2, y: 2 }
+        { id: "engineer_mid", role: "engineer", name: "Forward Engineering", x: -1, y: -2, defaultShieldFacing: "front" },
+        { id: "engineer_aux", role: "engineer", name: "Aft Engineering", x: -2, y: 2, defaultShieldFacing: "back" }
       ],
       amenities: [
         { kind: "bed", x: -6, y: -3 },
@@ -7707,7 +7709,7 @@ function getShipLayout(shipOrClass = "skiff") {
         { id: "pilot", role: "pilot", name: "Pilot", x: 4, y: -1 },
         { id: "copilot", role: "copilot", name: "Co-Pilot", x: 4, y: 1 },
         { id: "gunner_aft", role: "gunner", name: "Gunner", x: -5, y: 0 },
-        { id: "engineer_mid", role: "engineer", name: "Engineering", x: -1, y: 0 }
+        { id: "engineer_mid", role: "engineer", name: "Engineering", x: -1, y: 0, defaultShieldFacing: "front" }
       ],
       amenities: [
         { kind: "bed", x: -4, y: -2 },
@@ -8183,6 +8185,162 @@ function drawShipVehicleObject(obj, sx, sy, boarded = false, facing = 0, thrust 
   ctx.restore();
 }
 
+function shieldFacingToAngle(facing) {
+  if (facing === "right") return 0;
+  if (facing === "back") return Math.PI / 2;
+  if (facing === "left") return Math.PI;
+  return -Math.PI / 2;
+}
+
+function defaultShipShieldSections(shipOrClass = "skiff") {
+  const layout = getShipLayout(shipOrClass);
+  const fallbackDirections = ["front", "back", "right", "left"];
+  const sections = {};
+  let index = 0;
+  for (const station of layout.stations || []) {
+    if (station.role !== "engineer") continue;
+    sections[station.id] = station.defaultShieldFacing || fallbackDirections[index] || "front";
+    index += 1;
+  }
+  return sections;
+}
+
+function shipShieldSections(ship, layout = getShipLayout(ship)) {
+  const defaults = defaultShipShieldSections(ship);
+  const source = ship?.shieldSections && typeof ship.shieldSections === "object" ? ship.shieldSections : {};
+  const sections = {};
+  for (const station of layout.stations || []) {
+    if (station.role !== "engineer") continue;
+    sections[station.id] = source[station.id] || defaults[station.id] || ship?.shieldFacing || "front";
+  }
+  return sections;
+}
+
+function stationShieldFacing(ship, station) {
+  if (!station || station.role !== "engineer") return null;
+  const sections = shipShieldSections(ship);
+  return sections[station.id] || ship?.shieldFacing || station.defaultShieldFacing || "front";
+}
+
+function drawStationActiveRing(wx, wy, active, color, radius = 24) {
+  if (!active) return;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.arc(wx, wy, radius, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+function drawPilotStation(wx, wy, active, color, isCaptain = false) {
+  const width = isCaptain ? 44 : 30;
+  const height = isCaptain ? 36 : 28;
+  ctx.fillStyle = "rgba(8, 16, 28, 0.96)";
+  ctx.strokeStyle = color;
+  ctx.lineWidth = isCaptain ? 2.5 : 2;
+  roundedRect(wx - width / 2, wy - height / 2, width, height, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = active ? "rgba(103,240,255,0.92)" : "rgba(44, 62, 86, 0.94)";
+  roundedRect(wx - width * 0.26, wy - height * 0.18, width * 0.52, height * 0.42, 4);
+  ctx.fill();
+
+  ctx.strokeStyle = active ? "#06101c" : color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(wx - width * 0.22, wy + height * 0.08);
+  ctx.lineTo(wx, wy + height * 0.22);
+  ctx.lineTo(wx + width * 0.22, wy + height * 0.08);
+  ctx.stroke();
+
+  if (isCaptain) {
+    ctx.fillStyle = active ? "#06101c" : "#ffd36d";
+    ctx.beginPath();
+    for (let i = 0; i < 10; i += 1) {
+      const a = -Math.PI / 2 + i * (Math.PI * 2 / 10);
+      const r = i % 2 === 0 ? 7 : 3.5;
+      const px = wx + Math.cos(a) * r;
+      const py = wy - 8 + Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  drawStationActiveRing(wx, wy, active, color, isCaptain ? 28 : 22);
+}
+
+function drawGunnerStation(wx, wy, active, color) {
+  ctx.fillStyle = "rgba(12, 16, 24, 0.96)";
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  roundedRect(wx - 20, wy - 14, 40, 28, 5);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = active ? color : "rgba(70, 78, 94, 0.96)";
+  ctx.beginPath();
+  ctx.arc(wx - 3, wy, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillRect(wx + 3, wy - 4, 22, 8);
+  ctx.fillStyle = "rgba(255,255,255,0.22)";
+  ctx.fillRect(wx + 16, wy - 2, 7, 4);
+
+  ctx.strokeStyle = active ? "#ffe2d5" : color;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(wx - 3, wy, 13, 0, Math.PI * 2);
+  ctx.moveTo(wx - 3, wy - 17);
+  ctx.lineTo(wx - 3, wy - 10);
+  ctx.moveTo(wx - 3, wy + 10);
+  ctx.lineTo(wx - 3, wy + 17);
+  ctx.moveTo(wx - 20, wy);
+  ctx.lineTo(wx - 13, wy);
+  ctx.moveTo(wx + 7, wy);
+  ctx.lineTo(wx + 14, wy);
+  ctx.stroke();
+  drawStationActiveRing(wx, wy, active, color, 24);
+}
+
+function drawEngineerStation(wx, wy, active, color, shieldFacing) {
+  ctx.fillStyle = "rgba(6, 20, 22, 0.96)";
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  roundedRect(wx - 24, wy - 16, 48, 32, 5);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = active ? "rgba(143,227,136,0.88)" : "rgba(39, 74, 64, 0.95)";
+  roundedRect(wx - 18, wy - 11, 36, 16, 3);
+  ctx.fill();
+  ctx.fillStyle = active ? "#06150e" : "rgba(143,227,136,0.65)";
+  ctx.fillRect(wx - 13, wy - 6, 10, 2);
+  ctx.fillRect(wx - 13, wy - 1, 22, 2);
+  ctx.fillRect(wx - 13, wy + 4, 15, 2);
+
+  const angle = shieldFacingToAngle(shieldFacing);
+  ctx.strokeStyle = active ? "#f2fff0" : color;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.arc(wx + 12, wy + 8, 8, angle - Math.PI / 4, angle + Math.PI / 4);
+  ctx.stroke();
+  drawStationActiveRing(wx, wy, active, color, 28);
+}
+
+function drawShipStationObject(ship, station, wx, wy) {
+  const active = ship?.stationId === station.id;
+  if (station.role === "gunner") {
+    drawGunnerStation(wx, wy, active, "#ff8f6b");
+    return;
+  }
+  if (station.role === "engineer") {
+    drawEngineerStation(wx, wy, active, "#8fe388", stationShieldFacing(ship, station));
+    return;
+  }
+  drawPilotStation(wx, wy, active, "#67f0ff", station.role === "captain");
+}
+
 function drawShipDeckObject(ship, sx, sy) {
   const layout = getShipLayout(ship);
   const color = ship?.color || "#67f0ff";
@@ -8282,41 +8440,37 @@ function drawShipDeckObject(ship, sx, sy) {
     ctx.restore();
   }
 
-  // Stations - drawn as crew chairs/consoles at full tile scale
+  // Stations - role-specific icons at full tile scale.
   for (const station of layout.stations) {
     const wx = sx + station.x * TILE_SIZE;
     const wy = sy + station.y * TILE_SIZE;
-    const active = ship?.stationId === station.id;
-    const stroke = station.role === "engineer" ? "#8fe388" : station.role === "gunner" ? "#ff8f6b" : "#67f0ff";
-    // Console panel
-    ctx.fillStyle = "rgba(10, 18, 30, 0.95)";
-    ctx.strokeStyle = stroke;
-    ctx.lineWidth = 2;
-    roundedRect(wx - 14, wy - 12, 28, 24, 4);
-    ctx.fill();
-    ctx.stroke();
-    // Chair indicator
-    ctx.fillStyle = active ? "rgba(103,240,255,0.9)" : "rgba(40, 58, 80, 0.9)";
-    roundedRect(wx - 8, wy - 6, 16, 12, 3);
-    ctx.fill();
-    ctx.fillStyle = active ? "#06101c" : stroke;
-    ctx.font = "bold 10px ui-sans-serif, system-ui";
-    ctx.textAlign = "center";
-    ctx.fillText(station.role[0].toUpperCase(), wx, wy + 3);
+    drawShipStationObject(ship, station, wx, wy);
   }
 
   ctx.restore();
   ctx.save();
 
-  // Shield arc outside the hull clip
-  const shieldFacing = ship?.shieldFacing || "front";
-  const shieldAngle = shieldFacing === "right" ? 0 : shieldFacing === "back" ? Math.PI / 2 : shieldFacing === "left" ? Math.PI : -Math.PI / 2;
+  // Shield arcs outside the hull clip. Each engineering station owns one shield section.
+  const shieldSections = shipShieldSections(ship, layout);
+  const shieldEntries = Object.entries(shieldSections);
   ctx.translate(sx, sy);
-  ctx.strokeStyle = "rgba(103, 240, 255, 0.65)";
-  ctx.lineWidth = 5;
-  ctx.beginPath();
-  ctx.arc(0, 0, Math.max(w, h) * 0.55, shieldAngle - Math.PI / 4, shieldAngle + Math.PI / 4);
-  ctx.stroke();
+  const shieldColors = [
+    "rgba(103, 240, 255, 0.68)",
+    "rgba(143, 227, 136, 0.66)",
+    "rgba(255, 211, 109, 0.62)",
+    "rgba(255, 143, 107, 0.62)"
+  ];
+  if (!shieldEntries.length) {
+    shieldEntries.push(["ship", ship?.shieldFacing || "front"]);
+  }
+  shieldEntries.forEach(([, facing], index) => {
+    const shieldAngle = shieldFacingToAngle(facing);
+    ctx.strokeStyle = shieldColors[index % shieldColors.length];
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(0, 0, Math.max(w, h) * (0.54 + index * 0.025), shieldAngle - Math.PI / 4, shieldAngle + Math.PI / 4);
+    ctx.stroke();
+  });
   ctx.restore();
 
   ctx.save();

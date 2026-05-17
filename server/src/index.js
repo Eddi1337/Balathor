@@ -1218,6 +1218,7 @@ function serializeShip(ship) {
   const layout = getShipLayout(ship);
   const maxHealth = getShipMaxHealth(ship);
   const maxShields = getShipMaxShields(ship);
+  const shieldSections = sanitizeShipShieldSections(ship);
   return {
     id: typeof ship.id === "string" ? ship.id.slice(0, 64) : "starter_ship",
     templateId: typeof ship.templateId === "string" ? ship.templateId : "starter_ship",
@@ -1243,7 +1244,8 @@ function serializeShip(ship) {
     maxHealth,
     shields: clampNumber(ship.shields, 0, maxShields, maxShields),
     maxShields,
-    shieldFacing: normalizeShieldFacing(ship.shieldFacing),
+    shieldFacing: normalizeShieldFacing(ship.shieldFacing || Object.values(shieldSections)[0]),
+    shieldSections,
     docking: ship.docking && typeof ship.docking.portId === "string"
       ? { portId: ship.docking.portId }
       : null
@@ -1289,12 +1291,12 @@ function getShipLayout(shipOrClass = "skiff") {
       entry: { x: -7, y: 0 },
       teleporter: { x: -4, y: 0 },
       stations: [
-        { id: "captain", role: "captain", name: "Captain Seat", x: 5, y: -1 },
-        { id: "pilot", role: "pilot", name: "Pilot Seat", x: 6, y: 1 },
-        { id: "copilot", role: "copilot", name: "Co-Pilot Seat", x: 3, y: 1 },
+        { id: "captain", role: "captain", name: "Captain Seat", x: 4, y: 0 },
+        { id: "pilot", role: "pilot", name: "Pilot Seat", x: 6, y: -1 },
+        { id: "copilot", role: "copilot", name: "Co-Pilot Seat", x: 6, y: 1 },
         { id: "gunner_aft", role: "gunner", name: "Aft Gunner", x: -6, y: 0 },
-        { id: "engineer_mid", role: "engineer", name: "Main Engineering", x: -1, y: -2 },
-        { id: "engineer_aux", role: "engineer", name: "Aux Engineering", x: -2, y: 2 }
+        { id: "engineer_mid", role: "engineer", name: "Forward Engineering", x: -1, y: -2, defaultShieldFacing: "front" },
+        { id: "engineer_aux", role: "engineer", name: "Aft Engineering", x: -2, y: 2, defaultShieldFacing: "back" }
       ]
     };
   }
@@ -1309,7 +1311,7 @@ function getShipLayout(shipOrClass = "skiff") {
         { id: "pilot", role: "pilot", name: "Pilot Seat", x: 4, y: -1 },
         { id: "copilot", role: "copilot", name: "Co-Pilot Seat", x: 4, y: 1 },
         { id: "gunner_aft", role: "gunner", name: "Aft Gunner", x: -5, y: 0 },
-        { id: "engineer_mid", role: "engineer", name: "Engineering", x: -1, y: 0 }
+        { id: "engineer_mid", role: "engineer", name: "Engineering", x: -1, y: 0, defaultShieldFacing: "front" }
       ]
     };
   }
@@ -1335,6 +1337,30 @@ function getShipMaxShields(ship) {
 function normalizeShieldFacing(value) {
   const dir = String(value || "front");
   return ["front", "right", "back", "left"].includes(dir) ? dir : "front";
+}
+
+function defaultShipShieldSections(shipOrClass = "skiff") {
+  const layout = getShipLayout(shipOrClass);
+  const fallbackDirections = ["front", "back", "right", "left"];
+  const sections = {};
+  let index = 0;
+  for (const station of layout.stations || []) {
+    if (station.role !== "engineer") continue;
+    sections[station.id] = normalizeShieldFacing(station.defaultShieldFacing || fallbackDirections[index] || "front");
+    index += 1;
+  }
+  return sections;
+}
+
+function sanitizeShipShieldSections(shipOrClass = "skiff") {
+  const defaults = defaultShipShieldSections(shipOrClass);
+  const source = shipOrClass && typeof shipOrClass === "object" && shipOrClass.shieldSections && typeof shipOrClass.shieldSections === "object"
+    ? shipOrClass.shieldSections
+    : {};
+  for (const id of Object.keys(defaults)) {
+    defaults[id] = normalizeShieldFacing(source[id] || defaults[id]);
+  }
+  return defaults;
 }
 
 function shieldFacingFromInput(input = {}) {
@@ -1548,6 +1574,7 @@ function createStarterShip(playerId = "starter") {
     stationId: null,
     shieldFacing: "front"
   };
+  ship.shieldSections = defaultShipShieldSections(ship);
   ship.maxHealth = getShipMaxHealth(ship);
   ship.health = ship.maxHealth;
   ship.maxShields = getShipMaxShields(ship);
@@ -1580,7 +1607,8 @@ function sanitizeShip(ship, fallbackId = null) {
     deckMode: Boolean(ship.deckMode),
     stationRole: typeof ship.stationRole === "string" ? ship.stationRole.slice(0, 24) : null,
     stationId: typeof ship.stationId === "string" ? ship.stationId.slice(0, 48) : null,
-    shieldFacing: normalizeShieldFacing(ship.shieldFacing)
+    shieldFacing: normalizeShieldFacing(ship.shieldFacing),
+    shieldSections: sanitizeShipShieldSections(ship)
   };
   out.maxHealth = getShipMaxHealth(out);
   out.health = clampNumber(ship.health, 0, out.maxHealth, out.maxHealth);
@@ -2504,6 +2532,10 @@ function simulate() {
         }
         const shieldFacing = shieldFacingFromInput(input);
         if (shieldFacing) {
+          ship.shieldSections = sanitizeShipShieldSections(ship);
+          if (station) {
+            ship.shieldSections[station.id] = shieldFacing;
+          }
           ship.shieldFacing = shieldFacing;
         }
         if (input.repair) {
