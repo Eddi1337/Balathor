@@ -10097,7 +10097,7 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   else if (laughing) rawBob = Math.sin(t * 13) * 2;
   else if (crying)   rawBob = Math.sin(t * 1.8) * 1;
   else if (bowing)   rawBob = 0;
-  else if (swimming) rawBob = moving ? Math.abs(cos1) * 0.9 - 0.12 : Math.sin(phase * 2.35) * 0.5;
+  else if (swimming) rawBob = 0;
   else               rawBob = moving ? Math.abs(cos1) * 1.5 - 0.4 : 0;
   const bob = dancing ? rawBob : Math.round(rawBob);
 
@@ -10144,6 +10144,12 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
     ctx.translate(x + 10, by + s * 2);
     ctx.rotate(-Math.PI / 2 + 0.06);
     ctx.translate(-(x + 10), -(by + s * 2));
+  }
+  if (swimming) {
+    ctx.save();
+    ctx.translate(bx, by - s);
+    ctx.rotate(Math.PI / 2 - facing);
+    ctx.translate(-bx, -(by - s));
   }
 
   if (isMod) {
@@ -10256,15 +10262,14 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
     ctx.fillRect(lAX, lAY, 2 * s, 4 * s);
     ctx.fillRect(rAX, rAY, 2 * s, 4 * s);
   } else if (swimming) {
-    const st = phase * 2.75;
-    const alt = Math.sin(st);
     if (moving) {
-      const reach = Math.round(alt * 4 * s);
-      const spread = Math.round(Math.cos(st * 0.92) * 2 * s);
-      lAX = bx - 8 * s - reach;
-      lAY = by - 4 * s + spread;
-      rAX = bx + 5 * s + reach;
-      rAY = by - 4 * s - spread;
+      // Alternating crawl stroke: arms cycle from reaching past the head (forward in
+      // swim direction after the body rotation) to pulling back past the hips.
+      const strokeL = Math.sin(phase * 2.0);
+      lAX = bx - 7 * s;
+      lAY = by - 2 * s + Math.round(strokeL * 5 * s);
+      rAX = bx + 5 * s;
+      rAY = by - 2 * s - Math.round(strokeL * 5 * s);
     } else {
       const tr = Math.round(Math.sin(phase * 2.15) * s);
       lAX = bx - 7 * s + tr;
@@ -10331,6 +10336,9 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   }
 
   if (lyingBedPose) {
+    ctx.restore();
+  }
+  if (swimming) {
     ctx.restore();
   }
 
