@@ -7095,19 +7095,26 @@ const CARAVAN_DEFINITIONS = [
   }
 ];
 
-const caravans = CARAVAN_DEFINITIONS.map((def) => ({
-  ...def,
-  x: def.route[0].x,
-  y: def.route[0].y,
-  facing: 0,
-  targetIndex: 1,
-  paused: true,
-  pauseUntil: Date.now() + 3000,
-  passengers: new Set()
-}));
+// Lazy-initialised so the simulate loop (which runs at module load) doesn't
+// hit a temporal dead zone before this declaration is evaluated.
+let _caravansCache = null;
+function getCaravans() {
+  if (_caravansCache) return _caravansCache;
+  _caravansCache = CARAVAN_DEFINITIONS.map((def) => ({
+    ...def,
+    x: def.route[0].x,
+    y: def.route[0].y,
+    facing: 0,
+    targetIndex: 1,
+    paused: true,
+    pauseUntil: Date.now() + 3000,
+    passengers: new Set()
+  }));
+  return _caravansCache;
+}
 
 function getCaravanById(id) {
-  return caravans.find((c) => c.id === id) || null;
+  return getCaravans().find((c) => c.id === id) || null;
 }
 
 function caravanIsAtEndpoint(caravan) {
@@ -7147,7 +7154,7 @@ function findClientByPlayerIdInternal(playerId) {
 
 function updateCaravans(dt) {
   const now = Date.now();
-  for (const caravan of caravans) {
+  for (const caravan of getCaravans()) {
     if (caravan.paused) {
       if (now >= caravan.pauseUntil) {
         caravan.paused = false;
@@ -7252,7 +7259,7 @@ function handleCaravanDisembark(client) {
 
 function getCaravansSnapshotForViewer(view) {
   const out = [];
-  for (const caravan of caravans) {
+  for (const caravan of getCaravans()) {
     if (Math.abs(caravan.x - view.x) > view.halfW + 12) continue;
     if (Math.abs(caravan.y - view.y) > view.halfH + 12) continue;
     out.push({
