@@ -928,6 +928,9 @@ const server = http.createServer((req, res) => {
       aiTickDivisor: AI_TICK_DIVISOR,
       enemyDensityMultiplier: ENEMY_DENSITY_MULTIPLIER,
       enemies: mobs.length,
+      forceSimulatedEnemies: forceSimulateMobs.size,
+      measuredSimHz: getMeasuredSimHz(),
+      perf: perfLastSnapshot,
       chunkWorkers: chunkWorkerPool.length,
       chunkQueue: chunkGenQueue.length,
       chunkSize: CHUNK_SIZE
@@ -2416,11 +2419,13 @@ function computePlayerViewBoundsArray(tileMargin) {
   for (const client of clients.values()) {
     if (!client.player) continue;
     const view = client.view || defaultViewForPlayer(client.player);
+    const world = worldForPosition(client.player.x, client.player.y);
     result.push({
       minX: view.x - view.halfW - tileMargin,
       maxX: view.x + view.halfW + tileMargin,
       minY: view.y - view.halfH - tileMargin,
       maxY: view.y + view.halfH + tileMargin,
+      world
     });
   }
   return result;
@@ -2431,11 +2436,13 @@ function computeMobActivationBoundsArray(tileMargin = MOB_ACTIVITY_MARGIN_TILES)
   for (const client of clients.values()) {
     const player = client.player;
     if (!player) continue;
+    const world = worldForPosition(player.x, player.y);
     result.push({
       minX: player.x - tileMargin,
       maxX: player.x + tileMargin,
       minY: player.y - tileMargin,
-      maxY: player.y + tileMargin
+      maxY: player.y + tileMargin,
+      world
     });
   }
   return result;
@@ -2518,9 +2525,12 @@ function forEachMobHomeInBounds(bounds, visitor) {
   const maxCx = Math.floor((bounds.maxX + MOB_SPATIAL_QUERY_PAD) / cellSize);
   const minCy = Math.floor((bounds.minY - MOB_SPATIAL_QUERY_PAD) / cellSize);
   const maxCy = Math.floor((bounds.maxY + MOB_SPATIAL_QUERY_PAD) / cellSize);
+  const worlds = typeof bounds.world === "string" && bounds.world
+    ? [bounds.world]
+    : WORLD_IDS_WITH_MOBS;
   for (let cx = minCx; cx <= maxCx; cx += 1) {
     for (let cy = minCy; cy <= maxCy; cy += 1) {
-      for (const world of WORLD_IDS_WITH_MOBS) {
+      for (const world of worlds) {
         const bucket = mobHomeBuckets.get(`${world}|${cx},${cy}`);
         if (!bucket) continue;
         for (const mob of bucket) {
@@ -2548,7 +2558,13 @@ function forEachMobCandidate(boundsArray, visitor) {
 }
 
 function forEachMobNear(x, y, radius, visitor) {
-  const bounds = { minX: x - radius, maxX: x + radius, minY: y - radius, maxY: y + radius };
+  const bounds = {
+    minX: x - radius,
+    maxX: x + radius,
+    minY: y - radius,
+    maxY: y + radius,
+    world: worldForPosition(x, y)
+  };
   const seen = new Set();
   forEachMobHomeInBounds(bounds, (mob) => {
     if (seen.has(mob.id)) return;
@@ -6458,11 +6474,20 @@ function snapshotForEachCellInWorldRect(minX, maxX, minY, maxY, cellSize, visito
 }
 
 function broadcastSnapshot() {
+  const joinedClients = [];
+  for (const client of clients.values()) {
+    if (client.player) {
+      joinedClients.push(client);
+    }
+  }
+  if (!joinedClients.length) {
+    return;
+  }
+
   const margin = CHAT_VIEW_MARGIN_TILES;
   /** Widen NPC inclusion so crowds at the view edge still get position updates. */
   const npcMargin = margin + 18;
   const cellSize = CHUNK_SIZE;
-  const mobCullBounds = computePlayerViewUnionBounds(CHAT_VIEW_MARGIN_TILES);
 
   // Helper: is a point inside a client's view (with optional margin)
   function isInView(view, x, y, pad = margin) {
@@ -6557,13 +6582,6 @@ function broadcastSnapshot() {
   }
 
   const npcsAll = getNpcSnapshot();
-  const mobsAll = getMobSnapshot(mobCullBounds);
-
-  const mobBuckets = new Map();
-  for (const m of mobsAll) {
-    snapshotAddToSpatialBucket(mobBuckets, m.x, m.y, m, cellSize);
-  }
-
   const npcBuckets = new Map();
   for (const n of npcsAll) {
     snapshotAddToSpatialBucket(npcBuckets, n.x, n.y, n, cellSize);
@@ -6580,18 +6598,12 @@ function broadcastSnapshot() {
   }
 
   const playerBuckets = new Map();
-  let totalOnline = 0;
-  for (const c of clients.values()) {
-    if (c.player) {
-      totalOnline += 1;
-      snapshotAddToSpatialBucket(playerBuckets, c.player.x, c.player.y, c, cellSize);
-    }
+  const totalOnline = joinedClients.length;
+  for (const c of joinedClients) {
+    snapshotAddToSpatialBucket(playerBuckets, c.player.x, c.player.y, c, cellSize);
   }
 
-  for (const client of clients.values()) {
-    if (!client.player) {
-      continue;
-    }
+  for (const client of joinedClients) {
     const view = client.view || defaultViewForPlayer(client.player);
 
     const minX = view.x - view.halfW - margin;
@@ -6650,25 +6662,12 @@ function broadcastSnapshot() {
       }
     });
 
-    const mobs = [];
-    const seenMob = new Set();
-    snapshotForEachCellInWorldRect(minX, maxX, minY, maxY, cellSize, (key) => {
-      const arr = mobBuckets.get(key);
-      if (!arr) {
-        return;
-      }
-      for (const m of arr) {
-        if (seenMob.has(m.id)) {
-          continue;
-        }
-        if (worldForPosition(m.x, m.y) !== viewerWorld) {
-          continue;
-        }
-        if (isInView(view, m.x, m.y)) {
-          seenMob.add(m.id);
-          mobs.push(m);
-        }
-      }
+    const mobs = getMobSnapshot({
+      minX,
+      maxX,
+      minY,
+      maxY,
+      world: viewerWorld
     });
 
     const visibleChests = [];
@@ -7531,7 +7530,6 @@ function createWildernessMobs() {
         faction: faction || null,
         isDragon: faction === "dragon",
         isAssaultWave: true,
-        forceSimulate: true,
         noRespawn: true,
         spawnedAt: Date.now(),
         maxHp: enemy.hp + level * 7 + Math.floor(hash2(camp.x, camp.y, 700 + i) * 14),
@@ -8732,6 +8730,9 @@ function getMobSnapshot(viewBounds) {
   const out = [];
   forEachMobCandidate([viewBounds], (mob) => {
     if (mob.dead) {
+      return;
+    }
+    if (typeof viewBounds.world === "string" && worldForPosition(mob.x, mob.y) !== viewBounds.world) {
       return;
     }
     if (
