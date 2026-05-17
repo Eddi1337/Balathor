@@ -1324,32 +1324,36 @@ function buildHydratedHubNpcExtras() {
 
   /** Gate guards — one per entrance gap in the perimeter wall (8 gates total) */
   const GATE_GUARD_SPECS = [
-    { id: "hub_g_n",  homeX: 0,    homeY: -105 },
-    { id: "hub_g_ne", homeX: 74,   homeY: -74  },
-    { id: "hub_g_e",  homeX: 105,  homeY: 0    },
-    { id: "hub_g_se", homeX: 74,   homeY: 74   },
-    { id: "hub_g_s",  homeX: 0,    homeY: 105  },
-    { id: "hub_g_sw", homeX: -74,  homeY: 74   },
-    { id: "hub_g_w",  homeX: -105, homeY: 0    },
-    { id: "hub_g_nw", homeX: -74,  homeY: -74  },
+    { id: "hub_g_n",  homeX: 0,    homeY: -105, facing: -Math.PI / 2 },
+    { id: "hub_g_ne", homeX: 74,   homeY: -74,  facing: -Math.PI / 4 },
+    { id: "hub_g_e",  homeX: 105,  homeY: 0,    facing: 0 },
+    { id: "hub_g_se", homeX: 74,   homeY: 74,   facing: Math.PI / 4 },
+    { id: "hub_g_s",  homeX: 0,    homeY: 105,  facing: Math.PI / 2 },
+    { id: "hub_g_sw", homeX: -74,  homeY: 74,   facing: Math.PI * 0.75 },
+    { id: "hub_g_w",  homeX: -105, homeY: 0,    facing: Math.PI },
+    { id: "hub_g_nw", homeX: -74,  homeY: -74,  facing: -Math.PI * 0.75 },
   ];
   for (const gs of GATE_GUARD_SPECS) {
     out.push({
       id: gs.id,
-      name: "Gate Guard",
-      classId: "knight",
-      primary: "#6e7a8a",
-      accent: "#c8c8c8",
+      name: "Gatekeeper Archer",
+      classId: "ranger",
+      primary: "#4f6474",
+      accent: "#e8c86a",
+      weaponKind: "bow",
+      weaponStyle: "heavy",
       homeX: gs.homeX,
       homeY: gs.homeY,
-      patrolRadius: 8,
+      facing: gs.facing,
+      patrolRadius: 0,
       isGuard: true,
+      isGateKeeper: true,
       dialogue: [
-        "The gate is open — travel safely.",
-        "Mind the road beyond the walls.",
-        "All are welcome in the town.",
-        "Report any trouble to me.",
-        "Clear skies today — good travel weather.",
+        "Stay inside the wall if arrows start flying.",
+        "No beast crosses this gate while I draw breath.",
+        "The tower has eyes on the road.",
+        "Keep moving, traveler — I have the gate covered.",
+        "If it charges the town, it gets an arrow.",
       ]
     });
   }
@@ -2102,7 +2106,7 @@ const npcs = DEFINITIONS.map((def) => {
     romanceSilhouette,
     x: def.homeX + (Math.random() * 2 - 1),
     y: def.homeY + (Math.random() * 2 - 1),
-    facing: Math.random() * Math.PI * 2,
+    facing: Number.isFinite(def.facing) ? def.facing : Math.random() * Math.PI * 2,
     moving: false,
     _targetX: def.homeX,
     _targetY: def.homeY,
@@ -2112,6 +2116,12 @@ const npcs = DEFINITIONS.map((def) => {
       CHAT_INTERVAL_MIN +
       Math.random() * (CHAT_INTERVAL_MAX - CHAT_INTERVAL_MIN),
   };
+  if (npc.isGateKeeper) {
+    npc.x = npc.homeX;
+    npc.y = npc.homeY;
+    npc._targetX = npc.homeX;
+    npc._targetY = npc.homeY;
+  }
   if (npc.sciFiShipTraffic) {
     initSciFiTrafficRuntime(npc);
   }
@@ -2741,6 +2751,15 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
       continue;
     }
 
+    if (npc.isGateKeeper) {
+      npc.x = npc.homeX;
+      npc.y = npc.homeY;
+      npc._targetX = npc.homeX;
+      npc._targetY = npc.homeY;
+      npc.moving = false;
+      continue;
+    }
+
     if (npc.sciFiShipTraffic) {
       tickSciFiTraffic(npc, dt, now);
       continue;
@@ -2999,6 +3018,8 @@ function getNpcSnapshot() {
       classId: npc.classId,
       primary: npc.primary,
       accent: npc.accent,
+      ...(npc.weaponKind ? { weaponKind: npc.weaponKind } : {}),
+      ...(npc.weaponStyle ? { weaponStyle: npc.weaponStyle } : {}),
       ...(npc.npcTheme ? { npcTheme: npc.npcTheme } : {}),
       ...(npc.sciFiLook ? { sciFiLook: npc.sciFiLook } : {}),
       ...(npc.sciFiRole ? { sciFiRole: npc.sciFiRole } : {}),
@@ -3025,6 +3046,7 @@ function getNpcSnapshot() {
       facing: Number(npc.facing.toFixed(3)),
       moving: npc.moving,
       isTrader: npc.isTrader || false,
+      ...(npc.isGateKeeper ? { isGateKeeper: true } : {}),
       ...(npc.questGiver ? { questGiver: true, questIds: Array.isArray(npc.questIds) ? npc.questIds : [] } : {}),
       ...(npc.bondTag ? { bondTag: npc.bondTag } : {}),
       ...(npc.longHair ? { longHair: true } : {}),

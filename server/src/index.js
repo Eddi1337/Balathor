@@ -121,6 +121,11 @@ const MOB_ATTACK_RADIUS = 1.15;
 const MOB_ATTACK_COOLDOWN_MS = 1300;
 const MOB_ATTACK_DAMAGE = 13;
 const BOSS_ATTACK_DAMAGE = 26;
+const GATEKEEPER_IDS = Object.freeze(["hub_g_n", "hub_g_ne", "hub_g_e", "hub_g_se", "hub_g_s", "hub_g_sw", "hub_g_w", "hub_g_nw"]);
+const GATEKEEPER_RANGE = 46;
+const GATEKEEPER_NEAR_TOWN_RADIUS = HUB_TOWN_GRASS_RADIUS + 84;
+const GATEKEEPER_ATTACK_COOLDOWN_MS = 1150;
+const GATEKEEPER_ARROW_DAMAGE = 34;
 const XP_BASE_TO_LEVEL = 100;
 const XP_LEVEL_STEP = 55;
 const STARTING_TALENT_POINTS = 1;
@@ -2612,6 +2617,7 @@ function simulate() {
     }
   });
   updateMobs(dt, computePlayerViewBoundsArray(CHAT_VIEW_MARGIN_TILES + MOB_ACTIVITY_MARGIN_TILES));
+  processGatekeeperArchers(Date.now());
   updateCaravans(dt);
 
   processConsecrationZones(Date.now());
@@ -7556,6 +7562,67 @@ function updateMobs(dt, boundsArray) {
       mob.y = nextY;
     }
     mob.facing = Math.atan2(ny, nx);
+  }
+}
+
+function processGatekeeperArchers(now = Date.now()) {
+  for (const guardId of GATEKEEPER_IDS) {
+    const guard = getNpcById(guardId);
+    if (!guard) continue;
+    guard.x = guard.homeX;
+    guard.y = guard.homeY;
+    guard._targetX = guard.homeX;
+    guard._targetY = guard.homeY;
+    guard.moving = false;
+    if (now - (guard._lastGateShotAt || 0) < GATEKEEPER_ATTACK_COOLDOWN_MS) {
+      continue;
+    }
+
+    let target = null;
+    let bestDist = Infinity;
+    for (const mob of mobs) {
+      if (mob.dead || mob.isCritter) continue;
+      const townDist = Math.hypot(mob.x, mob.y);
+      if (townDist > GATEKEEPER_NEAR_TOWN_RADIUS) continue;
+      const d = Math.hypot(mob.x - guard.x, mob.y - guard.y);
+      if (d <= GATEKEEPER_RANGE && d < bestDist) {
+        bestDist = d;
+        target = mob;
+      }
+    }
+    if (!target) continue;
+
+    const damage = Math.max(1, Math.round(GATEKEEPER_ARROW_DAMAGE + (Number(target.level) || 1) * 1.5));
+    guard._lastGateShotAt = now;
+    guard.facing = Math.atan2(target.y - guard.y, target.x - guard.x);
+    target.hp = Math.max(0, target.hp - damage);
+
+    const event = {
+      type: "combat",
+      kind: "projectile",
+      weapon: "gatekeeper_bow",
+      projectileKind: "arrow",
+      attackerId: guard.id,
+      x: Number(guard.x.toFixed(3)),
+      y: Number(guard.y.toFixed(3)),
+      facing: Number(guard.facing.toFixed(3)),
+      range: GATEKEEPER_RANGE,
+      hit: true,
+      targetId: target.id,
+      targetKind: "mob",
+      damage,
+      targetHp: target.hp,
+      endX: Number(target.x.toFixed(3)),
+      endY: Number(target.y.toFixed(3))
+    };
+
+    if (target.hp <= 0 && !target.dead) {
+      target.dead = true;
+      target.respawnAt = now + (target.isCritter ? 4200 : MOB_RESPAWN_MS);
+      event.defeated = true;
+    }
+
+    broadcastCombat(event);
   }
 }
 
