@@ -34,7 +34,6 @@ const TILE = {
 };
 
 const BLOCKED_TILES = new Set([
-  TILE.WATER,
   TILE.WALL,
   TILE.LAVA,
   TILE.BED,
@@ -2230,6 +2229,11 @@ function isBlocked(x, y) {
   return BLOCKED_TILES.has(generateTile(Math.floor(x), Math.floor(y)));
 }
 
+/** True when the tile under the given world coordinates is deep water (player may swim). */
+function isSwimmingAt(x, y) {
+  return generateTile(Math.floor(x), Math.floor(y)) === TILE.WATER;
+}
+
 function isBlockedForShip(x, y) {
   const tx = Math.floor(x);
   const ty = Math.floor(y);
@@ -2438,6 +2442,7 @@ module.exports = {
   isProtectedStartingArea,
   isBlocked,
   isBlockedCircle,
+  isSwimmingAt,
   isBlockedForShip,
   isBlockedCircleForShip,
   isBlockedByAsteroid,

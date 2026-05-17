@@ -269,6 +269,8 @@ const LOCAL_CORRECTION_DEADZONE_TILES = 0.65;
 const LOCAL_CORRECTION_BLEND_THRESHOLD_TILES = 1.35;
 const LOCAL_CORRECTION_SNAP_TILES = 3.0;
 const SHIP_STATION_INTERACT_RADIUS = 1.35;
+/** Must match server/src/index.js SWIM_SPEED_MULT */
+const CLIENT_SWIM_SPEED_MULT = 0.38;
 
 const TALENT_TREES = {
   mage: [
@@ -380,9 +382,8 @@ const TILE = {
   ENERGY: 27
 };
 
-/** Matches server/src/world.js BLOCKED_TILES — used only for local movement prediction. */
+/** Local foot collision: mirrors server blocked tiles except WATER (swimmable). */
 const CLIENT_BLOCKED_TILES = new Set([
-  TILE.WATER,
   TILE.WALL,
   TILE.LAVA,
   TILE.BED,
@@ -421,6 +422,13 @@ function clientLandmarkSpawnTreeTrunkBlocked(worldX, worldY, radius = PLAYER_COL
   const ly = worldY - START_SPAWN.y;
   const { minX, maxX, minY, maxY } = LANDMARK_SPAWN_TREE_TRUNK_BOUNDS;
   return circleIntersectsAxisRect(lx, ly, radius, minX, minY, maxX, maxY);
+}
+
+function clientIsSwimmingAt(wx, wy) {
+  if (!clientMovementSampleChunksReady(wx, wy, PLAYER_COLLISION_RADIUS)) {
+    return false;
+  }
+  return getTile(Math.floor(wx), Math.floor(wy)) === TILE.WATER;
 }
 
 function clientMovementSampleChunksReady(wx, wy, radius) {
@@ -1905,6 +1913,12 @@ function applyCombatEvent(event) {
 
 function updateSmoothPlayers(dt) {
   for (const player of state.players.values()) {
+    if (clientMovementSampleChunksReady(player.renderX, player.renderY, PLAYER_COLLISION_RADIUS)) {
+      player.renderSwimming = getTile(Math.floor(player.renderX), Math.floor(player.renderY)) === TILE.WATER;
+    } else {
+      player.renderSwimming = Boolean(player.swimming);
+    }
+
     let isMoving = Boolean(player.moving);
 
     if (player.id === state.selfId) {
@@ -1947,9 +1961,10 @@ function updateSmoothPlayers(dt) {
     player.renderX += (player.targetX - player.renderX) * follow;
     player.renderY += (player.targetY - player.renderY) * follow;
     player.renderMoving = isMoving || Math.hypot(player.targetX - player.renderX, player.targetY - player.renderY) > 0.01;
-    if (player.renderMoving) {
-      player.walkPhase = (player.walkPhase || 0) + dt * 9;
-      if (player.id === state.selfId) {
+    if (player.renderMoving || player.renderSwimming) {
+      const rate = player.renderSwimming ? (player.renderMoving ? 6.4 : 2.9) : 9;
+      player.walkPhase = (player.walkPhase || 0) + dt * rate;
+      if (player.renderMoving && player.id === state.selfId) {
         /** Do not clear bench pose from render catch-up while server still reports idle. */
         if (!state.benchSeatIndefinite || isMoving) {
           state.benchSitUntil = 0;
@@ -2082,6 +2097,8 @@ function sciFiFeatureAtClient(x, y, kind = null) {
 }
 
 function predictLocalPlayer(player, dt) {
+  // Base speed; on-foot path scales this by CLIENT_SWIM_SPEED_MULT when
+  // standing on a water tile (must match server SWIM_SPEED_MULT).
   const speed = Number.isFinite(player.moveSpeed) ? player.moveSpeed : CLIENT_PLAYER_SPEED;
 
   if (player.ship?.boarded && player.ship.deckMode) {
@@ -2183,7 +2200,8 @@ function predictLocalPlayer(player, dt) {
     dx = Number(player.zeroGDriftX) || 0;
     dy = Number(player.zeroGDriftY) || 0;
   }
-  const stepSpeed = speed * (inZeroG ? 0.74 : 1);
+  const swimMult = clientIsSwimmingAt(player.renderX, player.renderY) ? CLIENT_SWIM_SPEED_MULT : 1;
+  const stepSpeed = speed * (inZeroG ? 0.74 : 1) * swimMult;
   const stepX = dx * stepSpeed * dt;
   const stepY = dy * stepSpeed * dt;
 
@@ -10059,15 +10077,27 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const crying   = emoteKind === "cry";
   const bowing   = emoteKind === "bow";
 
-  const wf   = dancing ? 4.0 : 2.6;
-  const sin1 = (moving || dancing) ? Math.sin(dancing ? t * wf : phase * wf) : 0;
-  const cos1 = (moving || dancing) ? Math.cos(dancing ? t * wf : phase * wf) : 0;
+  const lyingBedPose = !!(poseOpts && poseOpts.lyingBed);
+  const restingBenchPose = !!(poseOpts && poseOpts.restingBench);
+  const selfBenchSit =
+    !isNpc &&
+    entity.id === state.selfId &&
+    ((state.benchSeatIndefinite || false) || (state.benchSitUntil || 0) > performance.now());
+  const benchSeatPose = restingBenchPose || selfBenchSit;
+  const compressLowerBody = benchSeatPose || lyingBedPose;
+  const swimming = Boolean(entity.renderSwimming) && !compressLowerBody && !entity.ship?.boarded;
+
+  const wf   = dancing ? 4.0 : swimming ? 3.05 : 2.6;
+  const swimAnim = swimming && !dancing;
+  const sin1 = (moving || dancing || swimAnim) ? Math.sin(dancing ? t * wf : phase * wf) : 0;
+  const cos1 = (moving || dancing || swimAnim) ? Math.cos(dancing ? t * wf : phase * wf) : 0;
 
   let rawBob;
   if (dancing)       rawBob = Math.abs(Math.cos(t * 4.0)) * 4 - 0.4 + Math.sin(t * 2.1) * 2;
   else if (laughing) rawBob = Math.sin(t * 13) * 2;
   else if (crying)   rawBob = Math.sin(t * 1.8) * 1;
   else if (bowing)   rawBob = 0;
+  else if (swimming) rawBob = moving ? Math.abs(cos1) * 0.9 - 0.12 : Math.sin(phase * 2.35) * 0.5;
   else               rawBob = moving ? Math.abs(cos1) * 1.5 - 0.4 : 0;
   const bob = dancing ? rawBob : Math.round(rawBob);
 
@@ -10086,20 +10116,13 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const helmetColor = entity.helmetColor || blend(torsoColor, "#ffffff", 0.08);
   const visorColor = entity.visorColor || "#67f0ff";
 
-  const lyingBedPose = !!(poseOpts && poseOpts.lyingBed);
-  const restingBenchPose = !!(poseOpts && poseOpts.restingBench);
-  const selfBenchSit =
-    !isNpc &&
-    entity.id === state.selfId &&
-    ((state.benchSeatIndefinite || false) || (state.benchSitUntil || 0) > performance.now());
-  const benchSeatPose = restingBenchPose || selfBenchSit;
-  const compressLowerBody = benchSeatPose || lyingBedPose;
   /** Negative nudge draws the torso higher so the character reads as sitting on the plank, not under it. */
   const sitBumpPx = lyingBedPose ? 11 : benchSeatPose ? -13 : 0;
   const headSitNudge = benchSeatPose ? Math.round(s * 0.85) : lyingBedPose ? Math.round(s * 0.42) : 0;
 
+  const swimSink = swimming ? Math.round(2.1 * s) : 0;
   const bx = x;
-  const by = y + bob + sitBumpPx;
+  const by = y + bob + sitBumpPx + swimSink;
 
   const homeCasting =
     !isNpc &&
@@ -10127,14 +10150,21 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
     drawModCape(bx - 5.2 * s, by - 3.6 * s, s, bob, dirX, dirY, moving, sin1);
   }
 
-  // Tiny stump legs (RotMG style) — compressed when seated on benches
-  const legWalk = moving ? Math.round(sin1 * 2) : 0;
+  // Tiny stump legs (RotMG style) — compressed when seated on benches; scissor kick when swimming
+  const legWalk = moving && !swimming ? Math.round(sin1 * 2) : 0;
+  const swimKick = swimming ? Math.round(Math.sin(phase * 3.15) * 2.2) : 0;
   ctx.fillStyle = pantColor;
   if (compressLowerBody) {
     ctx.fillRect(bx - 4 * s, by + 3 * s, 8 * s, 2 * s);
     ctx.fillStyle = bootColor;
     ctx.fillRect(bx - 4 * s - 1, by + 4 * s, 5 * s, 2 * s);
     ctx.fillRect(bx + 0 * s, by + 4 * s, 5 * s, 2 * s);
+  } else if (swimming) {
+    ctx.fillRect(bx - 5 * s - swimKick, by + 3 * s, 3 * s, 2 * s);
+    ctx.fillRect(bx + 2 * s + swimKick, by + 3 * s, 3 * s, 2 * s);
+    ctx.fillStyle = bootColor;
+    ctx.fillRect(bx - 5 * s - 1, by + 5 * s, 4 * s, 2 * s);
+    ctx.fillRect(bx + 2 * s, by + 5 * s, 4 * s, 2 * s);
   } else {
     ctx.fillRect(bx - 4 * s,     by + 3 * s - legWalk, 3 * s, 2 * s);
     ctx.fillRect(bx +     s,     by + 3 * s + legWalk, 3 * s, 2 * s);
@@ -10225,6 +10255,25 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
     rAX = bx + 3 * s; rAY = by + s;
     ctx.fillRect(lAX, lAY, 2 * s, 4 * s);
     ctx.fillRect(rAX, rAY, 2 * s, 4 * s);
+  } else if (swimming) {
+    const st = phase * 2.75;
+    const alt = Math.sin(st);
+    if (moving) {
+      const reach = Math.round(alt * 4 * s);
+      const spread = Math.round(Math.cos(st * 0.92) * 2 * s);
+      lAX = bx - 8 * s - reach;
+      lAY = by - 4 * s + spread;
+      rAX = bx + 5 * s + reach;
+      rAY = by - 4 * s - spread;
+    } else {
+      const tr = Math.round(Math.sin(phase * 2.15) * s);
+      lAX = bx - 7 * s + tr;
+      lAY = by - 3 * s;
+      rAX = bx + 4 * s - tr;
+      rAY = by - 3 * s;
+    }
+    ctx.fillRect(lAX, lAY, 2 * s, 4 * s);
+    ctx.fillRect(rAX, rAY, 2 * s, 4 * s);
   } else {
     const armSwing = moving ? Math.round(sin1 * 2) : 0;
     lAX = bx - 6 * s;
@@ -10274,8 +10323,8 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
     ctx.fillRect(hx + 3 * s + eo, eyeY, s, s);
   }
 
-  // Weapon / equipment (stash weapon while channeling home / sitting)
-  if (!isNpc && !homeCasting && !benchSeatPose && !lyingBedPose) {
+  // Weapon / equipment (stash weapon while channeling home / sitting / swimming)
+  if (!isNpc && !homeCasting && !benchSeatPose && !lyingBedPose && !swimming) {
     drawClassEquipment(entity, bx, by, dirX, dirY, sideX, sideY, weaponColor,
       rAX + s, rAY + 2 * s,
       lAX + s, lAY + 2 * s, moving, sin1, s);
