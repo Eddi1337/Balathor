@@ -220,7 +220,9 @@ function buildStationFeatures() {
       y: CY + 12,
       w: 10,
       h: 7,
-      entrances: [{ side: "east", offset: -1, width: 2 }, { side: "bottom", offset: 3, width: 2 }]
+      terminalX: 1.6,
+      terminalY: 0.5,
+      entrances: [{ side: "east", offset: -1, width: 2 }, { side: "bottom", offset: -2, width: 2 }]
     },
     {
       id: "rf_shop_parts",
@@ -231,7 +233,9 @@ function buildStationFeatures() {
       y: CY + 12,
       w: 10,
       h: 7,
-      entrances: [{ side: "west", offset: -1, width: 2 }, { side: "bottom", offset: -3, width: 2 }]
+      terminalX: -1.6,
+      terminalY: 0.5,
+      entrances: [{ side: "west", offset: -1, width: 2 }, { side: "bottom", offset: 2, width: 2 }]
     }
   ];
 
