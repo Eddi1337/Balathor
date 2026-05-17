@@ -2426,6 +2426,21 @@ function computePlayerViewBoundsArray(tileMargin) {
   return result;
 }
 
+function computeMobActivationBoundsArray(tileMargin = MOB_ACTIVITY_MARGIN_TILES) {
+  const result = [];
+  for (const client of clients.values()) {
+    const player = client.player;
+    if (!player) continue;
+    result.push({
+      minX: player.x - tileMargin,
+      maxX: player.x + tileMargin,
+      minY: player.y - tileMargin,
+      maxY: player.y + tileMargin
+    });
+  }
+  return result;
+}
+
 function computeNpcActivationBounds() {
   const half = Math.ceil(Number(HUB_TOWN_GRASS_RADIUS) || 132) + NPC_HUB_AI_PAD_TILES;
   const hubAlways = { minX: -half, maxX: half, minY: -half, maxY: half };
@@ -2816,7 +2831,7 @@ function simulate() {
     perfAcc.assaults += Number(process.hrtime.bigint() - _pt) / 1e3;
 
     _pt = process.hrtime.bigint();
-    updateMobs(aiDt, computePlayerViewBoundsArray(CHAT_VIEW_MARGIN_TILES + MOB_ACTIVITY_MARGIN_TILES));
+    updateMobs(aiDt, computeMobActivationBoundsArray());
     perfAcc.mobs += Number(process.hrtime.bigint() - _pt) / 1e3;
 
     _pt = process.hrtime.bigint();
