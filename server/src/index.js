@@ -8460,6 +8460,40 @@ function processTownArrowSupply(now = Date.now(), dt = 0.05) {
       }
     }
   }
+
+  // Stuck detection: if a courier has a distant target but barely moved in 5s, teleport clear.
+  const COURIER_STUCK_MS = 5000;
+  const COURIER_STUCK_MIN_DIST = 0.3;
+  for (const courier of courierRows) {
+    const cx = courier.x;
+    const cy = courier.y;
+    const tx = Number(courier._targetX);
+    const ty = Number(courier._targetY);
+    // Only check couriers that are supposed to be travelling somewhere
+    if (!Number.isFinite(tx) || Math.hypot(cx - tx, cy - ty) < 1.5) {
+      courier._stuckCheckX = cx;
+      courier._stuckCheckY = cy;
+      courier._stuckCheckAt = now;
+      continue;
+    }
+    if (!Number.isFinite(courier._stuckCheckAt)) {
+      courier._stuckCheckX = cx;
+      courier._stuckCheckY = cy;
+      courier._stuckCheckAt = now;
+      continue;
+    }
+    if (now - courier._stuckCheckAt < COURIER_STUCK_MS) continue;
+    const moved = Math.hypot(cx - courier._stuckCheckX, cy - courier._stuckCheckY);
+    courier._stuckCheckX = cx;
+    courier._stuckCheckY = cy;
+    courier._stuckCheckAt = now;
+    if (moved < COURIER_STUCK_MIN_DIST) {
+      const angle = Math.random() * Math.PI * 2;
+      const nudge = 2.5 + Math.random() * 2;
+      courier.x = cx + Math.cos(angle) * nudge;
+      courier.y = cy + Math.sin(angle) * nudge;
+    }
+  }
 }
 
 function processStationDefenses(now = Date.now()) {
