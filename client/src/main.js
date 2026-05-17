@@ -9216,42 +9216,62 @@ function drawBarrelCluster(x, y, cols = 1, rows = 1, scale = 1) {
 function drawAsteroidFieldObject(obj, sx, sy) {
   const rocks = Array.isArray(obj?.rocks) ? obj.rocks : [];
   if (!rocks.length) return;
-  ctx.save();
+  const now = performance.now() * 0.001;
   for (const rock of rocks) {
-    const rsx = (rock.x - obj.x) * TILE_SIZE + sx;
-    const rsy = (rock.y - obj.y) * TILE_SIZE + sy;
+    const baseX = (rock.x - obj.x) * TILE_SIZE + sx;
+    const baseY = (rock.y - obj.y) * TILE_SIZE + sy;
     const rr = Math.max(6, Number(rock.radius || 1) * TILE_SIZE);
+
+    // Deterministic per-rock motion derived from its position — consistent across all clients.
+    const hx = ((Math.round(rock.x * 41) * 17 + Math.round(rock.y * 41) * 31) & 0x7fff);
+    const hy = ((Math.round(rock.x * 41) * 29 + Math.round(rock.y * 41) * 13) & 0x7fff);
+    const driftAmp   = TILE_SIZE * (0.5 + (hx & 0x1f) / 31 * 1.2);
+    const freqX      = 0.032 + ((hx >> 5) & 0x1f) / 31 * 0.045;
+    const freqY      = 0.032 + ((hy >> 5) & 0x1f) / 31 * 0.045;
+    const phaseX     = ((hx >> 10) & 0x1f) / 31 * Math.PI * 2;
+    const phaseY     = ((hy >> 10) & 0x1f) / 31 * Math.PI * 2;
+    const rotSpeed   = 0.06 + (hx % 53) / 53 * 0.28;
+
+    const rsx = baseX + Math.sin(now * freqX + phaseX) * driftAmp;
+    const rsy = baseY + Math.cos(now * freqY + phaseY) * driftAmp;
+    const rotation = now * rotSpeed;
+
+    ctx.save();
+    ctx.translate(rsx, rsy);
+    ctx.rotate(rotation);
+
     // Soft outer haze
-    const halo = ctx.createRadialGradient(rsx, rsy, rr * 0.4, rsx, rsy, rr * 1.5);
+    const halo = ctx.createRadialGradient(0, 0, rr * 0.4, 0, 0, rr * 1.5);
     halo.addColorStop(0, "rgba(140, 130, 120, 0.45)");
     halo.addColorStop(1, "rgba(60, 50, 40, 0)");
     ctx.fillStyle = halo;
     ctx.beginPath();
-    ctx.arc(rsx, rsy, rr * 1.5, 0, Math.PI * 2);
+    ctx.arc(0, 0, rr * 1.5, 0, Math.PI * 2);
     ctx.fill();
     // Rock body
     ctx.fillStyle = "#574a3d";
     ctx.beginPath();
-    ctx.arc(rsx, rsy, rr, 0, Math.PI * 2);
+    ctx.arc(0, 0, rr, 0, Math.PI * 2);
     ctx.fill();
-    // Highlights
+    // Highlight (rotates with rock, making spin visible)
     ctx.fillStyle = "#8a7763";
     ctx.beginPath();
-    ctx.arc(rsx - rr * 0.3, rsy - rr * 0.3, rr * 0.5, 0, Math.PI * 2);
+    ctx.arc(-rr * 0.3, -rr * 0.3, rr * 0.5, 0, Math.PI * 2);
     ctx.fill();
     // Dark crater
     ctx.fillStyle = "#2c241c";
     ctx.beginPath();
-    ctx.arc(rsx + rr * 0.2, rsy + rr * 0.25, rr * 0.25, 0, Math.PI * 2);
+    ctx.arc(rr * 0.2, rr * 0.25, rr * 0.25, 0, Math.PI * 2);
     ctx.fill();
     // Outline
     ctx.strokeStyle = "rgba(20, 18, 14, 0.7)";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.arc(rsx, rsy, rr, 0, Math.PI * 2);
+    ctx.arc(0, 0, rr, 0, Math.PI * 2);
     ctx.stroke();
+
+    ctx.restore();
   }
-  ctx.restore();
 }
 
 function drawPlanetObject(obj, sx, sy) {

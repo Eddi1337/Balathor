@@ -28,11 +28,24 @@ const SCI_FI_DEFENSES = Object.freeze([
 ]);
 
 const SCI_FI_ASTEROIDS = Object.freeze([
-  { id: "asteroid_belt_north", x: 1820, y: -260, radius: 18, density: 14, seed: 3201 },
-  { id: "asteroid_belt_south", x: 1990, y: 290, radius: 22, density: 18, seed: 4117 },
-  { id: "asteroid_belt_east_outer", x: 2280, y: -90, radius: 16, density: 12, seed: 5293 },
-  { id: "asteroid_belt_west_outer", x: 1620, y: 90, radius: 20, density: 16, seed: 6418 },
-  { id: "asteroid_belt_far_north", x: 1740, y: -450, radius: 14, density: 10, seed: 7102 }
+  // Original belts (slightly denser)
+  { id: "asteroid_belt_north",       x: 1820, y: -260, radius: 20, density: 20, seed: 3201 },
+  { id: "asteroid_belt_south",       x: 1990, y:  290, radius: 24, density: 24, seed: 4117 },
+  { id: "asteroid_belt_east_outer",  x: 2280, y:  -90, radius: 18, density: 18, seed: 5293 },
+  { id: "asteroid_belt_west_outer",  x: 1620, y:   90, radius: 22, density: 22, seed: 6418 },
+  { id: "asteroid_belt_far_north",   x: 1740, y: -450, radius: 16, density: 15, seed: 7102 },
+  // New clusters filling the sector
+  { id: "asteroid_belt_mid_east",    x: 2140, y: -175, radius: 21, density: 20, seed: 8213 },
+  { id: "asteroid_belt_deep_south",  x: 1870, y:  460, radius: 18, density: 16, seed: 9347 },
+  { id: "asteroid_belt_far_west",    x: 1540, y: -310, radius: 16, density: 14, seed: 10521 },
+  { id: "asteroid_belt_central",     x: 2030, y:  -80, radius: 13, density: 12, seed: 11604 },
+  { id: "asteroid_belt_northeast",   x: 2290, y: -370, radius: 20, density: 18, seed: 12718 },
+  { id: "asteroid_belt_southwest",   x: 1680, y:  420, radius: 17, density: 16, seed: 13892 },
+  { id: "asteroid_belt_far_east",    x: 2315, y:  400, radius: 19, density: 17, seed: 14956 },
+  { id: "asteroid_belt_corridor",    x: 2060, y:  180, radius: 15, density: 14, seed: 15033 },
+  { id: "asteroid_belt_rim_north",   x: 1920, y: -510, radius: 17, density: 15, seed: 16210 },
+  { id: "asteroid_belt_scatter_w",   x: 1570, y: -490, radius: 14, density: 12, seed: 17388 },
+  { id: "asteroid_belt_scatter_e",   x: 2200, y:  360, radius: 16, density: 14, seed: 18471 },
 ]);
 
 function getAsteroidRocks(cluster, hash2) {

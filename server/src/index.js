@@ -7195,12 +7195,22 @@ function createSciFiPirateMobs() {
   // Declared inside the function so it's evaluated lazily and avoids a temporal dead zone
   // when createMobs() runs at module top-level startup.
   const fleets = [
-    { id: "pirate_eclipse", name: "Eclipse Raider", x: 1740, y: -180, size: 9, color: "#ff6b8a", level: 8 },
-    { id: "pirate_blacksun", name: "Blacksun Corsair", x: 2240, y: 250, size: 10, color: "#c084fc", level: 10 },
-    { id: "pirate_redclaw", name: "Redclaw Marauder", x: 1660, y: 350, size: 9, color: "#f97316", level: 9 },
-    { id: "pirate_void", name: "Void Stalker", x: 2200, y: -420, size: 10, color: "#22d3ee", level: 11 },
-    { id: "pirate_ironwake", name: "Ironwake Reaver", x: 2080, y: -255, size: 9, color: "#facc15", level: 9 },
-    { id: "pirate_nullfang", name: "Nullfang Skiff", x: 1780, y: 265, size: 8, color: "#38bdf8", level: 7 }
+    // Original fleets — sizes bumped up
+    { id: "pirate_eclipse",   name: "Eclipse Raider",    x: 1740, y: -180, size: 14, color: "#ff6b8a", level: 8  },
+    { id: "pirate_blacksun",  name: "Blacksun Corsair",  x: 2240, y:  250, size: 15, color: "#c084fc", level: 10 },
+    { id: "pirate_redclaw",   name: "Redclaw Marauder",  x: 1660, y:  350, size: 13, color: "#f97316", level: 9  },
+    { id: "pirate_void",      name: "Void Stalker",      x: 2200, y: -420, size: 15, color: "#22d3ee", level: 11 },
+    { id: "pirate_ironwake",  name: "Ironwake Reaver",   x: 2080, y: -255, size: 13, color: "#facc15", level: 9  },
+    { id: "pirate_nullfang",  name: "Nullfang Skiff",    x: 1780, y:  265, size: 12, color: "#38bdf8", level: 7  },
+    // New fleets scattered across the sector
+    { id: "pirate_riftclaw",  name: "Riftclaw Brigand",  x: 1580, y: -200, size: 12, color: "#86efac", level: 8  },
+    { id: "pirate_ashwing",   name: "Ashwing Raider",    x: 2160, y:  430, size: 13, color: "#fb923c", level: 10 },
+    { id: "pirate_deathmark", name: "Deathmark Corsair", x: 1910, y: -490, size: 11, color: "#e879f9", level: 11 },
+    { id: "pirate_ironveil",  name: "Ironveil Scourge",  x: 2310, y: -215, size: 12, color: "#f43f5e", level: 12 },
+    { id: "pirate_ghost",     name: "Ghost Marauder",    x: 1700, y:  480, size: 11, color: "#94a3b8", level: 8  },
+    { id: "pirate_venomfang", name: "Venomfang Pack",    x: 1870, y: -370, size: 10, color: "#4ade80", level: 9  },
+    { id: "pirate_burnedge",  name: "Burn Edge Fleet",   x: 2320, y:  130, size: 12, color: "#fbbf24", level: 10 },
+    { id: "pirate_wraithclaw",name: "Wraithclaw Patrol", x: 1560, y:  390, size: 10, color: "#a78bfa", level: 9  },
   ];
   const out = [];
   for (const fleet of fleets) {
