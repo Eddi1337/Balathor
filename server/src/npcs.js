@@ -33,12 +33,28 @@ const GAME_HOURS_PER_SEC = 24 / 600;
 const HUB_PUB_X      = 11;
 const HUB_PUB_Y      = -65;
 const HUB_PUB_RADIUS = 12;
+const TOWN_ARCHER_COUNT = 50;
+const TOWN_ARCHER_AMMO_MAX = 24;
+const TOWN_ARCHER_LOW_AMMO = 8;
+const TOWN_COURIER_CARRY_MAX = 16;
+const FLETCHER_ARROW_STOCK_MAX = 960;
+const FLETCHER_CRAFT_PER_SEC = 18;
+const FLETCHER_WORKER_CRAFT_PER_SEC = 7;
 
 function isNightHour(h) { return h < 6 || h >= 22; }
 function isPubHour(h)   { return h >= 18 && h < 22; }
 
 function hubScheduleEligible(npc) {
-  return npc._followHubPaths && !npc.isTrader && !npc.isGuard && !soldCompanionNpcIds.has(npc.id);
+  return (
+    npc._followHubPaths &&
+    !npc.isTrader &&
+    !npc.isGuard &&
+    !npc.isTownArcher &&
+    !npc.isFletcher &&
+    !npc.isFletcherWorker &&
+    !npc.isArrowCourier &&
+    !soldCompanionNpcIds.has(npc.id)
+  );
 }
 
 function hubScheduleEnsureInit(npc, now = Date.now()) {
@@ -177,6 +193,32 @@ function pickPubWaypoint(npc, navSet) {
     if (nt) return { tx: nt.tx + 0.5, ty: nt.ty + 0.5 };
   }
   return { tx, ty };
+}
+
+function buildTownWallArcherSpecs(navSet) {
+  /** 50 stationary defenders distributed across the parapet and a few tower tops. */
+  const specs = [];
+  const radiusBase = 119.2;
+  for (let i = 0; i < TOWN_ARCHER_COUNT; i += 1) {
+    const tower = i % 10 === 0;
+    const angle = (Math.PI * 2 * i) / TOWN_ARCHER_COUNT + (tower ? 0.07 : -0.04) + ((i % 3) * 0.01);
+    const radius = tower ? radiusBase + 1.8 : radiusBase - 1.8 + ((i % 4) * 0.24);
+    const homeX = Math.round(Math.cos(angle) * radius);
+    const homeY = Math.round(Math.sin(angle) * radius);
+    const supplyProbeX = homeX * 0.9;
+    const supplyProbeY = homeY * 0.9;
+    const supply = navSet instanceof Set ? nearestHubNavTile(supplyProbeX, supplyProbeY, navSet) : null;
+    specs.push({
+      id: `hub_wall_archer_${i}`,
+      homeX,
+      homeY,
+      supplyX: supply ? supply.tx + 0.5 : supplyProbeX,
+      supplyY: supply ? supply.ty + 0.5 : supplyProbeY,
+      tower,
+      ammo: i % 7 === 0 ? 10 : i % 5 === 0 ? 14 : TOWN_ARCHER_AMMO_MAX
+    });
+  }
+  return specs;
 }
 
 /**
@@ -1224,6 +1266,110 @@ function buildHydratedHubNpcExtras() {
     });
   }
 
+  const fletcherStand = roadside.find((rs) => rs?.vendorNpcId === "hub_fletcher_main") || null;
+  const fletcherHomeX = Number(fletcherStand?.x) + 1 || 0;
+  const fletcherHomeY = Number(fletcherStand?.y) + 0.38 || 0;
+
+  out.push({
+    id: "hub_fletcher_main",
+    name: "Master Fletcher",
+    classId: "ranger",
+    primary: "#5f472b",
+    accent: "#e8c86a",
+    homeX: fletcherHomeX,
+    homeY: fletcherHomeY,
+    patrolRadius: 0,
+    isTrader: true,
+    isFletcher: true,
+    shopType: "fletcher",
+    arrowStock: 240,
+    arrowStockMax: FLETCHER_ARROW_STOCK_MAX,
+    craftRate: FLETCHER_CRAFT_PER_SEC,
+    dialogue: [
+      "Feathers, shafts, and a steady hand. That is the trade.",
+      "Fresh arrows for the wall. I keep the stock moving.",
+      "The town sleeps easier when the quivers stay full.",
+      "Take care of the finish — a clean shaft flies true."
+    ]
+  });
+
+  const FLETCHER_WORKERS = [
+    { id: "hub_fletcher_worker_0", name: "Arrow Maker",  dx: -0.75, dy: 0.88, accent: "#c7a96a" },
+    { id: "hub_fletcher_worker_1", name: "Arrow Maker",  dx: 0.82,  dy: 0.88, accent: "#d2b57a" }
+  ];
+  for (const worker of FLETCHER_WORKERS) {
+    out.push({
+      id: worker.id,
+      name: worker.name,
+      classId: "knight",
+      primary: "#6d5c46",
+      accent: worker.accent,
+      homeX: fletcherHomeX + worker.dx,
+      homeY: fletcherHomeY + worker.dy,
+      patrolRadius: 0,
+      isFletcherWorker: true,
+      craftRate: FLETCHER_WORKER_CRAFT_PER_SEC,
+      dialogue: [
+        "Cut true, sand smooth, stack straight.",
+        "Every shaft here has a purpose.",
+        "Keep the quivers full and the wall stays standing."
+      ]
+    });
+  }
+
+  const wallArchers = buildTownWallArcherSpecs(navKeys);
+  for (const archer of wallArchers) {
+    out.push({
+      id: archer.id,
+      name: archer.tower ? "Tower Archer" : "Wall Archer",
+      classId: "ranger",
+      primary: "#4f6474",
+      accent: "#e8c86a",
+      weaponKind: "bow",
+      weaponStyle: "heavy",
+      homeX: archer.homeX,
+      homeY: archer.homeY,
+      supplyX: archer.supplyX,
+      supplyY: archer.supplyY,
+      ammo: archer.ammo,
+      ammoMax: TOWN_ARCHER_AMMO_MAX,
+      ammoLowWatermark: TOWN_ARCHER_LOW_AMMO,
+      patrolRadius: 0,
+      isGuard: true,
+      isTownArcher: true,
+      tower: archer.tower,
+      dialogue: [
+        "I hold this wall.",
+        "Arrow ready, sighted, waiting.",
+        "If it reaches the town, I missed once already.",
+        "Quiver full. Keep the road busy."
+        ]
+      });
+  }
+
+  const courierNames = ["Arrow Runner", "Arrow Porter", "Arrow Hand", "Arrow Runner"];
+  for (let ci = 0; ci < 4; ci += 1) {
+    out.push({
+      id: `hub_arrow_courier_${ci}`,
+      name: courierNames[ci] || "Arrow Courier",
+      classId: "ranger",
+      primary: "#6d5c46",
+      accent: ci % 2 === 0 ? "#e8c86a" : "#d2b57a",
+      homeX: fletcherHomeX + (ci % 2 === 0 ? -0.75 : 0.85),
+      homeY: fletcherHomeY + (ci < 2 ? 0.55 : 1.0),
+      patrolRadius: 0,
+      isArrowCourier: true,
+      carryAmount: 0,
+      carryMax: TOWN_COURIER_CARRY_MAX,
+      deliveryTargetId: null,
+      dialogue: [
+        "Arrows on the move.",
+        "Wall first, then back for more.",
+        "Keep the quivers topped up."
+      ]
+    });
+  }
+
   const baseCount = BASE_NPC_DEFINITIONS.length;
   const extrasSoFar = out.length;
   const crowdBudget = Math.max(0, HUB_POPULATION_TARGET - baseCount - extrasSoFar);
@@ -1349,6 +1495,9 @@ function buildHydratedHubNpcExtras() {
       homeX: gs.homeX,
       homeY: gs.homeY,
       facing: gs.facing,
+      ammo: 20,
+      ammoMax: TOWN_ARCHER_AMMO_MAX,
+      ammoLowWatermark: TOWN_ARCHER_LOW_AMMO,
       patrolRadius: 0,
       isGuard: true,
       isGateKeeper: true,
@@ -2204,7 +2353,12 @@ function refreshHubPathFollowingFlags() {
   for (const n of npcs) {
     const idStr = typeof n.id === "string" ? n.id : "";
     let follow = false;
-    if (idStr.startsWith("hub_m_") || idStr.startsWith("hub_seek_") || idStr.startsWith("hub_g_")) {
+    if (
+      idStr.startsWith("hub_m_") ||
+      idStr.startsWith("hub_seek_") ||
+      idStr.startsWith("hub_g_") ||
+      idStr.startsWith("hub_arrow_courier_")
+    ) {
       follow = !soldCompanionNpcIds.has(idStr);
     } else if (hubLinkedNpcIds.has(idStr)) {
       if (!(n.isTrader && n.patrolRadius <= 1.251)) {
@@ -2795,6 +2949,76 @@ function applyHawkerApproach(npc, companionCtx, onChat, now) {
   return dist > 1.6;
 }
 
+function tickArrowFletcher(npc, dt, now) {
+  const main = npc.isFletcherWorker ? getNpcById("hub_fletcher_main") : npc;
+  if (!main) {
+    return;
+  }
+  const rate = npc.isFletcherWorker
+    ? Number(npc.craftRate) || FLETCHER_WORKER_CRAFT_PER_SEC
+    : Number(npc.craftRate) || FLETCHER_CRAFT_PER_SEC;
+  npc._craftProgress = (Number(npc._craftProgress) || 0) + rate * dt;
+  const crafted = Math.floor(npc._craftProgress);
+  if (crafted <= 0) {
+    npc.moving = false;
+    npc.x = npc.homeX;
+    npc.y = npc.homeY;
+    npc._targetX = npc.x;
+    npc._targetY = npc.y;
+    return;
+  }
+  npc._craftProgress -= crafted;
+  const maxStock = Math.max(0, Number(main.arrowStockMax) || FLETCHER_ARROW_STOCK_MAX);
+  main.arrowStock = Math.min(maxStock, (Number(main.arrowStock) || 0) + crafted);
+  main._arrowStockChangedAt = now;
+  npc.moving = false;
+  npc.x = npc.homeX;
+  npc.y = npc.homeY;
+  npc._targetX = npc.x;
+  npc._targetY = npc.y;
+}
+
+function tickArrowCourier(npc, dt, now, navSet) {
+  if (!Number.isFinite(npc._targetX) || !Number.isFinite(npc._targetY)) {
+    npc._targetX = npc.homeX;
+    npc._targetY = npc.homeY;
+  }
+  const dx = npc._targetX - npc.x;
+  const dy = npc._targetY - npc.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < NPC_STOP_DISTANCE) {
+    npc.x = npc._targetX;
+    npc.y = npc._targetY;
+    npc.moving = false;
+    return;
+  }
+
+  if (npc._followHubPaths && navSet instanceof Set && navSet.size > 96) {
+    const moved = stepNpcAlongHubRoadPath(npc, navSet, dt);
+    if (moved) {
+      return;
+    }
+  }
+
+  const step = Math.min(NPC_SPEED * dt, dist);
+  const nx = dx / dist;
+  const ny = dy / dist;
+  const nextX = npc.x + nx * step;
+  const nextY = npc.y + ny * step;
+  if (!isBlockedCircle(nextX, npc.y)) {
+    npc.x = nextX;
+  }
+  if (!isBlockedCircle(npc.x, nextY)) {
+    npc.y = nextY;
+  }
+  npc.facing = Math.atan2(ny, nx);
+  npc.moving = Math.hypot(npc._targetX - npc.x, npc._targetY - npc.y) > NPC_STOP_DISTANCE;
+  if (!npc.moving) {
+    npc.x = npc._targetX;
+    npc.y = npc._targetY;
+  }
+}
+
 function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
   if (!activationBounds) {
     return;
@@ -2825,6 +3049,25 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
       npc._targetX = npc.homeX;
       npc._targetY = npc.homeY;
       npc.moving = false;
+      continue;
+    }
+
+    if (npc.isTownArcher) {
+      npc.x = npc.homeX;
+      npc.y = npc.homeY;
+      npc._targetX = npc.homeX;
+      npc._targetY = npc.homeY;
+      npc.moving = false;
+      continue;
+    }
+
+    if (npc.isFletcher || npc.isFletcherWorker) {
+      tickArrowFletcher(npc, dt, now);
+      continue;
+    }
+
+    if (npc.isArrowCourier) {
+      tickArrowCourier(npc, dt, now, navSetStatic);
       continue;
     }
 
@@ -3100,6 +3343,25 @@ function getNpcSnapshot() {
       ...(npc.npcTheme ? { npcTheme: npc.npcTheme } : {}),
       ...(npc.sciFiLook ? { sciFiLook: npc.sciFiLook } : {}),
       ...(npc.sciFiRole ? { sciFiRole: npc.sciFiRole } : {}),
+      ...(typeof npc.ammo === "number"
+        ? {
+            ammo: Math.max(0, Math.round(npc.ammo)),
+            ammoMax: Math.max(0, Math.round(Number(npc.ammoMax) || TOWN_ARCHER_AMMO_MAX))
+          }
+        : {}),
+      ...(typeof npc.arrowStock === "number"
+        ? {
+            arrowStock: Math.max(0, Math.round(npc.arrowStock)),
+            arrowStockMax: Math.max(0, Math.round(Number(npc.arrowStockMax) || FLETCHER_ARROW_STOCK_MAX))
+          }
+        : {}),
+      ...(typeof npc.carryAmount === "number"
+        ? {
+            carryAmount: Math.max(0, Math.round(npc.carryAmount)),
+            carryMax: Math.max(0, Math.round(Number(npc.carryMax) || TOWN_COURIER_CARRY_MAX)),
+            ...(typeof npc.deliveryTargetId === "string" ? { deliveryTargetId: npc.deliveryTargetId } : {})
+          }
+        : {}),
       ...(npc.ship
         ? {
             ship: {
@@ -3124,6 +3386,10 @@ function getNpcSnapshot() {
       moving: npc.moving,
       isTrader: npc.isTrader || false,
       ...(npc.isGateKeeper ? { isGateKeeper: true } : {}),
+      ...(npc.isTownArcher ? { isTownArcher: true } : {}),
+      ...(npc.isFletcher ? { isFletcher: true } : {}),
+      ...(npc.isFletcherWorker ? { isFletcherWorker: true } : {}),
+      ...(npc.isArrowCourier ? { isArrowCourier: true } : {}),
       ...(npc.questGiver ? { questGiver: true, questIds: Array.isArray(npc.questIds) ? npc.questIds : [] } : {}),
       ...(npc.bondTag ? { bondTag: npc.bondTag } : {}),
       ...(npc.longHair ? { longHair: true } : {}),

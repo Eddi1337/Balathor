@@ -602,6 +602,7 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
 
   /** Upright 2×1 stalls on flat grass with path along the south edge (customer side). */
   const limS = Math.ceil(HUB_WALL_R_IN_MAIN + 4);
+  let fletcherStand = null;
   for (let ny = -limS; ny <= limS; ny += 1) {
     for (let nx = -limS; nx <= limS - 1; nx += 1) {
       if (plazaTree(nx, ny) || plazaTree(nx + 1, ny) || nearListedPortal(nx, ny, 110) || nearListedPortal(nx + 1, ny, 110)) {
@@ -633,7 +634,19 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
         facing: 0,
         vendorNpcId: vid
       });
+      const distSq = nx * nx + ny * ny;
+      if (!fletcherStand || distSq < fletcherStand.distSq) {
+        fletcherStand = list[list.length - 1];
+        fletcherStand.distSq = distSq;
+      }
     }
+  }
+
+  if (fletcherStand) {
+    fletcherStand.vendorNpcId = "hub_fletcher_main";
+    fletcherStand.shopType = "fletcher";
+    fletcherStand.shopName = "Fletcher's Store";
+    delete fletcherStand.distSq;
   }
 
   const bound = Math.ceil(HUB_WALL_R_IN_MAIN + 2);

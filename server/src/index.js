@@ -163,10 +163,24 @@ const GATEKEEPER_IDS = Object.freeze([
   "hub_g_in_s",
   "hub_g_in_w"
 ]);
+const TOWN_ARCHER_IDS = Object.freeze([
+  ...GATEKEEPER_IDS,
+  ...Array.from({ length: 50 }, (_, index) => `hub_wall_archer_${index}`)
+]);
 const GATEKEEPER_RANGE = 46;
 const GATEKEEPER_NEAR_TOWN_RADIUS = HUB_TOWN_GRASS_RADIUS + 84;
 const GATEKEEPER_ATTACK_COOLDOWN_MS = 1150;
 const GATEKEEPER_ARROW_DAMAGE = 34;
+const TOWN_ARCHER_AMMO_LOW_WATERMARK = 8;
+const TOWN_COURIER_IDS = Object.freeze([
+  "hub_arrow_courier_0",
+  "hub_arrow_courier_1",
+  "hub_arrow_courier_2",
+  "hub_arrow_courier_3"
+]);
+const FLETCHER_ID = "hub_fletcher_main";
+const FLETCHER_ARROW_STOCK_MAX = 960;
+const FLETCHER_COURIER_CARRY_MAX = 16;
 const FANTASY_ASSAULT_INTERVAL_MS = 15000;
 const SCI_FI_ASSAULT_INTERVAL_MS = 30000;
 const MAX_ACTIVE_FANTASY_ASSAULT_MOBS = 128;
@@ -799,7 +813,7 @@ const SIM_WALL_SAMPLES_MAX = 60;
 
 /** Per-section timing accumulators (microseconds, reset every PERF_LOG_INTERVAL ticks). */
 const PERF_LOG_INTERVAL = 300;
-const perfAcc = { players: 0, npcs: 0, assaults: 0, mobs: 0, archers: 0, defenses: 0, caravans: 0, consecration: 0, snapshot: 0 };
+const perfAcc = { players: 0, npcs: 0, assaults: 0, mobs: 0, archerSupply: 0, archers: 0, defenses: 0, caravans: 0, consecration: 0, snapshot: 0 };
 let perfLastSnapshot = null;
 
 const worldDb = openWorldDb();
@@ -2804,6 +2818,10 @@ function simulate() {
     _pt = process.hrtime.bigint();
     updateMobs(aiDt, computePlayerViewBoundsArray(CHAT_VIEW_MARGIN_TILES + MOB_ACTIVITY_MARGIN_TILES));
     perfAcc.mobs += Number(process.hrtime.bigint() - _pt) / 1e3;
+
+    _pt = process.hrtime.bigint();
+    processTownArrowSupply(Date.now(), aiDt);
+    perfAcc.archerSupply += Number(process.hrtime.bigint() - _pt) / 1e3;
 
     _pt = process.hrtime.bigint();
     processGatekeeperArchers(Date.now());
@@ -7433,20 +7451,23 @@ function createWildernessMobs() {
     const biome = camp.biome || getBiome(camp.x, camp.y);
     const faction = camp.faction;
     const type = (faction && MOB_TYPES[faction]) ? MOB_TYPES[faction] : (MOB_TYPES[biome] || MOB_TYPES.forest);
-    const baseCount = Math.ceil(scaledCampEncounterSize(camp.size, camp) * 2.25);
-    const count = baseCount * ENEMY_DENSITY_MULTIPLIER;
+    const residentCount = Math.max(1, Math.ceil(scaledCampEncounterSize(camp.size, camp) * 2.25));
+    const overflowLimit = Math.max(2, Math.floor(residentCount * 0.75));
+    const overflowCount = Math.min(
+      Math.max(0, residentCount * Math.max(0, ENEMY_DENSITY_MULTIPLIER - 1)),
+      overflowLimit
+    );
+    const totalCount = residentCount + overflowCount;
     const tier = camp.tier || Math.max(1, Math.floor(Math.hypot(camp.x, camp.y) / 90));
 
-    for (let i = 0; i < count; i += 1) {
+    for (let i = 0; i < residentCount; i += 1) {
       const enemy = type.enemies[i % type.enemies.length];
       const level = enemy.level + Math.max(0, tier - 1);
       const angle = hash2(camp.x, camp.y, 300 + i) * Math.PI * 2;
       const radius = 2 + Math.sqrt(i + 1) * 0.62 + hash2(camp.x, camp.y, 400 + i) * 5;
       const rawX = camp.x + Math.cos(angle) * radius;
       const rawY = camp.y + Math.sin(angle) * radius;
-      const home = i < baseCount
-        ? findOpenMobHome(rawX, rawY, camp.x, camp.y)
-        : { x: Number(rawX.toFixed(3)), y: Number(rawY.toFixed(3)) };
+      const home = findOpenMobHome(rawX, rawY, camp.x, camp.y);
       mobs.push({
         id: `mob_camp_${camp.id}_${i + 1}`,
         name: enemy.name,
@@ -7463,6 +7484,45 @@ function createWildernessMobs() {
         attackDamage: enemy.damage + Math.floor(level * 1.15),
         roamRadius: camp.size >= 6 ? 8.5 : 6.2,
         speed: enemy.speed + hash2(camp.x, camp.y, 600 + i) * 0.18
+      });
+    }
+
+    const routeAngle = Math.atan2(-camp.y, -camp.x);
+    const targetRadius = 104;
+    const targetX = Math.cos(routeAngle) * targetRadius;
+    const targetY = Math.sin(routeAngle) * targetRadius;
+    for (let i = 0; i < overflowCount; i += 1) {
+      const enemy = type.enemies[(residentCount + i) % type.enemies.length];
+      const level = enemy.level + Math.max(0, tier - 1) + 1;
+      const sideAngle = routeAngle + Math.PI / 2;
+      const spread = (i - (overflowCount - 1) / 2) * 1.5;
+      const rawX = camp.x + Math.cos(sideAngle) * spread + Math.cos(routeAngle) * (2.5 + (i % 3) * 0.6);
+      const rawY = camp.y + Math.sin(sideAngle) * spread + Math.sin(routeAngle) * (2.5 + (i % 3) * 0.6);
+      const home = findOpenMobHome(rawX, rawY, camp.x, camp.y);
+      mobs.push({
+        id: `mob_camp_overflow_${camp.id}_${i + 1}`,
+        name: `${enemy.name} Raider`,
+        level,
+        homeX: home.x,
+        homeY: home.y,
+        targetX: targetX,
+        targetY: targetY,
+        assaultTargetX: targetX,
+        assaultTargetY: targetY,
+        primary: type.primary,
+        accent: type.accent,
+        campId: camp.id,
+        biome,
+        faction: faction || null,
+        isDragon: faction === "dragon",
+        isAssaultWave: true,
+        forceSimulate: true,
+        noRespawn: true,
+        spawnedAt: Date.now(),
+        maxHp: enemy.hp + level * 7 + Math.floor(hash2(camp.x, camp.y, 700 + i) * 14),
+        attackDamage: enemy.damage + Math.floor(level * 1.15) + 2,
+        roamRadius: 1,
+        speed: enemy.speed + 0.25 + hash2(camp.x, camp.y, 800 + i) * 0.12
       });
     }
 
@@ -8236,7 +8296,7 @@ function updateMobs(dt, boundsArray) {
 }
 
 function processGatekeeperArchers(now = Date.now()) {
-  for (const guardId of GATEKEEPER_IDS) {
+  for (const guardId of TOWN_ARCHER_IDS) {
     const guard = getNpcById(guardId);
     if (!guard) continue;
     guard.x = guard.homeX;
@@ -8244,6 +8304,13 @@ function processGatekeeperArchers(now = Date.now()) {
     guard._targetX = guard.homeX;
     guard._targetY = guard.homeY;
     guard.moving = false;
+    const ammoMax = Math.max(0, Number(guard.ammoMax) || 0);
+    if (ammoMax <= 0) {
+      continue;
+    }
+    if (guard.ammo <= 0) {
+      continue;
+    }
     if (now - (guard._lastGateShotAt || 0) < GATEKEEPER_ATTACK_COOLDOWN_MS) {
       continue;
     }
@@ -8265,6 +8332,7 @@ function processGatekeeperArchers(now = Date.now()) {
     const damage = Math.max(1, Math.round(GATEKEEPER_ARROW_DAMAGE + (Number(target.level) || 1) * 1.5));
     guard._lastGateShotAt = now;
     guard.facing = Math.atan2(target.y - guard.y, target.x - guard.x);
+    guard.ammo = Math.max(0, (Number(guard.ammo) || 0) - 1);
     target.hp = Math.max(0, target.hp - damage);
 
     const event = {
@@ -8293,6 +8361,94 @@ function processGatekeeperArchers(now = Date.now()) {
     }
 
     broadcastCombat(event);
+  }
+}
+
+function processTownArrowSupply(now = Date.now(), dt = 0.05) {
+  const fletcher = getNpcById(FLETCHER_ID);
+  const archers = TOWN_ARCHER_IDS.map((id) => getNpcById(id)).filter((npc) => npc && typeof npc.ammo === "number");
+  const archerNeeds = archers
+    .map((npc) => ({
+      npc,
+      threshold: Math.max(1, Number(npc.ammoLowWatermark) || TOWN_ARCHER_AMMO_LOW_WATERMARK),
+      need: Math.max(0, (Number(npc.ammoMax) || 24) - (Number(npc.ammo) || 0))
+    }))
+    .filter((row) => row.need > 0 && (Number(row.npc.ammo) || 0) < row.threshold)
+    .sort((a, b) => b.need - a.need || (Number(a.npc.ammo) || 0) - (Number(b.npc.ammo) || 0));
+
+  const courierRows = TOWN_COURIER_IDS.map((id) => getNpcById(id)).filter(Boolean);
+  const assigned = new Set();
+  for (const courier of courierRows) {
+    if (!Number.isFinite(courier.carryMax)) {
+      courier.carryMax = FLETCHER_COURIER_CARRY_MAX;
+    }
+    if (!courier._deliveryTargetId || assigned.has(courier._deliveryTargetId)) {
+      courier._deliveryTargetId = null;
+    }
+    const currentTarget = courier._deliveryTargetId
+      ? archers.find((npc) => npc.id === courier._deliveryTargetId && (Number(npc.ammoMax) || 24) > (Number(npc.ammo) || 0))
+      : null;
+    if (currentTarget) {
+      assigned.add(currentTarget.id);
+      continue;
+    }
+    const nextTarget = archerNeeds.find((row) => !assigned.has(row.npc.id))?.npc || null;
+    if (nextTarget) {
+      courier._deliveryTargetId = nextTarget.id;
+      assigned.add(nextTarget.id);
+    }
+  }
+
+  for (const courier of courierRows) {
+    const target = courier._deliveryTargetId ? getNpcById(courier._deliveryTargetId) : null;
+    const home = fletcher || null;
+    const fletcherX = Number(home?.x ?? home?.homeX);
+    const fletcherY = Number(home?.y ?? home?.homeY);
+    const targetX = Number.isFinite(target?.supplyX) ? Number(target.supplyX) : Number(target?.homeX);
+    const targetY = Number.isFinite(target?.supplyY) ? Number(target.supplyY) : Number(target?.homeY);
+    const carryAmount = Math.max(0, Number(courier.carryAmount) || 0);
+    const carryMax = Math.max(0, Number(courier.carryMax) || FLETCHER_COURIER_CARRY_MAX);
+    const stock = home ? Math.max(0, Number(home.arrowStock) || 0) : 0;
+
+    if (!target || !Number.isFinite(targetX) || !Number.isFinite(targetY)) {
+      courier._deliveryTargetId = null;
+      courier.carryAmount = 0;
+      courier._targetX = Number.isFinite(fletcherX) ? fletcherX : courier.homeX;
+      courier._targetY = Number.isFinite(fletcherY) ? fletcherY : courier.homeY;
+      continue;
+    }
+
+    if (carryAmount <= 0) {
+      courier._targetX = Number.isFinite(fletcherX) ? fletcherX : courier.homeX;
+      courier._targetY = Number.isFinite(fletcherY) ? fletcherY : courier.homeY;
+      if (home && Math.hypot(courier.x - courier._targetX, courier.y - courier._targetY) <= 1.4 && stock > 0) {
+        const targetNeed = Math.max(0, (Number(target.ammoMax) || 24) - (Number(target.ammo) || 0));
+        const load = Math.min(carryMax, stock, targetNeed > 0 ? targetNeed : carryMax);
+        if (load > 0) {
+          courier.carryAmount = load;
+          home.arrowStock = Math.max(0, stock - load);
+          courier._targetX = targetX;
+          courier._targetY = targetY;
+        }
+      }
+      continue;
+    }
+
+    courier._targetX = targetX;
+    courier._targetY = targetY;
+    if (Math.hypot(courier.x - targetX, courier.y - targetY) <= 1.45) {
+      const targetNeed = Math.max(0, (Number(target.ammoMax) || 24) - (Number(target.ammo) || 0));
+      const transfer = Math.min(carryAmount, targetNeed);
+      if (transfer > 0) {
+        target.ammo = Math.min(Number(target.ammoMax) || 24, (Number(target.ammo) || 0) + transfer);
+        courier.carryAmount = carryAmount - transfer;
+      }
+      courier._deliveryTargetId = (Number(target.ammo) || 0) < (Number(target.ammoMax) || 24) ? target.id : null;
+      if (courier.carryAmount <= 0) {
+        courier._targetX = Number.isFinite(fletcherX) ? fletcherX : courier.homeX;
+        courier._targetY = Number.isFinite(fletcherY) ? fletcherY : courier.homeY;
+      }
+    }
   }
 }
 

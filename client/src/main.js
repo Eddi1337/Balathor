@@ -2275,6 +2275,39 @@ const NPC_CTX_HIT_RADIUS = 1.8;
 const NPC_CTX_PLAYER_RADIUS = 9;
 const HOUSE_COMPANION_CTX_HIT_RADIUS = 1.45;
 
+function npcWorldStatusLabel(npc) {
+  if (!npc) return "";
+  const name = npc.name || "NPC";
+  const ammo = Number(npc.ammo);
+  const ammoMax = Number(npc.ammoMax);
+  if (npc.isTownArcher || npc.isGateKeeper) {
+    if (Number.isFinite(ammo) && Number.isFinite(ammoMax)) {
+      return `${name} - ${Math.max(0, Math.round(ammo))}/${Math.max(0, Math.round(ammoMax))} arrows`;
+    }
+    return `${name} - archer`;
+  }
+  if (npc.isFletcher) {
+    const stock = Number(npc.arrowStock);
+    const stockMax = Number(npc.arrowStockMax);
+    if (Number.isFinite(stock) && Number.isFinite(stockMax)) {
+      return `${name} - ${Math.max(0, Math.round(stock))}/${Math.max(0, Math.round(stockMax))} arrows stocked`;
+    }
+    return `${name} - fletcher`;
+  }
+  if (npc.isFletcherWorker) {
+    return `${name} - making arrows`;
+  }
+  if (npc.isArrowCourier) {
+    const carry = Number(npc.carryAmount);
+    const carryMax = Number(npc.carryMax);
+    if (Number.isFinite(carry) && Number.isFinite(carryMax)) {
+      return `${name} - carrying ${Math.max(0, Math.round(carry))}/${Math.max(0, Math.round(carryMax))} arrows`;
+    }
+    return `${name} - arrow courier`;
+  }
+  return name;
+}
+
 function hideNpcContextMenu() {
   state.npcContext = null;
   npcContextMenu?.classList.add("hidden");
@@ -2292,7 +2325,7 @@ function showNpcContextMenu(npc) {
   const kind = npc.questGiver ? "quest" : npc.bondTag ? "romance" : npc.wandersToPlayer ? "hawker" : "comment";
   state.npcContext = { npcId: npc.id, kind };
 
-  if (npcContextMenuName) npcContextMenuName.textContent = npc.name || "";
+  if (npcContextMenuName) npcContextMenuName.textContent = npcWorldStatusLabel(npc);
   if (npcContextMenuButtons) {
     npcContextMenuButtons.replaceChildren();
     if (kind === "quest") {
@@ -2462,8 +2495,19 @@ function tryOpenNpcContextMenuFromCanvas(event, worldX, worldY) {
   let best = null;
   let bestDist = NPC_CTX_HIT_RADIUS;
   for (const npc of state.npcs.values()) {
-    // Quest givers + active approachers are all clickable.
-    if (!npc.wandersToPlayer && !npc.bondTag && !npc.wandersToFlirt && !npc.questGiver) continue;
+    // Quest givers + active approachers + fixed town defenders are clickable.
+    if (
+      !npc.wandersToPlayer &&
+      !npc.bondTag &&
+      !npc.wandersToFlirt &&
+      !npc.questGiver &&
+      !npc.isTownArcher &&
+      !npc.isGateKeeper &&
+      !npc.isFletcher &&
+      !npc.isFletcherWorker &&
+      !npc.isArrowCourier &&
+      !npc.isTrader
+    ) continue;
     const nx = Number.isFinite(npc.renderX) ? npc.renderX : npc.x;
     const ny = Number.isFinite(npc.renderY) ? npc.renderY : npc.y;
     const d = Math.hypot(nx - worldX, ny - worldY);
@@ -4661,6 +4705,7 @@ function refreshWorldHoverTooltip(event) {
   }
 
   const world = screenEventToWorld(event);
+  const self = state.players.get(state.selfId);
   if (isSciFiWorld()) {
     const shipDeckHit = findShipDeckInteractionAt(world.x, world.y);
     if (shipDeckHit?.label) {
@@ -4702,7 +4747,9 @@ function refreshWorldHoverTooltip(event) {
         f.kind === "bench"
           ? "Bench — interact to sit"
           : f.kind === "market_stand"
-            ? "Market stand"
+            ? f.shopType === "fletcher"
+              ? "Fletcher's Store"
+              : "Market stand"
             : f.kind === "small_tree"
               ? "Small tree"
               : f.kind === "fountain"
@@ -4717,7 +4764,42 @@ function refreshWorldHoverTooltip(event) {
     }
   }
 
-  const self = state.players.get(state.selfId);
+  let bestNpc = null;
+  let bestNpcDist = NPC_CTX_HIT_RADIUS;
+  for (const npc of state.npcs.values()) {
+    if (
+      !npc.isTownArcher &&
+      !npc.isGateKeeper &&
+      !npc.isFletcher &&
+      !npc.isFletcherWorker &&
+      !npc.isArrowCourier &&
+      !npc.isTrader &&
+      !npc.questGiver &&
+      !npc.wandersToPlayer &&
+      !npc.wandersToFlirt &&
+      !npc.bondTag
+    ) {
+      continue;
+    }
+    const nx = Number.isFinite(npc.renderX) ? npc.renderX : npc.x;
+    const ny = Number.isFinite(npc.renderY) ? npc.renderY : npc.y;
+    if (Math.hypot(nx - world.x, ny - world.y) > bestNpcDist) {
+      continue;
+    }
+    const sx = Number.isFinite(self?.renderX) ? self.renderX : self?.x;
+    const sy = Number.isFinite(self?.renderY) ? self.renderY : self?.y;
+    if (Number.isFinite(sx) && Number.isFinite(sy) && Math.hypot(nx - sx, ny - sy) > NPC_CTX_PLAYER_RADIUS + 1) {
+      continue;
+    }
+    bestNpc = npc;
+    bestNpcDist = Math.hypot(nx - world.x, ny - world.y);
+  }
+  if (bestNpc) {
+    state.hoverTooltipText = npcWorldStatusLabel(bestNpc);
+    state.hoverTooltipSmall = true;
+    return;
+  }
+
   if (!self?.homeBuildingKey) {
     return;
   }
