@@ -317,6 +317,34 @@ function isSciFiSector(x, y) {
   return x >= SCI_FI_SECTOR.xMin && x <= SCI_FI_SECTOR.xMax && y >= SCI_FI_SECTOR.yMin && y <= SCI_FI_SECTOR.yMax;
 }
 
+/**
+ * Returns a stable world id for any world-space coordinate. Used to keep the
+ * fantasy and sci-fi maps isolated — entities in different worlds never see
+ * each other and ships can't fly between them outside of portals.
+ *  - "fantasy"          → original walkable world (loose bounds around 0,0)
+ *  - "scifi"            → orbital sector around the station + asteroid fields
+ *  - "planet:<id>"      → one of the procedural alien planet surfaces
+ *  - "void"             → nowhere; off-limits to everyone
+ */
+function worldForPosition(x, y) {
+  // Procedural alien planet surfaces sit in a remote band at x >= ~5000.
+  for (const planet of SCI_FI_PLANETS) {
+    const dx = x - planet.surfaceX;
+    const dy = y - planet.surfaceY;
+    const r = planet.surfaceRadius + PLANET_SURFACE_EDGE_MARGIN;
+    if (dx * dx + dy * dy <= r * r) return `planet:${planet.id}`;
+  }
+  if (isSciFiSector(x, y)) return "scifi";
+  // Fantasy world: a generous square around the origin that captures the hub,
+  // all wilderness, and the portal-realm satellite zones.
+  if (x > -1000 && x < 1000 && y > -1000 && y < 1000) return "fantasy";
+  return "void";
+}
+
+function sameWorld(a, b) {
+  return worldForPosition(a.x, a.y) === worldForPosition(b.x, b.y);
+}
+
 function sciFiStationById(id) {
   return SCI_FI_STATIONS.find((station) => station.id === id) || null;
 }
@@ -2432,6 +2460,11 @@ function isBlockedCircle(x, y, radius = 0.28) {
 }
 
 function isBlockedCircleForShip(x, y, radius = 0.34) {
+  // Hard sector boundary — ships cannot leave the sci-fi sector by flying. The
+  // only way to reach a different world is via a portal / planet travel action.
+  if (!isSciFiSector(x, y)) {
+    return true;
+  }
   const points = [
     [x - radius, y - radius],
     [x + radius, y - radius],
@@ -2580,6 +2613,9 @@ module.exports = {
   getPlanetBySurfacePoint,
   getPlanetBySpacePoint,
   PLANET_SURFACE_LANDING_OFFSET,
+  worldForPosition,
+  sameWorld,
+  isSciFiSector,
   spawnPoint,
   southDoorWorldXs,
   southDoorAnchorWorldX,

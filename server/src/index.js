@@ -34,7 +34,8 @@ const {
   SCI_FI_SAFE_RADIUS,
   getPlanetById,
   getPlanetBySpacePoint,
-  PLANET_SURFACE_LANDING_OFFSET
+  PLANET_SURFACE_LANDING_OFFSET,
+  worldForPosition
 } = require("./world");
 const {
   updateNpcs,
@@ -5546,6 +5547,25 @@ function drainChunkGenQueue() {
   }
 }
 
+function chunkInClientWorld(client, cx, cy) {
+  if (!client.player) return true;
+  const playerWorld = worldForPosition(client.player.x, client.player.y);
+  // Sample the chunk's center to decide which world the tiles belong to.
+  // A chunk passes if any corner shares the player's world — generous so
+  // chunks straddling a world boundary still stream cleanly.
+  const samples = [
+    [cx * CHUNK_SIZE + CHUNK_SIZE / 2, cy * CHUNK_SIZE + CHUNK_SIZE / 2],
+    [cx * CHUNK_SIZE, cy * CHUNK_SIZE],
+    [cx * CHUNK_SIZE + CHUNK_SIZE - 1, cy * CHUNK_SIZE],
+    [cx * CHUNK_SIZE, cy * CHUNK_SIZE + CHUNK_SIZE - 1],
+    [cx * CHUNK_SIZE + CHUNK_SIZE - 1, cy * CHUNK_SIZE + CHUNK_SIZE - 1]
+  ];
+  for (const [sx, sy] of samples) {
+    if (worldForPosition(sx, sy) === playerWorld) return true;
+  }
+  return false;
+}
+
 function streamChunks(client, chunks) {
   if (!Array.isArray(chunks)) {
     return;
@@ -5559,6 +5579,11 @@ function streamChunks(client, chunks) {
     const cx = clampInteger(item[0], -4096, 4096);
     const cy = clampInteger(item[1], -4096, 4096);
     const key = `${cx},${cy}`;
+
+    // Skip chunks that belong to a different world — keeps maps isolated.
+    if (!chunkInClientWorld(client, cx, cy)) {
+      continue;
+    }
 
     if (chunkCache.has(key)) {
       // Already cached — send immediately, no tick cost
@@ -5737,6 +5762,11 @@ function broadcastSnapshot() {
     const minY = view.y - view.halfH - margin;
     const maxY = view.y + view.halfH + margin;
 
+    // Each viewer only sees entities sharing the same world (fantasy / sci-fi
+    // sector / a specific planet surface). Worlds are otherwise completely
+    // isolated — the only crossover is a portal teleport.
+    const viewerWorld = client.player ? worldForPosition(client.player.x, client.player.y) : null;
+
     const playersVisible = [];
     const seenPid = new Set();
 
@@ -5751,6 +5781,9 @@ function broadcastSnapshot() {
         for (const cli of arr) {
           const p = cli.player;
           if (!p || seenPid.has(p.id) || cli === client) {
+            continue;
+          }
+          if (viewerWorld && worldForPosition(p.x, p.y) !== viewerWorld) {
             continue;
           }
           if (isInView(view, p.x, p.y)) {
@@ -5789,6 +5822,9 @@ function broadcastSnapshot() {
         if (seenNpc.has(n.id)) {
           continue;
         }
+        if (viewerWorld && worldForPosition(n.x, n.y) !== viewerWorld) {
+          continue;
+        }
         if (isInView(view, n.x, n.y, npcMargin)) {
           seenNpc.add(n.id);
           npcs.push(n);
@@ -5805,6 +5841,9 @@ function broadcastSnapshot() {
       }
       for (const m of arr) {
         if (seenMob.has(m.id)) {
+          continue;
+        }
+        if (viewerWorld && worldForPosition(m.x, m.y) !== viewerWorld) {
           continue;
         }
         if (isInView(view, m.x, m.y)) {
@@ -6939,9 +6978,15 @@ function nearestAttackablePlayer(mob) {
   // Alerted pirates aggro from anywhere on the map for a window after taking damage.
   const alerted = isPirate && mob._alertedUntil && mob._alertedUntil > now;
 
+  const mobWorld = worldForPosition(mob.x, mob.y);
   for (const client of clients.values()) {
     const player = client.player;
     if (!player || player.hp <= 0 || !canAttackAt(player.x, player.y)) {
+      continue;
+    }
+    // Worlds are isolated — never target a player in another map (e.g. a
+    // pirate in space won't aggro on a player in the fantasy hub).
+    if (mobWorld !== worldForPosition(player.x, player.y)) {
       continue;
     }
     // Pirates never attack a player who is inside the station safe zone.
