@@ -359,8 +359,8 @@ function sciFiStationTileForFeature(feature, x, y) {
     const cy = Math.floor(fh / 2);
     const ring = Math.max(Math.abs(lx - cx), Math.abs(ly - cy));
     if (ring <= 1) return TILE.ENERGY;
-    if (ring <= 3) return TILE.WALKWAY;
-    if (ring <= 5) return ((lx + ly) & 1) === 0 ? TILE.METAL : TILE.WINDOW;
+    if (ring <= 3) return ((lx + ly) & 1) === 0 ? TILE.ENERGY : TILE.WALKWAY;
+    if (ring <= 5) return ((lx + ly) & 1) === 0 ? TILE.METAL : TILE.WALKWAY;
     return TILE.METAL;
   }
 
@@ -2429,6 +2429,7 @@ module.exports = {
   sciFiDockPortForPlayerId,
   sciFiDockPortById,
   findNearestSciFiDockPort,
+  sciFiStationFeatureAt,
   STARGATE_LANDING,
   getPortalAt,
   hash2,

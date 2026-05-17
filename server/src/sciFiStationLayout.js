@@ -184,8 +184,8 @@ function buildStationFeatures() {
     kind: "station-plaza",
     x: CX,
     y: CY,
-    w: 33,
-    h: 25
+    w: 23,
+    h: 17
   });
 
   const shops = [
@@ -272,12 +272,16 @@ function buildStationFeatures() {
   }
 
   const shopCorridors = [
-    { id: "rf_shop_lane_n", name: "North Retail Walk", kind: "corridor", x: CX, y: CY - 15, w: 43, h: 5 },
-    { id: "rf_shop_lane_s", name: "South Retail Walk", kind: "corridor", x: CX, y: CY + 12, w: 43, h: 5 },
-    { id: "rf_shop_lane_spine", name: "Retail Spine", kind: "corridor", x: CX, y: CY - 1, w: 5, h: 35 },
-    { id: "rf_shop_lane_gate", name: "Stargate Arcade", kind: "corridor", x: CX, y: CY + 22, w: 7, h: 12 },
-    { id: "rf_shop_lane_w", name: "West Arcade", kind: "corridor", x: CX - 27, y: CY - 1, w: 7, h: 25 },
-    { id: "rf_shop_lane_e", name: "East Arcade", kind: "corridor", x: CX + 27, y: CY - 1, w: 7, h: 25 }
+    { id: "rf_shop_lane_n", name: "North Retail Walk", kind: "corridor", x: CX, y: CY - 15, w: 43, h: 3 },
+    { id: "rf_shop_lane_s", name: "South Retail Walk", kind: "corridor", x: CX, y: CY + 12, w: 43, h: 3 },
+    { id: "rf_shop_lane_spine", name: "Retail Spine", kind: "corridor", x: CX, y: CY - 1, w: 3, h: 35 },
+    { id: "rf_shop_lane_gate", name: "Stargate Arcade", kind: "corridor", x: CX, y: CY + 22, w: 5, h: 12 },
+    { id: "rf_shop_lane_w", name: "West Arcade", kind: "corridor", x: CX - 27, y: CY - 1, w: 5, h: 25 },
+    { id: "rf_shop_lane_e", name: "East Arcade", kind: "corridor", x: CX + 27, y: CY - 1, w: 5, h: 25 },
+    { id: "rf_shop_lane_port_n", name: "North Dock Link", kind: "corridor", x: CX, y: CY - 31, w: 57, h: 3 },
+    { id: "rf_shop_lane_port_s", name: "South Dock Link", kind: "corridor", x: CX, y: CY + 31, w: 57, h: 3 },
+    { id: "rf_shop_lane_port_w", name: "West Dock Link", kind: "corridor", x: CX - 36, y: CY, w: 3, h: 43 },
+    { id: "rf_shop_lane_port_e", name: "East Dock Link", kind: "corridor", x: CX + 36, y: CY, w: 3, h: 43 }
   ];
   for (const corridor of shopCorridors) {
     pushFeature(out, corridor);

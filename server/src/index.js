@@ -28,6 +28,7 @@ const {
   sciFiDockPortForPlayerId,
   sciFiDockPortById,
   findNearestSciFiDockPort,
+  sciFiStationFeatureAt,
   STARGATE_LANDING,
   isInsideSciFiSafeZone,
   SCI_FI_STATION_CENTER,
@@ -135,6 +136,7 @@ const MAX_ACTIVE_SCI_FI_ASSAULT_MOBS = 60;
 const STATION_DEFENSE_ATTACK_COOLDOWN_MS = 900;
 const STATION_TURRET_DAMAGE = 42;
 const ORBITAL_CANNON_DAMAGE = 82;
+const ZERO_G_DRIFT_SPEED_MULTIPLIER = 0.74;
 const XP_BASE_TO_LEVEL = 100;
 const XP_LEVEL_STEP = 55;
 const STARTING_TALENT_POINTS = 1;
@@ -2606,13 +2608,26 @@ function simulate() {
       let dx = Number(input.right) - Number(input.left);
       let dy = Number(input.down) - Number(input.up);
       const length = Math.hypot(dx, dy);
+      const zeroGFeature = getWorldThemeAt(client.player.x, client.player.y) === "sci-fi"
+        ? sciFiStationFeatureAt(Math.round(client.player.x), Math.round(client.player.y))
+        : null;
+      const inZeroG = zeroGFeature?.kind === "station-plaza";
+      if (inZeroG && length > 0) {
+        client.player.zeroGDriftX = dx / length;
+        client.player.zeroGDriftY = dy / length;
+      }
 
-      if (length > 0) {
+      if (length > 0 || (inZeroG && Math.hypot(Number(client.player.zeroGDriftX) || 0, Number(client.player.zeroGDriftY) || 0) > 0)) {
         client.player._stillAccumulator = 0;
-        dx /= length;
-        dy /= length;
+        if (length > 0) {
+          dx /= length;
+          dy /= length;
+        } else {
+          dx = Number(client.player.zeroGDriftX) || 0;
+          dy = Number(client.player.zeroGDriftY) || 0;
+        }
 
-        const speed = getPlayerSpeed(client.player);
+        const speed = getPlayerSpeed(client.player) * (inZeroG ? ZERO_G_DRIFT_SPEED_MULTIPLIER : 1);
         const nextX = client.player.x + dx * speed * dt;
         const nextY = client.player.y + dy * speed * dt;
 
@@ -2627,6 +2642,8 @@ function simulate() {
         client.player.facing = Math.atan2(dy, dx);
         client.player.moving = true;
       } else {
+        client.player.zeroGDriftX = 0;
+        client.player.zeroGDriftY = 0;
         client.player.moving = false;
         client.player._stillAccumulator = (client.player._stillAccumulator || 0) + dt;
       }

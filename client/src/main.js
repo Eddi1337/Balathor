@@ -2050,6 +2050,21 @@ function getEffectiveWorldZoom(player = state.players.get(state.selfId)) {
   return baseZoom * (selfIsInPilotSeat(player) ? 0.7 : 1);
 }
 
+function sciFiFeatureAtClient(x, y, kind = null) {
+  if (!isSciFiWorld()) return null;
+  for (const obj of state.spaceObjects.values()) {
+    if (!obj || (kind && obj.kind !== kind)) continue;
+    const w = Math.max(1, Number(obj.w || 1));
+    const h = Math.max(1, Number(obj.h || 1));
+    const minX = Number(obj.x) - Math.floor(w / 2);
+    const minY = Number(obj.y) - Math.floor(h / 2);
+    if (x >= minX && x < minX + w && y >= minY && y < minY + h) {
+      return obj;
+    }
+  }
+  return null;
+}
+
 function predictLocalPlayer(player, dt) {
   const speed = Number.isFinite(player.moveSpeed) ? player.moveSpeed : CLIENT_PLAYER_SPEED;
 
@@ -2131,16 +2146,30 @@ function predictLocalPlayer(player, dt) {
   let dx = Number(state.input.right) - Number(state.input.left);
   let dy = Number(state.input.down) - Number(state.input.up);
   const length = Math.hypot(dx, dy);
+  const inZeroG = Boolean(sciFiFeatureAtClient(Math.round(player.renderX), Math.round(player.renderY), "station-plaza"));
 
-  if (length === 0) {
+  if (inZeroG && length > 0) {
+    player.zeroGDriftX = dx / length;
+    player.zeroGDriftY = dy / length;
+  }
+
+  if (length === 0 && (!inZeroG || Math.hypot(Number(player.zeroGDriftX) || 0, Number(player.zeroGDriftY) || 0) === 0)) {
+    player.zeroGDriftX = 0;
+    player.zeroGDriftY = 0;
     player.renderMoving = false;
     return false;
   }
 
-  dx /= length;
-  dy /= length;
-  const stepX = dx * speed * dt;
-  const stepY = dy * speed * dt;
+  if (length > 0) {
+    dx /= length;
+    dy /= length;
+  } else {
+    dx = Number(player.zeroGDriftX) || 0;
+    dy = Number(player.zeroGDriftY) || 0;
+  }
+  const stepSpeed = speed * (inZeroG ? 0.74 : 1);
+  const stepX = dx * stepSpeed * dt;
+  const stepY = dy * stepSpeed * dt;
 
   const moved = clientTryFootMove(player.renderX, player.renderY, stepX, stepY);
   if (!moved.moved) {
@@ -4594,14 +4623,14 @@ function refreshWorldHoverTooltip(event) {
     let bestStationObject = null;
     let bestStationDist = Infinity;
     for (const obj of state.spaceObjects.values()) {
-      if (!obj || (obj.kind !== "ship-port" && obj.kind !== "ship-console" && obj.kind !== "sci-shop" && obj.kind !== "sci-shop-terminal" && obj.kind !== "station-kiosk")) {
+      if (!obj || !isSciFiHoverLabelObject(obj)) {
         continue;
       }
       const { x: ax, y: ay } = stationObjectInteractionAnchor(obj);
       if (!Number.isFinite(ax) || !Number.isFinite(ay)) {
         continue;
       }
-      const reach = obj.kind === "ship-console" || obj.kind === "sci-shop-terminal" ? 1.6 : obj.kind === "ship-port" ? 1.8 : 1.9;
+      const reach = stationObjectHoverReach(obj);
       const dist = Math.hypot(world.x - ax, world.y - ay);
       if (dist <= reach && dist < bestStationDist) {
         bestStationDist = dist;
@@ -4609,22 +4638,7 @@ function refreshWorldHoverTooltip(event) {
       }
     }
     if (bestStationObject) {
-      if (bestStationObject.kind === "ship-console") {
-        state.hoverTooltipText = "Ship terminal - summon or board";
-      } else if (bestStationObject.kind === "ship-port") {
-        state.hoverTooltipText = "Docking port";
-      } else {
-        const labels = {
-          ship: "Shipyard kiosk",
-          arms: "Armory kiosk",
-          stims: "Medical kiosk",
-          parts: "Parts kiosk",
-          trade: "Bazaar kiosk",
-          pub: "Lounge kiosk"
-        };
-        const terminal = bestStationObject.kind === "sci-shop-terminal" ? "terminal" : "shop";
-        state.hoverTooltipText = `${labels[bestStationObject.shopType] || "Station shop"} ${terminal} - open`;
-      }
+      state.hoverTooltipText = sciFiHoverLabel(bestStationObject);
       state.hoverTooltipSmall = true;
       return;
     }
@@ -4680,6 +4694,60 @@ function refreshWorldHoverTooltip(event) {
     state.hoverTooltipText = "House chest";
     state.hoverTooltipSmall = false;
   }
+}
+
+function isSciFiHoverLabelObject(obj) {
+  return Boolean(obj && [
+    "ship-port",
+    "ship-console",
+    "sci-shop",
+    "sci-shop-terminal",
+    "station-kiosk",
+    "station-plaza",
+    "station-core",
+    "command",
+    "station-module",
+    "defense-turret",
+    "orbital-cannon"
+  ].includes(obj.kind));
+}
+
+function stationObjectHoverReach(obj) {
+  if (!obj) return 1.4;
+  if (obj.kind === "ship-console" || obj.kind === "sci-shop-terminal") return 1.6;
+  if (obj.kind === "ship-port") return 2.1;
+  if (obj.kind === "station-plaza") return 5.8;
+  if (obj.kind === "station-core") return 4.2;
+  if (obj.kind === "defense-turret" || obj.kind === "orbital-cannon") return 2.1;
+  const w = Math.max(1, Number(obj.w) || 1);
+  const h = Math.max(1, Number(obj.h) || 1);
+  return Math.max(1.9, Math.min(6, Math.max(w, h) * 0.38));
+}
+
+function sciFiHoverLabel(obj) {
+  if (!obj) return "";
+  if (obj.kind === "ship-console") return "Ship terminal - summon or board";
+  if (obj.kind === "ship-port") return "Docking port - board and dock ships";
+  if (obj.kind === "station-plaza") return "Zero-G Concourse - drift keeps your last direction";
+  if (obj.kind === "station-core") return "Prismatic Reactor - station power core";
+  if (obj.kind === "command") return `${obj.name || "Command Deck"} - station operations`;
+  if (obj.kind === "station-module") return `${obj.name || "Station module"} - station facility`;
+  if (obj.kind === "defense-turret") return `${obj.name || "Defense Turret"} - automated pirate defense`;
+  if (obj.kind === "orbital-cannon") return `${obj.name || "Orbital Cannon"} - heavy station defense`;
+  const labels = {
+    ship: "Shipyard kiosk",
+    arms: "Armory kiosk",
+    stims: "Medical kiosk",
+    parts: "Parts kiosk",
+    trade: "Bazaar kiosk",
+    pub: "Lounge kiosk"
+  };
+  if (obj.kind === "station-kiosk") return `${labels[obj.shopType] || obj.name || "Station kiosk"} - open`;
+  if (obj.kind === "sci-shop" || obj.kind === "sci-shop-terminal") {
+    const terminal = obj.kind === "sci-shop-terminal" ? "terminal" : "shop";
+    return `${labels[obj.shopType] || obj.shopName || obj.name || "Station shop"} ${terminal} - open`;
+  }
+  return obj.name || "Station object";
 }
 
 function tryClickHouseHomeTree(wx, wy) {
@@ -7471,38 +7539,38 @@ function drawCorridorObject(obj, sx, sy) {
   const y = sy - h / 2;
   ctx.save();
   const longHorizontal = w >= h;
-  ctx.fillStyle = "rgba(10, 18, 30, 0.96)";
+  ctx.fillStyle = "rgba(10, 18, 30, 0.58)";
   ctx.fillRect(x, y, w, h);
-  ctx.fillStyle = "rgba(34, 48, 72, 0.96)";
+  ctx.fillStyle = "rgba(34, 48, 72, 0.48)";
   ctx.fillRect(x + 4, y + 4, w - 8, h - 8);
-  ctx.fillStyle = "rgba(103, 240, 255, 0.14)";
+  ctx.fillStyle = "rgba(103, 240, 255, 0.08)";
   ctx.fillRect(x + 6, y + 6, w - 12, h - 12);
-  ctx.fillStyle = "rgba(8, 14, 22, 0.95)";
+  ctx.fillStyle = "rgba(8, 14, 22, 0.58)";
   if (longHorizontal) {
     ctx.fillRect(x + 10, y + h * 0.38, w - 20, h * 0.24);
-    ctx.fillStyle = "rgba(103, 240, 255, 0.22)";
+    ctx.fillStyle = "rgba(103, 240, 255, 0.13)";
     ctx.fillRect(x + 10, y + h * 0.46, w - 20, 3);
-    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    ctx.fillStyle = "rgba(255,255,255,0.045)";
     for (let i = 0; i < Math.max(3, Math.round(w / 60)); i += 1) {
       const px = x + 10 + i * (w - 20) / Math.max(1, Math.round(w / 60));
       ctx.fillRect(px, y + 6, 4, h - 12);
     }
   } else {
     ctx.fillRect(x + w * 0.38, y + 10, w * 0.24, h - 20);
-    ctx.fillStyle = "rgba(103, 240, 255, 0.22)";
+    ctx.fillStyle = "rgba(103, 240, 255, 0.13)";
     ctx.fillRect(x + w * 0.46, y + 10, 3, h - 20);
-    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    ctx.fillStyle = "rgba(255,255,255,0.045)";
     for (let i = 0; i < Math.max(2, Math.round(h / 60)); i += 1) {
       const py = y + 10 + i * (h - 20) / Math.max(1, Math.round(h / 60));
       ctx.fillRect(x + 6, py, w - 12, 4);
     }
   }
-  ctx.fillStyle = "rgba(255,255,255,0.18)";
+  ctx.fillStyle = "rgba(255,255,255,0.10)";
   ctx.fillRect(x + 8, y + 8, 8, 2);
-  ctx.fillStyle = "rgba(103,240,255,0.36)";
+  ctx.fillStyle = "rgba(103,240,255,0.20)";
   ctx.fillRect(x + w - 14, y + h - 14, 6, 6);
-  ctx.strokeStyle = "rgba(103,240,255,0.32)";
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(103,240,255,0.18)";
+  ctx.lineWidth = 1;
   ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
   ctx.restore();
 }
