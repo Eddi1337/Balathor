@@ -124,36 +124,10 @@ function terminalPoint(shop) {
 function buildPortFeatures(out) {
   for (const port of SCI_FI_DOCK_PORTS) {
     const vertical = port.facing === "north" || port.facing === "south";
-    const portW = vertical ? 7 : 5;
-    const portH = vertical ? 5 : 7;
-    const bridgeX =
-      port.facing === "west"
-        ? CX - HALF_W - 1
-        : port.facing === "east"
-          ? CX + HALF_W + 1
-          : port.x;
-    const bridgeY =
-      port.facing === "north"
-        ? CY - HALF_H - 1
-        : port.facing === "south"
-          ? CY + HALF_H + 1
-          : port.y;
-
-    pushFeature(out, {
-      id: `${port.id}_port`,
-      name: "Docking Port",
-      kind: "ship-port",
-      portId: port.id,
-      x: bridgeX,
-      y: bridgeY,
-      w: portW,
-      h: portH,
-      facing: port.facing
-    });
 
     pushFeature(out, {
       id: `${port.id}_console`,
-      name: "Ship Call Terminal",
+      name: "Ship Access Terminal",
       kind: "ship-console",
       portId: port.id,
       x: port.terminalX,

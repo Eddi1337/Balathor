@@ -1268,9 +1268,7 @@ function serializeShip(ship) {
     maxShields,
     shieldFacing: normalizeShieldFacing(ship.shieldFacing || Object.values(shieldSections)[0]),
     shieldSections,
-    docking: ship.docking && typeof ship.docking.portId === "string"
-      ? { portId: ship.docking.portId }
-      : null
+    docking: null
   };
 }
 
@@ -2447,51 +2445,7 @@ function simulate() {
     if (shipPilot) {
       const ship = client.player.ship;
       client.player._stillAccumulator = 0;
-
-      // Auto-dock animation takes priority over pilot input.
-      if (ship.docking && typeof ship.docking.portId === "string") {
-        const dockPort = sciFiDockPortById(ship.docking.portId);
-        if (!dockPort) {
-          ship.docking = null;
-        } else {
-          const center = shipCenter(ship);
-          const targetX = dockPort.x;
-          const targetY = dockPort.y;
-          const dxd = targetX - center.x;
-          const dyd = targetY - center.y;
-          const dist = Math.hypot(dxd, dyd);
-          const dockSpeed = Math.max(1.5, getPlayerSpeed(client.player) * 0.4);
-          if (dist <= dockSpeed * dt + 0.2) {
-            ship.worldX = targetX;
-            ship.worldY = targetY;
-            ship.docking = null;
-            client.player.facing = facingForDockPort(dockPort);
-            dockPlayerShipAtStation(client, dockPort);
-            continue;
-          }
-          const stepX = (dxd / dist) * dockSpeed * dt;
-          const stepY = (dyd / dist) * dockSpeed * dt;
-          const prevShipX = Number.isFinite(ship.worldX) ? ship.worldX : center.x;
-          const prevShipY = Number.isFinite(ship.worldY) ? ship.worldY : center.y;
-          ship.worldX = center.x + stepX;
-          ship.worldY = center.y + stepY;
-          client.player.facing = Math.atan2(dyd, dxd);
-          const shipDx = ship.worldX - prevShipX;
-          const shipDy = ship.worldY - prevShipY;
-          for (const passengerClient of clients.values()) {
-            const passenger = passengerClient.player;
-            if (!passenger || passenger.aboardShipId !== ship.id) continue;
-            passenger.x += shipDx;
-            passenger.y += shipDy;
-          }
-          const seatStation = getShipLayout(ship).stations.find((candidate) => candidate.id === ship.stationId) || getShipLayout(ship).stations[0];
-          const seat = shipStationWorld(ship, seatStation);
-          client.player.x = seat.x;
-          client.player.y = seat.y;
-          client.player.moving = true;
-          continue;
-        }
-      }
+      ship.docking = null;
 
       // WASD sets the ship's facing direction
       const dx = Number(input.right) - Number(input.left);
@@ -4794,23 +4748,9 @@ function handleTravelToPlanet(client, message = {}) {
 }
 
 function handleShipDockRequest(client) {
-  const ship = client.player?.ship;
-  if (!ship?.boarded || !isPilotShipRole(ship.stationRole)) {
-    send(client, { type: "serverMessage", message: "ship_dock_not_piloting" });
-    return;
+  if (client.player?.ship) {
+    client.player.ship.docking = null;
   }
-  if (ship.docking) {
-    return; // Already docking
-  }
-  const center = shipCenter(ship);
-  const port = findNearestSciFiDockPort(center.x, center.y, SHIP_DOCK_PROMPT_RANGE);
-  if (!port) {
-    send(client, { type: "serverMessage", message: "ship_dock_not_nearby" });
-    return;
-  }
-  ship.docking = { portId: port.id, startedAt: Date.now() };
-  send(client, { type: "serverMessage", message: "ship_dock_engaged" });
-  broadcastSnapshot();
 }
 
 function handleShipTerminalInteract(client, message = {}) {

@@ -2967,15 +2967,6 @@ function wireUi() {
         if (active) sendInteract();
         return;
       }
-      // If we're showing the contextual "Dock" action and the player tapped it, fire the dock request once.
-      if (active && shipEngageEl.dataset.dockAction === "dock") {
-        send({ type: "shipDockRequest" });
-        return;
-      }
-      // Ignore presses while a docking animation is in progress.
-      if (shipEngageEl.dataset.dockAction === "docking") {
-        return;
-      }
       state.input.engage = Boolean(active && isPilotShipRole(role));
       state.input.fire = Boolean(active && role === "gunner");
       state.input.repair = Boolean(active && role === "engineer");
@@ -3404,12 +3395,6 @@ function wireUi() {
       event.preventDefault();
       if (isSelfOnShip()) {
         const role = selfShipStationRole();
-        const self = state.players.get(state.selfId);
-        if (isPilotShipRole(role) && self?.ship && !self.ship.docking && isShipNearAnyDockPort(self.ship)) {
-          send({ type: "shipDockRequest" });
-          return;
-        }
-        if (self?.ship?.docking) return;
         state.input.engage = Boolean(isPilotShipRole(role) || (isSelfFlyingShip() && !role));
         state.input.fire = Boolean(role === "gunner");
         state.input.repair = Boolean(role === "engineer");
@@ -3794,21 +3779,15 @@ function renderAbilityBar() {
     const button = document.getElementById("shipEngageBtn");
     const key = engageEl.querySelector(".ship-engage-key");
     const role = selfShipStationRole();
-    const pilotNearDock = isPilotShipRole(role) && self.ship && isShipNearAnyDockPort(self.ship);
-    const docking = isPilotShipRole(role) && Boolean(self.ship?.docking?.portId);
     if (button) {
-      button.dataset.dockAction = docking ? "docking" : pilotNearDock ? "dock" : "";
+      button.dataset.dockAction = "";
       button.textContent = role === "gunner"
         ? "Fire"
         : role === "engineer"
           ? "Repair"
-          : docking
-            ? "Docking…"
-            : pilotNearDock
-              ? "Dock"
-              : isPilotShipRole(role) || !self.ship?.deckMode
-                ? "Engage"
-                : "Station";
+          : isPilotShipRole(role) || !self.ship?.deckMode
+            ? "Engage"
+            : "Station";
     }
     if (key) {
       key.textContent = role ? "Space" : "E";
@@ -4743,7 +4722,6 @@ function isSciFiHoverLabelObject(obj) {
 function stationObjectHoverReach(obj) {
   if (!obj) return 1.4;
   if (obj.kind === "ship-console" || obj.kind === "sci-shop-terminal") return 1.6;
-  if (obj.kind === "ship-port") return 2.1;
   if (obj.kind === "station-plaza") return 5.8;
   if (obj.kind === "station-core") return 4.2;
   if (obj.kind === "defense-turret" || obj.kind === "orbital-cannon") return 2.1;
@@ -4755,7 +4733,6 @@ function stationObjectHoverReach(obj) {
 function sciFiHoverLabel(obj) {
   if (!obj) return "";
   if (obj.kind === "ship-console") return "Ship terminal - summon or board";
-  if (obj.kind === "ship-port") return "Docking port - board and dock ships";
   if (obj.kind === "station-plaza") return "Zero-G Concourse - drift keeps your last direction";
   if (obj.kind === "station-core") return "Prismatic Reactor - station power core";
   if (obj.kind === "command") return `${obj.name || "Command Deck"} - station operations`;
@@ -4905,14 +4882,14 @@ function tryDockPortClickInteract(event) {
   let best = null;
   let bestDist = Infinity;
   for (const obj of state.spaceObjects.values()) {
-    if (!obj || (obj.kind !== "ship-port" && obj.kind !== "ship-console" && obj.kind !== "sci-shop" && obj.kind !== "sci-shop-terminal" && obj.kind !== "station-kiosk")) {
+    if (!obj || (obj.kind !== "ship-console" && obj.kind !== "sci-shop" && obj.kind !== "sci-shop-terminal" && obj.kind !== "station-kiosk")) {
       continue;
     }
     const { x: ax, y: ay } = stationObjectInteractionAnchor(obj);
     if (!Number.isFinite(ax) || !Number.isFinite(ay)) {
       continue;
     }
-    const clickReach = obj.kind === "ship-console" || obj.kind === "sci-shop-terminal" ? 1.55 : obj.kind === "ship-port" ? 1.85 : 1.9;
+    const clickReach = obj.kind === "ship-console" || obj.kind === "sci-shop-terminal" ? 1.55 : 1.9;
     const d = Math.hypot(world.x - ax, world.y - ay);
     if (d <= clickReach && d < bestDist) {
       bestDist = d;
@@ -6262,9 +6239,7 @@ function renderShipTerminal() {
 
   const terminal = state.shipTerminal;
   shipTerminalTitle.textContent = `${terminal.stationName || "Station"} — Ship Terminal`;
-  shipTerminalPort.textContent = terminal.port?.id
-    ? `Linked dock: ${terminal.port.id.replace(/^rf_/, "").replaceAll("_", " ").toUpperCase()}`
-    : "Linked dock: unknown";
+  shipTerminalPort.textContent = "Station ship access";
   shipTerminalList.replaceChildren();
 
   if (!terminal.ships.length) {
@@ -6295,7 +6270,7 @@ function renderShipTerminal() {
     const status = ship.boarded
       ? "In flight"
       : ship.atTerminalPort
-        ? "At this dock"
+        ? "Ready"
         : "Stored";
     stats.textContent = [
       ship.hullClass || "ship",
