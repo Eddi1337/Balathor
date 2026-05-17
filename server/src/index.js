@@ -2437,6 +2437,15 @@ function simulate() {
           client.player.moving = false;
         }
       }
+    } else if (client.player._caravanRiding) {
+      // While riding a caravan the server drives the player position. Input is ignored.
+      const dx = Number(input.right) - Number(input.left);
+      const dy = Number(input.down) - Number(input.up);
+      // Tapping any direction key is treated as a disembark request, so players
+      // don't get stuck if they stop reading chat hints.
+      if (Math.hypot(dx, dy) > 0.5) {
+        handleCaravanDisembark(client);
+      }
     } else {
       let dx = Number(input.right) - Number(input.left);
       let dy = Number(input.down) - Number(input.up);
@@ -2497,6 +2506,7 @@ function simulate() {
     }
   });
   updateMobs(dt, computePlayerViewBoundsArray(CHAT_VIEW_MARGIN_TILES + MOB_ACTIVITY_MARGIN_TILES));
+  updateCaravans(dt);
 
   processConsecrationZones(Date.now());
 
@@ -2997,6 +3007,16 @@ function handleMessage(client, raw) {
 
   if (message.type === "travelToPlanet") {
     handleTravelToPlanet(client, message);
+    return;
+  }
+
+  if (message.type === "caravanRide") {
+    handleCaravanRide(client, message);
+    return;
+  }
+
+  if (message.type === "caravanDisembark") {
+    handleCaravanDisembark(client);
     return;
   }
 
@@ -5889,6 +5909,8 @@ function broadcastSnapshot() {
       }
     });
 
+    const caravansForViewer = viewerWorld === "fantasy" ? getCaravansSnapshotForViewer(view) : [];
+
     send(client, {
       type: "snapshot",
       serverTime: Date.now(),
@@ -5898,6 +5920,7 @@ function broadcastSnapshot() {
       players: playersVisible,
       npcs,
       mobs,
+      caravans: caravansForViewer,
       chests: visibleChests,
       groundItems: visibleGround,
       party: social ? social.getPartyView(client) : null
@@ -6890,6 +6913,221 @@ function findOpenMobHome(x, y, fallbackX, fallbackY) {
   }
 
   return { x: fallbackX, y: fallbackY };
+}
+
+// ── Caravan system ─────────────────────────────────────────────────────────
+// Wagons that ferry players between hub towns. Pay the fare and you ride on
+// the back; the caravan moves itself, dragging you to the destination.
+
+const CARAVAN_DEFINITIONS = [
+  {
+    id: "caravan_oasis",
+    name: "Oasis Caravan",
+    fromName: "Hub",
+    toName: "Oasis Keep",
+    fare: 25,
+    speed: 2.6,
+    color: "#d4a55b",
+    route: [{ x: 0, y: -30 }, { x: 240, y: 220 }, { x: 560, y: 480 }]
+  },
+  {
+    id: "caravan_frost",
+    name: "Frost Caravan",
+    fromName: "Hub",
+    toName: "Frost Keep",
+    fare: 25,
+    speed: 2.6,
+    color: "#9ee7ff",
+    route: [{ x: 0, y: -30 }, { x: -240, y: -200 }, { x: -560, y: -420 }]
+  },
+  {
+    id: "caravan_ember",
+    name: "Ember Caravan",
+    fromName: "Hub",
+    toName: "Ember Citadel",
+    fare: 30,
+    speed: 2.6,
+    color: "#ff8f4a",
+    route: [{ x: 0, y: -30 }, { x: 240, y: -220 }, { x: 540, y: -470 }]
+  }
+];
+
+const caravans = CARAVAN_DEFINITIONS.map((def) => ({
+  ...def,
+  x: def.route[0].x,
+  y: def.route[0].y,
+  facing: 0,
+  targetIndex: 1,
+  paused: true,
+  pauseUntil: Date.now() + 3000,
+  passengers: new Set()
+}));
+
+function getCaravanById(id) {
+  return caravans.find((c) => c.id === id) || null;
+}
+
+function caravanIsAtEndpoint(caravan) {
+  return caravan.targetIndex === 0 || caravan.targetIndex === caravan.route.length - 1;
+}
+
+function disembarkAllCaravanPassengers(caravan, opts = {}) {
+  if (!caravan.passengers.size) return;
+  for (const pid of caravan.passengers) {
+    const player = getPlayerById(pid);
+    if (!player) continue;
+    player._caravanRiding = null;
+    // Step off to the side so two passengers don't stack.
+    player.x = caravan.x + 1.4;
+    player.y = caravan.y + 0.8;
+    player.moving = false;
+    const client = findClientByPlayerIdInternal(pid);
+    if (client) {
+      send(client, {
+        type: "serverMessage",
+        message: opts.arrived ? "caravan_arrived" : "caravan_disembarked",
+        caravanName: caravan.name,
+        destination: opts.destinationName
+      });
+      saveClientCharacter(client);
+    }
+  }
+  caravan.passengers.clear();
+}
+
+function findClientByPlayerIdInternal(playerId) {
+  for (const c of clients.values()) {
+    if (c.player?.id === playerId) return c;
+  }
+  return null;
+}
+
+function updateCaravans(dt) {
+  const now = Date.now();
+  for (const caravan of caravans) {
+    if (caravan.paused) {
+      if (now >= caravan.pauseUntil) {
+        caravan.paused = false;
+      } else {
+        continue;
+      }
+    }
+    const target = caravan.route[caravan.targetIndex];
+    if (!target) continue;
+    const dx = target.x - caravan.x;
+    const dy = target.y - caravan.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 0.4) {
+      caravan.x = target.x;
+      caravan.y = target.y;
+      // If we just rolled into an endpoint, drop off everyone and rest.
+      if (caravanIsAtEndpoint(caravan)) {
+        const destinationName = caravan.targetIndex === 0 ? caravan.fromName : caravan.toName;
+        disembarkAllCaravanPassengers(caravan, { arrived: true, destinationName });
+        caravan.paused = true;
+        caravan.pauseUntil = now + 9000;
+      }
+      caravan.targetIndex = caravan.targetIndex === caravan.route.length - 1
+        ? caravan.route.length - 2
+        : caravan.targetIndex === 0 ? 1 : caravan.targetIndex + 1;
+      continue;
+    }
+    const step = caravan.speed * dt;
+    const mx = (dx / dist) * step;
+    const my = (dy / dist) * step;
+    caravan.x += mx;
+    caravan.y += my;
+    caravan.facing = Math.atan2(dy, dx);
+    for (const pid of caravan.passengers) {
+      const passenger = getPlayerById(pid);
+      if (!passenger) continue;
+      passenger.x += mx;
+      passenger.y += my;
+      passenger.facing = caravan.facing;
+      passenger.moving = true;
+    }
+  }
+}
+
+function handleCaravanRide(client, message = {}) {
+  const player = client.player;
+  if (!player) return;
+  const caravan = getCaravanById(typeof message.caravanId === "string" ? message.caravanId : "");
+  if (!caravan) {
+    send(client, { type: "serverMessage", message: "caravan_unknown" });
+    return;
+  }
+  if (caravan.passengers.has(player.id)) return;
+  if (worldForPosition(player.x, player.y) !== "fantasy") {
+    send(client, { type: "serverMessage", message: "caravan_unknown" });
+    return;
+  }
+  const dist = Math.hypot(caravan.x - player.x, caravan.y - player.y);
+  if (dist > 4) {
+    send(client, { type: "serverMessage", message: "caravan_too_far" });
+    return;
+  }
+  const fare = Math.max(0, Number(caravan.fare) || 0);
+  if (!player.isMod && (player.gold || 0) < fare) {
+    send(client, { type: "serverMessage", message: "caravan_too_poor", fare });
+    return;
+  }
+  if (!player.isMod && fare > 0) {
+    player.gold = Math.max(0, (player.gold || 0) - fare);
+  }
+  caravan.passengers.add(player.id);
+  player._caravanRiding = caravan.id;
+  player.x = caravan.x;
+  player.y = caravan.y + 0.6;
+  player.facing = caravan.facing;
+  player.moving = false;
+  saveClientCharacter(client);
+  send(client, {
+    type: "serverMessage",
+    message: "caravan_boarded",
+    caravanName: caravan.name,
+    fare,
+    destination: caravan.targetIndex === 0 ? caravan.fromName : caravan.toName
+  });
+  broadcastSnapshot();
+}
+
+function handleCaravanDisembark(client) {
+  const player = client.player;
+  if (!player?._caravanRiding) return;
+  const caravan = getCaravanById(player._caravanRiding);
+  if (caravan) {
+    caravan.passengers.delete(player.id);
+    player.x = caravan.x + 1.4;
+    player.y = caravan.y + 0.8;
+    send(client, { type: "serverMessage", message: "caravan_disembarked", caravanName: caravan.name });
+  }
+  player._caravanRiding = null;
+  saveClientCharacter(client);
+  broadcastSnapshot();
+}
+
+function getCaravansSnapshotForViewer(view) {
+  const out = [];
+  for (const caravan of caravans) {
+    if (Math.abs(caravan.x - view.x) > view.halfW + 12) continue;
+    if (Math.abs(caravan.y - view.y) > view.halfH + 12) continue;
+    out.push({
+      id: caravan.id,
+      name: caravan.name,
+      color: caravan.color || "#d4a55b",
+      fare: caravan.fare,
+      fromName: caravan.fromName,
+      toName: caravan.toName,
+      destinationName: caravan.targetIndex === 0 ? caravan.fromName : caravan.toName,
+      x: Number(caravan.x.toFixed(3)),
+      y: Number(caravan.y.toFixed(3)),
+      facing: Number((caravan.facing || 0).toFixed(3)),
+      moving: !caravan.paused,
+      passengers: caravan.passengers.size
+    });
+  }
+  return out;
 }
 
 function updateMobs(dt, boundsArray) {

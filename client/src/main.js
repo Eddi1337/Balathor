@@ -684,6 +684,7 @@ const state = {
   players: new Map(),
   npcs: new Map(),
   mobs: new Map(),
+  caravans: new Map(),
   chests: [],
   groundItems: [],
   inventory: Array(10).fill(null),
@@ -1241,6 +1242,7 @@ function handleServerMessage(message) {
     applySnapshot(message.players);
     applyNpcSnapshot(message.npcs || []);
     applyMobSnapshot(message.mobs || []);
+    applyCaravanSnapshot(message.caravans || []);
     applyPartySnapshot(message.party ?? null);
     state.chests = message.chests || [];
     state.groundItems = message.groundItems || [];
@@ -1482,6 +1484,18 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: "Board your ship before travelling to a planet" });
     } else if (message.message === "planet_travel_unknown") {
       appendChat({ kind: "system", name: "Realm", text: "Unknown planet" });
+    } else if (message.message === "caravan_boarded") {
+      appendChat({ kind: "system", name: "Realm", text: `Boarded ${message.caravanName || "caravan"} (${message.fare ?? 0}g) — bound for ${message.destination || "town"}. Tap a movement key to hop off.` });
+    } else if (message.message === "caravan_arrived") {
+      appendChat({ kind: "system", name: "Realm", text: `Arrived at ${message.destination || "town"} aboard ${message.caravanName || "caravan"}` });
+    } else if (message.message === "caravan_disembarked") {
+      appendChat({ kind: "system", name: "Realm", text: `Got off ${message.caravanName || "caravan"}` });
+    } else if (message.message === "caravan_too_far") {
+      appendChat({ kind: "system", name: "Realm", text: "Move closer to the caravan" });
+    } else if (message.message === "caravan_too_poor") {
+      appendChat({ kind: "system", name: "Realm", text: `Caravan fare is ${message.fare || 0}g — you can't afford it.` });
+    } else if (message.message === "caravan_unknown") {
+      appendChat({ kind: "system", name: "Realm", text: "That caravan isn't here" });
     } else if (message.message === "ship_station_entered") {
       appendChat({ kind: "system", name: "Realm", text: `Entered ${message.stationName || "ship station"}` });
     } else if (message.message === "ship_station_left") {
@@ -1794,6 +1808,23 @@ function applyMobSnapshot(snapshotMobs) {
     if (!seen.has(id)) {
       state.mobs.delete(id);
     }
+  }
+}
+
+function applyCaravanSnapshot(snapshotCaravans) {
+  const seen = new Set();
+  for (const snap of snapshotCaravans) {
+    seen.add(snap.id);
+    let caravan = state.caravans.get(snap.id);
+    if (!caravan) {
+      caravan = { ...snap, renderX: snap.x, renderY: snap.y };
+      state.caravans.set(snap.id, caravan);
+      continue;
+    }
+    Object.assign(caravan, snap);
+  }
+  for (const [id] of state.caravans) {
+    if (!seen.has(id)) state.caravans.delete(id);
   }
 }
 
@@ -2327,8 +2358,8 @@ function tryOpenNpcContextMenuFromCanvas(event, worldX, worldY) {
   let best = null;
   let bestDist = NPC_CTX_HIT_RADIUS;
   for (const npc of state.npcs.values()) {
-    // Only NPCs that actively approach the player are clickable.
-    if (!npc.wandersToPlayer && !npc.bondTag && !npc.wandersToFlirt) continue;
+    // Quest givers + active approachers are all clickable.
+    if (!npc.wandersToPlayer && !npc.bondTag && !npc.wandersToFlirt && !npc.questGiver) continue;
     const nx = Number.isFinite(npc.renderX) ? npc.renderX : npc.x;
     const ny = Number.isFinite(npc.renderY) ? npc.renderY : npc.y;
     const d = Math.hypot(nx - worldX, ny - worldY);
@@ -2341,6 +2372,11 @@ function tryOpenNpcContextMenuFromCanvas(event, worldX, worldY) {
   event.preventDefault();
   event.stopPropagation();
   hidePlayerContextMenu();
+  // Pure quest givers (no romance / hawker behaviour) open the quest dialog directly.
+  if (best.questGiver && !best.bondTag && !best.wandersToFlirt && !best.wandersToPlayer) {
+    send({ type: "questNpc", npcId: best.id });
+    return true;
+  }
   showNpcContextMenu(best);
   return true;
 }
@@ -3151,6 +3187,9 @@ function wireUi() {
       return;
     }
     if (tryTravelToPlanetAtClick(world.x, world.y)) {
+      return;
+    }
+    if (tryRideCaravanAtClick(world.x, world.y)) {
       return;
     }
     if (!playerAttackBlockedBySafeZone()) {
@@ -6634,6 +6673,7 @@ function draw() {
 
   drawWorld();
   drawPortals();
+  drawCaravans();
   drawPlayers();
   drawFountainTossFx(halfW, halfH);
   drawTreeCanopies();
@@ -7585,6 +7625,31 @@ function planetAtWorldPoint(wx, wy) {
     }
   }
   return best;
+}
+
+function tryRideCaravanAtClick(wx, wy) {
+  if (!state.caravans?.size) return false;
+  const self = state.players.get(state.selfId);
+  if (!self) return false;
+  if (self._caravanRiding) return false;
+  // Player has to be within 4 tiles of the caravan to ride; click within 3
+  // tiles of the wagon body to count as a "ride" click.
+  let best = null;
+  let bestDist = 3;
+  for (const caravan of state.caravans.values()) {
+    const cx = Number(caravan.x);
+    const cy = Number(caravan.y);
+    const clickDist = Math.hypot(wx - cx, wy - cy);
+    if (clickDist > bestDist) continue;
+    const selfX = Number.isFinite(self.renderX) ? self.renderX : self.x;
+    const selfY = Number.isFinite(self.renderY) ? self.renderY : self.y;
+    if (Math.hypot(cx - selfX, cy - selfY) > 4) continue;
+    bestDist = clickDist;
+    best = caravan;
+  }
+  if (!best) return false;
+  send({ type: "caravanRide", caravanId: best.id });
+  return true;
 }
 
 function tryTravelToPlanetAtClick(wx, wy) {
@@ -8782,6 +8847,89 @@ function drawQuestMarker(npc, sx, sy) {
   ctx.strokeText(mark, sx, y);
   ctx.fillText(mark, sx, y);
   ctx.restore();
+}
+
+function drawCaravans() {
+  if (!state.caravans?.size) return;
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const self = state.players.get(state.selfId);
+  const selfX = self ? (Number.isFinite(self.renderX) ? self.renderX : self.x) : 0;
+  const selfY = self ? (Number.isFinite(self.renderY) ? self.renderY : self.y) : 0;
+
+  for (const caravan of state.caravans.values()) {
+    const cx = Number(caravan.x);
+    const cy = Number(caravan.y);
+    const sx = Math.floor(cx * TILE_SIZE - state.camera.x + halfW);
+    const sy = Math.floor(cy * TILE_SIZE - state.camera.y + halfH);
+    const angle = Number(caravan.facing) || 0;
+    const color = caravan.color || "#d4a55b";
+
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(angle);
+
+    // Shadow under the wagon
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.beginPath();
+    ctx.ellipse(0, 14, 40, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Ox / draft beast pulling the cart (out front along facing direction)
+    ctx.fillStyle = "#6e4a2a";
+    ctx.fillRect(28, -8, 14, 16);
+    ctx.fillStyle = "#3a261b";
+    ctx.fillRect(42, -4, 4, 8); // head
+    ctx.fillStyle = "#1a120a";
+    ctx.fillRect(46, -5, 2, 2); ctx.fillRect(46, 3, 2, 2); // horns
+    // Yoke
+    ctx.strokeStyle = "#3a261b";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(22, 0);
+    ctx.lineTo(30, 0);
+    ctx.stroke();
+
+    // Wagon body
+    ctx.fillStyle = "#2c1b0e";
+    ctx.fillRect(-26, -14, 48, 28);
+    ctx.fillStyle = color;
+    ctx.fillRect(-22, -11, 40, 22);
+    // Plank lines for wood texture
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    for (let i = -18; i < 18; i += 6) {
+      ctx.fillRect(i, -10, 1, 20);
+    }
+    // Wheels
+    ctx.fillStyle = "#1a0e06";
+    ctx.beginPath(); ctx.arc(-16, 14, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(14, 14, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#5a3a1f";
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(-16, 14, 7, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(14, 14, 7, 0, Math.PI * 2); ctx.stroke();
+
+    // Canopy hint along top edge
+    ctx.fillStyle = "rgba(255,255,255,0.25)";
+    ctx.fillRect(-22, -13, 40, 3);
+
+    ctx.restore();
+
+    // Hover prompt — show fare and a "click to ride" hint when nearby
+    const dist = Math.hypot(cx - selfX, cy - selfY);
+    if (dist <= 4 && self && !self._caravanRiding) {
+      const label = `${caravan.name || "Caravan"}  •  Pay ${caravan.fare}g → ${caravan.destinationName || "?"}`;
+      ctx.save();
+      ctx.font = "bold 11px ui-sans-serif, system-ui";
+      ctx.textAlign = "center";
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(4,8,16,0.9)";
+      ctx.fillStyle = "#ffe6a8";
+      ctx.strokeText(label, sx, sy - 26);
+      ctx.fillText(label, sx, sy - 26);
+      ctx.restore();
+    }
+  }
 }
 
 function drawPlayers() {
