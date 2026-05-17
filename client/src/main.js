@@ -6768,6 +6768,150 @@ function drawFountainTossFx(halfW, halfH) {
   ctx.restore();
 }
 
+const SHIP_RADAR_RANGE_TILES = 180;
+
+function radarPoint(cx, cy, x, y, radius) {
+  const dx = Number(x) - cx;
+  const dy = Number(y) - cy;
+  const dist = Math.hypot(dx, dy);
+  const clamped = Math.min(dist, SHIP_RADAR_RANGE_TILES);
+  const angle = Math.atan2(dy, dx);
+  return {
+    x: Math.cos(angle) * (clamped / SHIP_RADAR_RANGE_TILES) * radius,
+    y: Math.sin(angle) * (clamped / SHIP_RADAR_RANGE_TILES) * radius,
+    edge: dist > SHIP_RADAR_RANGE_TILES
+  };
+}
+
+function drawRadarBlip(cx, cy, x, y, radius, draw) {
+  if (!Number.isFinite(Number(x)) || !Number.isFinite(Number(y))) return;
+  const p = radarPoint(cx, cy, Number(x), Number(y), radius);
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  if (p.edge) {
+    ctx.globalAlpha = 0.72;
+  }
+  draw(p);
+  ctx.restore();
+}
+
+function drawShipRadar() {
+  const self = state.players.get(state.selfId);
+  if (!self?.ship?.boarded || !isSciFiWorld()) return;
+  const center = shipCenter(self.ship, self);
+  const cx = Number(center.x);
+  const cy = Number(center.y);
+  if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;
+
+  const size = Math.max(132, Math.min(178, Math.floor(Math.min(canvas.width, canvas.height) * 0.23)));
+  const pad = 14;
+  const x = canvas.width - size - pad;
+  const y = pad;
+  const radius = size / 2 - 15;
+  const now = performance.now();
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = "rgba(3, 10, 18, 0.78)";
+  ctx.strokeStyle = "rgba(103, 240, 255, 0.55)";
+  ctx.lineWidth = 1.5;
+  roundedRect(0, 0, size, size, 8);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.translate(size / 2, size / 2 + 4);
+  ctx.strokeStyle = "rgba(103, 240, 255, 0.18)";
+  ctx.lineWidth = 1;
+  for (const rr of [0.33, 0.66, 1]) {
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * rr, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  ctx.moveTo(-radius, 0);
+  ctx.lineTo(radius, 0);
+  ctx.moveTo(0, -radius);
+  ctx.lineTo(0, radius);
+  ctx.stroke();
+
+  ctx.save();
+  ctx.rotate(Number(self.ship.facing) || 0);
+  ctx.fillStyle = "#67f0ff";
+  ctx.strokeStyle = "rgba(2, 8, 14, 0.9)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(10, 0);
+  ctx.lineTo(-7, -6);
+  ctx.lineTo(-4, 0);
+  ctx.lineTo(-7, 6);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.fill();
+  ctx.restore();
+
+  for (const obj of state.spaceObjects.values()) {
+    const kind = obj?.kind || obj?.type;
+    if (kind === "lane" || kind === "ship-port" || kind === "ship-console" || kind === "sci-shop-terminal") continue;
+    drawRadarBlip(cx, cy, obj.x, obj.y, radius, () => {
+      if (kind === "planet") {
+        ctx.fillStyle = obj.color || obj.surfacePrimary || "#8bd346";
+        ctx.beginPath();
+        ctx.arc(0, 0, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+      }
+      if (kind === "asteroid_field") {
+        ctx.fillStyle = "rgba(190, 205, 220, 0.82)";
+        ctx.fillRect(-2.5, -2.5, 5, 5);
+        return;
+      }
+      if (kind === "station" || kind === "station-core" || kind === "station-plaza") {
+        ctx.fillStyle = "#67f0ff";
+        ctx.fillRect(-4, -4, 8, 8);
+        return;
+      }
+      ctx.fillStyle = "rgba(126, 200, 255, 0.7)";
+      ctx.fillRect(-2, -2, 4, 4);
+    });
+  }
+
+  for (const mob of state.mobs.values()) {
+    if (!mob?.isShipPirate) continue;
+    drawRadarBlip(cx, cy, mob.renderX ?? mob.x, mob.renderY ?? mob.y, radius, () => {
+      const pulse = 0.75 + Math.sin(now / 180) * 0.2;
+      ctx.fillStyle = mob.isBoss ? "#ffcf6b" : `rgba(255, 107, 138, ${pulse})`;
+      ctx.beginPath();
+      ctx.moveTo(0, -5);
+      ctx.lineTo(5, 4);
+      ctx.lineTo(-5, 4);
+      ctx.closePath();
+      ctx.fill();
+    });
+  }
+
+  for (const player of state.players.values()) {
+    if (!player || player.id === state.selfId || !player.ship?.boarded) continue;
+    const pc = shipCenter(player.ship, player);
+    drawRadarBlip(cx, cy, pc.x, pc.y, radius, () => {
+      ctx.fillStyle = "#8fe388";
+      ctx.beginPath();
+      ctx.arc(0, 0, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#d8fbff";
+  ctx.font = "bold 10px ui-sans-serif, system-ui";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText("RADAR", x + 10, y + 8);
+  ctx.fillStyle = "rgba(216,251,255,0.72)";
+  ctx.font = "9px ui-sans-serif, system-ui";
+  ctx.fillText(`${SHIP_RADAR_RANGE_TILES} tiles`, x + 10, y + 22);
+  ctx.restore();
+}
+
 function draw() {
   ctx.imageSmoothingEnabled = false;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -6813,6 +6957,7 @@ function draw() {
   drawPortalTransitionOverlay();
   drawPubPassoutOverlay();
   drawIntimateBlackoutOverlay();
+  drawShipRadar();
   drawWorldHoverTooltip();
   if (state.menuOpen) {
     syncMenuSessionInfo();
@@ -7683,18 +7828,18 @@ function getShipLayout(shipOrClass = "skiff") {
       entry: { x: -7, y: 0 },
       teleporter: { x: -4, y: 0 },
       stations: [
-        { id: "captain", role: "captain", name: "Captain", x: 4, y: 0 },
-        { id: "pilot", role: "pilot", name: "Pilot", x: 6, y: -1 },
-        { id: "copilot", role: "copilot", name: "Co-Pilot", x: 6, y: 1 },
-        { id: "gunner_aft", role: "gunner", name: "Gunner", x: -6, y: 0 },
-        { id: "engineer_mid", role: "engineer", name: "Forward Engineering", x: -1, y: -2, defaultShieldFacing: "front" },
-        { id: "engineer_aux", role: "engineer", name: "Aft Engineering", x: -2, y: 2, defaultShieldFacing: "back" }
+        { id: "captain", role: "captain", name: "Captain", x: 3.2, y: 0 },
+        { id: "pilot", role: "pilot", name: "Pilot", x: 5.1, y: -1 },
+        { id: "copilot", role: "copilot", name: "Co-Pilot", x: 5.1, y: 1 },
+        { id: "gunner_aft", role: "gunner", name: "Gunner", x: -5.2, y: 0 },
+        { id: "engineer_mid", role: "engineer", name: "Forward Engineering", x: -1.2, y: -2, defaultShieldFacing: "front" },
+        { id: "engineer_aux", role: "engineer", name: "Aft Engineering", x: -1.6, y: 2, defaultShieldFacing: "back" }
       ],
       amenities: [
-        { kind: "bed", x: -6, y: -3 },
-        { kind: "bed", x: -6, y: 3 },
-        { kind: "kitchen", x: -3, y: -3 },
-        { kind: "table", x: 0, y: 3 }
+        { kind: "bed", x: -5.2, y: -2.8 },
+        { kind: "bed", x: -5.2, y: 2.8 },
+        { kind: "kitchen", x: -2.5, y: -2.8 },
+        { kind: "table", x: 0, y: 2.5 }
       ]
     };
   }
@@ -7706,14 +7851,14 @@ function getShipLayout(shipOrClass = "skiff") {
       entry: { x: -5, y: 0 },
       teleporter: { x: -3, y: 0 },
       stations: [
-        { id: "pilot", role: "pilot", name: "Pilot", x: 4, y: -1 },
-        { id: "copilot", role: "copilot", name: "Co-Pilot", x: 4, y: 1 },
-        { id: "gunner_aft", role: "gunner", name: "Gunner", x: -5, y: 0 },
-        { id: "engineer_mid", role: "engineer", name: "Engineering", x: -1, y: 0, defaultShieldFacing: "front" }
+        { id: "pilot", role: "pilot", name: "Pilot", x: 3.4, y: -1 },
+        { id: "copilot", role: "copilot", name: "Co-Pilot", x: 3.4, y: 1 },
+        { id: "gunner_aft", role: "gunner", name: "Gunner", x: -4.1, y: 0 },
+        { id: "engineer_mid", role: "engineer", name: "Engineering", x: -0.7, y: 0, defaultShieldFacing: "front" }
       ],
       amenities: [
-        { kind: "bed", x: -4, y: -2 },
-        { kind: "kitchen", x: -3, y: 2 }
+        { kind: "bed", x: -3.5, y: -2 },
+        { kind: "kitchen", x: -2.5, y: 2 }
       ]
     };
   }
@@ -8232,8 +8377,8 @@ function drawStationActiveRing(wx, wy, active, color, radius = 24) {
 }
 
 function drawPilotStation(wx, wy, active, color, isCaptain = false) {
-  const width = isCaptain ? 44 : 30;
-  const height = isCaptain ? 36 : 28;
+  const width = isCaptain ? 38 : 26;
+  const height = isCaptain ? 30 : 23;
   ctx.fillStyle = "rgba(8, 16, 28, 0.96)";
   ctx.strokeStyle = color;
   ctx.lineWidth = isCaptain ? 2.5 : 2;
@@ -8258,7 +8403,7 @@ function drawPilotStation(wx, wy, active, color, isCaptain = false) {
     ctx.beginPath();
     for (let i = 0; i < 10; i += 1) {
       const a = -Math.PI / 2 + i * (Math.PI * 2 / 10);
-      const r = i % 2 === 0 ? 7 : 3.5;
+      const r = i % 2 === 0 ? 6 : 3;
       const px = wx + Math.cos(a) * r;
       const py = wy - 8 + Math.sin(a) * r;
       if (i === 0) ctx.moveTo(px, py);
@@ -8268,64 +8413,64 @@ function drawPilotStation(wx, wy, active, color, isCaptain = false) {
     ctx.fill();
   }
 
-  drawStationActiveRing(wx, wy, active, color, isCaptain ? 28 : 22);
+  drawStationActiveRing(wx, wy, active, color, isCaptain ? 24 : 19);
 }
 
 function drawGunnerStation(wx, wy, active, color) {
   ctx.fillStyle = "rgba(12, 16, 24, 0.96)";
   ctx.strokeStyle = color;
   ctx.lineWidth = 2;
-  roundedRect(wx - 20, wy - 14, 40, 28, 5);
+  roundedRect(wx - 17, wy - 12, 34, 24, 5);
   ctx.fill();
   ctx.stroke();
 
   ctx.fillStyle = active ? color : "rgba(70, 78, 94, 0.96)";
   ctx.beginPath();
-  ctx.arc(wx - 3, wy, 8, 0, Math.PI * 2);
+  ctx.arc(wx - 3, wy, 7, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillRect(wx + 3, wy - 4, 22, 8);
+  ctx.fillRect(wx + 3, wy - 3, 18, 6);
   ctx.fillStyle = "rgba(255,255,255,0.22)";
-  ctx.fillRect(wx + 16, wy - 2, 7, 4);
+  ctx.fillRect(wx + 14, wy - 1.5, 6, 3);
 
   ctx.strokeStyle = active ? "#ffe2d5" : color;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.arc(wx - 3, wy, 13, 0, Math.PI * 2);
-  ctx.moveTo(wx - 3, wy - 17);
-  ctx.lineTo(wx - 3, wy - 10);
-  ctx.moveTo(wx - 3, wy + 10);
-  ctx.lineTo(wx - 3, wy + 17);
-  ctx.moveTo(wx - 20, wy);
-  ctx.lineTo(wx - 13, wy);
-  ctx.moveTo(wx + 7, wy);
-  ctx.lineTo(wx + 14, wy);
+  ctx.arc(wx - 3, wy, 11, 0, Math.PI * 2);
+  ctx.moveTo(wx - 3, wy - 15);
+  ctx.lineTo(wx - 3, wy - 9);
+  ctx.moveTo(wx - 3, wy + 9);
+  ctx.lineTo(wx - 3, wy + 15);
+  ctx.moveTo(wx - 17, wy);
+  ctx.lineTo(wx - 11, wy);
+  ctx.moveTo(wx + 6, wy);
+  ctx.lineTo(wx + 12, wy);
   ctx.stroke();
-  drawStationActiveRing(wx, wy, active, color, 24);
+  drawStationActiveRing(wx, wy, active, color, 20);
 }
 
 function drawEngineerStation(wx, wy, active, color, shieldFacing) {
   ctx.fillStyle = "rgba(6, 20, 22, 0.96)";
   ctx.strokeStyle = color;
   ctx.lineWidth = 2;
-  roundedRect(wx - 24, wy - 16, 48, 32, 5);
+  roundedRect(wx - 20, wy - 14, 40, 28, 5);
   ctx.fill();
   ctx.stroke();
 
   ctx.fillStyle = active ? "rgba(143,227,136,0.88)" : "rgba(39, 74, 64, 0.95)";
-  roundedRect(wx - 18, wy - 11, 36, 16, 3);
+  roundedRect(wx - 15, wy - 9, 30, 14, 3);
   ctx.fill();
   ctx.fillStyle = active ? "#06150e" : "rgba(143,227,136,0.65)";
-  ctx.fillRect(wx - 13, wy - 6, 10, 2);
-  ctx.fillRect(wx - 13, wy - 1, 22, 2);
-  ctx.fillRect(wx - 13, wy + 4, 15, 2);
+  ctx.fillRect(wx - 11, wy - 5, 9, 2);
+  ctx.fillRect(wx - 11, wy - 1, 18, 2);
+  ctx.fillRect(wx - 11, wy + 3, 13, 2);
 
   const angle = shieldFacingToAngle(shieldFacing);
   ctx.strokeStyle = active ? "#f2fff0" : color;
   ctx.lineWidth = 2.5;
   ctx.beginPath();
-  ctx.arc(wx + 12, wy + 8, 8, angle - Math.PI / 4, angle + Math.PI / 4);
+  ctx.arc(wx + 10, wy + 7, 6, angle - Math.PI / 4, angle + Math.PI / 4);
   ctx.stroke();
-  drawStationActiveRing(wx, wy, active, color, 28);
+  drawStationActiveRing(wx, wy, active, color, 23);
 }
 
 function drawShipStationObject(ship, station, wx, wy) {

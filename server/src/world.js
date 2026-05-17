@@ -235,14 +235,14 @@ function getPlanetSurfaceTile(planet, x, y) {
 
 // Safe zone around the station — no pirate spawns or aggro within this radius.
 const SCI_FI_STATION_CENTER = { x: 1920, y: 0 };
-const SCI_FI_SAFE_RADIUS = 60;
+const SCI_FI_SAFE_RADIUS = 34;
 const SCI_FI_DEFENSES = Object.freeze([
-  { id: "ringforge_turret_n", kind: "defense-turret", name: "North Defense Turret", x: SCI_FI_STATION_CENTER.x, y: SCI_FI_STATION_CENTER.y - 48, range: 96 },
-  { id: "ringforge_turret_e", kind: "defense-turret", name: "East Defense Turret", x: SCI_FI_STATION_CENTER.x + 48, y: SCI_FI_STATION_CENTER.y, range: 96 },
-  { id: "ringforge_turret_s", kind: "defense-turret", name: "South Defense Turret", x: SCI_FI_STATION_CENTER.x, y: SCI_FI_STATION_CENTER.y + 48, range: 96 },
-  { id: "ringforge_turret_w", kind: "defense-turret", name: "West Defense Turret", x: SCI_FI_STATION_CENTER.x - 48, y: SCI_FI_STATION_CENTER.y, range: 96 },
-  { id: "ringforge_cannon_alpha", kind: "orbital-cannon", name: "Orbital Cannon Alpha", x: SCI_FI_STATION_CENTER.x - 34, y: SCI_FI_STATION_CENTER.y - 34, range: 138 },
-  { id: "ringforge_cannon_beta", kind: "orbital-cannon", name: "Orbital Cannon Beta", x: SCI_FI_STATION_CENTER.x + 34, y: SCI_FI_STATION_CENTER.y + 34, range: 138 }
+  { id: "ringforge_turret_n", kind: "defense-turret", name: "North Defense Turret", x: SCI_FI_STATION_CENTER.x, y: SCI_FI_STATION_CENTER.y - 28, range: 82 },
+  { id: "ringforge_turret_e", kind: "defense-turret", name: "East Defense Turret", x: SCI_FI_STATION_CENTER.x + 28, y: SCI_FI_STATION_CENTER.y, range: 82 },
+  { id: "ringforge_turret_s", kind: "defense-turret", name: "South Defense Turret", x: SCI_FI_STATION_CENTER.x, y: SCI_FI_STATION_CENTER.y + 28, range: 82 },
+  { id: "ringforge_turret_w", kind: "defense-turret", name: "West Defense Turret", x: SCI_FI_STATION_CENTER.x - 28, y: SCI_FI_STATION_CENTER.y, range: 82 },
+  { id: "ringforge_cannon_alpha", kind: "orbital-cannon", name: "Orbital Cannon Alpha", x: SCI_FI_STATION_CENTER.x - 20, y: SCI_FI_STATION_CENTER.y - 20, range: 112 },
+  { id: "ringforge_cannon_beta", kind: "orbital-cannon", name: "Orbital Cannon Beta", x: SCI_FI_STATION_CENTER.x + 20, y: SCI_FI_STATION_CENTER.y + 20, range: 112 }
 ]);
 
 // Asteroid fields scattered around the sector. Each cluster is a circular area

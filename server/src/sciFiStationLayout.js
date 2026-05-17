@@ -9,8 +9,8 @@
 
 const CX = 1920;
 const CY = 0;
-const STATION_W = 131;
-const STATION_H = 111;
+const STATION_W = 71;
+const STATION_H = 61;
 const HALF_W = Math.floor(STATION_W / 2);
 const HALF_H = Math.floor(STATION_H / 2);
 
@@ -33,8 +33,8 @@ const SCI_FI_STATIONS = Object.freeze([
   }
 ]);
 
-const NORTH_SOUTH_DOCK_OFFSETS = Object.freeze([-52, -36, -20, -4, 12, 28, 44, 58]);
-const EAST_WEST_DOCK_OFFSETS = Object.freeze([-38, -22, -6, 10, 26, 42]);
+const NORTH_SOUTH_DOCK_OFFSETS = Object.freeze([-24, -8, 8, 24]);
+const EAST_WEST_DOCK_OFFSETS = Object.freeze([-18, 0, 18]);
 
 function buildDockPorts() {
   const out = [];
@@ -194,10 +194,10 @@ function buildStationFeatures() {
       name: "Nova Shipyard",
       keeperName: "Foreman Voss-7",
       shopType: "ship",
-      x: CX - 42,
-      y: CY - 28,
-      w: 14,
-      h: 9,
+      x: CX - 22,
+      y: CY - 15,
+      w: 10,
+      h: 7,
       entrances: [{ side: "east", width: 2 }, { side: "bottom", offset: 3, width: 2 }]
     },
     {
@@ -205,10 +205,10 @@ function buildStationFeatures() {
       name: "Photon Armory",
       keeperName: "Armorer Kade",
       shopType: "arms",
-      x: CX + 42,
-      y: CY - 28,
-      w: 14,
-      h: 9,
+      x: CX + 22,
+      y: CY - 15,
+      w: 10,
+      h: 7,
       entrances: [{ side: "west", width: 2 }, { side: "bottom", offset: -3, width: 2 }]
     },
     {
@@ -216,10 +216,10 @@ function buildStationFeatures() {
       name: "Medgel Clinic",
       keeperName: "Sera-Med Automa",
       shopType: "stims",
-      x: CX - 42,
-      y: CY + 20,
-      w: 13,
-      h: 9,
+      x: CX - 22,
+      y: CY + 12,
+      w: 10,
+      h: 7,
       entrances: [{ side: "east", offset: -1, width: 2 }, { side: "bottom", offset: 3, width: 2 }]
     },
     {
@@ -227,33 +227,11 @@ function buildStationFeatures() {
       name: "Drive Parts Depot",
       keeperName: "Tess Gearwright",
       shopType: "parts",
-      x: CX + 42,
-      y: CY + 20,
-      w: 13,
-      h: 9,
+      x: CX + 22,
+      y: CY + 12,
+      w: 10,
+      h: 7,
       entrances: [{ side: "west", offset: -1, width: 2 }, { side: "bottom", offset: -3, width: 2 }]
-    },
-    {
-      id: "rf_shop_trade",
-      name: "Alien Bazaar",
-      keeperName: "Vee'ra Coilkeeper",
-      shopType: "trade",
-      x: CX,
-      y: CY - 34,
-      w: 15,
-      h: 8,
-      entrances: [{ side: "bottom", width: 3 }, { side: "east", offset: 1, width: 2 }]
-    },
-    {
-      id: "rf_shop_outfitter",
-      name: "Exosuit Outfitter",
-      keeperName: "Rook-17 Tailor",
-      shopType: "arms",
-      x: CX,
-      y: CY + 28,
-      w: 15,
-      h: 8,
-      entrances: [{ side: "bottom", width: 3 }, { side: "west", offset: -1, width: 2 }]
     }
   ];
 
@@ -294,26 +272,24 @@ function buildStationFeatures() {
   }
 
   const shopCorridors = [
-    { id: "rf_shop_lane_n", name: "North Retail Walk", kind: "corridor", x: CX, y: CY - 28, w: 76, h: 7 },
-    { id: "rf_shop_lane_s", name: "South Retail Walk", kind: "corridor", x: CX, y: CY + 20, w: 76, h: 7 },
-    { id: "rf_shop_lane_spine", name: "Retail Spine", kind: "corridor", x: CX, y: CY - 3, w: 7, h: 61 },
-    { id: "rf_shop_lane_gate", name: "Stargate Arcade", kind: "corridor", x: CX, y: CY + 37, w: 9, h: 20 },
-    { id: "rf_shop_lane_w", name: "West Arcade", kind: "corridor", x: CX - 48, y: CY - 4, w: 9, h: 43 },
-    { id: "rf_shop_lane_e", name: "East Arcade", kind: "corridor", x: CX + 48, y: CY - 4, w: 9, h: 43 }
+    { id: "rf_shop_lane_n", name: "North Retail Walk", kind: "corridor", x: CX, y: CY - 15, w: 43, h: 5 },
+    { id: "rf_shop_lane_s", name: "South Retail Walk", kind: "corridor", x: CX, y: CY + 12, w: 43, h: 5 },
+    { id: "rf_shop_lane_spine", name: "Retail Spine", kind: "corridor", x: CX, y: CY - 1, w: 5, h: 35 },
+    { id: "rf_shop_lane_gate", name: "Stargate Arcade", kind: "corridor", x: CX, y: CY + 22, w: 7, h: 12 },
+    { id: "rf_shop_lane_w", name: "West Arcade", kind: "corridor", x: CX - 27, y: CY - 1, w: 7, h: 25 },
+    { id: "rf_shop_lane_e", name: "East Arcade", kind: "corridor", x: CX + 27, y: CY - 1, w: 7, h: 25 }
   ];
   for (const corridor of shopCorridors) {
     pushFeature(out, corridor);
   }
 
   const modules = [
-    { id: "rf_cmd", name: "Command Deck", kind: "command", x: CX, y: CY - 48, w: 15, h: 5, facing: "south" },
-    { id: "rf_observatory_s", name: "Starview Lounge", kind: "station-module", x: CX, y: CY + 48, w: 18, h: 5, facing: "north" },
-    { id: "rf_hydro_nw", name: "Hydroponics Rack", kind: "station-module", x: CX - 52, y: CY - 4, w: 6, h: 12, facing: "east" },
-    { id: "rf_hydro_ne", name: "Life Support Rack", kind: "station-module", x: CX + 52, y: CY - 4, w: 6, h: 12, facing: "west" },
-    { id: "rf_quarters_w", name: "Crew Bunks", kind: "quarters", x: CX - 22, y: CY + 42, w: 12, h: 5, facing: "north" },
-    { id: "rf_quarters_e", name: "Pilot Bunks", kind: "quarters", x: CX + 22, y: CY + 42, w: 12, h: 5, facing: "north" },
-    { id: "rf_relay_w", name: "Signal Relay", kind: "station-kiosk", shopType: "trade", x: CX - 58, y: CY + 28, w: 5, h: 5, facing: "east" },
-    { id: "rf_relay_e", name: "Signal Relay", kind: "station-kiosk", shopType: "trade", x: CX + 58, y: CY + 28, w: 5, h: 5, facing: "west" }
+    { id: "rf_cmd", name: "Command Deck", kind: "command", x: CX, y: CY - 25, w: 11, h: 4, facing: "south" },
+    { id: "rf_observatory_s", name: "Starview Lounge", kind: "station-module", x: CX, y: CY + 25, w: 12, h: 4, facing: "north" },
+    { id: "rf_hydro_nw", name: "Hydroponics Rack", kind: "station-module", x: CX - 30, y: CY - 1, w: 4, h: 8, facing: "east" },
+    { id: "rf_hydro_ne", name: "Life Support Rack", kind: "station-module", x: CX + 30, y: CY - 1, w: 4, h: 8, facing: "west" },
+    { id: "rf_relay_w", name: "Signal Relay", kind: "station-kiosk", shopType: "trade", x: CX - 29, y: CY + 21, w: 4, h: 4, facing: "east" },
+    { id: "rf_relay_e", name: "Signal Relay", kind: "station-kiosk", shopType: "trade", x: CX + 29, y: CY + 21, w: 4, h: 4, facing: "west" }
   ];
 
   for (const module of modules) {
@@ -328,12 +304,12 @@ function buildStationFeatures() {
     { kind: "cargo-crate", name: "Cargo Cube", w: 2, h: 2 }
   ];
   let cargoIndex = 0;
-  for (let gx = -58; gx <= 58; gx += 8) {
-    for (let gy = -46; gy <= 46; gy += 8) {
-      if (Math.abs(gx) < 18 && Math.abs(gy) < 18) continue;
-      if (Math.abs(gx) < 15 || Math.abs(gy) < 11) continue;
+  for (let gx = -30; gx <= 30; gx += 7) {
+    for (let gy = -23; gy <= 23; gy += 7) {
+      if (Math.abs(gx) < 12 && Math.abs(gy) < 12) continue;
+      if (Math.abs(gx) < 9 || Math.abs(gy) < 8) continue;
       const roll = hash2(gx, gy, 711);
-      if (roll < 0.62) continue;
+      if (roll < 0.68) continue;
       const pick = cargoKinds[(cargoIndex + Math.floor(roll * 31)) % cargoKinds.length];
       pushFeature(out, {
         id: `rf_cargo_${cargoIndex}`,
@@ -346,7 +322,7 @@ function buildStationFeatures() {
         facing: hash2(gx, gy, 913) > 0.5 ? "east" : "west"
       });
       cargoIndex += 1;
-      if (cargoIndex >= 26) return out;
+      if (cargoIndex >= 10) return out;
     }
   }
 
@@ -372,7 +348,7 @@ function sciFiDockPortForPlayerId(playerId) {
 
 module.exports = {
   RINGFORGE_CENTER: Object.freeze({ x: CX, y: CY }),
-  STARGATE_LANDING: Object.freeze({ x: CX, y: CY + 42 }),
+  STARGATE_LANDING: Object.freeze({ x: CX, y: CY + 22 }),
   SCI_FI_STATIONS,
   SCI_FI_STATION_FEATURES,
   SCI_FI_DOCK_PORTS,
