@@ -167,7 +167,7 @@ const TOWN_ARCHER_IDS = Object.freeze([
   ...GATEKEEPER_IDS,
   ...Array.from({ length: 50 }, (_, index) => `hub_wall_archer_${index}`)
 ]);
-const GATEKEEPER_RANGE = 46;
+const GATEKEEPER_RANGE = 20;
 const GATEKEEPER_NEAR_TOWN_RADIUS = HUB_TOWN_GRASS_RADIUS + 84;
 const GATEKEEPER_ATTACK_COOLDOWN_MS = 1150;
 const GATEKEEPER_ARROW_DAMAGE = 34;
