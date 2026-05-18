@@ -710,6 +710,8 @@ const state = {
   ships: [],
   shipTerminal: null,
   teleportMenu: null,
+  warpAnimation: null,
+  warpButtonRect: null,
   questOffer: null,
   gold: 0,
   shop: null,
@@ -1328,6 +1330,16 @@ function handleServerMessage(message) {
 
   if (message.type === "teleportMenu") {
     showTeleportMenu(message);
+    return;
+  }
+
+  if (message.type === "shipWarp") {
+    state.warpAnimation = {
+      startedAt: performance.now(),
+      duration: 2200,
+      color: message.color || "#67f0ff",
+      destinationName: message.destinationName || "Unknown"
+    };
     return;
   }
 
@@ -3350,6 +3362,9 @@ function wireUi() {
       return;
     }
     event.preventDefault();
+    if (tryWarpButtonClick(event)) {
+      return;
+    }
     if (tryInteractClickedFixture(event)) {
       return;
     }
@@ -7245,6 +7260,199 @@ function drawShipRadar() {
   ctx.restore();
 }
 
+function drawWarpHud() {
+  if (!isSelfFlyingShip()) {
+    state.warpButtonRect = null;
+    return;
+  }
+  const self = state.players.get(state.selfId);
+  const role = self?.ship?.stationRole;
+  if (self?.ship?.deckMode && !isPilotShipRole(role)) {
+    state.warpButtonRect = null;
+    return;
+  }
+
+  const size = Math.max(132, Math.min(178, Math.floor(Math.min(canvas.width, canvas.height) * 0.23)));
+  const pad = 14;
+  const bx = canvas.width - size - pad;
+  const by = size + pad + 10;
+  const bw = size;
+  const bh = 38;
+  state.warpButtonRect = { x: bx, y: by, w: bw, h: bh };
+
+  const now = performance.now();
+  const pulse = 0.72 + Math.sin(now / 480) * 0.18;
+  const charging = Boolean(state.warpAnimation && (now - state.warpAnimation.startedAt) < state.warpAnimation.duration * 0.5);
+
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  ctx.fillStyle = charging ? `rgba(180,120,255,${pulse * 0.95})` : `rgba(3,10,18,0.82)`;
+  ctx.strokeStyle = charging ? "#cc88ff" : "rgba(103,240,255,0.70)";
+  ctx.lineWidth = 2;
+  roundedRect(bx, by, bw, bh, 7);
+  ctx.fill();
+  ctx.stroke();
+
+  // Animated glow lines inside button
+  if (!charging) {
+    for (let i = 0; i < 3; i += 1) {
+      const lx = bx + 10 + ((now / 320 + i * 28) % (bw - 20));
+      ctx.strokeStyle = `rgba(103,240,255,${0.12 + i * 0.06})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(lx, by + 10);
+      ctx.lineTo(lx + 8, by + bh - 10);
+      ctx.stroke();
+    }
+  }
+
+  // Icon: three horizontal speed-lines converging to a point on right side
+  const iconX = bx + 16;
+  const iconY = by + bh / 2;
+  ctx.strokeStyle = charging ? "#ffffff" : "rgba(103,240,255,0.85)";
+  ctx.lineWidth = 1.5;
+  for (let i = -1; i <= 1; i += 1) {
+    ctx.beginPath();
+    ctx.moveTo(iconX, iconY + i * 5);
+    ctx.lineTo(iconX + 14, iconY);
+    ctx.stroke();
+  }
+
+  ctx.font = "bold 14px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = charging ? "#ffffff" : `rgba(103,240,255,${pulse})`;
+  ctx.strokeStyle = "rgba(2,6,14,0.9)";
+  ctx.lineWidth = 3;
+  const label = charging ? "WARPING…" : "WARP DRIVE";
+  ctx.strokeText(label, bx + bw / 2 + 8, by + bh / 2);
+  ctx.fillText(label, bx + bw / 2 + 8, by + bh / 2);
+
+  ctx.restore();
+}
+
+function tryWarpButtonClick(event) {
+  const rect = state.warpButtonRect;
+  if (!rect) return false;
+  const cx = event.clientX * (canvas.width / canvas.offsetWidth);
+  const cy = event.clientY * (canvas.height / canvas.offsetHeight);
+  if (cx < rect.x || cx > rect.x + rect.w || cy < rect.y || cy > rect.y + rect.h) return false;
+  if (state.warpAnimation) return true; // button disabled while animating
+  send({ type: "teleportMenuOpen", fromFlight: true });
+  return true;
+}
+
+function drawWarpAnimation() {
+  const anim = state.warpAnimation;
+  if (!anim) return;
+
+  const now = performance.now();
+  const elapsed = now - anim.startedAt;
+  const pct = Math.min(1, elapsed / anim.duration);
+
+  if (pct >= 1) {
+    state.warpAnimation = null;
+    return;
+  }
+
+  const color = anim.color || "#67f0ff";
+  const rgb = hexToRgb(color);
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+
+  // Phase: 0-0.22 = charge, 0.22-0.65 = tunnel, 0.65-1 = emerge
+  const chargeT = Math.min(1, pct / 0.22);
+  const tunnelT = pct < 0.22 ? 0 : pct < 0.65 ? (pct - 0.22) / 0.43 : 1;
+  const emergeT = pct < 0.65 ? 0 : (pct - 0.65) / 0.35;
+
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  // Dark overlay builds up during charge
+  const overlayAlpha = chargeT < 1 ? chargeT * 0.55 : 0.55 + emergeT * 0.45;
+  ctx.fillStyle = `rgba(2,4,12,${overlayAlpha})`;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  if (tunnelT > 0 && emergeT < 1) {
+    // Streaking star lines — speed increases in tunnel phase
+    const streak = tunnelT < 1 ? tunnelT : Math.max(0, 1 - emergeT * 1.4);
+    const numStars = 80;
+    const rng = mulberry32(99271);
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+    for (let i = 0; i < numStars; i += 1) {
+      const angle = rng() * Math.PI * 2;
+      const baseR = 20 + rng() * 180;
+      const len = streak * (60 + rng() * 220);
+      const alpha = streak * (0.35 + rng() * 0.55);
+      const lineColor = rng() < 0.3 ? `rgba(${rgb},${alpha})` : `rgba(200,230,255,${alpha})`;
+      ctx.strokeStyle = lineColor;
+      ctx.lineWidth = 0.8 + rng() * 1.6;
+      const ox = Math.cos(angle);
+      const oy = Math.sin(angle);
+      ctx.beginPath();
+      ctx.moveTo(cx + ox * baseR, cy + oy * baseR);
+      ctx.lineTo(cx + ox * (baseR + len), cy + oy * (baseR + len));
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Tunnel rings
+    const ringAlpha = streak * 0.7;
+    ctx.strokeStyle = `rgba(${rgb},${ringAlpha})`;
+    for (let i = 0; i < 5; i += 1) {
+      const r = 40 + i * 55 + ((elapsed * 0.4) % 55);
+      ctx.lineWidth = 2 - i * 0.3;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Bright core flash
+    if (tunnelT > 0.3 && tunnelT < 0.85) {
+      const flashPct = (tunnelT - 0.3) / 0.55;
+      const flash = Math.sin(flashPct * Math.PI);
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 120 * flash);
+      g.addColorStop(0, `rgba(255,255,255,${flash * 0.85})`);
+      g.addColorStop(0.35, `rgba(${rgb},${flash * 0.55})`);
+      g.addColorStop(1, `rgba(${rgb},0)`);
+      ctx.fillStyle = g;
+      ctx.globalCompositeOperation = "screen";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.globalCompositeOperation = "source-over";
+    }
+  }
+
+  // Destination label fades in during emerge
+  if (emergeT > 0.3) {
+    const labelAlpha = Math.min(1, (emergeT - 0.3) / 0.5);
+    ctx.font = "bold 22px ui-sans-serif, system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = `rgba(${rgb},${labelAlpha * 0.9})`;
+    ctx.strokeStyle = `rgba(2,6,14,${labelAlpha * 0.85})`;
+    ctx.lineWidth = 4;
+    ctx.strokeText(anim.destinationName.toUpperCase(), cx, cy - 28);
+    ctx.fillText(anim.destinationName.toUpperCase(), cx, cy - 28);
+    ctx.font = "12px ui-sans-serif, system-ui";
+    ctx.fillStyle = `rgba(200,240,255,${labelAlpha * 0.72})`;
+    ctx.fillText("WARP COMPLETE", cx, cy - 6);
+  }
+
+  ctx.restore();
+}
+
+function mulberry32(seed) {
+  let s = seed >>> 0;
+  return function () {
+    s += 0x6d2b79f5;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 function draw() {
   ctx.imageSmoothingEnabled = false;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -7293,6 +7501,8 @@ function draw() {
   drawPubPassoutOverlay();
   drawIntimateBlackoutOverlay();
   drawShipRadar();
+  drawWarpHud();
+  drawWarpAnimation();
   drawGunnerMissileTarget();
   drawWorldHoverTooltip();
   if (state.menuOpen) {
@@ -8423,20 +8633,20 @@ function getShipLayout(shipOrClass = "skiff") {
       deckW: 18,
       deckH: 10,
       entry: { x: -7, y: 0 },
-      teleporter: { x: -2.0, y: 0 },
+      teleporter: { x: -3.0, y: 0 },
       stations: [
-        { id: "captain", role: "captain", name: "Captain", x: 3.2, y: 0 },
-        { id: "pilot", role: "pilot", name: "Pilot", x: 5.1, y: -1 },
-        { id: "copilot", role: "copilot", name: "Co-Pilot", x: 5.1, y: 1 },
-        { id: "gunner_aft", role: "gunner", name: "Gunner", x: -5.5, y: 0 },
-        { id: "engineer_mid", role: "engineer", name: "Forward Engineering", x: -1.2, y: -2, defaultShieldFacing: "front" },
-        { id: "engineer_aux", role: "engineer", name: "Aft Engineering", x: -1.6, y: 2, defaultShieldFacing: "back" }
+        { id: "captain", role: "captain", name: "Captain", x: 4.0, y: 0 },
+        { id: "pilot", role: "pilot", name: "Pilot", x: 6.5, y: -1.8 },
+        { id: "copilot", role: "copilot", name: "Co-Pilot", x: 6.5, y: 1.8 },
+        { id: "gunner_aft", role: "gunner", name: "Gunner", x: -6.0, y: 0 },
+        { id: "engineer_mid", role: "engineer", name: "Forward Engineering", x: 1.0, y: -3.5, defaultShieldFacing: "front" },
+        { id: "engineer_aux", role: "engineer", name: "Aft Engineering", x: 1.0, y: 3.5, defaultShieldFacing: "back" }
       ],
       amenities: [
-        { kind: "bed", x: -5.2, y: -2.8 },
-        { kind: "bed", x: -5.2, y: 2.8 },
-        { kind: "kitchen", x: -2.5, y: -2.8 },
-        { kind: "table", x: 0, y: 2.5 }
+        { kind: "bed", x: -4.5, y: -3.0 },
+        { kind: "bed", x: -4.5, y: 3.0 },
+        { kind: "kitchen", x: -1.5, y: -4.0 },
+        { kind: "table", x: -1.5, y: 4.0 }
       ]
     };
   }
@@ -8446,16 +8656,16 @@ function getShipLayout(shipOrClass = "skiff") {
       deckW: 14,
       deckH: 8,
       entry: { x: -5, y: 0 },
-      teleporter: { x: -1.0, y: 0 },
+      teleporter: { x: -2.5, y: 0 },
       stations: [
-        { id: "pilot", role: "pilot", name: "Pilot", x: 3.4, y: -1 },
-        { id: "copilot", role: "copilot", name: "Co-Pilot", x: 3.4, y: 1 },
-        { id: "gunner_aft", role: "gunner", name: "Gunner", x: -4.2, y: 0 },
-        { id: "engineer_mid", role: "engineer", name: "Engineering", x: -0.7, y: 0, defaultShieldFacing: "front" }
+        { id: "pilot", role: "pilot", name: "Pilot", x: 4.5, y: -1.8 },
+        { id: "copilot", role: "copilot", name: "Co-Pilot", x: 4.5, y: 1.8 },
+        { id: "gunner_aft", role: "gunner", name: "Gunner", x: -4.0, y: -2.5 },
+        { id: "engineer_mid", role: "engineer", name: "Engineering", x: 1.0, y: 2.5, defaultShieldFacing: "front" }
       ],
       amenities: [
-        { kind: "bed", x: -3.5, y: -2 },
-        { kind: "kitchen", x: -2.5, y: 2 }
+        { kind: "bed", x: -3.5, y: 2.5 },
+        { kind: "kitchen", x: -1.0, y: -3.0 }
       ]
     };
   }

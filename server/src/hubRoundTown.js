@@ -46,15 +46,16 @@ const HUB_NPC_ORDER = [
 ];
 
 /**
- * Five Fletcher workshop buildings — real buildings at ~80-tile radius,
- * one per 72° sector. Roads connect to them automatically via connectHouseDoorways().
+ * Five Fletcher workshop buildings — real buildings positioned in clear
+ * open areas (min 4-tile gap to every other building), one per 72° sector.
+ * Roads connect automatically via connectHouseDoorways().
  */
 const HUB_FLETCHER_RECTS = Object.freeze([
-  [65, 36, 8, 7],   // sector E
-  [-28, 72, 8, 7],  // sector S
-  [-86, -4, 8, 7],  // sector W
-  [-28, -80, 8, 7], // sector N
-  [54, -60, 8, 7],  // sector NE
+  [24, 71, 8, 7],   // sector E  (angle ~57°, r~80)
+  [-8, 99, 8, 7],   // sector S  (angle ~96°, r~103)
+  [-91, 19, 8, 7],  // sector W  (angle ~168°, r~90)
+  [-57, -91, 8, 7], // sector N  (angle ~238°, r~102)
+  [82, -45, 8, 7],  // sector NE (angle ~334°, r~95)
 ]);
 
 /** Civic + dwellings — deterministic. */
@@ -746,11 +747,6 @@ function computeHubDistrict() {
   /** @type {{x:number,y:number,w:number,h:number}[]} */
   const rects = HUB_BLUEPRINT_RECT.map(([x, y, w, h]) => ({ x, y, w, h }));
 
-  /** Append fletcher workshop footprints so path-building avoids them and doors get carved. */
-  for (const [x, y, w, h] of HUB_FLETCHER_RECTS) {
-    rects.push({ x, y, w, h });
-  }
-
   /** Assign NPC lots by angular sweep from east */
   /** @type {{r:{x:number,y:number,w:number,h:number}, angle:number}[]} */
   const hutSlots = rects.slice(4).map((r) => ({
@@ -875,7 +871,8 @@ function computeHubDistrict() {
     });
   }
 
-  /** Fletcher workshops — added to hubBuildings with type "fletcher" so NPCs and client can locate them. */
+  /** Fletcher workshops — footprints registered in rects so path-building avoids them
+   * and connectHouseDoorways() carves roads to their south doors. */
   const FLETCHER_NAMES = [
     "East Fletching House",
     "South Fletching House",
@@ -885,6 +882,7 @@ function computeHubDistrict() {
   ];
   for (let fi = 0; fi < HUB_FLETCHER_RECTS.length; fi++) {
     const [x, y, w, h] = HUB_FLETCHER_RECTS[fi];
+    rects.push({ x, y, w, h });
     hubBuildings.push({
       x, y, w, h,
       name: FLETCHER_NAMES[fi] || "Fletching House",

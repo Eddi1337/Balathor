@@ -1363,14 +1363,14 @@ function getShipLayout(shipOrClass = "skiff") {
       deckW: 18,
       deckH: 10,
       entry: { x: -7, y: 0 },
-      teleporter: { x: -2.0, y: 0 },
+      teleporter: { x: -3.0, y: 0 },
       stations: [
-        { id: "captain", role: "captain", name: "Captain Seat", x: 3.2, y: 0 },
-        { id: "pilot", role: "pilot", name: "Pilot Seat", x: 5.1, y: -1 },
-        { id: "copilot", role: "copilot", name: "Co-Pilot Seat", x: 5.1, y: 1 },
-        { id: "gunner_aft", role: "gunner", name: "Aft Gunner", x: -5.5, y: 0 },
-        { id: "engineer_mid", role: "engineer", name: "Forward Engineering", x: -1.2, y: -2, defaultShieldFacing: "front" },
-        { id: "engineer_aux", role: "engineer", name: "Aft Engineering", x: -1.6, y: 2, defaultShieldFacing: "back" }
+        { id: "captain", role: "captain", name: "Captain Seat", x: 4.0, y: 0 },
+        { id: "pilot", role: "pilot", name: "Pilot Seat", x: 6.5, y: -1.8 },
+        { id: "copilot", role: "copilot", name: "Co-Pilot Seat", x: 6.5, y: 1.8 },
+        { id: "gunner_aft", role: "gunner", name: "Aft Gunner", x: -6.0, y: 0 },
+        { id: "engineer_mid", role: "engineer", name: "Forward Engineering", x: 1.0, y: -3.5, defaultShieldFacing: "front" },
+        { id: "engineer_aux", role: "engineer", name: "Aft Engineering", x: 1.0, y: 3.5, defaultShieldFacing: "back" }
       ]
     };
   }
@@ -1380,12 +1380,12 @@ function getShipLayout(shipOrClass = "skiff") {
       deckW: 14,
       deckH: 8,
       entry: { x: -5, y: 0 },
-      teleporter: { x: -1.0, y: 0 },
+      teleporter: { x: -2.5, y: 0 },
       stations: [
-        { id: "pilot", role: "pilot", name: "Pilot Seat", x: 3.4, y: -1 },
-        { id: "copilot", role: "copilot", name: "Co-Pilot Seat", x: 3.4, y: 1 },
-        { id: "gunner_aft", role: "gunner", name: "Aft Gunner", x: -4.2, y: 0 },
-        { id: "engineer_mid", role: "engineer", name: "Engineering", x: -0.7, y: 0, defaultShieldFacing: "front" }
+        { id: "pilot", role: "pilot", name: "Pilot Seat", x: 4.5, y: -1.8 },
+        { id: "copilot", role: "copilot", name: "Co-Pilot Seat", x: 4.5, y: 1.8 },
+        { id: "gunner_aft", role: "gunner", name: "Aft Gunner", x: -4.0, y: -2.5 },
+        { id: "engineer_mid", role: "engineer", name: "Engineering", x: 1.0, y: 2.5, defaultShieldFacing: "front" }
       ]
     };
   }
@@ -3406,7 +3406,7 @@ function handleMessage(client, raw) {
   }
 
   if (message.type === "teleportMenuOpen") {
-    handleTeleportMenuOpen(client);
+    handleTeleportMenuOpen(client, message);
     return;
   }
 
@@ -4796,15 +4796,32 @@ function handleShipMissile(client) {
   client.player.moving = true;
 }
 
-// ── Teleport menu ───────────────────────────────────────────────────────────
+// ── Teleport / Warp menu ─────────────────────────────────────────────────────
 // Surfaces a list of nearby destinations the player can warp to. Available
 // inside any multi-crew ship (teleporter fixture / hotbar button) and on the
 // main station. Destinations include the closest planet, the player's current
 // home dock, and the main Orbital Square station as a fallback.
+// When opened from the warp-drive button (fromFlight:true), pirate outposts
+// and major asteroid belts are also included.
 
 const TELEPORT_NEAR_RANGE = 220; // tiles — used to decide "nearby" planets / stations.
 
-function buildTeleportDestinations(player) {
+const WARP_PIRATE_OUTPOSTS = Object.freeze([
+  { id: "outpost_breach",    name: "Breach Depot",      sublabel: "Pirate stronghold",   x: 2192, y: -428, color: "#ff6b6b" },
+  { id: "outpost_shoals",    name: "Iron Shoals",       sublabel: "Pirate salvage yard",  x: 1582, y:  372, color: "#ff8c42" },
+  { id: "outpost_voidgate",  name: "Void Gate Relay",   sublabel: "Contested relay post", x: 2316, y:  284, color: "#ff6baa" },
+  { id: "outpost_boneyard",  name: "The Boneyard",      sublabel: "Derelict hulk cluster", x: 1658, y: -402, color: "#cc7fff" },
+]);
+
+const WARP_ASTEROID_BELTS = Object.freeze([
+  { id: "belt_north",     name: "North Belt",      sublabel: "Dense rock field",     x: 1820, y: -260, color: "#b0c0d4" },
+  { id: "belt_south",     name: "South Belt",      sublabel: "Mineral-rich cluster", x: 1990, y:  290, color: "#a8bcc8" },
+  { id: "belt_northeast", name: "Northeast Cluster", sublabel: "Outer asteroid ring", x: 2290, y: -370, color: "#c4d4e8" },
+  { id: "belt_rim",       name: "Rim Fragment",    sublabel: "Far sector debris",    x: 1920, y: -510, color: "#9ab0c0" },
+  { id: "belt_mideast",   name: "Mid-Sector Field", sublabel: "Navigation hazard",  x: 2140, y: -175, color: "#a8c0c8" },
+]);
+
+function buildTeleportDestinations(player, fromFlight = false) {
   const destinations = [];
   const px = Number(player.x) || 0;
   const py = Number(player.y) || 0;
@@ -4853,10 +4870,22 @@ function buildTeleportDestinations(player) {
     dist: world === "scifi" ? Math.round(Math.hypot(SCI_FI_STATION_CENTER.x - px, SCI_FI_STATION_CENTER.y - py)) : 0
   });
 
+  // Warp-drive mode: include pirate outposts and major asteroid belts as deep-space jump targets.
+  if (fromFlight && world === "scifi") {
+    for (const outpost of WARP_PIRATE_OUTPOSTS) {
+      const dist = Math.round(Math.hypot(outpost.x - px, outpost.y - py));
+      destinations.push({ kind: "warp_pirate", id: outpost.id, label: outpost.name, sublabel: outpost.sublabel, color: outpost.color, dist });
+    }
+    for (const belt of WARP_ASTEROID_BELTS) {
+      const dist = Math.round(Math.hypot(belt.x - px, belt.y - py));
+      destinations.push({ kind: "warp_asteroid", id: belt.id, label: belt.name, sublabel: belt.sublabel, color: belt.color, dist });
+    }
+  }
+
   return destinations;
 }
 
-function handleTeleportMenuOpen(client) {
+function handleTeleportMenuOpen(client, message = {}) {
   const player = client.player;
   if (!player) return;
   const world = worldForPosition(player.x, player.y);
@@ -4864,10 +4893,13 @@ function handleTeleportMenuOpen(client) {
     send(client, { type: "serverMessage", message: "teleport_not_here" });
     return;
   }
+  const fromFlight = Boolean(message.fromFlight);
+  const title = world?.startsWith("planet:") ? "Planet Teleporter" : fromFlight ? "Warp Drive" : "Ship Teleporter";
   send(client, {
     type: "teleportMenu",
-    title: world?.startsWith("planet:") ? "Planet Teleporter" : "Ship Teleporter",
-    destinations: buildTeleportDestinations(player)
+    title,
+    fromFlight,
+    destinations: buildTeleportDestinations(player, fromFlight)
   });
 }
 
@@ -4936,6 +4968,45 @@ function handleTeleportMenuTravel(client, message = {}) {
       y: player.y
     });
     send(client, { type: "serverMessage", message: "teleport_arrived", destination: "Orbital Square" });
+    broadcastSnapshot();
+    return;
+  }
+  if (kind === "warp_pirate" || kind === "warp_asteroid") {
+    // Warp the ship to the target coordinates — player stays aboard.
+    const lookup = kind === "warp_pirate"
+      ? WARP_PIRATE_OUTPOSTS.find((o) => o.id === id)
+      : WARP_ASTEROID_BELTS.find((b) => b.id === id);
+    if (!lookup) {
+      send(client, { type: "serverMessage", message: "teleport_unknown" });
+      return;
+    }
+    const ship = player.ship;
+    if (!ship || !ship.boarded) {
+      send(client, { type: "serverMessage", message: "teleport_not_here" });
+      return;
+    }
+    const wx = lookup.x;
+    const wy = lookup.y;
+    ship.worldX = wx;
+    ship.worldY = wy;
+    ship.speed = 0;
+    if (ship.deckMode) {
+      const layout = getShipLayout(ship);
+      player.x = wx + (layout?.entry?.x || 0);
+      player.y = wy + (layout?.entry?.y || 0);
+    } else {
+      player.x = wx;
+      player.y = wy;
+    }
+    player.moving = false;
+    saveClientCharacter(client);
+    send(client, {
+      type: "shipWarp",
+      destinationName: lookup.name,
+      color: lookup.color || "#67f0ff",
+      x: wx,
+      y: wy
+    });
     broadcastSnapshot();
     return;
   }
