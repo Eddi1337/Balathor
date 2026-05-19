@@ -2141,9 +2141,12 @@ const BASE_NPC_DEFINITIONS = [
     sciFiRole: "dockmaster",
     sciFiLook: "android",
     isTrader: true,
+    questGiver: true,
+    questIds: ["q_scifi_pirate_patrol", "q_scifi_capital_breaker", "q_scifi_distress_response"],
     dialogue: [
       "Docking clamps are green. Keep the lane clear.",
       "If you want a ship, talk to me before you wander off.",
+      "Outer-lane combat contracts are live if your crew wants hazard pay.",
       "We keep this station running one airlock at a time.",
       "The bay to the east is for newer hulls and faster exits.",
       "Try not to stand in the hangar lane unless you want a story.",

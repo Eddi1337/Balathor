@@ -188,6 +188,40 @@ const FANTASY_NIGHT_RAID_CAMPS_PER_WAVE = 3;
 const STATION_DEFENSE_ATTACK_COOLDOWN_MS = 900;
 const STATION_TURRET_DAMAGE = 42;
 const ORBITAL_CANNON_DAMAGE = 82;
+const NPC_SHIP_BATTLE_RANGE = 16;
+const NPC_SHIP_BATTLE_SCAN_RADIUS = 26;
+const NPC_SHIP_BATTLE_COOLDOWN_MS = 1250;
+const CAPITAL_SHIP_SHIELD_REGEN_MS = 1800;
+const CAPITAL_SHIP_SHIELD_REGEN_AMOUNT = 3;
+const SCI_FI_ENCOUNTER_EVENTS = Object.freeze([
+  {
+    id: "distress_beacon_kestrel",
+    kind: "distress",
+    title: "Distress Beacon",
+    x: 1748,
+    y: -322,
+    radius: 28,
+    message: "A looping distress beacon reports raiders closing on a disabled courier."
+  },
+  {
+    id: "derelict_helix",
+    kind: "derelict",
+    title: "Derelict Ship",
+    x: 2128,
+    y: 318,
+    radius: 30,
+    message: "A derelict cruiser drifts without power. Heat signatures move around the wreck."
+  },
+  {
+    id: "blackstar_battle_line",
+    kind: "battle",
+    title: "Fleet Battle",
+    x: 2038,
+    y: -286,
+    radius: 38,
+    message: "Long-range sensors light up as two hostile fleets exchange fire."
+  }
+]);
 const ZERO_G_DRIFT_SPEED_MULTIPLIER = 0.74;
 const XP_BASE_TO_LEVEL = 100;
 const XP_LEVEL_STEP = 55;
@@ -283,6 +317,42 @@ const QUEST_DEFINITIONS = Object.freeze({
     steps: [
       { type: "kill", text: "Defeat 3 Ember Imps", count: 3, matchName: "ember imp", target: { x: 146, y: -132 } },
       { type: "talk", text: "Return to Tamsin Anvil", npcId: "npc_quest_tamsin_anvil", target: { x: 33, y: -25 } }
+    ]
+  },
+  q_scifi_pirate_patrol: {
+    id: "q_scifi_pirate_patrol",
+    giverId: "npc_lyra_station",
+    title: "Outer Patrol Contract",
+    summary: "Dockmaster Lyra needs raider patrols cleared from the station approach lanes.",
+    rewardGold: 72,
+    rewardXp: 180,
+    steps: [
+      { type: "kill", text: "Destroy 6 pirate ships in the outer lanes", count: 6, isShipPirate: true, target: { x: 1740, y: -180 } },
+      { type: "talk", text: "Report back to Dockmaster Lyra", npcId: "npc_lyra_station", target: { x: 1866, y: -34 } }
+    ]
+  },
+  q_scifi_capital_breaker: {
+    id: "q_scifi_capital_breaker",
+    giverId: "npc_lyra_station",
+    title: "Break the Flagship",
+    summary: "A shielded capital ship is anchoring the enemy battle line beyond the station.",
+    rewardGold: 140,
+    rewardXp: 340,
+    steps: [
+      { type: "kill", text: "Destroy 1 enemy capital ship", count: 1, matchName: "capital", target: { x: 2038, y: -286 } },
+      { type: "talk", text: "Return to Dockmaster Lyra", npcId: "npc_lyra_station", target: { x: 1866, y: -34 } }
+    ]
+  },
+  q_scifi_distress_response: {
+    id: "q_scifi_distress_response",
+    giverId: "npc_lyra_station",
+    title: "Answer the Beacon",
+    summary: "A distress beacon is broadcasting from the asteroid belt north-west of Ringforge.",
+    rewardGold: 96,
+    rewardXp: 240,
+    steps: [
+      { type: "kill", text: "Destroy 4 raiders near the distress beacon", count: 4, faction: "pirate_distress", target: { x: 1748, y: -322 } },
+      { type: "talk", text: "Confirm the response with Dockmaster Lyra", npcId: "npc_lyra_station", target: { x: 1866, y: -34 } }
     ]
   }
 });
@@ -812,7 +882,7 @@ const SIM_WALL_SAMPLES_MAX = 60;
 
 /** Per-section timing accumulators (microseconds, reset every PERF_LOG_INTERVAL ticks). */
 const PERF_LOG_INTERVAL = 300;
-const perfAcc = { players: 0, npcs: 0, assaults: 0, mobs: 0, archerSupply: 0, archers: 0, defenses: 0, caravans: 0, consecration: 0, snapshot: 0 };
+const perfAcc = { players: 0, npcs: 0, assaults: 0, mobs: 0, archerSupply: 0, archers: 0, defenses: 0, encounters: 0, caravans: 0, consecration: 0, snapshot: 0 };
 let perfLastSnapshot = null;
 
 const worldDb = openWorldDb();
@@ -2863,6 +2933,10 @@ function simulate() {
     perfAcc.defenses += Number(process.hrtime.bigint() - _pt) / 1e3;
 
     _pt = process.hrtime.bigint();
+    processSciFiEncounters(Date.now());
+    perfAcc.encounters += Number(process.hrtime.bigint() - _pt) / 1e3;
+
+    _pt = process.hrtime.bigint();
     updateCaravans(aiDt);
     perfAcc.caravans += Number(process.hrtime.bigint() - _pt) / 1e3;
 
@@ -4613,6 +4687,49 @@ const SHIP_DOCK_PROMPT_RANGE = 8;
 const SHIP_GUNNER_COOLDOWN_MS = 350;
 const SHIP_MISSILE_COOLDOWN_MS = 1500;
 
+function applyShipMobDamage(mob, rawDamage, now = Date.now(), sourceX = mob.x, sourceY = mob.y) {
+  const incoming = Math.max(1, Math.round(Number(rawDamage) || 1));
+  let hullDamage = incoming;
+  let shieldDamage = 0;
+  let shieldHit = false;
+  if (mob?.isShipPirate && (Number(mob.maxShieldHp) || 0) > 0 && (Number(mob.shieldHp) || 0) > 0) {
+    shieldHit = true;
+    shieldDamage = Math.min(Math.max(0, Math.round(mob.shieldHp)), incoming);
+    mob.shieldHp = Math.max(0, Math.round(mob.shieldHp) - shieldDamage);
+    hullDamage = Math.max(0, incoming - shieldDamage);
+    mob.lastShieldHitAt = now;
+    const dx = sourceX - mob.x;
+    const dy = sourceY - mob.y;
+    const len = Math.hypot(dx, dy) || 1;
+    mob.lastShieldHitDx = dx / len;
+    mob.lastShieldHitDy = dy / len;
+  }
+  if (hullDamage > 0) {
+    mob.hp = Math.max(0, mob.hp - hullDamage);
+  }
+  return {
+    damage: hullDamage,
+    shieldDamage,
+    shieldHit,
+    targetHp: mob.hp,
+    targetShieldHp: Number(mob.shieldHp) || 0
+  };
+}
+
+function awardMobDefeatToClient(client, mob, event, now = Date.now()) {
+  mob.dead = true;
+  mob.respawnAt = now + (mob.isCritter ? 4200 : MOB_RESPAWN_MS);
+  event.defeated = true;
+  const progress = awardXp(client.player, xpForMob(mob));
+  event.xpGained = progress.xpGained;
+  event.levelsGained = progress.levelsGained;
+  const goldReward = goldForMob(mob);
+  client.player.gold += goldReward;
+  event.goldGained = goldReward;
+  dropLootForMob(mob);
+  recordMobDefeatForQuests(client, mob);
+}
+
 function handleShipFire(client, message = {}) {
   const ship = client.player?.ship;
   if (!ship?.boarded || ship.stationRole !== "gunner") {
@@ -4699,26 +4816,19 @@ function handleShipFire(client, message = {}) {
 
     if (bestMob) {
       const damage = Math.max(1, Math.round(turretDamage + bestMob.level));
-      bestMob.hp = Math.max(0, bestMob.hp - damage);
+      const result = applyShipMobDamage(bestMob, damage, now, ox, oy);
       event.targetId = bestMob.id;
       event.targetKind = "mob";
-      event.damage = damage;
-      event.targetHp = bestMob.hp;
+      event.damage = result.damage;
+      event.shieldDamage = result.shieldDamage;
+      event.shieldHit = result.shieldHit;
+      event.targetHp = result.targetHp;
+      event.targetShieldHp = result.targetShieldHp;
       if (bestMob.isShipPirate) {
         alertPirateFleet(bestMob);
       }
       if (bestMob.hp <= 0) {
-        bestMob.dead = true;
-        bestMob.respawnAt = Date.now() + MOB_RESPAWN_MS;
-        event.defeated = true;
-        const progress = awardXp(client.player, xpForMob(bestMob));
-        event.xpGained = progress.xpGained;
-        event.levelsGained = progress.levelsGained;
-        const goldReward = goldForMob(bestMob);
-        client.player.gold += goldReward;
-        event.goldGained = goldReward;
-        dropLootForMob(bestMob);
-        recordMobDefeatForQuests(client, bestMob);
+        awardMobDefeatToClient(client, bestMob, event, now);
       }
     }
 
@@ -4772,24 +4882,18 @@ function handleShipMissile(client) {
     targetId: target.id,
     targetKind: "mob",
     damage: missileDamage,
-    targetHp: Math.max(0, target.hp - missileDamage)
+    targetHp: target.hp
   };
 
-  target.hp = Math.max(0, target.hp - missileDamage);
-  event.targetHp = target.hp;
+  const result = applyShipMobDamage(target, missileDamage, Date.now(), center.x, center.y);
+  event.damage = result.damage;
+  event.shieldDamage = result.shieldDamage;
+  event.shieldHit = result.shieldHit;
+  event.targetHp = result.targetHp;
+  event.targetShieldHp = result.targetShieldHp;
   if (target.isShipPirate) alertPirateFleet(target);
   if (target.hp <= 0) {
-    target.dead = true;
-    target.respawnAt = Date.now() + MOB_RESPAWN_MS;
-    event.defeated = true;
-    const progress = awardXp(client.player, xpForMob(target));
-    event.xpGained = progress.xpGained;
-    event.levelsGained = progress.levelsGained;
-    const goldReward = goldForMob(target);
-    client.player.gold += goldReward;
-    event.goldGained = goldReward;
-    dropLootForMob(target);
-    recordMobDefeatForQuests(client, target);
+    awardMobDefeatToClient(client, target, event, Date.now());
   }
 
   broadcastCombat(event);
@@ -5506,6 +5610,7 @@ function handleAbandonQuest(client, message = {}) {
 
 function mobMatchesQuestStep(mob, step) {
   if (!mob || !step || step.type !== "kill") return false;
+  if (step.isShipPirate && mob.isShipPirate) return true;
   if (step.campId && mob.campId === step.campId) return true;
   if (step.faction && mob.faction === step.faction) return true;
   if (step.matchName && String(mob.name || "").toLowerCase().includes(String(step.matchName).toLowerCase())) return true;
@@ -7634,21 +7739,26 @@ function createSciFiPirateMobs() {
   // when createMobs() runs at module top-level startup.
   const fleets = [
     // Original fleets — sizes bumped up
-    { id: "pirate_eclipse",   name: "Eclipse Raider",    x: 1740, y: -180, size: 14, color: "#ff6b8a", level: 8  },
-    { id: "pirate_blacksun",  name: "Blacksun Corsair",  x: 2240, y:  250, size: 15, color: "#c084fc", level: 10 },
-    { id: "pirate_redclaw",   name: "Redclaw Marauder",  x: 1660, y:  350, size: 13, color: "#f97316", level: 9  },
-    { id: "pirate_void",      name: "Void Stalker",      x: 2200, y: -420, size: 15, color: "#22d3ee", level: 11 },
-    { id: "pirate_ironwake",  name: "Ironwake Reaver",   x: 2080, y: -255, size: 13, color: "#facc15", level: 9  },
-    { id: "pirate_nullfang",  name: "Nullfang Skiff",    x: 1780, y:  265, size: 12, color: "#38bdf8", level: 7  },
+    { id: "pirate_eclipse",   name: "Eclipse Raider",    x: 1740, y: -180, size: 14, color: "#ff6b8a", level: 8, battleSide: "eclipse" },
+    { id: "pirate_blacksun",  name: "Blacksun Corsair",  x: 2240, y:  250, size: 15, color: "#c084fc", level: 10, battleSide: "blackstar", capital: true, capitalName: "Blacksun Capital" },
+    { id: "pirate_redclaw",   name: "Redclaw Marauder",  x: 1660, y:  350, size: 13, color: "#f97316", level: 9, battleSide: "redclaw" },
+    { id: "pirate_void",      name: "Void Stalker",      x: 2200, y: -420, size: 15, color: "#22d3ee", level: 11, battleSide: "void", capital: true, capitalName: "Void Capital" },
+    { id: "pirate_ironwake",  name: "Ironwake Reaver",   x: 2080, y: -255, size: 13, color: "#facc15", level: 9, battleSide: "eclipse" },
+    { id: "pirate_nullfang",  name: "Nullfang Skiff",    x: 1780, y:  265, size: 12, color: "#38bdf8", level: 7, battleSide: "redclaw" },
     // New fleets scattered across the sector
-    { id: "pirate_riftclaw",  name: "Riftclaw Brigand",  x: 1580, y: -200, size: 12, color: "#86efac", level: 8  },
-    { id: "pirate_ashwing",   name: "Ashwing Raider",    x: 2160, y:  430, size: 13, color: "#fb923c", level: 10 },
-    { id: "pirate_deathmark", name: "Deathmark Corsair", x: 1910, y: -490, size: 11, color: "#e879f9", level: 11 },
-    { id: "pirate_ironveil",  name: "Ironveil Scourge",  x: 2310, y: -215, size: 12, color: "#f43f5e", level: 12 },
-    { id: "pirate_ghost",     name: "Ghost Marauder",    x: 1700, y:  480, size: 11, color: "#94a3b8", level: 8  },
-    { id: "pirate_venomfang", name: "Venomfang Pack",    x: 1870, y: -370, size: 10, color: "#4ade80", level: 9  },
-    { id: "pirate_burnedge",  name: "Burn Edge Fleet",   x: 2320, y:  130, size: 12, color: "#fbbf24", level: 10 },
-    { id: "pirate_wraithclaw",name: "Wraithclaw Patrol", x: 1560, y:  390, size: 10, color: "#a78bfa", level: 9  },
+    { id: "pirate_riftclaw",  name: "Riftclaw Brigand",  x: 1580, y: -200, size: 12, color: "#86efac", level: 8, battleSide: "riftclaw" },
+    { id: "pirate_ashwing",   name: "Ashwing Raider",    x: 2160, y:  430, size: 13, color: "#fb923c", level: 10, battleSide: "blackstar" },
+    { id: "pirate_deathmark", name: "Deathmark Corsair", x: 1910, y: -490, size: 11, color: "#e879f9", level: 11, battleSide: "void" },
+    { id: "pirate_ironveil",  name: "Ironveil Scourge",  x: 2310, y: -215, size: 12, color: "#f43f5e", level: 12, battleSide: "blackstar" },
+    { id: "pirate_ghost",     name: "Ghost Marauder",    x: 1700, y:  480, size: 11, color: "#94a3b8", level: 8, battleSide: "riftclaw" },
+    { id: "pirate_venomfang", name: "Venomfang Pack",    x: 1870, y: -370, size: 10, color: "#4ade80", level: 9, battleSide: "eclipse" },
+    { id: "pirate_burnedge",  name: "Burn Edge Fleet",   x: 2320, y:  130, size: 12, color: "#fbbf24", level: 10, battleSide: "blackstar" },
+    { id: "pirate_wraithclaw",name: "Wraithclaw Patrol", x: 1560, y:  390, size: 10, color: "#a78bfa", level: 9, battleSide: "riftclaw" },
+    // Dense opposing groups around event locations so players can fly into fleet battles.
+    { id: "battle_eclipse_line", name: "Eclipse Battlewing", x: 1996, y: -296, size: 10, color: "#ff6b8a", level: 12, battleSide: "eclipse", capital: true, capitalName: "Eclipse Capital" },
+    { id: "battle_blackstar_line", name: "Blackstar Battlewing", x: 2076, y: -274, size: 10, color: "#8b5cf6", level: 13, battleSide: "blackstar", capital: true, capitalName: "Blackstar Capital" },
+    { id: "pirate_distress", name: "Distress Raider", x: 1748, y: -322, size: 7, color: "#fb7185", level: 9, battleSide: "distress" },
+    { id: "derelict_scavenger", name: "Derelict Scavenger", x: 2128, y: 318, size: 8, color: "#f59e0b", level: 10, battleSide: "scavenger", capital: true, capitalName: "Scavenger Capital" },
   ];
   const out = [];
   for (const fleet of fleets) {
@@ -7659,10 +7769,14 @@ function createSciFiPirateMobs() {
       const ringR = 4 + Math.sqrt(i + 1) * 1.8;
       const homeX = fleet.x + Math.cos(angle) * ringR;
       const homeY = fleet.y + Math.sin(angle) * ringR;
-      const lvl = fleet.level + (i === 0 ? 1 : 0); // lead ship is a touch tougher
+      const isCapitalShip = Boolean(fleet.capital && i === 0);
+      const isHeavyEscort = !isCapitalShip && i % Math.max(5, Math.floor(count / 4)) === 0;
+      const lvl = fleet.level + (isCapitalShip ? 4 : isHeavyEscort ? 2 : 0);
+      const maxHp = isCapitalShip ? 420 + lvl * 30 : isHeavyEscort ? 180 + lvl * 18 : 90 + lvl * 14;
+      const maxShieldHp = isCapitalShip ? 220 + lvl * 18 : isHeavyEscort ? 70 + lvl * 6 : (i % 7 === 0 ? 38 + lvl * 3 : 0);
       out.push({
         id: `mob_${fleet.id}_${i + 1}`,
-        name: fleet.name,
+        name: isCapitalShip ? (fleet.capitalName || `${fleet.name} Capital`) : fleet.name,
         level: lvl,
         homeX,
         homeY,
@@ -7670,11 +7784,15 @@ function createSciFiPirateMobs() {
         accent: "#0a0613",
         faction: fleet.id,
         isShipPirate: true,
-        hullClass: i % Math.max(1, fleet.size | 0) === 0 ? "interceptor" : "fighter",
-        maxHp: 90 + lvl * 14,
-        attackDamage: 6 + Math.floor(lvl * 0.9),
-        roamRadius: 7 + (i % 2) * 3,
-        speed: 1.9 + hash2(fleet.x, fleet.y, 700 + i) * 0.4
+        battleSide: fleet.battleSide || fleet.id,
+        isCapitalShip,
+        hullClass: isCapitalShip ? "crew4" : isHeavyEscort ? "crew2" : (i % Math.max(1, fleet.size | 0) === 0 ? "interceptor" : "fighter"),
+        maxHp,
+        maxShieldHp,
+        shieldHp: maxShieldHp,
+        attackDamage: (isCapitalShip ? 16 : isHeavyEscort ? 10 : 6) + Math.floor(lvl * 0.9),
+        roamRadius: isCapitalShip ? 5 : 7 + (i % 2) * 3,
+        speed: (isCapitalShip ? 1.15 : isHeavyEscort ? 1.45 : 1.9) + hash2(fleet.x, fleet.y, 700 + i) * 0.4
       });
     }
   }
@@ -8493,6 +8611,9 @@ function updateMobs(dt, boundsArray) {
       if (now >= mob.respawnAt) {
         mob.dead = false;
         mob.hp = mob.maxHp;
+        if ((Number(mob.maxShieldHp) || 0) > 0) {
+          mob.shieldHp = mob.maxShieldHp;
+        }
         mob.x = mob.homeX;
         mob.y = mob.homeY;
       }
@@ -8504,6 +8625,11 @@ function updateMobs(dt, boundsArray) {
     }
 
     const targetPlayer = nearestAttackablePlayer(mob, playerTargets, now);
+    if (mob.isShipPirate && (Number(mob.maxShieldHp) || 0) > 0 && mob.shieldHp < mob.maxShieldHp) {
+      if (now - (mob.lastShieldHitAt || 0) > CAPITAL_SHIP_SHIELD_REGEN_MS) {
+        mob.shieldHp = Math.min(mob.maxShieldHp, (Number(mob.shieldHp) || 0) + CAPITAL_SHIP_SHIELD_REGEN_AMOUNT * dt * 20);
+      }
+    }
     if (targetPlayer) {
       mob._targetX = targetPlayer.x;
       mob._targetY = targetPlayer.y;
@@ -8519,6 +8645,22 @@ function updateMobs(dt, boundsArray) {
       } else if (distToPlayer <= MOB_ATTACK_RADIUS) {
         attackPlayerWithMob(mob, targetPlayer, now);
         return;
+      }
+    } else if (mob.isShipPirate) {
+      const npcTarget = nearestHostileNpcShip(mob);
+      if (npcTarget) {
+        const dxh = npcTarget.x - mob.x;
+        const dyh = npcTarget.y - mob.y;
+        const distToShip = Math.hypot(dxh, dyh);
+        mob.facing = Math.atan2(dyh, dxh);
+        if (distToShip <= NPC_SHIP_BATTLE_RANGE) {
+          fireNpcShipLaser(mob, npcTarget, now);
+        }
+        const standOff = mob.isCapitalShip ? 11 : 8;
+        const pull = distToShip > standOff ? 0.65 : -0.35;
+        const len = distToShip || 1;
+        mob._targetX = mob.x + (dxh / len) * standOff * pull;
+        mob._targetY = mob.y + (dyh / len) * standOff * pull;
       }
     } else if (
       mob.isAssaultWave &&
@@ -8558,6 +8700,36 @@ function updateMobs(dt, boundsArray) {
     }
     mob.facing = Math.atan2(ny, nx);
   });
+}
+
+function processSciFiEncounters(now = Date.now()) {
+  for (const client of clients.values()) {
+    const player = client.player;
+    if (!player || player.hp <= 0 || worldForPosition(player.x, player.y) !== "scifi") {
+      continue;
+    }
+    if (!client.sciFiEncounterSeen) {
+      client.sciFiEncounterSeen = new Set();
+    }
+    for (const encounter of SCI_FI_ENCOUNTER_EVENTS) {
+      if (client.sciFiEncounterSeen.has(encounter.id)) continue;
+      const radius = Number(encounter.radius) || 24;
+      const dx = player.x - encounter.x;
+      const dy = player.y - encounter.y;
+      if (dx * dx + dy * dy > radius * radius) continue;
+      client.sciFiEncounterSeen.add(encounter.id);
+      send(client, {
+        type: "spaceEvent",
+        id: encounter.id,
+        kind: encounter.kind,
+        title: encounter.title,
+        message: encounter.message,
+        x: encounter.x,
+        y: encounter.y,
+        at: now
+      });
+    }
+  }
 }
 
 function processGatekeeperArchers(now = Date.now()) {
@@ -8803,7 +8975,7 @@ function processStationDefenses(now = Date.now()) {
     const isCannon = defense.kind === "orbital-cannon";
     const damage = Math.max(1, Math.round((isCannon ? ORBITAL_CANNON_DAMAGE : STATION_TURRET_DAMAGE) + (Number(target.level) || 1) * 1.2));
     const facing = Math.atan2(target.y - defense.y, target.x - defense.x);
-    target.hp = Math.max(0, target.hp - damage);
+    const result = applyShipMobDamage(target, damage, now, defense.x, defense.y);
     const event = {
       type: "combat",
       kind: "projectile",
@@ -8819,8 +8991,11 @@ function processStationDefenses(now = Date.now()) {
       hit: true,
       targetId: target.id,
       targetKind: "mob",
-      damage,
-      targetHp: target.hp,
+      damage: result.damage,
+      shieldDamage: result.shieldDamage,
+      shieldHit: result.shieldHit,
+      targetHp: result.targetHp,
+      targetShieldHp: result.targetShieldHp,
       endX: Number(target.x.toFixed(3)),
       endY: Number(target.y.toFixed(3))
     };
@@ -8951,6 +9126,66 @@ function fireShipPirateLaser(mob, player, now) {
   broadcastCombat(event);
 }
 
+function nearestHostileNpcShip(mob) {
+  if (!mob?.isShipPirate || !mob.battleSide) return null;
+  let nearest = null;
+  let nearestDistance = Infinity;
+  forEachMobNear(mob.x, mob.y, NPC_SHIP_BATTLE_SCAN_RADIUS, (other) => {
+    if (other === mob || other.dead || !other.isShipPirate || !other.battleSide) return;
+    if (other.battleSide === mob.battleSide) return;
+    const dx = other.x - mob.x;
+    const dy = other.y - mob.y;
+    const dist = dx * dx + dy * dy;
+    if (dist < nearestDistance) {
+      nearestDistance = dist;
+      nearest = other;
+    }
+  });
+  return nearest;
+}
+
+function fireNpcShipLaser(attacker, target, now) {
+  if (!attacker?.isShipPirate || !target?.isShipPirate || target.dead) return;
+  if (now - (attacker._lastNpcShipShotAt || 0) < NPC_SHIP_BATTLE_COOLDOWN_MS) return;
+  const dxh = target.x - attacker.x;
+  const dyh = target.y - attacker.y;
+  const dist = Math.hypot(dxh, dyh);
+  if (dist > NPC_SHIP_BATTLE_RANGE || dist < 0.01) return;
+  attacker._lastNpcShipShotAt = now;
+  attacker.facing = Math.atan2(dyh, dxh);
+  const damage = Math.max(2, Math.round((attacker.attackDamage || 8) * (attacker.isCapitalShip ? 1.35 : 1)));
+  const result = applyShipMobDamage(target, damage, now, attacker.x, attacker.y);
+  const event = {
+    type: "combat",
+    kind: "projectile",
+    weapon: "npc_ship_laser",
+    projectileKind: "laser_bolt",
+    weaponStyle: attacker.isCapitalShip ? "orbital_cannon" : "ship_laser",
+    weaponColor: attacker.primary || "#ff6b8a",
+    attackerId: attacker.id,
+    x: Number(attacker.x.toFixed(3)),
+    y: Number(attacker.y.toFixed(3)),
+    facing: Number(attacker.facing.toFixed(3)),
+    range: NPC_SHIP_BATTLE_RANGE,
+    hit: true,
+    targetId: target.id,
+    targetKind: "mob",
+    damage: result.damage,
+    shieldDamage: result.shieldDamage,
+    shieldHit: result.shieldHit,
+    targetHp: result.targetHp,
+    targetShieldHp: result.targetShieldHp,
+    endX: Number(target.x.toFixed(3)),
+    endY: Number(target.y.toFixed(3))
+  };
+  if (target.hp <= 0 && !target.dead) {
+    target.dead = true;
+    target.respawnAt = now + (target.noRespawn ? 9000 : MOB_RESPAWN_MS);
+    event.defeated = true;
+  }
+  broadcastCombat(event);
+}
+
 function alertPirateFleet(triggerMob, alertRadius = 28) {
   if (!triggerMob?.faction) return;
   const until = Date.now() + PIRATE_ALERTED_MS;
@@ -9073,6 +9308,10 @@ function getMobSnapshot(viewBounds) {
       isCritter: Boolean(mob.isCritter),
       isShipPirate: Boolean(mob.isShipPirate),
       hullClass: typeof mob.hullClass === "string" ? mob.hullClass : null,
+      isCapitalShip: Boolean(mob.isCapitalShip),
+      battleSide: typeof mob.battleSide === "string" ? mob.battleSide : null,
+      shieldHp: Number.isFinite(Number(mob.shieldHp)) ? Number(Number(mob.shieldHp).toFixed(2)) : 0,
+      maxShieldHp: Number.isFinite(Number(mob.maxShieldHp)) ? Number(mob.maxShieldHp) : 0,
       x: Number(mob.x.toFixed(3)),
       y: Number(mob.y.toFixed(3)),
       facing: Number(mob.facing.toFixed(3))

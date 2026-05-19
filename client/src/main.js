@@ -1361,6 +1361,15 @@ function handleServerMessage(message) {
     return;
   }
 
+  if (message.type === "spaceEvent") {
+    appendChat({
+      kind: "system",
+      name: message.title || "Space Event",
+      text: message.message || "Long-range sensors picked up an anomaly."
+    });
+    return;
+  }
+
   if (message.type === "chatHistory") {
     chatMessages.replaceChildren();
     for (const chatMessage of message.messages) {
@@ -1944,6 +1953,19 @@ function applyCombatEvent(event) {
       const mob = state.mobs.get(event.targetId);
       if (mob) {
         mob.hp = event.targetHp;
+        if (Number.isFinite(event.targetShieldHp)) {
+          mob.shieldHp = event.targetShieldHp;
+        }
+        if (event.shieldHit) {
+          const mx = Number.isFinite(mob.renderX) ? mob.renderX : mob.x;
+          const my = Number.isFinite(mob.renderY) ? mob.renderY : mob.y;
+          const dx = Number(event.x) - mx;
+          const dy = Number(event.y) - my;
+          const len = Math.hypot(dx, dy) || 1;
+          mob.lastShieldHitAt = performance.now();
+          mob.lastShieldHitDx = dx / len;
+          mob.lastShieldHitDy = dy / len;
+        }
       }
     }
   }
@@ -11834,30 +11856,62 @@ function drawMobShipPirate(entity, x, y) {
   const color = entity.primary || "#ff6b8a";
   const { w, h } = shipHullDimensions(hullClass);
   const facing = Number.isFinite(entity.facing) ? entity.facing : 0;
+  const maxShield = Math.max(0, Number(entity.maxShieldHp) || 0);
+  const shield = Math.max(0, Number(entity.shieldHp) || 0);
+  const shieldPct = maxShield > 0 ? Math.max(0, Math.min(1, shield / maxShield)) : 0;
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(facing);
   drawEllipseShadow(-w / 2 - 4, h * 0.36, w + 8, 8, 0.28);
   drawShipHullShape(hullClass, -w / 2, -h / 2, w, h, color);
   ctx.restore();
+  if (maxShield > 0 && shield > 0) {
+    const recentHit = performance.now() - (Number(entity.lastShieldHitAt) || 0) < 420;
+    const radiusX = w * 0.57 + 6;
+    const radiusY = h * 0.62 + 6;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(recentHit ? Math.atan2(entity.lastShieldHitDy || 0, entity.lastShieldHitDx || -1) : facing);
+    ctx.globalAlpha = recentHit ? 0.95 : 0.42 + shieldPct * 0.28;
+    ctx.strokeStyle = recentHit ? "#d7fbff" : "#67f0ff";
+    ctx.lineWidth = recentHit ? 4 : 2;
+    ctx.setLineDash(recentHit ? [] : [8, 6]);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, radiusX, radiusY, 0, recentHit ? -0.9 : -Math.PI, recentHit ? 0.9 : Math.PI);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
   // Hostile name label below the hull
   ctx.save();
   ctx.font = "bold 10px ui-sans-serif, system-ui";
   ctx.textAlign = "center";
   ctx.lineWidth = 3;
   ctx.strokeStyle = "rgba(4,8,16,0.9)";
-  ctx.fillStyle = "#ff8aa6";
+  ctx.fillStyle = entity.isCapitalShip ? "#ffd166" : "#ff8aa6";
   const label = `Lv ${entity.level || 1} ${entity.name || "Pirate"}`;
   ctx.strokeText(label, x, y - h / 2 - 6);
   ctx.fillText(label, x, y - h / 2 - 6);
+  if (entity.isCapitalShip) {
+    ctx.font = "bold 9px ui-sans-serif, system-ui";
+    ctx.strokeText("CAPITAL", x, y - h / 2 - 18);
+    ctx.fillText("CAPITAL", x, y - h / 2 - 18);
+  }
   ctx.restore();
   // HP bar
   const hpPct = Math.max(0, Math.min(1, (entity.hp || 0) / Math.max(1, entity.maxHp || 1)));
-  if (hpPct < 1) {
+  const barW = entity.isCapitalShip ? 58 : 44;
+  if (hpPct < 1 || maxShield > 0) {
     ctx.fillStyle = "rgba(0,0,0,0.6)";
-    ctx.fillRect(x - 22, y + h / 2 + 4, 44, 4);
+    ctx.fillRect(x - barW / 2, y + h / 2 + 4, barW, 4);
     ctx.fillStyle = "#ff5d6e";
-    ctx.fillRect(x - 21, y + h / 2 + 5, 42 * hpPct, 2);
+    ctx.fillRect(x - barW / 2 + 1, y + h / 2 + 5, (barW - 2) * hpPct, 2);
+    if (maxShield > 0) {
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(x - barW / 2, y + h / 2 + 9, barW, 3);
+      ctx.fillStyle = "#67f0ff";
+      ctx.fillRect(x - barW / 2 + 1, y + h / 2 + 10, (barW - 2) * shieldPct, 1.5);
+    }
   }
 }
 
@@ -12558,8 +12612,13 @@ function drawDamageFx(fx, pct, halfW, halfH) {
     ctx.globalAlpha = 1;
     return;
   }
-  ctx.fillStyle = fx.blocked ? "#b9d7ff" : "#ffdf7a";
-  ctx.fillText(fx.blocked ? `blocked -${fx.damage}` : `-${fx.damage}`, tx, ty - 22 - pct * 18);
+  if (fx.shieldHit && Number.isFinite(fx.shieldDamage) && fx.shieldDamage > 0) {
+    ctx.fillStyle = "#9ef7ff";
+    ctx.fillText(`shield -${fx.shieldDamage}`, tx, ty - 22 - pct * 18);
+  } else {
+    ctx.fillStyle = fx.blocked ? "#b9d7ff" : "#ffdf7a";
+    ctx.fillText(fx.blocked ? `blocked -${fx.damage}` : `-${fx.damage}`, tx, ty - 22 - pct * 18);
+  }
   ctx.globalAlpha = 1;
 }
 

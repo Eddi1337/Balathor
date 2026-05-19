@@ -46,6 +46,10 @@ const SCI_FI_ASTEROIDS = Object.freeze([
   { id: "asteroid_belt_rim_north",   x: 1920, y: -510, radius: 17, density: 15, seed: 16210 },
   { id: "asteroid_belt_scatter_w",   x: 1570, y: -490, radius: 14, density: 12, seed: 17388 },
   { id: "asteroid_belt_scatter_e",   x: 2200, y:  360, radius: 16, density: 14, seed: 18471 },
+  { id: "asteroid_battle_shards",    x: 2028, y: -286, radius: 24, density: 24, seed: 19544 },
+  { id: "asteroid_distress_debris",  x: 1748, y: -322, radius: 18, density: 18, seed: 20631 },
+  { id: "asteroid_derelict_drift",   x: 2128, y:  318, radius: 20, density: 20, seed: 21702 },
+  { id: "asteroid_outer_crossfire",  x: 2248, y: -292, radius: 21, density: 18, seed: 22849 },
 ]);
 
 function getAsteroidRocks(cluster, hash2) {
