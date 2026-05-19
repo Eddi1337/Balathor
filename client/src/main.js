@@ -155,6 +155,7 @@ let safeZoneTooltipPinTimer = null;
 
 const TILE_SIZE = 32;
 const SCI_FI_THEME = "sci-fi";
+const ALIEN_THEME = "alien";
 /** Hub landmark tree trunk — same origin as server/src/world.js START_SPAWN. */
 const START_SPAWN = Object.freeze({ x: 0, y: 0 });
 
@@ -831,7 +832,11 @@ function drawDebugHud() {
   const posLabel = self
     ? `Map: ${Math.round(self.renderX)}, ${Math.round(self.renderY)} (chunk ${Math.floor(self.renderX / CHUNK_SIZE)}, ${Math.floor(self.renderY / CHUNK_SIZE)})`
     : "Map: —";
-  const themeLabel = state.worldTheme === SCI_FI_THEME ? "Realm: sci-fi" : "Realm: fantasy";
+  const themeLabel = state.worldTheme === SCI_FI_THEME
+    ? "Realm: sci-fi"
+    : state.worldTheme === ALIEN_THEME
+      ? "Realm: alien"
+      : "Realm: fantasy";
 
   const simLabel =
     typeof state.debugServerSimHz === "number" && Number.isFinite(state.debugServerSimHz)
@@ -957,8 +962,39 @@ const sciFiTilePalette = {
   [TILE.ENERGY]: ["#103a40", "#67f0ff", "#e8ffff"]
 };
 
+const alienTilePalette = {
+  [TILE.GRASS]: ["#193d46", "#3fd39a", "#112832"],
+  [TILE.DARK_GRASS]: ["#132833", "#8b5cf6", "#0a1720"],
+  [TILE.TREE]: ["#1d3a35", "#e879f9", "#67f0ff"],
+  [TILE.WATER]: ["#102440", "#22d3ee", "#c4f1ff"],
+  [TILE.STONE]: ["#32324a", "#9ca3af", "#171728"],
+  [TILE.PATH]: ["#2c3440", "#7dd3fc", "#141a24"],
+  [TILE.FLOWERS]: ["#1d3040", "#f0abfc", "#bef264"],
+  [TILE.WALL]: ["#2d3440", "#61738a", "#141923"],
+  [TILE.FLOOR]: ["#394657", "#7c93ab", "#1b2430"],
+  [TILE.DOOR]: ["#1b2733", "#67f0ff", "#0d1218"],
+  [TILE.SAND]: ["#38424c", "#c4b5fd", "#1d2430"],
+  [TILE.SNOW]: ["#d8fbff", "#ffffff", "#86dff0"],
+  [TILE.LAVA]: ["#381324", "#fb3f70", "#ffd166"],
+  [TILE.PORTAL]: ["#071322", "#67f0ff", "#f0abfc"],
+  [TILE.CARPET]: ["#223447", "#5f8394", "#101922"],
+  [TILE.BED]: ["#415c78", "#8fb8d8", "#223240"],
+  [TILE.TABLE]: ["#2f4558", "#6e8aa0", "#17212c"],
+  [TILE.SHELF]: ["#32465a", "#98c4da", "#141c26"],
+  [TILE.FIREPLACE]: ["#3a2820", "#e05010", "#ffa040"],
+  [TILE.CHAIR]: ["#35495c", "#7d9ab1", "#171f28"],
+  [TILE.CHEST]: ["#2f3d4d", "#7ec8ff", "#d4af37"],
+  [TILE.HOME_TREE]: ["#315f45", "#2f7a4e", "#6c4b2e"],
+  [TILE.VOID]: ["#02030a", "#100b22", "#000000"],
+  [TILE.METAL]: ["#34425a", "#9fb8cf", "#172334"],
+  [TILE.WALKWAY]: ["#273447", "#67f0ff", "#111827"],
+  [TILE.HULL]: ["#233041", "#637a93", "#111721"],
+  [TILE.WINDOW]: ["#09131f", "#67f0ff", "#d8fbff"],
+  [TILE.ENERGY]: ["#15224a", "#a78bfa", "#e9d5ff"]
+};
+
 function getTileColors(tile, theme = state.worldTheme) {
-  const themePalette = theme === SCI_FI_THEME ? sciFiTilePalette : tilePalette;
+  const themePalette = theme === SCI_FI_THEME ? sciFiTilePalette : theme === ALIEN_THEME ? alienTilePalette : tilePalette;
   return themePalette[tile] || themePalette[TILE.GRASS];
 }
 
@@ -7480,7 +7516,7 @@ function draw() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   /** Solid fill so zoomed-out letterboxing matches the game frame (no “inner screen” seam). */
-  ctx.fillStyle = state.worldTheme === SCI_FI_THEME ? "#02050d" : "#132118";
+  ctx.fillStyle = state.worldTheme === SCI_FI_THEME ? "#02050d" : state.worldTheme === ALIEN_THEME ? "#07111a" : "#132118";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   if (!state.joined) {
@@ -8170,6 +8206,8 @@ function drawWorld() {
   const maxTileY = (maxChunkY + 1) * CHUNK_SIZE + 1;
   if (state.worldTheme === SCI_FI_THEME) {
     drawSpaceBackdrop(minChunkX, maxChunkX, minChunkY, maxChunkY);
+  } else if (state.worldTheme === ALIEN_THEME) {
+    drawAlienAtmosphere(minChunkX, maxChunkX, minChunkY, maxChunkY);
   }
   drawWorldAssets(minTileX, maxTileX, minTileY, maxTileY);
   drawSpaceObjects();
@@ -8219,8 +8257,29 @@ function drawSpaceBackdrop(minChunkX, maxChunkX, minChunkY, maxChunkY, fillBackg
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
+function drawAlienAtmosphere(minChunkX, maxChunkX, minChunkY, maxChunkY) {
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const minTileX = minChunkX * CHUNK_SIZE - 4;
+  const maxTileX = (maxChunkX + 1) * CHUNK_SIZE + 4;
+  const minTileY = minChunkY * CHUNK_SIZE - 4;
+  const maxTileY = (maxChunkY + 1) * CHUNK_SIZE + 4;
+  const time = performance.now() * 0.00035;
+
+  for (let y = minTileY; y <= maxTileY; y += 3) {
+    for (let x = minTileX; x <= maxTileX; x += 3) {
+      const haze = hash2(x, y, 4411);
+      if (haze < 0.82) continue;
+      const sx = x * TILE_SIZE - state.camera.x + halfW + Math.sin(time + x * 0.11) * 5;
+      const sy = y * TILE_SIZE - state.camera.y + halfH + Math.cos(time + y * 0.09) * 5;
+      ctx.fillStyle = haze > 0.96 ? "rgba(240,171,252,0.10)" : "rgba(103,240,255,0.06)";
+      ctx.fillRect(sx, sy, TILE_SIZE * 3, TILE_SIZE * 2);
+    }
+  }
+}
+
 function drawSpaceObjects() {
-  if (state.worldTheme !== SCI_FI_THEME) {
+  if (state.worldTheme !== SCI_FI_THEME && state.worldTheme !== ALIEN_THEME) {
     return;
   }
 
@@ -8241,7 +8300,11 @@ function drawSpaceObjects() {
     }
     const sx = obj.x * TILE_SIZE - state.camera.x + halfW;
     const sy = obj.y * TILE_SIZE - state.camera.y + halfH;
-    if (obj.kind === "planet" || obj.type === "planet") {
+    if (obj.kind === "alien_return_gate") {
+      drawAlienReturnGateObject(obj, sx, sy);
+    } else if (String(obj.kind || "").startsWith("alien_")) {
+      drawAlienSurfaceObject(obj, sx, sy);
+    } else if (obj.kind === "planet" || obj.type === "planet") {
       drawPlanetObject(obj, sx, sy);
     } else if (obj.kind === "asteroid_field") {
       drawAsteroidFieldObject(obj, sx, sy);
@@ -9504,6 +9567,140 @@ function drawStationObject(obj, sx, sy) {
   ctx.restore();
 }
 
+function drawAlienReturnGateObject(obj, sx, sy) {
+  const primary = obj.primary || "#67f0ff";
+  const accent = obj.accent || "#f0abfc";
+  const t = performance.now() * 0.001;
+  ctx.save();
+  drawEllipseShadow(sx - 28, sy + 16, 56, 12, 0.32);
+  ctx.translate(sx, sy);
+  ctx.strokeStyle = hexToRgba(primary, 0.72);
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.ellipse(0, 2, 22, 30, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = hexToRgba(accent, 0.9);
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(0, 2, 13 + Math.sin(t * 2) * 2, 20 + Math.cos(t * 2.2) * 2, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = hexToRgba(primary, 0.12);
+  ctx.beginPath();
+  ctx.ellipse(0, 2, 16, 24, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#d8fbff";
+  ctx.fillRect(-3, -31, 6, 6);
+  ctx.fillRect(-3, 29, 6, 6);
+  ctx.restore();
+}
+
+function drawAlienSurfaceObject(obj, sx, sy) {
+  const kind = obj.kind || obj.type;
+  const primary = obj.primary || "#67f0ff";
+  const accent = obj.accent || "#f0abfc";
+  const seed = Number(obj.seed) || 1;
+  const w = Math.max(18, Number(obj.w || 2) * TILE_SIZE);
+  const h = Math.max(24, Number(obj.h || 3) * TILE_SIZE);
+  const t = performance.now() * 0.001 + seed;
+  ctx.save();
+  if (kind === "alien_crystal") {
+    drawEllipseShadow(sx - w * 0.38, sy + h * 0.25, w * 0.76, 8, 0.26);
+    ctx.translate(sx, sy);
+    for (let i = 0; i < 3; i += 1) {
+      const ox = (i - 1) * w * 0.18;
+      const ph = h * (0.62 + hash2(seed, i, 7) * 0.34);
+      ctx.fillStyle = i === 1 ? primary : accent;
+      ctx.globalAlpha = 0.84;
+      ctx.beginPath();
+      ctx.moveTo(ox, -ph * 0.58);
+      ctx.lineTo(ox + w * 0.16, -ph * 0.16);
+      ctx.lineTo(ox + w * 0.08, ph * 0.42);
+      ctx.lineTo(ox - w * 0.13, ph * 0.32);
+      ctx.lineTo(ox - w * 0.18, -ph * 0.12);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.42)";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  } else if (kind === "alien_spire") {
+    drawEllipseShadow(sx - w * 0.44, sy + h * 0.3, w * 0.88, 10, 0.3);
+    ctx.translate(sx, sy);
+    ctx.fillStyle = blend(primary, "#111827", 0.42);
+    ctx.beginPath();
+    ctx.moveTo(0, -h * 0.62);
+    ctx.lineTo(w * 0.3, h * 0.36);
+    ctx.lineTo(-w * 0.24, h * 0.42);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, -h * 0.5);
+    ctx.lineTo(0, h * 0.28);
+    ctx.stroke();
+  } else if (kind === "alien_vent") {
+    drawEllipseShadow(sx - w * 0.45, sy + h * 0.18, w * 0.9, 10, 0.28);
+    ctx.translate(sx, sy);
+    ctx.fillStyle = blend(primary, "#0f172a", 0.38);
+    ctx.beginPath();
+    ctx.ellipse(0, h * 0.18, w * 0.35, h * 0.22, 0, 0, Math.PI * 2);
+    ctx.fill();
+    for (let i = 0; i < 3; i += 1) {
+      ctx.strokeStyle = hexToRgba(accent, 0.24 - i * 0.04);
+      ctx.lineWidth = 5 - i;
+      ctx.beginPath();
+      ctx.arc(0, -i * 9 + Math.sin(t + i) * 2, 12 + i * 9, Math.PI * 1.08, Math.PI * 1.92);
+      ctx.stroke();
+    }
+  } else if (kind === "alien_mushroom") {
+    drawEllipseShadow(sx - w * 0.44, sy + h * 0.26, w * 0.88, 8, 0.24);
+    ctx.translate(sx, sy);
+    ctx.fillStyle = blend(primary, "#ffffff", 0.18);
+    ctx.fillRect(-w * 0.08, -h * 0.04, w * 0.16, h * 0.42);
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.ellipse(0, -h * 0.13, w * 0.36, h * 0.2, 0, Math.PI, 0);
+    ctx.fill();
+    ctx.fillStyle = "#d8fbff";
+    ctx.fillRect(-w * 0.18, -h * 0.17, 4, 3);
+    ctx.fillRect(w * 0.08, -h * 0.2, 4, 3);
+  } else if (kind === "alien_coral") {
+    drawEllipseShadow(sx - w * 0.42, sy + h * 0.24, w * 0.84, 8, 0.24);
+    ctx.translate(sx, sy);
+    ctx.strokeStyle = primary;
+    ctx.lineWidth = 4;
+    ctx.lineCap = "round";
+    for (let i = 0; i < 5; i += 1) {
+      const ox = (i - 2) * w * 0.09;
+      ctx.beginPath();
+      ctx.moveTo(0, h * 0.28);
+      ctx.quadraticCurveTo(ox, -h * 0.05, ox * 1.35, -h * (0.25 + i * 0.03));
+      ctx.stroke();
+    }
+    ctx.lineCap = "butt";
+  } else {
+    drawEllipseShadow(sx - w * 0.42, sy + h * 0.22, w * 0.84, 8, 0.22);
+    ctx.translate(sx, sy);
+    ctx.strokeStyle = primary;
+    ctx.lineWidth = 4;
+    ctx.lineCap = "round";
+    for (let i = 0; i < 4; i += 1) {
+      const angle = -Math.PI / 2 + (i - 1.5) * 0.34 + Math.sin(t + i) * 0.05;
+      ctx.beginPath();
+      ctx.moveTo(0, h * 0.28);
+      ctx.quadraticCurveTo(Math.cos(angle) * w * 0.18, -h * 0.05, Math.cos(angle) * w * 0.32, -h * 0.36);
+      ctx.stroke();
+      ctx.fillStyle = i % 2 === 0 ? accent : primary;
+      ctx.beginPath();
+      ctx.ellipse(Math.cos(angle) * w * 0.34, -h * 0.38, 5, 8, angle, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.lineCap = "butt";
+  }
+  ctx.restore();
+}
+
 function drawStationVacuumBorder(x, y, w, h) {
   const pad = Math.max(18, Math.round(Math.min(w, h) * 0.18));
   const bx = x - pad;
@@ -10102,6 +10299,7 @@ function drawTile(tile, sx, sy, tx, ty) {
   }
 
   if (
+    state.worldTheme === SCI_FI_THEME &&
     globalThis.TechDungeonSprites &&
     tile >= TILE.VOID &&
     tile <= TILE.ENERGY &&
@@ -13575,6 +13773,43 @@ function drawTreeCanopies() {
 }
 
 function drawTreeCanopy(sx, sy, tx, ty) {
+  if (state.worldTheme === ALIEN_THEME) {
+    const v = hash2(tx, ty, 200);
+    const pulse = 0.5 + Math.sin(performance.now() * 0.002 + tx * 0.31 + ty * 0.17) * 0.5;
+    const trunk = v > 0.5 ? "#27315a" : "#243b3b";
+    const leafA = v > 0.66 ? "#e879f9" : v > 0.33 ? "#67f0ff" : "#86efac";
+    const leafB = v > 0.66 ? "#8b5cf6" : v > 0.33 ? "#0ea5e9" : "#16a34a";
+    ctx.save();
+    drawEllipseShadow(sx + 3, sy + 25, 26, 8, 0.24);
+    ctx.fillStyle = trunk;
+    ctx.fillRect(sx + 14, sy + 16, 5, 16);
+    ctx.strokeStyle = hexToRgba(leafA, 0.86);
+    ctx.lineWidth = 4;
+    ctx.lineCap = "round";
+    for (let i = 0; i < 5; i += 1) {
+      const angle = -Math.PI / 2 + (i - 2) * 0.34;
+      ctx.beginPath();
+      ctx.moveTo(sx + 16, sy + 21);
+      ctx.quadraticCurveTo(
+        sx + 16 + Math.cos(angle) * 18,
+        sy + 8 + Math.sin(angle) * 8,
+        sx + 16 + Math.cos(angle) * 25,
+        sy + 2 + Math.sin(angle) * 13
+      );
+      ctx.stroke();
+    }
+    ctx.fillStyle = hexToRgba(leafB, 0.92);
+    ctx.beginPath();
+    ctx.ellipse(sx + 16, sy + 4, 19 + pulse * 2, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = hexToRgba("#ffffff", 0.35 + pulse * 0.25);
+    ctx.fillRect(sx + 11, sy + 2, 3, 3);
+    ctx.fillRect(sx + 21, sy + 5, 2, 2);
+    ctx.lineCap = "butt";
+    ctx.restore();
+    return;
+  }
+
   const frost = isNearTile(tx, ty, TILE.SNOW);
   const ember = tx > 80 && ty < -70;
   const v = hash2(tx, ty, 200);
@@ -15494,16 +15729,22 @@ function setStatus(text) {
 }
 
 function setWorldTheme(theme) {
-  const next = theme === SCI_FI_THEME ? SCI_FI_THEME : "fantasy";
+  const next = theme === SCI_FI_THEME ? SCI_FI_THEME : theme === ALIEN_THEME ? ALIEN_THEME : "fantasy";
   if (state.worldTheme === next) {
     return;
   }
   state.worldTheme = next;
   document.body.classList.toggle("theme-sci-fi", next === SCI_FI_THEME);
+  document.body.classList.toggle("theme-alien", next === ALIEN_THEME);
   if (next === SCI_FI_THEME) {
     document.body.classList.remove("theme-fantasy");
+    document.body.classList.remove("theme-alien");
+  } else if (next === ALIEN_THEME) {
+    document.body.classList.remove("theme-fantasy");
+    document.body.classList.remove("theme-sci-fi");
   } else {
     document.body.classList.add("theme-fantasy");
+    document.body.classList.remove("theme-alien");
   }
   chunkCanvasCache.clear();
 }

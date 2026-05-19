@@ -42,6 +42,24 @@ body.theme-sci-fi #game {
     linear-gradient(180deg, #02101d 0%, #030814 55%, #01030a 100%);
 }
 
+body.theme-alien {
+  --bg: #07111a;
+  --panel: rgba(13, 24, 34, 0.92);
+  --panel-edge: rgba(240, 171, 252, 0.24);
+  --text: #f0fbff;
+  --muted: #a8d7cf;
+  --accent: #f0abfc;
+  --danger: #fb7185;
+  --control: #172638;
+}
+
+body.theme-alien #game {
+  background:
+    radial-gradient(circle at 22% 12%, rgba(240, 171, 252, 0.08), transparent 36%),
+    radial-gradient(circle at 78% 26%, rgba(103, 240, 255, 0.07), transparent 34%),
+    linear-gradient(180deg, #07111a 0%, #0c1722 58%, #061018 100%);
+}
+
 button,
 input {
   font: inherit;
@@ -60,7 +78,13 @@ body.theme-sci-fi .game-window,
 body.theme-sci-fi .chat,
 body.theme-sci-fi .progression,
 body.theme-sci-fi .ability-bar,
-body.theme-sci-fi .menu-panel {
+body.theme-sci-fi .menu-panel,
+body.theme-alien .panel,
+body.theme-alien .game-window,
+body.theme-alien .chat,
+body.theme-alien .progression,
+body.theme-alien .ability-bar,
+body.theme-alien .menu-panel {
   box-shadow:
     0 0 0 1px rgba(103, 240, 255, 0.18) inset,
     0 18px 56px rgba(0, 0, 0, 0.55),
@@ -69,7 +93,10 @@ body.theme-sci-fi .menu-panel {
 
 body.theme-sci-fi .window-head,
 body.theme-sci-fi .progression-head,
-body.theme-sci-fi .chat-head {
+body.theme-sci-fi .chat-head,
+body.theme-alien .window-head,
+body.theme-alien .progression-head,
+body.theme-alien .chat-head {
   background: linear-gradient(180deg, rgba(18, 32, 51, 0.98) 0%, rgba(8, 16, 29, 0.98) 100%);
   border-color: rgba(103, 240, 255, 0.2);
 }
@@ -82,7 +109,16 @@ body.theme-sci-fi .chat-send,
 body.theme-sci-fi .progression-toggle,
 body.theme-sci-fi .window-close,
 body.theme-sci-fi .ability-bar-toggle,
-body.theme-sci-fi .menu-apply {
+body.theme-sci-fi .menu-apply,
+body.theme-alien .segment.selected,
+body.theme-alien .swatch.selected,
+body.theme-alien .connect,
+body.theme-alien .play,
+body.theme-alien .chat-send,
+body.theme-alien .progression-toggle,
+body.theme-alien .window-close,
+body.theme-alien .ability-bar-toggle,
+body.theme-alien .menu-apply {
   border-color: rgba(103, 240, 255, 0.4);
   box-shadow: 0 0 0 1px rgba(103, 240, 255, 0.12) inset;
 }

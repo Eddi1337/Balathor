@@ -76,7 +76,8 @@ const {
   getPlanetById,
   getPlanetBySurfacePoint,
   getPlanetBySpacePoint,
-  getPlanetSurfaceTile: getPlanetWorldSurfaceTile
+  getPlanetSurfaceTile: getPlanetWorldSurfaceTile,
+  getPlanetSurfaceObjectsInChunk
 } = require("./worlds/planetWorlds.js");
 const {
   SCI_FI_STATIONS,
@@ -209,6 +210,7 @@ function findNearestSciFiDockPort(px, py, maxDist = 12) {
 }
 
 function sciFiThemeForPoint(x, y) {
+  if (getPlanetBySurfacePoint(x, y)) return "alien";
   return isSciFiSector(x, y) ? SCI_FI_THEME : "fantasy";
 }
 
@@ -1871,6 +1873,11 @@ function getWorldThemeAt(x, y) {
 }
 
 function getBiome(x, y) {
+  const surfacePlanet = getPlanetBySurfacePoint(x, y);
+  if (surfacePlanet) {
+    return surfacePlanet.type || "alien";
+  }
+
   if (isSciFiSector(x, y)) {
     const station = sciFiStationAt(x, y);
     if (station) {
@@ -2210,7 +2217,10 @@ function generateChunk(cx, cy) {
     }
   }
 
-  const spaceObjects = getSciFiObjectsInChunk(cx, cy);
+  const spaceObjects = [
+    ...getSciFiObjectsInChunk(cx, cy),
+    ...getPlanetSurfaceObjectsInChunk(cx, cy, CHUNK_SIZE, hash2)
+  ];
 
   return {
     cx,

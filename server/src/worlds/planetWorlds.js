@@ -9,20 +9,38 @@
  * than falling through fantasy terrain generation.
  */
 
-const SCI_FI_PLANETS = Object.freeze([
-  { id: "planet_aurelia",   name: "Aurelia",   x: 2142, y: -382, radius: 60, seed: 8128, type: "lush",     surfaceX: 5000, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#3aa46c", surfaceAccent: "#daf7b0" },
-  { id: "planet_icefall",   name: "Icefall",   x: 2214, y: 180,  radius: 52, seed: 9181, type: "ice",      surfaceX: 5150, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#9fd8ff", surfaceAccent: "#f8fdff" },
-  { id: "planet_rust",      name: "Rust",      x: 2050, y: 416,  radius: 46, seed: 10201,type: "desert",   surfaceX: 5300, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#d3a15b", surfaceAccent: "#ffe0a6" },
-  { id: "planet_pyros",     name: "Pyros",     x: 1640, y: -260, radius: 48, seed: 11329,type: "volcanic", surfaceX: 5450, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#ef4444", surfaceAccent: "#fb923c" },
-  { id: "planet_thalas",    name: "Thalas",    x: 1560, y: 240,  radius: 56, seed: 12347,type: "ocean",    surfaceX: 5600, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#2bb3ff", surfaceAccent: "#a0e7ff" },
-  { id: "planet_velm",      name: "Velm",      x: 2306, y: -120, radius: 42, seed: 13441,type: "jungle",   surfaceX: 5750, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#16a34a", surfaceAccent: "#86efac" },
-  { id: "planet_kryon",     name: "Kryon",     x: 2280, y: 400,  radius: 50, seed: 14557,type: "crystal",  surfaceX: 5900, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#a78bfa", surfaceAccent: "#ddd6fe" },
-  { id: "planet_mycelia",   name: "Mycelia",   x: 1520, y: -360, radius: 44, seed: 15661,type: "fungal",   surfaceX: 6050, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#d946ef", surfaceAccent: "#fbcfe8" },
-  { id: "planet_obsidian",  name: "Obsidian",  x: 1820, y: 470,  radius: 40, seed: 16783,type: "barren",   surfaceX: 6200, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#475569", surfaceAccent: "#94a3b8" },
-  { id: "planet_xelune",    name: "Xelune",    x: 1900, y: -510, radius: 38, seed: 17893,type: "toxic",    surfaceX: 6350, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#84cc16", surfaceAccent: "#bef264" },
-  { id: "planet_aether",    name: "Aether",    x: 2160, y: 60,   radius: 36, seed: 18997,type: "aether",   surfaceX: 6500, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#22d3ee", surfaceAccent: "#cffafe" },
-  { id: "planet_dustcairn", name: "Dustcairn", x: 1640, y: 380,  radius: 34, seed: 20011,type: "ashland",  surfaceX: 6650, surfaceY: 0, surfaceRadius: 30, surfacePrimary: "#a8a29e", surfaceAccent: "#f5f5f4" }
-]);
+const PLANET_SURFACE_RADIUS = 900;
+const PLANET_SURFACE_SPACING = 2300;
+const PLANET_SURFACE_ORIGIN_X = 5000;
+const PLANET_SURFACE_ORIGIN_Y = -2600;
+
+function planetSurfaceAnchor(index) {
+  return {
+    surfaceX: PLANET_SURFACE_ORIGIN_X + (index % 4) * PLANET_SURFACE_SPACING,
+    surfaceY: PLANET_SURFACE_ORIGIN_Y + Math.floor(index / 4) * PLANET_SURFACE_SPACING
+  };
+}
+
+const PLANET_DEFINITIONS = [
+  { id: "planet_aurelia",   name: "Aurelia",   x: 2142, y: -382, radius: 60, seed: 8128,  type: "lush",     surfacePrimary: "#3aa46c", surfaceAccent: "#daf7b0" },
+  { id: "planet_icefall",   name: "Icefall",   x: 2214, y: 180,  radius: 52, seed: 9181,  type: "ice",      surfacePrimary: "#9fd8ff", surfaceAccent: "#f8fdff" },
+  { id: "planet_rust",      name: "Rust",      x: 2050, y: 416,  radius: 46, seed: 10201, type: "desert",   surfacePrimary: "#d3a15b", surfaceAccent: "#ffe0a6" },
+  { id: "planet_pyros",     name: "Pyros",     x: 1640, y: -260, radius: 48, seed: 11329, type: "volcanic", surfacePrimary: "#ef4444", surfaceAccent: "#fb923c" },
+  { id: "planet_thalas",    name: "Thalas",    x: 1560, y: 240,  radius: 56, seed: 12347, type: "ocean",    surfacePrimary: "#2bb3ff", surfaceAccent: "#a0e7ff" },
+  { id: "planet_velm",      name: "Velm",      x: 2306, y: -120, radius: 42, seed: 13441, type: "jungle",   surfacePrimary: "#16a34a", surfaceAccent: "#86efac" },
+  { id: "planet_kryon",     name: "Kryon",     x: 2280, y: 400,  radius: 50, seed: 14557, type: "crystal",  surfacePrimary: "#a78bfa", surfaceAccent: "#ddd6fe" },
+  { id: "planet_mycelia",   name: "Mycelia",   x: 1520, y: -360, radius: 44, seed: 15661, type: "fungal",   surfacePrimary: "#d946ef", surfaceAccent: "#fbcfe8" },
+  { id: "planet_obsidian",  name: "Obsidian",  x: 1820, y: 470,  radius: 40, seed: 16783, type: "barren",   surfacePrimary: "#475569", surfaceAccent: "#94a3b8" },
+  { id: "planet_xelune",    name: "Xelune",    x: 1900, y: -510, radius: 38, seed: 17893, type: "toxic",    surfacePrimary: "#84cc16", surfaceAccent: "#bef264" },
+  { id: "planet_aether",    name: "Aether",    x: 2160, y: 60,   radius: 36, seed: 18997, type: "aether",   surfacePrimary: "#22d3ee", surfaceAccent: "#cffafe" },
+  { id: "planet_dustcairn", name: "Dustcairn", x: 1640, y: 380,  radius: 34, seed: 20011, type: "ashland",  surfacePrimary: "#a8a29e", surfaceAccent: "#f5f5f4" }
+];
+
+const SCI_FI_PLANETS = Object.freeze(PLANET_DEFINITIONS.map((planet, index) => Object.freeze({
+  ...planet,
+  ...planetSurfaceAnchor(index),
+  surfaceRadius: PLANET_SURFACE_RADIUS
+})));
 
 const PLANET_SURFACE_LANDING_OFFSET = 6;
 const PLANET_SURFACE_EDGE_MARGIN = 1.5;
@@ -119,6 +137,22 @@ function biomeTileMix(type, h, TILE) {
   }
 }
 
+function smoothNoise(hash2, x, y, scale, seed) {
+  const fx = x / scale;
+  const fy = y / scale;
+  const x0 = Math.floor(fx);
+  const y0 = Math.floor(fy);
+  const tx = fx - x0;
+  const ty = fy - y0;
+  const a = hash2(x0, y0, seed);
+  const b = hash2(x0 + 1, y0, seed);
+  const c = hash2(x0, y0 + 1, seed);
+  const d = hash2(x0 + 1, y0 + 1, seed);
+  const ux = tx * tx * (3 - 2 * tx);
+  const uy = ty * ty * (3 - 2 * ty);
+  return (a + (b - a) * ux) + (((c + (d - c) * ux) - (a + (b - a) * ux)) * uy);
+}
+
 function getPlanetSurfaceTile(planet, x, y, TILE, hash2) {
   const dx = x - planet.surfaceX;
   const dy = y - planet.surfaceY;
@@ -130,15 +164,118 @@ function getPlanetSurfaceTile(planet, x, y, TILE, hash2) {
   if (dist > planet.surfaceRadius - 1.2) {
     return TILE.STONE;
   }
-  const h = hash2(x, y, planet.seed | 0);
-  if (dist < 4) {
+  const localX = x - planet.surfaceX;
+  const localY = y - planet.surfaceY;
+  const continental = smoothNoise(hash2, localX, localY, 78, planet.seed + 100);
+  const regional = smoothNoise(hash2, localX + planet.seed, localY - planet.seed, 28, planet.seed + 200);
+  const detail = hash2(x, y, planet.seed | 0);
+  const h = continental * 0.52 + regional * 0.34 + detail * 0.14;
+  const river = Math.abs(smoothNoise(hash2, localX, localY, 42, planet.seed + 330) - 0.5);
+  const ridge = smoothNoise(hash2, localX - 70, localY + 40, 96, planet.seed + 440);
+  if (dist < 9) {
     if (planet.type === "ocean" || planet.type === "toxic") return TILE.SAND;
     if (planet.type === "ice" || planet.type === "aether") return TILE.SNOW;
     if (planet.type === "volcanic" || planet.type === "ashland" || planet.type === "barren") return TILE.STONE;
     if (planet.type === "desert") return TILE.SAND;
     return TILE.GRASS;
   }
+  if (dist > planet.surfaceRadius - 9) {
+    return ridge > 0.58 ? TILE.STONE : TILE.DARK_GRASS;
+  }
+  if ((planet.type === "lush" || planet.type === "jungle" || planet.type === "fungal") && river < 0.028 && dist > 20) {
+    return TILE.WATER;
+  }
+  if ((planet.type === "crystal" || planet.type === "aether") && ridge > 0.78) {
+    return TILE.ENERGY;
+  }
   return biomeTileMix(planet.type, h, TILE);
+}
+
+function alienAssetKindsForPlanet(type) {
+  switch (type) {
+    case "ice": return ["alien_crystal", "alien_spire", "alien_flora"];
+    case "desert": return ["alien_spire", "alien_vent", "alien_crystal"];
+    case "volcanic": return ["alien_vent", "alien_spire", "alien_crystal"];
+    case "ocean": return ["alien_coral", "alien_flora", "alien_crystal"];
+    case "jungle": return ["alien_flora", "alien_mushroom", "alien_spire"];
+    case "crystal": return ["alien_crystal", "alien_spire", "alien_vent"];
+    case "fungal": return ["alien_mushroom", "alien_flora", "alien_coral"];
+    case "barren": return ["alien_spire", "alien_vent", "alien_crystal"];
+    case "toxic": return ["alien_vent", "alien_mushroom", "alien_flora"];
+    case "aether": return ["alien_crystal", "alien_flora", "alien_spire"];
+    case "ashland": return ["alien_vent", "alien_spire", "alien_mushroom"];
+    case "lush":
+    default: return ["alien_flora", "alien_mushroom", "alien_crystal"];
+  }
+}
+
+function planetObjectTouchesChunk(obj, startX, startY, endX, endY) {
+  const w = Math.max(1, Number(obj.w || 1));
+  const h = Math.max(1, Number(obj.h || 1));
+  return obj.x - w / 2 < endX && obj.x + w / 2 > startX && obj.y - h / 2 < endY && obj.y + h / 2 > startY;
+}
+
+function getPlanetSurfaceObjectsInChunk(cx, cy, chunkSize, hash2) {
+  const startX = cx * chunkSize;
+  const startY = cy * chunkSize;
+  const endX = startX + chunkSize;
+  const endY = startY + chunkSize;
+  const out = [];
+
+  for (const planet of SCI_FI_PLANETS) {
+    const reach = planet.surfaceRadius + 8;
+    if (planet.surfaceX + reach < startX || planet.surfaceX - reach > endX || planet.surfaceY + reach < startY || planet.surfaceY - reach > endY) {
+      continue;
+    }
+
+    const portal = {
+      id: `alien_return_${planet.id}`,
+      kind: "alien_return_gate",
+      type: "alien_return_gate",
+      planetId: planet.id,
+      x: planet.surfaceX,
+      y: planet.surfaceY - 3,
+      w: 4,
+      h: 5,
+      primary: planet.surfacePrimary,
+      accent: planet.surfaceAccent
+    };
+    if (planetObjectTouchesChunk(portal, startX, startY, endX, endY)) {
+      out.push(portal);
+    }
+
+    const cxSeed = Math.floor(cx);
+    const cySeed = Math.floor(cy);
+    const densityRoll = hash2(cxSeed, cySeed, planet.seed + 600);
+    const objectCount = densityRoll > 0.78 ? 2 : densityRoll > 0.34 ? 1 : 0;
+    const kinds = alienAssetKindsForPlanet(planet.type);
+    for (let i = 0; i < objectCount; i += 1) {
+      const px = startX + 1.5 + hash2(cxSeed, cySeed, planet.seed + 701 + i * 13) * (chunkSize - 3);
+      const py = startY + 1.5 + hash2(cxSeed, cySeed, planet.seed + 811 + i * 17) * (chunkSize - 3);
+      const dx = px - planet.surfaceX;
+      const dy = py - planet.surfaceY;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 13 || dist > planet.surfaceRadius - 10) continue;
+      const kind = kinds[Math.floor(hash2(cxSeed, cySeed, planet.seed + 911 + i) * kinds.length) % kinds.length];
+      const scale = 0.8 + hash2(cxSeed, cySeed, planet.seed + 991 + i) * 0.8;
+      out.push({
+        id: `alien_${planet.id}_${cx}_${cy}_${i}`,
+        kind,
+        type: kind,
+        planetId: planet.id,
+        planetType: planet.type,
+        x: Number(px.toFixed(3)),
+        y: Number(py.toFixed(3)),
+        w: scale * (kind === "alien_spire" ? 2.6 : kind === "alien_coral" ? 2.2 : 1.8),
+        h: scale * (kind === "alien_spire" ? 4.6 : kind === "alien_crystal" ? 3.2 : kind === "alien_vent" ? 2.4 : 2.8),
+        primary: planet.surfacePrimary,
+        accent: planet.surfaceAccent,
+        seed: planet.seed + cxSeed * 17 + cySeed * 31 + i
+      });
+    }
+  }
+
+  return out;
 }
 
 module.exports = {
@@ -148,5 +285,6 @@ module.exports = {
   getPlanetById,
   getPlanetBySurfacePoint,
   getPlanetBySpacePoint,
-  getPlanetSurfaceTile
+  getPlanetSurfaceTile,
+  getPlanetSurfaceObjectsInChunk
 };
