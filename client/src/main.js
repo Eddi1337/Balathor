@@ -6904,7 +6904,7 @@ function renderQuestPanel() {
   if (!quests.length) {
     const empty = document.createElement("div");
     empty.className = "quest-empty";
-    empty.textContent = "No active quests. Speak to people marked with ! in fantasy towns.";
+    empty.textContent = "No active quests. Speak to people marked with ! or contract officers on stations.";
     questList.append(empty);
     return;
   }
@@ -7590,7 +7590,7 @@ function getTrackedQuestObjective() {
 }
 
 function drawQuestHelperArrow() {
-  if (!state.joined || state.menuOpen || isSciFiWorld()) return;
+  if (!state.joined || state.menuOpen) return;
   const quest = getTrackedQuestObjective();
   const target = quest?.objective?.target;
   if (!target || !Number.isFinite(Number(target.x)) || !Number.isFinite(Number(target.y))) return;
@@ -7637,7 +7637,7 @@ function drawQuestHelperArrow() {
     ctx.fillStyle = "rgba(255, 245, 215, 0.95)";
     ctx.strokeStyle = "rgba(8, 6, 3, 0.88)";
     ctx.lineWidth = 3;
-    const label = quest.objective?.type === "kill" ? "Quest hunt" : "Quest talk";
+    const label = quest.objective?.type === "kill" ? "Quest hunt" : quest.objective?.type === "location" ? "Job site" : "Quest talk";
     ctx.strokeText(label, arrowX, arrowY + 18);
     ctx.fillText(label, arrowX, arrowY + 18);
     ctx.restore();

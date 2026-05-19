@@ -13,6 +13,13 @@ const PLANET_SURFACE_RADIUS = 900;
 const PLANET_SURFACE_SPACING = 2300;
 const PLANET_SURFACE_ORIGIN_X = 5000;
 const PLANET_SURFACE_ORIGIN_Y = -2600;
+const PROCEDURAL_PLANET_SPACE_GRID = 920;
+const PROCEDURAL_PLANET_SPACE_SEED = 70123;
+const PROCEDURAL_PLANET_SURFACE_ORIGIN_X = 500000;
+const PROCEDURAL_PLANET_SURFACE_ORIGIN_Y = 500000;
+const PROCEDURAL_PLANET_SURFACE_SPACING = 2300;
+const PROCEDURAL_PLANET_TYPES = Object.freeze(["lush", "ice", "desert", "volcanic", "ocean", "jungle", "crystal", "fungal", "barren", "toxic", "aether", "ashland"]);
+const PROCEDURAL_PLANET_PREFIX = "planet_proc_";
 
 function planetSurfaceAnchor(index) {
   return {
@@ -45,9 +52,86 @@ const SCI_FI_PLANETS = Object.freeze(PLANET_DEFINITIONS.map((planet, index) => O
 const PLANET_SURFACE_LANDING_OFFSET = 6;
 const PLANET_SURFACE_EDGE_MARGIN = 1.5;
 
+function unitHash(x, y, seed = PROCEDURAL_PLANET_SPACE_SEED) {
+  let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ seed;
+  h = (h ^ (h >>> 13)) >>> 0;
+  h = Math.imul(h, 1274126177) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+}
+
+function proceduralPlanetId(gx, gy) {
+  return `${PROCEDURAL_PLANET_PREFIX}${gx}_${gy}`;
+}
+
+function encodeSignedGrid(value) {
+  return value >= 0 ? value * 2 : Math.abs(value) * 2 - 1;
+}
+
+function decodeSignedGrid(value) {
+  return value % 2 === 0 ? value / 2 : -((value + 1) / 2);
+}
+
+function parseProceduralPlanetId(id) {
+  if (typeof id !== "string" || !id.startsWith(PROCEDURAL_PLANET_PREFIX)) return null;
+  const rest = id.slice(PROCEDURAL_PLANET_PREFIX.length);
+  const match = rest.match(/^(-?\d+)_(-?\d+)$/);
+  if (!match) return null;
+  return { gx: Number(match[1]), gy: Number(match[2]) };
+}
+
+function planetPaletteForType(type) {
+  const def = PLANET_DEFINITIONS.find((p) => p.type === type) || PLANET_DEFINITIONS[0];
+  return { surfacePrimary: def.surfacePrimary, surfaceAccent: def.surfaceAccent };
+}
+
+function proceduralPlanetName(gx, gy, type) {
+  const prefixes = ["Xel", "Or", "Va", "Nym", "Keth", "Aru", "Thal", "Zor", "Eri", "Sol"];
+  const suffixes = ["ara", "ion", "uun", "eth", "ora", "yx", "alis", "uun", "aris", "ea"];
+  const a = prefixes[Math.floor(unitHash(gx, gy, 7101) * prefixes.length) % prefixes.length];
+  const b = suffixes[Math.floor(unitHash(gx, gy, 7102) * suffixes.length) % suffixes.length];
+  const code = Math.floor(unitHash(gx, gy, 7103) * 90) + 10;
+  const typeLabel = type === "aether" ? "Aether" : type.charAt(0).toUpperCase() + type.slice(1);
+  return `${a}${b}-${code} ${typeLabel}`;
+}
+
+function makeProceduralPlanet(gx, gy) {
+  if (!Number.isFinite(gx) || !Number.isFinite(gy)) return null;
+  const roll = unitHash(gx, gy, PROCEDURAL_PLANET_SPACE_SEED);
+  if (roll < 0.22) return null;
+  const centerX = gx * PROCEDURAL_PLANET_SPACE_GRID + 160 + unitHash(gx, gy, 7201) * (PROCEDURAL_PLANET_SPACE_GRID - 320);
+  const centerY = gy * PROCEDURAL_PLANET_SPACE_GRID + 160 + unitHash(gx, gy, 7202) * (PROCEDURAL_PLANET_SPACE_GRID - 320);
+  if (Math.abs(centerX) < 1250 && Math.abs(centerY) < 1250) return null;
+  const type = PROCEDURAL_PLANET_TYPES[Math.floor(unitHash(gx, gy, 7203) * PROCEDURAL_PLANET_TYPES.length) % PROCEDURAL_PLANET_TYPES.length];
+  const palette = planetPaletteForType(type);
+  const radius = 32 + Math.floor(unitHash(gx, gy, 7204) * 36);
+  const seed = 30000 + ((Math.abs(gx * 92821 + gy * 68917) + Math.floor(unitHash(gx, gy, 7205) * 9999)) % 60000);
+  return Object.freeze({
+    id: proceduralPlanetId(gx, gy),
+    name: proceduralPlanetName(gx, gy, type),
+    x: Number(centerX.toFixed(3)),
+    y: Number(centerY.toFixed(3)),
+    radius,
+    seed,
+    type,
+    surfaceX: PROCEDURAL_PLANET_SURFACE_ORIGIN_X + encodeSignedGrid(gx) * PROCEDURAL_PLANET_SURFACE_SPACING,
+    surfaceY: PROCEDURAL_PLANET_SURFACE_ORIGIN_Y + encodeSignedGrid(gy) * PROCEDURAL_PLANET_SURFACE_SPACING,
+    surfaceRadius: PLANET_SURFACE_RADIUS,
+    surfacePrimary: palette.surfacePrimary,
+    surfaceAccent: palette.surfaceAccent,
+    procedural: true,
+    gridX: gx,
+    gridY: gy
+  });
+}
+
+function getProceduralPlanetById(id) {
+  const parsed = parseProceduralPlanetId(id);
+  return parsed ? makeProceduralPlanet(parsed.gx, parsed.gy) : null;
+}
+
 function getPlanetById(id) {
   if (typeof id !== "string") return null;
-  return SCI_FI_PLANETS.find((p) => p.id === id) || null;
+  return SCI_FI_PLANETS.find((p) => p.id === id) || getProceduralPlanetById(id) || null;
 }
 
 function getPlanetBySurfacePoint(x, y) {
@@ -56,6 +140,22 @@ function getPlanetBySurfacePoint(x, y) {
     const dy = y - planet.surfaceY;
     const r = planet.surfaceRadius + PLANET_SURFACE_EDGE_MARGIN;
     if (dx * dx + dy * dy <= r * r) return planet;
+  }
+  const encodedGx = Math.round((x - PROCEDURAL_PLANET_SURFACE_ORIGIN_X) / PROCEDURAL_PLANET_SURFACE_SPACING);
+  const encodedGy = Math.round((y - PROCEDURAL_PLANET_SURFACE_ORIGIN_Y) / PROCEDURAL_PLANET_SURFACE_SPACING);
+  if (encodedGx < 0 || encodedGy < 0) return null;
+  for (let ox = -1; ox <= 1; ox += 1) {
+    for (let oy = -1; oy <= 1; oy += 1) {
+      const sx = encodedGx + ox;
+      const sy = encodedGy + oy;
+      if (sx < 0 || sy < 0) continue;
+      const planet = makeProceduralPlanet(decodeSignedGrid(sx), decodeSignedGrid(sy));
+      if (!planet) continue;
+      const dx = x - planet.surfaceX;
+      const dy = y - planet.surfaceY;
+      const r = planet.surfaceRadius + PLANET_SURFACE_EDGE_MARGIN;
+      if (dx * dx + dy * dy <= r * r) return planet;
+    }
   }
   return null;
 }
@@ -67,7 +167,59 @@ function getPlanetBySpacePoint(x, y) {
     const r = planet.radius + 2;
     if (dx * dx + dy * dy <= r * r) return planet;
   }
+  const gx = Math.floor(x / PROCEDURAL_PLANET_SPACE_GRID);
+  const gy = Math.floor(y / PROCEDURAL_PLANET_SPACE_GRID);
+  for (let ox = -1; ox <= 1; ox += 1) {
+    for (let oy = -1; oy <= 1; oy += 1) {
+      const planet = makeProceduralPlanet(gx + ox, gy + oy);
+      if (!planet) continue;
+      const dx = x - planet.x;
+      const dy = y - planet.y;
+      const r = planet.radius + 2;
+      if (dx * dx + dy * dy <= r * r) return planet;
+    }
+  }
   return null;
+}
+
+function getPlanetsNearSpacePoint(x, y, radius = 1800) {
+  const out = [];
+  const seen = new Set();
+  for (const planet of SCI_FI_PLANETS) {
+    const d = Math.hypot(planet.x - x, planet.y - y);
+    if (d <= radius) {
+      out.push(planet);
+      seen.add(planet.id);
+    }
+  }
+  const minGx = Math.floor((x - radius) / PROCEDURAL_PLANET_SPACE_GRID) - 1;
+  const maxGx = Math.floor((x + radius) / PROCEDURAL_PLANET_SPACE_GRID) + 1;
+  const minGy = Math.floor((y - radius) / PROCEDURAL_PLANET_SPACE_GRID) - 1;
+  const maxGy = Math.floor((y + radius) / PROCEDURAL_PLANET_SPACE_GRID) + 1;
+  for (let gx = minGx; gx <= maxGx; gx += 1) {
+    for (let gy = minGy; gy <= maxGy; gy += 1) {
+      const planet = makeProceduralPlanet(gx, gy);
+      if (!planet || seen.has(planet.id)) continue;
+      const d = Math.hypot(planet.x - x, planet.y - y);
+      if (d <= radius + planet.radius) {
+        out.push(planet);
+        seen.add(planet.id);
+      }
+    }
+  }
+  return out.sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
+}
+
+function getPlanetsInSpaceChunk(cx, cy, chunkSize) {
+  const startX = cx * chunkSize;
+  const startY = cy * chunkSize;
+  const endX = startX + chunkSize;
+  const endY = startY + chunkSize;
+  return getPlanetsNearSpacePoint(startX + chunkSize / 2, startY + chunkSize / 2, Math.max(chunkSize, PROCEDURAL_PLANET_SPACE_GRID * 1.8))
+    .filter((planet) => {
+      const r = Number(planet.radius) || 1;
+      return planet.x - r < endX && planet.x + r > startX && planet.y - r < endY && planet.y + r > startY;
+    });
 }
 
 function biomeTileMix(type, h, TILE) {
@@ -222,7 +374,13 @@ function getPlanetSurfaceObjectsInChunk(cx, cy, chunkSize, hash2) {
   const endY = startY + chunkSize;
   const out = [];
 
-  for (const planet of SCI_FI_PLANETS) {
+  const planets = [...SCI_FI_PLANETS];
+  const surfacePlanet = getPlanetBySurfacePoint(startX + chunkSize / 2, startY + chunkSize / 2);
+  if (surfacePlanet && !planets.some((planet) => planet.id === surfacePlanet.id)) {
+    planets.push(surfacePlanet);
+  }
+
+  for (const planet of planets) {
     const reach = planet.surfaceRadius + 8;
     if (planet.surfaceX + reach < startX || planet.surfaceX - reach > endX || planet.surfaceY + reach < startY || planet.surfaceY - reach > endY) {
       continue;
@@ -285,6 +443,8 @@ module.exports = {
   getPlanetById,
   getPlanetBySurfacePoint,
   getPlanetBySpacePoint,
+  getPlanetsNearSpacePoint,
+  getPlanetsInSpaceChunk,
   getPlanetSurfaceTile,
   getPlanetSurfaceObjectsInChunk
 };

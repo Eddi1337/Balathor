@@ -2142,7 +2142,15 @@ const BASE_NPC_DEFINITIONS = [
     sciFiLook: "android",
     isTrader: true,
     questGiver: true,
-    questIds: ["q_scifi_pirate_patrol", "q_scifi_capital_breaker", "q_scifi_distress_response"],
+    questIds: [
+      "q_scifi_pirate_patrol",
+      "q_scifi_capital_breaker",
+      "q_scifi_distress_response",
+      "q_scifi_space_trucker",
+      "q_scifi_survey_world",
+      "q_scifi_mining_run",
+      "q_scifi_salvage_sweep"
+    ],
     dialogue: [
       "Docking clamps are green. Keep the lane clear.",
       "If you want a ship, talk to me before you wander off.",

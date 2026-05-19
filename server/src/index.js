@@ -39,6 +39,9 @@ const {
   SCI_FI_DEFENSES,
   getPlanetById,
   getPlanetBySpacePoint,
+  getPlanetsNearSpacePoint,
+  sciFiStationById,
+  proceduralSpaceStationsNear,
   SCI_FI_PLANETS,
   PLANET_SURFACE_LANDING_OFFSET,
   worldForPosition
@@ -234,6 +237,11 @@ const STAT_POINT_ARMOUR_REDUCTION = 0.04;
 const STAT_POINT_ARMOUR_CAP = 0.55;
 const CLASS_IDS = ["ranger", "mage", "knight"];
 const QUEST_INTERACT_RADIUS = 4.5;
+const SPACE_JOB_FREIGHT_ORIGIN = Object.freeze({ x: SCI_FI_STATION_CENTER.x - 29, y: SCI_FI_STATION_CENTER.y + 21, radius: 18, name: "Ringforge Freight Deck" });
+const SPACE_JOB_FREIGHT_DESTINATION = Object.freeze(sciFiStationById("station_proc_3_-2") || { id: "station_proc_3_-2", name: "Kestrel Harbor 155", x: 2750, y: -1192, radius: 34 });
+const SPACE_JOB_SURVEY_DESTINATION = Object.freeze(getPlanetById("planet_proc_2_1") || { id: "planet_proc_2_1", name: "Zorara-45 Desert", x: 2383, y: 1641, radius: 58 });
+const SPACE_JOB_MINING_TARGET = Object.freeze({ x: 1990, y: 290, radius: 34, name: "South Belt" });
+const SPACE_JOB_SALVAGE_TARGET = Object.freeze({ x: 2128, y: 318, radius: 30, name: "Derelict Helix" });
 const QUEST_DEFINITIONS = Object.freeze({
   q_first_hunt: {
     id: "q_first_hunt",
@@ -353,6 +361,55 @@ const QUEST_DEFINITIONS = Object.freeze({
     steps: [
       { type: "kill", text: "Destroy 4 raiders near the distress beacon", count: 4, faction: "pirate_distress", target: { x: 1748, y: -322 } },
       { type: "talk", text: "Confirm the response with Dockmaster Lyra", npcId: "npc_lyra_station", target: { x: 1866, y: -34 } }
+    ]
+  },
+  q_scifi_space_trucker: {
+    id: "q_scifi_space_trucker",
+    giverId: "npc_lyra_station",
+    title: "Space Trucker: Sealed Freight",
+    summary: `Move sealed station freight from Ringforge to ${SPACE_JOB_FREIGHT_DESTINATION.name}.`,
+    rewardGold: 160,
+    rewardXp: 260,
+    steps: [
+      { type: "location", text: "Load sealed cargo at Ringforge Freight Deck", target: SPACE_JOB_FREIGHT_ORIGIN, radius: SPACE_JOB_FREIGHT_ORIGIN.radius },
+      { type: "location", text: `Deliver cargo to ${SPACE_JOB_FREIGHT_DESTINATION.name}`, target: { x: SPACE_JOB_FREIGHT_DESTINATION.x, y: SPACE_JOB_FREIGHT_DESTINATION.y }, radius: 42 },
+      { type: "talk", text: "File the delivery receipt with Dockmaster Lyra", npcId: "npc_lyra_station", target: { x: 1866, y: -34 } }
+    ]
+  },
+  q_scifi_survey_world: {
+    id: "q_scifi_survey_world",
+    giverId: "npc_lyra_station",
+    title: "Survey Job: New Horizon",
+    summary: `Run a scan pass near ${SPACE_JOB_SURVEY_DESTINATION.name} for the station cartographers.`,
+    rewardGold: 120,
+    rewardXp: 230,
+    steps: [
+      { type: "location", text: `Reach orbit of ${SPACE_JOB_SURVEY_DESTINATION.name}`, target: { x: SPACE_JOB_SURVEY_DESTINATION.x, y: SPACE_JOB_SURVEY_DESTINATION.y }, radius: Math.max(70, Number(SPACE_JOB_SURVEY_DESTINATION.radius) + 16) },
+      { type: "talk", text: "Report the survey data to Dockmaster Lyra", npcId: "npc_lyra_station", target: { x: 1866, y: -34 } }
+    ]
+  },
+  q_scifi_mining_run: {
+    id: "q_scifi_mining_run",
+    giverId: "npc_lyra_station",
+    title: "Prospector Job: South Belt",
+    summary: "Prospect the mineral-rich asteroid belt and bring the scan ledger home.",
+    rewardGold: 110,
+    rewardXp: 210,
+    steps: [
+      { type: "location", text: "Hold position in the South Belt long enough to scan ore signatures", target: { x: SPACE_JOB_MINING_TARGET.x, y: SPACE_JOB_MINING_TARGET.y }, radius: SPACE_JOB_MINING_TARGET.radius },
+      { type: "talk", text: "Return the prospecting ledger to Dockmaster Lyra", npcId: "npc_lyra_station", target: { x: 1866, y: -34 } }
+    ]
+  },
+  q_scifi_salvage_sweep: {
+    id: "q_scifi_salvage_sweep",
+    giverId: "npc_lyra_station",
+    title: "Salvage Job: Derelict Sweep",
+    summary: "Check the derelict cruiser field and mark anything worth towing.",
+    rewardGold: 130,
+    rewardXp: 240,
+    steps: [
+      { type: "location", text: "Sweep the Derelict Helix field", target: { x: SPACE_JOB_SALVAGE_TARGET.x, y: SPACE_JOB_SALVAGE_TARGET.y }, radius: SPACE_JOB_SALVAGE_TARGET.radius },
+      { type: "talk", text: "Bring the salvage markers back to Dockmaster Lyra", npcId: "npc_lyra_station", target: { x: 1866, y: -34 } }
     ]
   }
 });
@@ -882,7 +939,7 @@ const SIM_WALL_SAMPLES_MAX = 60;
 
 /** Per-section timing accumulators (microseconds, reset every PERF_LOG_INTERVAL ticks). */
 const PERF_LOG_INTERVAL = 300;
-const perfAcc = { players: 0, npcs: 0, assaults: 0, mobs: 0, archerSupply: 0, archers: 0, defenses: 0, encounters: 0, caravans: 0, consecration: 0, snapshot: 0 };
+const perfAcc = { players: 0, npcs: 0, assaults: 0, mobs: 0, archerSupply: 0, archers: 0, defenses: 0, encounters: 0, jobs: 0, caravans: 0, consecration: 0, snapshot: 0 };
 let perfLastSnapshot = null;
 
 const worldDb = openWorldDb();
@@ -2937,6 +2994,10 @@ function simulate() {
     perfAcc.encounters += Number(process.hrtime.bigint() - _pt) / 1e3;
 
     _pt = process.hrtime.bigint();
+    processQuestLocationObjectives(Date.now());
+    perfAcc.jobs += Number(process.hrtime.bigint() - _pt) / 1e3;
+
+    _pt = process.hrtime.bigint();
     updateCaravans(aiDt);
     perfAcc.caravans += Number(process.hrtime.bigint() - _pt) / 1e3;
 
@@ -4932,19 +4993,16 @@ function buildTeleportDestinations(player, fromFlight = false) {
   const world = worldForPosition(px, py);
 
   if (world === "scifi") {
-    // Sort planets by distance from current ship position.
-    const ranked = SCI_FI_PLANETS.slice().sort((a, b) => {
-      const da = Math.hypot(a.x - px, a.y - py);
-      const db = Math.hypot(b.x - px, b.y - py);
-      return da - db;
-    });
+    // Show deterministic planets near the ship. This includes authored hub
+    // planets and procedurally generated worlds discovered as players fly out.
+    const ranked = getPlanetsNearSpacePoint(px, py, 2600).slice(0, 12);
     for (const planet of ranked) {
       const dist = Math.hypot(planet.x - px, planet.y - py);
       destinations.push({
         kind: "planet",
         id: planet.id,
         label: planet.name,
-        sublabel: dist <= TELEPORT_NEAR_RANGE ? "Nearby planet" : "Distant planet",
+        sublabel: planet.procedural ? "Procedural world" : dist <= TELEPORT_NEAR_RANGE ? "Nearby planet" : "Known planet",
         color: planet.surfacePrimary || "#67f0ff",
         dist: Math.round(dist)
       });
@@ -5406,6 +5464,9 @@ function questStepProgressText(step, quest) {
   if (step.type === "kill") {
     return `${Math.min(step.count, quest.progress || 0)} / ${step.count}`;
   }
+  if (step.type === "location") {
+    return "Travel";
+  }
   return "Speak";
 }
 
@@ -5430,6 +5491,7 @@ function buildQuestSnapshot(player) {
             text: step.text,
             progressText: questStepProgressText(step, quest),
             target: step.target || null,
+            radius: step.radius || null,
             npcId: step.npcId || null
           }
         : null
@@ -5445,6 +5507,36 @@ function activeQuestByNpc(player, npcId) {
     }
   }
   return null;
+}
+
+function playerQuestLocationPoint(player) {
+  if (!player) return null;
+  if (player.ship?.boarded) {
+    return shipCenter(player.ship, player);
+  }
+  return { x: Number(player.x) || 0, y: Number(player.y) || 0 };
+}
+
+function processQuestLocationObjectives(now = Date.now()) {
+  void now;
+  for (const client of clients.values()) {
+    const player = client.player;
+    if (!player?.quests) continue;
+    const point = playerQuestLocationPoint(player);
+    if (!point) continue;
+    for (const [questId, quest] of Object.entries(player.quests)) {
+      const step = questStepFor(questId, quest);
+      if (step?.type !== "location" || !step.target) continue;
+      const tx = Number(step.target.x);
+      const ty = Number(step.target.y);
+      if (!Number.isFinite(tx) || !Number.isFinite(ty)) continue;
+      const radius = Math.max(3, Number(step.radius) || Number(step.target.radius) || 12);
+      if (Math.hypot(point.x - tx, point.y - ty) <= radius) {
+        completeQuestStep(client, questId);
+        break;
+      }
+    }
+  }
 }
 
 function completeQuestStep(client, questId) {

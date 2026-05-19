@@ -59,7 +59,6 @@ const STARTING_AREA = { x: 0, y: 0, radius: 26 };
 const START_SPAWN = { x: 0, y: 0 };
 const SCI_FI_THEME = "sci-fi";
 const {
-  SCI_FI_SECTOR,
   SCI_FI_STATION_CENTER,
   SCI_FI_SAFE_RADIUS,
   SCI_FI_DEFENSES,
@@ -72,10 +71,11 @@ const {
 const {
   SCI_FI_PLANETS,
   PLANET_SURFACE_LANDING_OFFSET,
-  PLANET_SURFACE_EDGE_MARGIN,
   getPlanetById,
   getPlanetBySurfacePoint,
   getPlanetBySpacePoint,
+  getPlanetsNearSpacePoint,
+  getPlanetsInSpaceChunk,
   getPlanetSurfaceTile: getPlanetWorldSurfaceTile,
   getPlanetSurfaceObjectsInChunk
 } = require("./worlds/planetWorlds.js");
@@ -141,8 +141,19 @@ function hubPlazaLawnGrassTile(x, y) {
   return TILE.GRASS;
 }
 
+function isFantasyWorldPoint(x, y) {
+  return x > -1000 && x < 1000 && y > -1000 && y < 1000;
+}
+
+function isInteriorPlanePoint(x, y) {
+  return x >= INTERIOR_BASE_X - INTERIOR_EXTERIOR_MARGIN && y >= INTERIOR_BASE_Y - INTERIOR_EXTERIOR_MARGIN;
+}
+
 function isSciFiSector(x, y) {
-  return x >= SCI_FI_SECTOR.xMin && x <= SCI_FI_SECTOR.xMax && y >= SCI_FI_SECTOR.yMin && y <= SCI_FI_SECTOR.yMax;
+  if (isFantasyWorldPoint(x, y) || isInteriorPlanePoint(x, y) || getPlanetBySurfacePoint(x, y)) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -155,18 +166,12 @@ function isSciFiSector(x, y) {
  *  - "void"             → nowhere; off-limits to everyone
  */
 function worldForPosition(x, y) {
-  // Planet surfaces are authored in server/src/worlds/planetWorlds.js and
-  // exposed as separate `planet:<id>` planes through the current chunk protocol.
-  for (const planet of SCI_FI_PLANETS) {
-    const dx = x - planet.surfaceX;
-    const dy = y - planet.surfaceY;
-    const r = planet.surfaceRadius + PLANET_SURFACE_EDGE_MARGIN;
-    if (dx * dx + dy * dy <= r * r) return `planet:${planet.id}`;
-  }
+  const planetSurface = getPlanetBySurfacePoint(x, y);
+  if (planetSurface) return `planet:${planetSurface.id}`;
   if (isSciFiSector(x, y)) return "scifi";
   // Fantasy world: a generous square around the origin that captures the hub,
   // all wilderness, and the portal-realm satellite zones.
-  if (x > -1000 && x < 1000 && y > -1000 && y < 1000) return "fantasy";
+  if (isFantasyWorldPoint(x, y)) return "fantasy";
   return "void";
 }
 
@@ -175,7 +180,7 @@ function sameWorld(a, b) {
 }
 
 function sciFiStationById(id) {
-  return SCI_FI_STATIONS.find((station) => station.id === id) || null;
+  return SCI_FI_STATIONS.find((station) => station.id === id) || proceduralSpaceStationById(id) || null;
 }
 
 function sciFiStationFeatureById(id) {
@@ -222,22 +227,26 @@ function sciFiStationAt(x, y) {
       return station;
     }
   }
-  return null;
-}
-
-function sciFiPlanetAt(x, y) {
-  for (const planet of SCI_FI_PLANETS) {
-    const dx = x - planet.x;
-    const dy = y - planet.y;
-    if (dx * dx + dy * dy <= planet.radius * planet.radius) {
-      return planet;
+  for (const station of proceduralSpaceStationsNear(x, y, 96)) {
+    const halfW = Math.floor(station.w / 2);
+    const halfH = Math.floor(station.h / 2);
+    if (x >= station.x - halfW && x <= station.x + halfW && y >= station.y - halfH && y <= station.y + halfH) {
+      return station;
     }
   }
   return null;
 }
 
+function sciFiPlanetAt(x, y) {
+  const planet = getPlanetBySpacePoint(x, y);
+  if (!planet) return null;
+  const dx = x - planet.x;
+  const dy = y - planet.y;
+  return dx * dx + dy * dy <= planet.radius * planet.radius ? planet : null;
+}
+
 function sciFiPlanetById(id) {
-  return SCI_FI_PLANETS.find((p) => p.id === id) || null;
+  return getPlanetById(id);
 }
 
 function sciFiPlanetSurfaceTile(planet, x, y) {
@@ -260,6 +269,115 @@ function sciFiPlanetSurfaceTile(planet, x, y) {
   }
   if (detail > 0.95) return TILE.STONE;
   return TILE.GRASS;
+}
+
+const PROCEDURAL_SPACE_STATION_GRID = 760;
+const PROCEDURAL_SPACE_STATION_SEED = 51001;
+const PROCEDURAL_ASTEROID_GRID = 360;
+const PROCEDURAL_ASTEROID_SEED = 62011;
+
+function proceduralSpaceStationId(gx, gy) {
+  return `station_proc_${gx}_${gy}`;
+}
+
+function parseProceduralSpaceStationId(id) {
+  if (typeof id !== "string" || !id.startsWith("station_proc_")) return null;
+  const match = id.slice("station_proc_".length).match(/^(-?\d+)_(-?\d+)$/);
+  if (!match) return null;
+  return { gx: Number(match[1]), gy: Number(match[2]) };
+}
+
+function proceduralSpaceStationName(gx, gy) {
+  const prefixes = ["Kepler", "Vega", "Helix", "Orion", "Nadir", "Astra", "Kestrel", "Umbra", "Nova", "Zenith"];
+  const suffixes = ["Relay", "Exchange", "Depot", "Harbor", "Anchor", "Yard", "Foundry", "Port", "Spindle", "Ring"];
+  const a = prefixes[Math.floor(hash2(gx, gy, 51011) * prefixes.length) % prefixes.length];
+  const b = suffixes[Math.floor(hash2(gx, gy, 51012) * suffixes.length) % suffixes.length];
+  const code = Math.floor(hash2(gx, gy, 51013) * 900) + 100;
+  return `${a} ${b} ${code}`;
+}
+
+function proceduralSpaceStationForCell(gx, gy) {
+  if (!Number.isFinite(gx) || !Number.isFinite(gy)) return null;
+  if (hash2(gx, gy, PROCEDURAL_SPACE_STATION_SEED) < 0.24) return null;
+  const x = gx * PROCEDURAL_SPACE_STATION_GRID + 140 + hash2(gx, gy, 51021) * (PROCEDURAL_SPACE_STATION_GRID - 280);
+  const y = gy * PROCEDURAL_SPACE_STATION_GRID + 140 + hash2(gx, gy, 51022) * (PROCEDURAL_SPACE_STATION_GRID - 280);
+  if (Math.hypot(x - SCI_FI_STATION_CENTER.x, y - SCI_FI_STATION_CENTER.y) < 260) return null;
+  if (isFantasyWorldPoint(x, y)) return null;
+  const scale = 0.85 + hash2(gx, gy, 51023) * 0.5;
+  return Object.freeze({
+    id: proceduralSpaceStationId(gx, gy),
+    kind: "station",
+    type: "station",
+    name: proceduralSpaceStationName(gx, gy),
+    x: Number(x.toFixed(3)),
+    y: Number(y.toFixed(3)),
+    w: Math.round(18 * scale),
+    h: Math.round(13 * scale),
+    procedural: true,
+    color: hash2(gx, gy, 51024) > 0.5 ? "#67f0ff" : "#f0abfc",
+    gridX: gx,
+    gridY: gy
+  });
+}
+
+function proceduralSpaceStationById(id) {
+  const parsed = parseProceduralSpaceStationId(id);
+  return parsed ? proceduralSpaceStationForCell(parsed.gx, parsed.gy) : null;
+}
+
+function proceduralSpaceStationsNear(x, y, radius) {
+  const out = [];
+  const minGx = Math.floor((x - radius) / PROCEDURAL_SPACE_STATION_GRID) - 1;
+  const maxGx = Math.floor((x + radius) / PROCEDURAL_SPACE_STATION_GRID) + 1;
+  const minGy = Math.floor((y - radius) / PROCEDURAL_SPACE_STATION_GRID) - 1;
+  const maxGy = Math.floor((y + radius) / PROCEDURAL_SPACE_STATION_GRID) + 1;
+  for (let gx = minGx; gx <= maxGx; gx += 1) {
+    for (let gy = minGy; gy <= maxGy; gy += 1) {
+      const station = proceduralSpaceStationForCell(gx, gy);
+      if (!station) continue;
+      if (Math.hypot(station.x - x, station.y - y) <= radius + Math.max(station.w, station.h)) {
+        out.push(station);
+      }
+    }
+  }
+  return out;
+}
+
+function proceduralAsteroidFieldForCell(gx, gy) {
+  if (!Number.isFinite(gx) || !Number.isFinite(gy)) return null;
+  if (hash2(gx, gy, PROCEDURAL_ASTEROID_SEED) < 0.30) return null;
+  const x = gx * PROCEDURAL_ASTEROID_GRID + 80 + hash2(gx, gy, 62021) * (PROCEDURAL_ASTEROID_GRID - 160);
+  const y = gy * PROCEDURAL_ASTEROID_GRID + 80 + hash2(gx, gy, 62022) * (PROCEDURAL_ASTEROID_GRID - 160);
+  if (isFantasyWorldPoint(x, y)) return null;
+  return {
+    id: `asteroid_proc_${gx}_${gy}`,
+    kind: "asteroid_field",
+    type: "asteroid_field",
+    x: Number(x.toFixed(3)),
+    y: Number(y.toFixed(3)),
+    radius: 12 + Math.floor(hash2(gx, gy, 62023) * 22),
+    density: 7 + Math.floor(hash2(gx, gy, 62024) * 16),
+    seed: 40000 + Math.abs(gx * 181 + gy * 313),
+    procedural: true
+  };
+}
+
+function proceduralAsteroidFieldsNear(x, y, radius) {
+  const out = [];
+  const minGx = Math.floor((x - radius) / PROCEDURAL_ASTEROID_GRID) - 1;
+  const maxGx = Math.floor((x + radius) / PROCEDURAL_ASTEROID_GRID) + 1;
+  const minGy = Math.floor((y - radius) / PROCEDURAL_ASTEROID_GRID) - 1;
+  const maxGy = Math.floor((y + radius) / PROCEDURAL_ASTEROID_GRID) + 1;
+  for (let gx = minGx; gx <= maxGx; gx += 1) {
+    for (let gy = minGy; gy <= maxGy; gy += 1) {
+      const field = proceduralAsteroidFieldForCell(gx, gy);
+      if (!field) continue;
+      if (Math.hypot(field.x - x, field.y - y) <= radius + field.radius) {
+        out.push(field);
+      }
+    }
+  }
+  return out;
 }
 
 function sciFiObjectTouchesChunk(obj, startX, startY, endX, endY) {
@@ -465,6 +583,13 @@ function getSciFiObjectsInChunk(cx, cy) {
     }
   }
 
+  for (const station of proceduralSpaceStationsNear(startX + CHUNK_SIZE / 2, startY + CHUNK_SIZE / 2, PROCEDURAL_SPACE_STATION_GRID * 1.6)) {
+    const obj = { ...station, kind: "station" };
+    if (sciFiObjectTouchesChunk(obj, startX, startY, endX, endY)) {
+      out.push(obj);
+    }
+  }
+
   for (const feature of SCI_FI_STATION_FEATURES) {
     const obj = { ...feature };
     if (sciFiFeatureTouchesChunk(feature, startX, startY, endX, endY)) {
@@ -472,14 +597,32 @@ function getSciFiObjectsInChunk(cx, cy) {
     }
   }
 
+  const seenPlanets = new Set();
   for (const planet of SCI_FI_PLANETS) {
     const obj = { ...planet, kind: "planet" };
+    if (sciFiObjectTouchesChunk(obj, startX, startY, endX, endY)) {
+      out.push(obj);
+      seenPlanets.add(obj.id);
+    }
+  }
+
+  for (const planet of getPlanetsInSpaceChunk(cx, cy, CHUNK_SIZE)) {
+    if (seenPlanets.has(planet.id)) continue;
+    const obj = { ...planet, kind: "planet" };
+    if (sciFiObjectTouchesChunk(obj, startX, startY, endX, endY)) {
+      out.push(obj);
+      seenPlanets.add(obj.id);
+    }
+  }
+
+  for (const cluster of SCI_FI_ASTEROIDS) {
+    const obj = { ...cluster, kind: "asteroid_field", rocks: getAsteroidRocks(cluster) };
     if (sciFiObjectTouchesChunk(obj, startX, startY, endX, endY)) {
       out.push(obj);
     }
   }
 
-  for (const cluster of SCI_FI_ASTEROIDS) {
+  for (const cluster of proceduralAsteroidFieldsNear(startX + CHUNK_SIZE / 2, startY + CHUNK_SIZE / 2, PROCEDURAL_ASTEROID_GRID * 1.4)) {
     const obj = { ...cluster, kind: "asteroid_field", rocks: getAsteroidRocks(cluster) };
     if (sciFiObjectTouchesChunk(obj, startX, startY, endX, endY)) {
       out.push(obj);
@@ -2218,7 +2361,7 @@ function generateChunk(cx, cy) {
   }
 
   const spaceObjects = [
-    ...getSciFiObjectsInChunk(cx, cy),
+    ...(theme === SCI_FI_THEME ? getSciFiObjectsInChunk(cx, cy) : []),
     ...getPlanetSurfaceObjectsInChunk(cx, cy, CHUNK_SIZE, hash2)
   ];
 
@@ -2310,8 +2453,8 @@ function isBlockedCircle(x, y, radius = 0.28) {
 }
 
 function isBlockedCircleForShip(x, y, radius = 0.34) {
-  // Hard sector boundary — ships cannot leave the sci-fi sector by flying. The
-  // only way to reach a different world is via a portal / planet travel action.
+  // Ships can fly forever in the deterministic sci-fi plane, but cannot fly
+  // directly into fantasy/interior/planet-surface planes.
   if (!isSciFiSector(x, y)) {
     return true;
   }
@@ -2328,6 +2471,18 @@ function isBlockedCircleForShip(x, y, radius = 0.34) {
   // Asteroid fields block ship movement so pilots have to weave around them.
   if (isBlockedByAsteroid(x, y, radius)) {
     return true;
+  }
+  for (const cluster of proceduralAsteroidFieldsNear(x, y, 48)) {
+    const dx = x - cluster.x;
+    const dy = y - cluster.y;
+    const reach = cluster.radius + radius + 1;
+    if (dx * dx + dy * dy > reach * reach) continue;
+    for (const rock of getAsteroidRocks(cluster)) {
+      const rdx = x - rock.x;
+      const rdy = y - rock.y;
+      const ar = rock.radius + radius;
+      if (rdx * rdx + rdy * rdy < ar * ar) return true;
+    }
   }
   return false;
 }
@@ -2465,6 +2620,9 @@ module.exports = {
   getPlanetById,
   getPlanetBySurfacePoint,
   getPlanetBySpacePoint,
+  getPlanetsNearSpacePoint,
+  sciFiStationById,
+  proceduralSpaceStationsNear,
   PLANET_SURFACE_LANDING_OFFSET,
   worldForPosition,
   sameWorld,
