@@ -750,6 +750,7 @@ const state = {
   buildings: new Map(),
   roadsides: new Map(),
   spaceObjects: new Map(),
+  asteroidStates: new Map(),
   benchSitUntil: 0,
   /** Server sends seatBench until local movement clears the pose */
   benchSeatIndefinite: false,
@@ -1323,6 +1324,12 @@ function handleServerMessage(message) {
     applyMobSnapshot(message.mobs || []);
     applyCaravanSnapshot(message.caravans || []);
     applyPartySnapshot(message.party ?? null);
+    state.asteroidStates.clear();
+    for (const asteroid of message.asteroidStates || []) {
+      if (asteroid && asteroid.id) {
+        state.asteroidStates.set(String(asteroid.id), asteroid);
+      }
+    }
     state.chests = message.chests || [];
     state.groundItems = message.groundItems || [];
     updateSelfInventory();
@@ -10094,6 +10101,8 @@ function drawAsteroidFieldObject(obj, sx, sy) {
   if (!rocks.length) return;
   const now = performance.now() * 0.001;
   for (const rock of rocks) {
+    const asteroidState = rock?.id ? state.asteroidStates.get(String(rock.id)) : null;
+    if (asteroidState?.destroyed) continue;
     const baseX = (rock.x - obj.x) * TILE_SIZE + sx;
     const baseY = (rock.y - obj.y) * TILE_SIZE + sy;
     const rr = Math.max(6, Number(rock.radius || 1) * TILE_SIZE);

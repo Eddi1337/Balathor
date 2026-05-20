@@ -60,6 +60,7 @@ function getAsteroidRocks(cluster, hash2) {
     const r = Math.sqrt(hash2(cluster.seed, i, 29)) * cluster.radius;
     const size = 0.9 + hash2(cluster.seed, i, 43) * 1.6;
     rocks.push({
+      id: `${cluster.id}_rock_${i}`,
       x: cluster.x + Math.cos(a) * r,
       y: cluster.y + Math.sin(a) * r,
       radius: size

@@ -129,8 +129,36 @@ function getAsteroidRocks(cluster) {
   return buildSciFiAsteroidRocks(cluster, hash2);
 }
 
+let asteroidCollisionStateResolver = null;
+
+function setAsteroidCollisionStateResolver(resolver) {
+  asteroidCollisionStateResolver = typeof resolver === "function" ? resolver : null;
+}
+
+function isAsteroidRockDestroyed(rock) {
+  if (!rock || !asteroidCollisionStateResolver) return false;
+  try {
+    return Boolean(asteroidCollisionStateResolver(rock));
+  } catch {
+    return false;
+  }
+}
+
 function isBlockedByAsteroid(x, y, radius = 0.34) {
-  return isBlockedBySciFiAsteroid(x, y, radius, hash2);
+  for (const cluster of getSciFiAsteroids()) {
+    const dx = x - cluster.x;
+    const dy = y - cluster.y;
+    const reach = cluster.radius + radius + 1;
+    if (dx * dx + dy * dy > reach * reach) continue;
+    for (const rock of getAsteroidRocks(cluster)) {
+      if (isAsteroidRockDestroyed(rock)) continue;
+      const rdx = x - rock.x;
+      const rdy = y - rock.y;
+      const ar = rock.radius + radius;
+      if (rdx * rdx + rdy * rdy < ar * ar) return true;
+    }
+  }
+  return false;
 }
 
 /** Same grass mix as the inner plaza clearing around the landmark tree (hash2 seed 44). */
@@ -2460,6 +2488,7 @@ function isBlockedCircleForShip(x, y, radius = 0.34) {
     const reach = cluster.radius + radius + 1;
     if (dx * dx + dy * dy > reach * reach) continue;
     for (const rock of getAsteroidRocks(cluster)) {
+      if (isAsteroidRockDestroyed(rock)) continue;
       const rdx = x - rock.x;
       const rdy = y - rock.y;
       const ar = rock.radius + radius;
@@ -2593,6 +2622,8 @@ module.exports = {
   isBlockedForShip,
   isBlockedCircleForShip,
   isBlockedByAsteroid,
+  getAsteroidRocks,
+  setAsteroidCollisionStateResolver,
   isInsideSciFiSafeZone,
   getSciFiAsteroids,
   SCI_FI_STATION_CENTER,
@@ -2603,6 +2634,7 @@ module.exports = {
   getPlanetBySurfacePoint,
   getPlanetBySpacePoint,
   getPlanetsNearSpacePoint,
+  proceduralAsteroidFieldsNear,
   sciFiStationById,
   proceduralSpaceStationsNear,
   PLANET_SURFACE_LANDING_OFFSET,

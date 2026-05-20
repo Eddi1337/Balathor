@@ -18,6 +18,8 @@ const {
   isBlockedCircle,
   isSwimmingAt,
   isBlockedCircleForShip,
+  getAsteroidRocks,
+  setAsteroidCollisionStateResolver,
   getWorldThemeAt,
   spawnPoint,
   southDoorAnchorWorldX,
@@ -34,6 +36,7 @@ const {
   sciFiStationFeatureAt,
   STARGATE_LANDING,
   isInsideSciFiSafeZone,
+  getSciFiAsteroids,
   SCI_FI_STATION_CENTER,
   SCI_FI_SAFE_RADIUS,
   SCI_FI_DEFENSES,
@@ -41,6 +44,7 @@ const {
   getPlanetBySpacePoint,
   getPlanetsNearSpacePoint,
   sciFiStationById,
+  proceduralAsteroidFieldsNear,
   proceduralSpaceStationsNear,
   SCI_FI_PLANETS,
   PLANET_SURFACE_LANDING_OFFSET,
@@ -1037,6 +1041,7 @@ let nextAssaultMobId = 1;
 let nextFantasyAssaultAt = Date.now() + 22000;
 let nextSciFiAssaultAt = Date.now() + 30000;
 const stationDefenseLastShotAt = new Map();
+const asteroidStateById = new Map();
 const mobs = createMobs();
 const mobHomeBuckets = buildMobHomeBuckets(mobs);
 const forceSimulateMobs = new Set(mobs.filter((mob) => mob.forceSimulate));
@@ -1047,6 +1052,169 @@ for (const def of getTraderDefinitions()) {
 
 syncNextItemIdFromAccounts();
 syncNextItemIdFromHouseChestsDb();
+
+const ASTEROID_VIEW_MARGIN = 18;
+const ASTEROID_DESPAWN_MS = 8 * 60 * 1000;
+
+function asteroidMaxHp(rock) {
+  return Math.max(28, Math.round(18 + Number(rock?.radius || 1) * 20));
+}
+
+function asteroidStateForRock(rock) {
+  if (!rock?.id) return null;
+  const now = Date.now();
+  let state = asteroidStateById.get(rock.id);
+  if (!state) {
+    state = {
+      id: rock.id,
+      hp: asteroidMaxHp(rock),
+      maxHp: asteroidMaxHp(rock),
+      destroyed: false,
+      destroyedAt: 0,
+      lastDamagedAt: 0,
+      lastSeenAt: now
+    };
+    asteroidStateById.set(rock.id, state);
+  } else if (!Number.isFinite(state.maxHp) || state.maxHp <= 0) {
+    state.maxHp = asteroidMaxHp(rock);
+    if (!Number.isFinite(state.hp) || state.hp <= 0) {
+      state.hp = state.maxHp;
+    }
+  }
+  state.lastSeenAt = now;
+  return state;
+}
+
+function isAsteroidDestroyed(rock) {
+  const state = rock?.id ? asteroidStateById.get(rock.id) : null;
+  return Boolean(state?.destroyed || (state && state.hp <= 0));
+}
+
+setAsteroidCollisionStateResolver(isAsteroidDestroyed);
+
+function pruneAsteroidState(now = Date.now()) {
+  for (const [id, state] of asteroidStateById.entries()) {
+    if (!state) {
+      asteroidStateById.delete(id);
+      continue;
+    }
+    if (state.destroyed) {
+      continue;
+    }
+    const lastTouched = Math.max(
+      Number(state.lastDamagedAt) || 0,
+      Number(state.destroyedAt) || 0,
+      Number(state.lastSeenAt) || 0
+    );
+    if (lastTouched && now - lastTouched > ASTEROID_DESPAWN_MS) {
+      asteroidStateById.delete(id);
+    }
+  }
+}
+
+function asteroidFieldsNearPoint(x, y, radius) {
+  const out = [];
+  for (const cluster of getSciFiAsteroids()) {
+    if (Math.hypot(cluster.x - x, cluster.y - y) <= radius + Number(cluster.radius || 0)) {
+      out.push(cluster);
+    }
+  }
+  for (const cluster of proceduralAsteroidFieldsNear(x, y, radius)) {
+    out.push(cluster);
+  }
+  return out;
+}
+
+function forEachAsteroidRockNear(x, y, radius, visitor) {
+  const seen = new Set();
+  for (const field of asteroidFieldsNearPoint(x, y, radius + 32)) {
+    const fieldReach = Number(field.radius || 0) + radius + 3;
+    if (Math.hypot(field.x - x, field.y - y) > fieldReach) continue;
+    for (const rock of getAsteroidRocks(field)) {
+      if (!rock?.id || seen.has(rock.id) || isAsteroidDestroyed(rock)) continue;
+      seen.add(rock.id);
+      const reach = Number(rock.radius || 0) + radius;
+      if (Math.hypot(rock.x - x, rock.y - y) <= reach + 2.5) {
+        visitor(rock, asteroidStateForRock(rock));
+      }
+    }
+  }
+}
+
+function findAsteroidHitAlongRay(ox, oy, beamCos, beamSin, reach) {
+  let bestRock = null;
+  let bestState = null;
+  let bestT = reach;
+  forEachAsteroidRockNear(ox, oy, reach + 4, (rock, state) => {
+    const mx = rock.x - ox;
+    const my = rock.y - oy;
+    const t = mx * beamCos + my * beamSin;
+    if (t < 0 || t > reach) return;
+    const perpX = mx - beamCos * t;
+    const perpY = my - beamSin * t;
+    if (Math.hypot(perpX, perpY) > Number(rock.radius || 1) + 0.45) return;
+    if (t < bestT) {
+      bestT = t;
+      bestRock = rock;
+      bestState = state;
+    }
+  });
+  return bestRock ? { rock: bestRock, state: bestState, distance: bestT } : null;
+}
+
+function applyAsteroidDamage(rock, rawDamage, now = Date.now()) {
+  const state = asteroidStateForRock(rock);
+  if (!state || state.destroyed) {
+    return {
+      damage: 0,
+      targetHp: 0,
+      destroyed: true
+    };
+  }
+  const damage = Math.max(1, Math.round(Number(rawDamage) || 1));
+  state.hp = Math.max(0, state.hp - damage);
+  state.lastDamagedAt = now;
+  if (state.hp <= 0) {
+    state.destroyed = true;
+    state.destroyedAt = now;
+  }
+  return {
+    damage,
+    targetHp: state.hp,
+    destroyed: state.destroyed
+  };
+}
+
+function buildAsteroidSnapshotForView(minX, maxX, minY, maxY, viewerWorld) {
+  if (viewerWorld !== "scifi") return [];
+  const centerX = (minX + maxX) * 0.5;
+  const centerY = (minY + maxY) * 0.5;
+  const radius = Math.hypot(maxX - minX, maxY - minY) * 0.5 + ASTEROID_VIEW_MARGIN;
+  const out = [];
+  const seen = new Set();
+  for (const field of asteroidFieldsNearPoint(centerX, centerY, radius + 32)) {
+    for (const rock of getAsteroidRocks(field)) {
+      if (!rock?.id || seen.has(rock.id)) continue;
+      seen.add(rock.id);
+      if (
+        rock.x < minX - ASTEROID_VIEW_MARGIN ||
+        rock.x > maxX + ASTEROID_VIEW_MARGIN ||
+        rock.y < minY - ASTEROID_VIEW_MARGIN ||
+        rock.y > maxY + ASTEROID_VIEW_MARGIN
+      ) {
+        continue;
+      }
+      const state = asteroidStateForRock(rock);
+      out.push({
+        id: rock.id,
+        hp: state.hp,
+        maxHp: state.maxHp,
+        destroyed: Boolean(state.destroyed)
+      });
+    }
+  }
+  return out;
+}
 
 const server = http.createServer((req, res) => {
   if (req.url === "/health") {
@@ -2781,7 +2949,10 @@ function orbitalArrivalPointForPlanet(planet, fromX, fromY) {
   const dist = Math.hypot(dx, dy) || 1;
   const ux = dx / dist;
   const uy = dy / dist;
-  const offset = SHIP_ORBIT_VIEW_OFFSET;
+  const offset = Math.max(
+    SHIP_ORBIT_VIEW_OFFSET,
+    (Number(planet.radius) || 0) + SHIP_ORBIT_VIEW_OFFSET + 6
+  );
   return {
     x: Number((planet.x - ux * offset).toFixed(3)),
     y: Number((planet.y - uy * offset).toFixed(3))
@@ -2857,6 +3028,9 @@ function simulate() {
   tick += 1;
   const dt = 1 / TICK_RATE;
   const _perfT0 = process.hrtime.bigint();
+  if (tick % (TICK_RATE * 10) === 0) {
+    pruneAsteroidState();
+  }
   const aboardShipClients = buildAboardShipClientIndex();
 
   for (const client of clients.values()) {
@@ -4979,9 +5153,12 @@ function handleShipFire(client, message = {}) {
         bestMob = mob;
       }
     });
+    const asteroidHit = findAsteroidHitAlongRay(ox, oy, beamCos, beamSin, reach);
+    const bestAsteroidT = asteroidHit ? asteroidHit.distance : Infinity;
+    const hitAsteroid = asteroidHit && bestAsteroidT <= bestT;
 
-    const endX = bestMob ? bestMob.x : ox + beamCos * reach;
-    const endY = bestMob ? bestMob.y : oy + beamSin * reach;
+    const endX = hitAsteroid ? asteroidHit.rock.x : bestMob ? bestMob.x : ox + beamCos * reach;
+    const endY = hitAsteroid ? asteroidHit.rock.y : bestMob ? bestMob.y : oy + beamSin * reach;
 
     const event = {
       type: "combat",
@@ -4995,12 +5172,22 @@ function handleShipFire(client, message = {}) {
       y: Number(oy.toFixed(3)),
       facing: Number(facing.toFixed(3)),
       range: reach,
-      hit: Boolean(bestMob),
+      hit: Boolean(bestMob || hitAsteroid),
       endX: Number(endX.toFixed(3)),
       endY: Number(endY.toFixed(3))
     };
 
-    if (bestMob) {
+    if (hitAsteroid) {
+      const damage = Math.max(1, Math.round(turretDamage * 0.85));
+      const result = applyAsteroidDamage(asteroidHit.rock, damage, now);
+      event.targetId = asteroidHit.rock.id;
+      event.targetKind = "asteroid";
+      event.damage = result.damage;
+      event.targetHp = result.targetHp;
+      if (result.destroyed) {
+        event.defeated = true;
+      }
+    } else if (bestMob) {
       const damage = Math.max(1, Math.round(turretDamage + bestMob.level));
       const result = applyShipMobDamage(bestMob, damage, now, ox, oy);
       event.targetId = bestMob.id;
@@ -5048,9 +5235,27 @@ function handleShipMissile(client) {
     }
   });
 
-  if (!target) return;
+  let asteroidTarget = null;
+  let asteroidTargetState = null;
+  let asteroidDist = Infinity;
+  forEachAsteroidRockNear(center.x, center.y, missileRange + 4, (rock, state) => {
+    const d = Math.hypot(rock.x - center.x, rock.y - center.y);
+    if (d > missileRange) return;
+    if (d < asteroidDist) {
+      asteroidTarget = rock;
+      asteroidTargetState = state;
+      asteroidDist = d;
+    }
+  });
 
-  const facing = Math.atan2(target.y - center.y, target.x - center.x);
+  if (!target && !asteroidTarget) return;
+
+  const hitAsteroid = !target || (asteroidTarget && asteroidDist < bestDist);
+  const targetX = hitAsteroid ? asteroidTarget.x : target.x;
+  const targetY = hitAsteroid ? asteroidTarget.y : target.y;
+  const hitDistance = hitAsteroid ? asteroidDist : bestDist;
+
+  const facing = Math.atan2(targetY - center.y, targetX - center.x);
   const event = {
     type: "combat",
     kind: "projectile",
@@ -5061,25 +5266,34 @@ function handleShipMissile(client) {
     x: Number(center.x.toFixed(3)),
     y: Number(center.y.toFixed(3)),
     facing: Number(facing.toFixed(3)),
-    range: Number(bestDist.toFixed(3)),
+    range: Number(hitDistance.toFixed(3)),
     hit: true,
-    endX: Number(target.x.toFixed(3)),
-    endY: Number(target.y.toFixed(3)),
-    targetId: target.id,
-    targetKind: "mob",
+    endX: Number(targetX.toFixed(3)),
+    endY: Number(targetY.toFixed(3)),
+    targetId: hitAsteroid ? asteroidTarget.id : target.id,
+    targetKind: hitAsteroid ? "asteroid" : "mob",
     damage: missileDamage,
-    targetHp: target.hp
+    targetHp: hitAsteroid ? asteroidTargetState.hp : target.hp
   };
 
-  const result = applyShipMobDamage(target, missileDamage, Date.now(), center.x, center.y);
-  event.damage = result.damage;
-  event.shieldDamage = result.shieldDamage;
-  event.shieldHit = result.shieldHit;
-  event.targetHp = result.targetHp;
-  event.targetShieldHp = result.targetShieldHp;
-  if (target.isShipPirate) alertPirateFleet(target);
-  if (target.hp <= 0) {
-    awardMobDefeatToClient(client, target, event, Date.now());
+  if (hitAsteroid) {
+    const result = applyAsteroidDamage(asteroidTarget, missileDamage, Date.now());
+    event.damage = result.damage;
+    event.targetHp = result.targetHp;
+    if (result.destroyed) {
+      event.defeated = true;
+    }
+  } else {
+    const result = applyShipMobDamage(target, missileDamage, Date.now(), center.x, center.y);
+    event.damage = result.damage;
+    event.shieldDamage = result.shieldDamage;
+    event.shieldHit = result.shieldHit;
+    event.targetHp = result.targetHp;
+    event.targetShieldHp = result.targetShieldHp;
+    if (target.isShipPirate) alertPirateFleet(target);
+    if (target.hp <= 0) {
+      awardMobDefeatToClient(client, target, event, Date.now());
+    }
   }
 
   broadcastCombat(event);
@@ -5429,17 +5643,28 @@ function handleTravelToPlanet(client, message = {}) {
     return;
   }
 
-  // Park the ship in orbit at the planet's space coords. Player will pop back
-  // here when they step on the return portal on the surface.
+  // Keep the ship at the orbital position where it was left if already near
+  // the planet, otherwise park it at a clean orbit offset outside the planet's
+  // collision radius.
+  const parkedX = Number.isFinite(ship.worldX) ? ship.worldX : Number(player.x) || 0;
+  const parkedY = Number.isFinite(ship.worldY) ? ship.worldY : Number(player.y) || 0;
+  const parkedDist = Math.hypot(parkedX - planet.x, parkedY - planet.y);
+  const orbitalParking =
+    parkedDist <= (Number(planet.radius) || 0) + SHIP_ORBIT_VIEW_OFFSET + 18
+      ? { x: parkedX, y: parkedY }
+      : orbitalArrivalPointForPlanet(planet, parkedX, parkedY);
+
   ship.boarded = false;
   ship.deckMode = false;
   ship.stationRole = null;
   ship.stationId = null;
   ship.docking = null;
-  ship.worldX = planet.x;
-  ship.worldY = planet.y;
-  ship.dockX = planet.x;
-  ship.dockY = planet.y;
+  ship.warp = null;
+  ship.speed = 0;
+  ship.worldX = orbitalParking.x;
+  ship.worldY = orbitalParking.y;
+  ship.dockX = orbitalParking.x;
+  ship.dockY = orbitalParking.y;
   ship.dockStationId = `orbit_${planet.id}`;
   ship.dockPortId = null;
 
@@ -7349,6 +7574,7 @@ function broadcastSnapshot() {
     });
 
     const caravansForViewer = viewerWorld === "fantasy" ? getCaravansSnapshotForViewer(view) : [];
+    const asteroidStates = buildAsteroidSnapshotForView(minX, maxX, minY, maxY, viewerWorld);
 
     send(client, {
       type: "snapshot",
@@ -7359,6 +7585,7 @@ function broadcastSnapshot() {
       players: playersVisible,
       npcs,
       mobs,
+      asteroidStates,
       caravans: caravansForViewer,
       chests: visibleChests,
       groundItems: visibleGround,
@@ -9244,6 +9471,7 @@ function processStationDefenses(now = Date.now()) {
     const range = Number(defense.range) || (defense.kind === "orbital-cannon" ? 138 : 96);
     let target = null;
     let bestDist = Infinity;
+    let targetKind = "mob";
     forEachMobNear(defense.x, defense.y, range + 8, (mob) => {
       if (mob.dead || !mob.isShipPirate) return;
       const stationDist = Math.hypot(mob.x - SCI_FI_STATION_CENTER.x, mob.y - SCI_FI_STATION_CENTER.y);
@@ -9254,13 +9482,27 @@ function processStationDefenses(now = Date.now()) {
         target = mob;
       }
     });
+    forEachAsteroidRockNear(defense.x, defense.y, range + 8, (rock) => {
+      const stationDist = Math.hypot(rock.x - SCI_FI_STATION_CENTER.x, rock.y - SCI_FI_STATION_CENTER.y);
+      if (stationDist > SCI_FI_SAFE_RADIUS + 120) return;
+      const d = Math.hypot(rock.x - defense.x, rock.y - defense.y);
+      if (d <= range && d < bestDist) {
+        bestDist = d;
+        target = rock;
+        targetKind = "asteroid";
+      }
+    });
     if (!target) continue;
 
     stationDefenseLastShotAt.set(defense.id, now);
     const isCannon = defense.kind === "orbital-cannon";
-    const damage = Math.max(1, Math.round((isCannon ? ORBITAL_CANNON_DAMAGE : STATION_TURRET_DAMAGE) + (Number(target.level) || 1) * 1.2));
+    const damage = targetKind === "asteroid"
+      ? Math.max(18, Math.round((isCannon ? ORBITAL_CANNON_DAMAGE : STATION_TURRET_DAMAGE) * 0.95))
+      : Math.max(1, Math.round((isCannon ? ORBITAL_CANNON_DAMAGE : STATION_TURRET_DAMAGE) + (Number(target.level) || 1) * 1.2));
     const facing = Math.atan2(target.y - defense.y, target.x - defense.x);
-    const result = applyShipMobDamage(target, damage, now, defense.x, defense.y);
+    const result = targetKind === "asteroid"
+      ? applyAsteroidDamage(target, damage, now)
+      : applyShipMobDamage(target, damage, now, defense.x, defense.y);
     const event = {
       type: "combat",
       kind: "projectile",
@@ -9275,7 +9517,7 @@ function processStationDefenses(now = Date.now()) {
       range,
       hit: true,
       targetId: target.id,
-      targetKind: "mob",
+      targetKind,
       damage: result.damage,
       shieldDamage: result.shieldDamage,
       shieldHit: result.shieldHit,
@@ -9285,9 +9527,11 @@ function processStationDefenses(now = Date.now()) {
       endY: Number(target.y.toFixed(3))
     };
 
-    if (target.hp <= 0 && !target.dead) {
+    if (targetKind === "mob" && target.hp <= 0 && !target.dead) {
       target.dead = true;
       target.respawnAt = now + (target.noRespawn ? 9000 : MOB_RESPAWN_MS);
+      event.defeated = true;
+    } else if (targetKind === "asteroid" && result.destroyed) {
       event.defeated = true;
     }
     broadcastCombat(event);
