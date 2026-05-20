@@ -1832,6 +1832,7 @@ function serializeShip(ship) {
     maxShields,
     shieldFacing: normalizeShieldFacing(ship.shieldFacing || Object.values(shieldSections)[0]),
     shieldSections,
+    crew: serializeShipCrew(ship),
     docking: null,
     warp: sanitizeShipWarp(ship.warp)
   };
@@ -1868,25 +1869,44 @@ function sanitizeShipWarp(warp) {
   };
 }
 
-function getShipTurrets(shipOrClass) {
+// Each gunner station owns one orbiting combat drone. The drone count therefore
+// matches the number of gunner stations on the hull.
+function getShipDroneCount(shipOrClass) {
   const hullClass = typeof shipOrClass === "string" ? shipOrClass : shipOrClass?.hullClass;
-  // Turret anchors are offsets (in tiles) from the ship center. The gunner fires one bolt
-  // from every anchor when they click, and all bolts converge on the target.
-  if (hullClass === "crew4" || hullClass === "frigate" || hullClass === "freighter") {
-    return [
-      { x: 1.6, y: -0.9 },
-      { x: 1.6, y: 0.9 },
-      { x: -1.6, y: -0.9 },
-      { x: -1.6, y: 0.9 }
-    ];
+  if (hullClass === "crew4" || hullClass === "frigate" || hullClass === "freighter") return 3;
+  if (hullClass === "crew3" || hullClass === "cruiser") return 2;
+  return 1;
+}
+
+// Radius (in tiles) of the ring the drones orbit around the exterior hull.
+function getShipDroneOrbitRadius(shipOrClass) {
+  const hullClass = typeof shipOrClass === "string" ? shipOrClass : shipOrClass?.hullClass;
+  if (hullClass === "crew4" || hullClass === "frigate" || hullClass === "freighter") return 3.0;
+  if (hullClass === "crew3" || hullClass === "cruiser") return 2.7;
+  if (hullClass === "crew2" || hullClass === "corvette" || hullClass === "hauler" || hullClass === "yacht") return 2.4;
+  return 2.0;
+}
+
+const SHIP_DRONE_ORBIT_SPEED = 0.55; // radians per second
+
+// World-relative offset (tiles) of a drone at the given moment. Server and client
+// share this formula keyed off Date.now() so the firing origin tracks the visual.
+function shipDroneOffset(shipOrClass, index, count, now = Date.now()) {
+  const radius = getShipDroneOrbitRadius(shipOrClass);
+  const slots = Math.max(1, count);
+  const angle = (Math.PI * 2 * index) / slots + (now / 1000) * SHIP_DRONE_ORBIT_SPEED;
+  return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
+}
+
+// All drone offsets for a hull (used when a lone gunner controls every drone).
+function getShipTurrets(shipOrClass) {
+  const count = getShipDroneCount(shipOrClass);
+  const now = Date.now();
+  const out = [];
+  for (let i = 0; i < count; i += 1) {
+    out.push(shipDroneOffset(shipOrClass, i, count, now));
   }
-  if (hullClass === "crew2" || hullClass === "corvette" || hullClass === "hauler" || hullClass === "yacht") {
-    return [
-      { x: 1.2, y: -0.7 },
-      { x: 1.2, y: 0.7 }
-    ];
-  }
-  return [{ x: 1.1, y: 0 }];
+  return out;
 }
 
 function getShipLayout(shipOrClass = "skiff") {
@@ -1894,42 +1914,438 @@ function getShipLayout(shipOrClass = "skiff") {
   if (hullClass === "crew4" || hullClass === "frigate" || hullClass === "freighter") {
     return {
       crewCapacity: 4,
-      deckW: 18,
-      deckH: 10,
-      entry: { x: -7, y: 0 },
-      teleporter: { x: -3.0, y: 0 },
+      npcCrew: 4,
+      deckW: 30,
+      deckH: 18,
+      entry: { x: -13, y: 0 },
+      teleporter: { x: -12, y: 0 },
       stations: [
-        { id: "captain", role: "captain", name: "Captain Seat", x: 4.0, y: 0 },
-        { id: "pilot", role: "pilot", name: "Pilot Seat", x: 6.5, y: -1.8 },
-        { id: "copilot", role: "copilot", name: "Co-Pilot Seat", x: 6.5, y: 1.8 },
-        { id: "gunner_aft", role: "gunner", name: "Aft Gunner", x: -6.0, y: 0 },
-        { id: "engineer_mid", role: "engineer", name: "Forward Engineering", x: 1.0, y: -3.5, defaultShieldFacing: "front" },
-        { id: "engineer_aux", role: "engineer", name: "Aft Engineering", x: 1.0, y: 3.5, defaultShieldFacing: "back" }
+        { id: "helm", role: "pilot", name: "Helm", x: 11.0, y: 0 },
+        { id: "engineer_fwd", role: "engineer", name: "Fore Engineering", x: 4.0, y: -4.0, defaultShieldFacing: "front" },
+        { id: "engineer_aft", role: "engineer", name: "Aft Engineering", x: 4.0, y: 4.0, defaultShieldFacing: "back" },
+        { id: "engineer_port", role: "engineer", name: "Port Engineering", x: -8.0, y: -3.0, defaultShieldFacing: "left" },
+        { id: "gunner_1", role: "gunner", name: "Gunner I", x: -2.0, y: -4.0, droneIndex: 0 },
+        { id: "gunner_2", role: "gunner", name: "Gunner II", x: -2.0, y: 4.0, droneIndex: 1 },
+        { id: "gunner_3", role: "gunner", name: "Gunner III", x: -8.0, y: 3.0, droneIndex: 2 }
+      ],
+      crewIdle: [
+        { x: -10.0, y: -1.5 },
+        { x: -10.0, y: 1.5 },
+        { x: -5.0, y: -1.5 },
+        { x: -5.0, y: 1.5 }
+      ],
+      amenities: [
+        { kind: "bed", x: -11.0, y: -3.5 },
+        { kind: "bed", x: -11.0, y: 3.5 },
+        { kind: "kitchen", x: -6.5, y: -4.5 },
+        { kind: "table", x: 0.5, y: 0 }
+      ]
+    };
+  }
+  if (hullClass === "crew3" || hullClass === "cruiser") {
+    return {
+      crewCapacity: 3,
+      npcCrew: 2,
+      deckW: 23,
+      deckH: 14,
+      entry: { x: -10, y: 0 },
+      teleporter: { x: -8.5, y: 0 },
+      stations: [
+        { id: "helm", role: "pilot", name: "Helm", x: 8.5, y: 0 },
+        { id: "engineer_fwd", role: "engineer", name: "Fore Engineering", x: 2.5, y: -3.0, defaultShieldFacing: "front" },
+        { id: "engineer_aft", role: "engineer", name: "Aft Engineering", x: 2.5, y: 3.0, defaultShieldFacing: "back" },
+        { id: "gunner_1", role: "gunner", name: "Gunner I", x: -4.0, y: -3.0, droneIndex: 0 },
+        { id: "gunner_2", role: "gunner", name: "Gunner II", x: -4.0, y: 3.0, droneIndex: 1 }
+      ],
+      crewIdle: [
+        { x: -6.5, y: -1.5 },
+        { x: -6.5, y: 1.5 }
+      ],
+      amenities: [
+        { kind: "bed", x: -8.0, y: -3.0 },
+        { kind: "kitchen", x: -8.0, y: 3.0 }
       ]
     };
   }
   if (hullClass === "crew2" || hullClass === "corvette" || hullClass === "hauler" || hullClass === "yacht") {
     return {
       crewCapacity: 2,
-      deckW: 14,
-      deckH: 8,
-      entry: { x: -5, y: 0 },
-      teleporter: { x: -2.5, y: 0 },
+      npcCrew: 1,
+      deckW: 17,
+      deckH: 11,
+      entry: { x: -7, y: 0 },
+      teleporter: { x: -6.0, y: -1.5 },
       stations: [
-        { id: "pilot", role: "pilot", name: "Pilot Seat", x: 4.5, y: -1.8 },
-        { id: "copilot", role: "copilot", name: "Co-Pilot Seat", x: 4.5, y: 1.8 },
-        { id: "gunner_aft", role: "gunner", name: "Aft Gunner", x: -4.0, y: -2.5 },
-        { id: "engineer_mid", role: "engineer", name: "Engineering", x: 1.0, y: 2.5, defaultShieldFacing: "front" }
+        { id: "helm", role: "pilot", name: "Helm", x: 6.0, y: 0 },
+        { id: "engineer_main", role: "engineer", name: "Engineering", x: 0.5, y: -2.5, defaultShieldFacing: "front" },
+        { id: "gunner_1", role: "gunner", name: "Gunner", x: -4.5, y: 2.0, droneIndex: 0 }
+      ],
+      crewIdle: [
+        { x: -4.5, y: -2.0 }
+      ],
+      amenities: [
+        { kind: "bed", x: -2.5, y: 2.5 },
+        { kind: "kitchen", x: -6.0, y: 2.0 }
       ]
     };
   }
   return {
     crewCapacity: 1,
-    deckW: 7,
-    deckH: 4,
+    npcCrew: 0,
+    deckW: 8,
+    deckH: 5,
     entry: { x: 0, y: 0 },
-    stations: [{ id: "pilot", role: "pilot", name: "Pilot Seat", x: 0, y: 0 }]
+    stations: [{ id: "pilot", role: "pilot", name: "Pilot Seat", x: 0, y: 0 }],
+    crewIdle: [],
+    amenities: []
   };
+}
+
+// Gunner stations in layout order, each mapped to its orbiting drone.
+function getShipGunnerStations(shipOrClass) {
+  const layout = getShipLayout(shipOrClass);
+  return (layout.stations || []).filter((s) => s.role === "gunner");
+}
+
+// ---------------------------------------------------------------------------
+// NPC crew — the helpers that come bundled with multi-crew ships. They man
+// stations (gunner drones, engineering shields) and can be re-tasked by the
+// owner walking up to them on the deck.
+// ---------------------------------------------------------------------------
+const SHIP_CREW_NAMES = ["Vega", "Orin", "Lyra", "Cass", "Juno", "Rhea", "Dax", "Mira", "Kai", "Tov", "Sela", "Bren", "Nova", "Pell", "Zane", "Ivo"];
+const SHIP_CREW_COLORS = ["#5cc8ff", "#7ce0c0", "#ffb27a", "#c9a6ff", "#ff8f9e", "#9ed36a", "#f7d86a", "#8ad7ff"];
+const SHIP_CREW_NPC_FIRE_COOLDOWN_MS = 620;
+const SHIP_CREW_NPC_TARGET_RANGE = 22;
+
+function makeShipCrewMember(ship, index) {
+  const seed = (index + (typeof ship?.id === "string" ? ship.id.length : 0)) % SHIP_CREW_NAMES.length;
+  return {
+    id: `crew_${index}`,
+    name: SHIP_CREW_NAMES[seed],
+    color: SHIP_CREW_COLORS[index % SHIP_CREW_COLORS.length],
+    stationId: null,
+    localX: 0,
+    localY: 0,
+    facing: Math.PI,
+    lastFireAt: 0
+  };
+}
+
+function assignDefaultCrewStations(ship, layout = getShipLayout(ship)) {
+  // Crew fill the guns first (so the ship auto-defends), then engineering.
+  const order = [
+    ...layout.stations.filter((s) => s.role === "gunner"),
+    ...layout.stations.filter((s) => s.role === "engineer")
+  ];
+  let i = 0;
+  for (const crew of ship.crew) {
+    crew.stationId = order[i] ? order[i].id : null;
+    i += 1;
+  }
+}
+
+function placeShipCrew(ship, layout = getShipLayout(ship)) {
+  const idle = Array.isArray(layout.crewIdle) ? layout.crewIdle : [];
+  let idleIdx = 0;
+  for (const crew of ship.crew) {
+    const station = crew.stationId ? layout.stations.find((s) => s.id === crew.stationId) : null;
+    if (station) {
+      crew.localX = Number(station.x) || 0;
+      crew.localY = Number(station.y) || 0;
+      crew.facing = station.role === "pilot" ? 0 : (Number(station.x) >= 0 ? 0 : Math.PI);
+    } else {
+      const spot = idle[idleIdx % Math.max(1, idle.length)] || { x: (layout.entry?.x || 0) + 1.5, y: 0 };
+      idleIdx += 1;
+      crew.localX = Number(spot.x) || 0;
+      crew.localY = Number(spot.y) || 0;
+      crew.facing = 0;
+    }
+  }
+}
+
+function ensureShipCrew(ship) {
+  if (!ship || typeof ship !== "object") return [];
+  const layout = getShipLayout(ship);
+  const target = Math.max(0, Number(layout.npcCrew) || 0);
+  if (!Array.isArray(ship.crew)) ship.crew = [];
+  if (ship.crew.length > target) ship.crew.length = target;
+  while (ship.crew.length < target) {
+    ship.crew.push(makeShipCrewMember(ship, ship.crew.length));
+  }
+  // Drop assignments that no longer map to a valid non-pilot station.
+  const validStationIds = new Set(layout.stations.filter((s) => s.role !== "pilot").map((s) => s.id));
+  for (const crew of ship.crew) {
+    if (crew.stationId && !validStationIds.has(crew.stationId)) crew.stationId = null;
+  }
+  // Fresh crew with no posting at all → auto-fill stations once.
+  if (target > 0 && ship.crew.every((c) => !c.stationId)) {
+    assignDefaultCrewStations(ship, layout);
+  }
+  placeShipCrew(ship, layout);
+  return ship.crew;
+}
+
+function shipStationNpcOccupant(ship, stationId) {
+  if (!Array.isArray(ship?.crew)) return null;
+  return ship.crew.find((c) => c.stationId === stationId) || null;
+}
+
+function shipStationPlayerOccupant(ship, stationId) {
+  if (!ship || !stationId) return null;
+  for (const c of clients.values()) {
+    const p = c.player;
+    if (!p) continue;
+    const onShip = p.ship === ship || (typeof p.aboardShipId === "string" && p.aboardShipId === ship.id);
+    if (!onShip) continue;
+    if ((p.shipStationId || null) === stationId) return p;
+  }
+  return null;
+}
+
+// When a player sits at a station an NPC holds, move that NPC to an open
+// non-pilot station, or to an idle post if the deck is full.
+function bumpCrewFromStation(ship, stationId) {
+  if (!ship || !stationId) return;
+  ensureShipCrew(ship);
+  const crew = shipStationNpcOccupant(ship, stationId);
+  if (!crew) return;
+  const layout = getShipLayout(ship);
+  const open = layout.stations.find((s) =>
+    s.role !== "pilot" &&
+    s.id !== stationId &&
+    !shipStationPlayerOccupant(ship, s.id) &&
+    !shipStationNpcOccupant(ship, s.id)
+  );
+  crew.stationId = open ? open.id : null;
+  placeShipCrew(ship, layout);
+}
+
+function serializeShipCrew(ship) {
+  if (!Array.isArray(ship?.crew) || !ship.crew.length) return [];
+  const layout = getShipLayout(ship);
+  return ship.crew.map((crew) => {
+    const station = crew.stationId ? layout.stations.find((s) => s.id === crew.stationId) : null;
+    return {
+      id: crew.id,
+      name: crew.name,
+      color: crew.color,
+      stationId: crew.stationId || null,
+      role: station ? station.role : null,
+      localX: Number(crew.localX) || 0,
+      localY: Number(crew.localY) || 0,
+      facing: Number(crew.facing) || 0
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Drone weapons — every gunner station owns one orbiting drone. A lone gunner
+// commands all of them; otherwise each operator drives only their own.
+// ---------------------------------------------------------------------------
+function gunnerDroneSelection(ship, stationId) {
+  const layout = getShipLayout(ship);
+  const count = getShipDroneCount(ship);
+  const gunnerStations = layout.stations.filter((s) => s.role === "gunner");
+  const myStation = gunnerStations.find((s) => s.id === stationId);
+  const myDrone = myStation && Number.isFinite(myStation.droneIndex) ? myStation.droneIndex : 0;
+  let otherOccupied = 0;
+  for (const s of gunnerStations) {
+    if (s.id === stationId) continue;
+    if (shipStationPlayerOccupant(ship, s.id) || shipStationNpcOccupant(ship, s.id)) otherOccupied += 1;
+  }
+  if (otherOccupied === 0) {
+    return Array.from({ length: count }, (_, i) => i);
+  }
+  return [myDrone];
+}
+
+// Fires a single drone's beam from its current orbit position toward (tx,ty).
+// Kills are credited to attributeClient (the gunner, or the owner for NPC fire).
+function fireOneShipDrone(ship, attributeClient, droneIndex, droneCount, tx, ty, now = Date.now()) {
+  const center = shipCenter(ship);
+  const off = shipDroneOffset(ship, droneIndex, droneCount, now);
+  const ox = center.x + off.x;
+  const oy = center.y + off.y;
+  const tier = Math.max(1, Number(ship.laserTier) || 1);
+  const baseRange = 9 + tier * 2;
+  const turretDamage = 12 + tier * 6;
+  const dxs = tx - ox;
+  const dys = ty - oy;
+  const dist = Math.hypot(dxs, dys);
+  const reach = Math.min(baseRange, dist || baseRange) || baseRange;
+  const facing = Math.atan2(dys, dxs);
+  const beamCos = Math.cos(facing);
+  const beamSin = Math.sin(facing);
+
+  let bestMob = null;
+  let bestT = reach;
+  forEachMobNear(ox, oy, reach + 4, (mob) => {
+    if (mob.dead) return;
+    const mx = mob.x - ox;
+    const my = mob.y - oy;
+    const t = mx * beamCos + my * beamSin;
+    if (t < 0 || t > reach) return;
+    const perpX = mx - beamCos * t;
+    const perpY = my - beamSin * t;
+    if (Math.hypot(perpX, perpY) > 1.6) return;
+    if (t < bestT) {
+      bestT = t;
+      bestMob = mob;
+    }
+  });
+  const asteroidHit = findAsteroidHitAlongRay(ox, oy, beamCos, beamSin, reach);
+  const hitAsteroid = asteroidHit && asteroidHit.distance <= bestT;
+  const endX = hitAsteroid ? asteroidHit.rock.x : bestMob ? bestMob.x : ox + beamCos * reach;
+  const endY = hitAsteroid ? asteroidHit.rock.y : bestMob ? bestMob.y : oy + beamSin * reach;
+
+  const event = {
+    type: "combat",
+    kind: "projectile",
+    weapon: "ship_turret",
+    projectileKind: "laser_bolt",
+    weaponStyle: "ship_laser",
+    weaponColor: ship.color || "#67f0ff",
+    attackerId: attributeClient?.player?.id || ship.id,
+    x: Number(ox.toFixed(3)),
+    y: Number(oy.toFixed(3)),
+    facing: Number(facing.toFixed(3)),
+    range: reach,
+    hit: Boolean(bestMob || hitAsteroid),
+    endX: Number(endX.toFixed(3)),
+    endY: Number(endY.toFixed(3))
+  };
+
+  if (hitAsteroid) {
+    const damage = Math.max(1, Math.round(turretDamage * 0.85));
+    const result = applyAsteroidDamage(asteroidHit.rock, damage, now);
+    event.targetId = asteroidHit.rock.id;
+    event.targetKind = "asteroid";
+    event.damage = result.damage;
+    event.targetHp = result.targetHp;
+    if (result.destroyed) event.defeated = true;
+  } else if (bestMob) {
+    const damage = Math.max(1, Math.round(turretDamage + bestMob.level));
+    const result = applyShipMobDamage(bestMob, damage, now, ox, oy);
+    event.targetId = bestMob.id;
+    event.targetKind = "mob";
+    event.damage = result.damage;
+    event.shieldDamage = result.shieldDamage;
+    event.shieldHit = result.shieldHit;
+    event.targetHp = result.targetHp;
+    event.targetShieldHp = result.targetShieldHp;
+    if (bestMob.isShipPirate) alertPirateFleet(bestMob);
+    if (bestMob.hp <= 0) {
+      if (attributeClient) {
+        awardMobDefeatToClient(attributeClient, bestMob, event, now);
+      } else {
+        bestMob.dead = true;
+        bestMob.respawnAt = now + MOB_RESPAWN_MS;
+        event.defeated = true;
+      }
+    }
+  }
+
+  broadcastCombat(event);
+  return Boolean(bestMob || hitAsteroid);
+}
+
+function angleToShieldFacing(angle) {
+  const a = ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  if (a < Math.PI / 4 || a >= (7 * Math.PI) / 4) return "right";
+  if (a < (3 * Math.PI) / 4) return "back";
+  if (a < (5 * Math.PI) / 4) return "left";
+  return "front";
+}
+
+// One AI tick for a ship's NPC crew: gunners auto-fire their drone, engineers
+// hold shields up and patch the hull.
+function tickShipCrew(ownerClient, ship, aiDt, now) {
+  ensureShipCrew(ship);
+  if (!Array.isArray(ship.crew) || !ship.crew.length) return;
+  const layout = getShipLayout(ship);
+  const count = getShipDroneCount(ship);
+  const center = shipCenter(ship);
+
+  // Nearest hostile (ship pirate) once per ship, reused by all crew.
+  let threat = null;
+  let threatDist = Infinity;
+  forEachMobNear(center.x, center.y, SHIP_CREW_NPC_TARGET_RANGE + 4, (mob) => {
+    if (mob.dead || !mob.isShipPirate) return;
+    const d = Math.hypot(mob.x - center.x, mob.y - center.y);
+    if (d > SHIP_CREW_NPC_TARGET_RANGE) return;
+    if (d < threatDist) {
+      threatDist = d;
+      threat = mob;
+    }
+  });
+
+  for (const crew of ship.crew) {
+    if (!crew.stationId) continue;
+    const station = layout.stations.find((s) => s.id === crew.stationId);
+    if (!station) continue;
+    // A player sitting here takes over; the NPC stands by.
+    if (shipStationPlayerOccupant(ship, station.id)) continue;
+
+    if (station.role === "gunner" && threat) {
+      if (now - (crew.lastFireAt || 0) >= SHIP_CREW_NPC_FIRE_COOLDOWN_MS) {
+        crew.lastFireAt = now;
+        const droneIndex = Number.isFinite(station.droneIndex) ? station.droneIndex : 0;
+        crew.facing = Math.atan2(threat.y - center.y, threat.x - center.x);
+        fireOneShipDrone(ship, ownerClient, droneIndex, count, threat.x, threat.y, now);
+      }
+    } else if (station.role === "engineer") {
+      const maxShields = getShipMaxShields(ship);
+      ship.shields = Math.min(maxShields, (Number(ship.shields) || 0) + CAPITAL_SHIP_SHIELD_REGEN_AMOUNT * aiDt);
+      const maxHealth = getShipMaxHealth(ship);
+      ship.health = Math.min(maxHealth, (Number(ship.health) || 0) + SHIP_REPAIR_PER_SECOND * 0.5 * aiDt);
+      if (threat) {
+        ship.shieldSections = sanitizeShipShieldSections(ship);
+        ship.shieldSections[station.id] = angleToShieldFacing(Math.atan2(threat.y - center.y, threat.x - center.x));
+      }
+    }
+  }
+}
+
+function tickAllShipCrews(aiDt, now) {
+  for (const c of clients.values()) {
+    const ship = c.player?.ship;
+    if (!ship?.boarded) continue;
+    tickShipCrew(c, ship, aiDt, now);
+  }
+}
+
+function handleShipCrewCommand(client, message = {}) {
+  const player = client.player;
+  if (!player) return;
+  let ship = player.ship?.boarded ? player.ship : null;
+  if (!ship && typeof player.aboardShipId === "string" && player.aboardShipId) {
+    const found = findShipById(player.aboardShipId);
+    if (found?.ship?.boarded) ship = found.ship;
+  }
+  if (!ship || !ship.deckMode) return;
+  ensureShipCrew(ship);
+  const crew = ship.crew.find((c) => c.id === (typeof message.crewId === "string" ? message.crewId : null));
+  if (!crew) return;
+  const layout = getShipLayout(ship);
+  const center = shipCenter(ship);
+  const cx = center.x + (Number(crew.localX) || 0);
+  const cy = center.y + (Number(crew.localY) || 0);
+  if (Math.hypot(player.x - cx, player.y - cy) > 3.2) return;
+
+  const requested = typeof message.stationId === "string" ? message.stationId : null;
+  if (!requested || requested === "idle") {
+    crew.stationId = null;
+  } else {
+    const station = layout.stations.find((s) => s.id === requested);
+    if (!station || station.role === "pilot") return;
+    if (shipStationPlayerOccupant(ship, station.id)) return;
+    const other = shipStationNpcOccupant(ship, station.id);
+    if (other && other.id !== crew.id) other.stationId = null;
+    crew.stationId = station.id;
+  }
+  placeShipCrew(ship, layout);
+  send(client, { type: "serverMessage", message: "ship_crew_assigned", crewName: crew.name, stationName: crew.stationId ? (layout.stations.find((s) => s.id === crew.stationId)?.name || "station") : "stand by" });
+  broadcastSnapshot();
 }
 
 function getShipMaxHealth(ship) {
@@ -2013,6 +2429,11 @@ function shipStationWorld(ship, station) {
 // Polygon points in normalised [-1..1] space relative to the deck centre,
 // mirroring the visual hull silhouette drawn by buildShipHullPath on the client.
 function getShipHullPolygon(hullClass) {
+  if (hullClass === "crew2" || hullClass === "crew3" || hullClass === "crew4" ||
+      hullClass === "corvette" || hullClass === "cruiser" || hullClass === "frigate") {
+    // Roomy, symmetric crew deck: pointed bow, wide body, flat stern.
+    return [[0.96, 0],[0.55,-0.55],[-0.55,-0.62],[-0.90,-0.30],[-0.90,0.30],[-0.55,0.62],[0.55,0.55]];
+  }
   if (hullClass === "hauler" || hullClass === "freighter") {
     return [[-0.90, 0.24],[-0.60,-0.62],[0.56,-0.62],[0.94,-0.04],[0.56,0.62],[-0.60,0.62]];
   }
@@ -2187,6 +2608,7 @@ function createStarterShip(playerId = "starter") {
   ship.health = ship.maxHealth;
   ship.maxShields = getShipMaxShields(ship);
   ship.shields = ship.maxShields;
+  ensureShipCrew(ship);
   return ship;
 }
 
@@ -2217,6 +2639,14 @@ function sanitizeShip(ship, fallbackId = null) {
     stationId: typeof ship.stationId === "string" ? ship.stationId.slice(0, 48) : null,
     shieldFacing: normalizeShieldFacing(ship.shieldFacing),
     shieldSections: sanitizeShipShieldSections(ship),
+    crew: Array.isArray(ship.crew)
+      ? ship.crew.slice(0, 8).map((c, i) => ({
+          id: typeof c?.id === "string" ? c.id.slice(0, 24) : `crew_${i}`,
+          name: typeof c?.name === "string" ? c.name.slice(0, 24) : "Crew",
+          color: typeof c?.color === "string" ? c.color.slice(0, 22) : "#5cc8ff",
+          stationId: typeof c?.stationId === "string" ? c.stationId.slice(0, 48) : null
+        }))
+      : [],
     warp: sanitizeShipWarp(ship.warp)
   };
   out.maxHealth = getShipMaxHealth(out);
@@ -2526,6 +2956,23 @@ function getShipCatalog() {
       stats: { speed: 14.4 },
       laserTier: 3,
       thrustTier: 2
+    },
+    {
+      templateId: "trident_cruiser",
+      type: "ship",
+      name: "Trident Cruiser",
+      icon: "ship",
+      rarity: "legendary",
+      color: "#7ce0c0",
+      hullClass: "crew3",
+      value: 3750,
+      price: 3750,
+      shipTemplateId: "trident_cruiser",
+      shipName: "Trident Cruiser",
+      shipColor: "#7ce0c0",
+      stats: { speed: 13.6 },
+      laserTier: 3,
+      thrustTier: 3
     },
     {
       templateId: "aegis_frigate",
@@ -3456,6 +3903,7 @@ function simulate() {
   const runWorldAi = tick % AI_TICK_DIVISOR === 0;
   const aiDt = dt * AI_TICK_DIVISOR;
   if (runWorldAi) {
+    tickAllShipCrews(aiDt, Date.now());
     const companionAiTargets = [];
     const allNpcPlayers = [];
     for (const c of clients.values()) {
@@ -4023,6 +4471,11 @@ function handleMessage(client, raw) {
 
   if (message.type === "shipFire") {
     handleShipFire(client, message);
+    return;
+  }
+
+  if (message.type === "shipCrewCommand") {
+    handleShipCrewCommand(client, message);
     return;
   }
 
@@ -5131,6 +5584,8 @@ function handleShipInteract(client, message = {}) {
     }
     const station = nearestShipStationOn(hostShip, player, message);
     if (station) {
+      // A player taking a seat displaces any NPC crew member currently holding it.
+      bumpCrewFromStation(hostShip, station.id);
       player.shipStationRole = station.role;
       player.shipStationId = station.id;
       if (hostShip === ownShip) {
@@ -5300,13 +5755,12 @@ function awardMobDefeatToClient(client, mob, event, now = Date.now()) {
 }
 
 function handleShipFire(client, message = {}) {
-  const ship = client.player?.ship;
-  if (!ship?.boarded || ship.stationRole !== "gunner") {
-    return;
-  }
+  const ctx = resolveCrewShipContext(client);
+  if (!ctx || ctx.role !== "gunner") return;
+  const ship = ctx.ship;
   if (message.weaponMode === "missile") {
     if (Date.now() - (client.lastShipMissileAt || 0) > SHIP_MISSILE_COOLDOWN_MS) {
-      handleShipMissile(client);
+      handleShipMissile(client, ship);
     }
     return;
   }
@@ -5320,108 +5774,50 @@ function handleShipFire(client, message = {}) {
   const tx = Number.isFinite(Number(message.targetX)) ? Number(message.targetX) : center.x + Math.cos(client.player.facing) * 8;
   const ty = Number.isFinite(Number(message.targetY)) ? Number(message.targetY) : center.y + Math.sin(client.player.facing) * 8;
 
-  const tier = Math.max(1, Number(ship.laserTier) || 1);
-  const baseRange = 9 + tier * 2;
-  const turrets = getShipTurrets(ship);
-
-  // Update the gunner's facing toward the click so the visual orientation tracks
-  // their last shot and the turret seat indicator looks correct.
+  // Update the gunner's facing toward the aim point so the seat orientation tracks.
   const aimDx = tx - center.x;
   const aimDy = ty - center.y;
   if (aimDx * aimDx + aimDy * aimDy > 0.0001) {
     client.player.facing = Math.atan2(aimDy, aimDx);
   }
 
-  const turretDamage = 12 + tier * 6;
-  for (const turret of turrets) {
-    const ox = center.x + turret.x;
-    const oy = center.y + turret.y;
-    const dxs = tx - ox;
-    const dys = ty - oy;
-    const dist = Math.hypot(dxs, dys);
-    const reach = Math.min(baseRange, dist || baseRange) || baseRange;
-    const facing = Math.atan2(dys, dxs);
-
-    // Find the nearest live mob whose center is roughly along this turret's beam.
-    let bestMob = null;
-    let bestT = reach;
-    const beamCos = Math.cos(facing);
-    const beamSin = Math.sin(facing);
-    forEachMobNear(ox, oy, reach + 4, (mob) => {
-      if (mob.dead) return;
-      const mx = mob.x - ox;
-      const my = mob.y - oy;
-      const t = mx * beamCos + my * beamSin;
-      if (t < 0 || t > reach) return;
-      const perpX = mx - beamCos * t;
-      const perpY = my - beamSin * t;
-      const perpDist = Math.hypot(perpX, perpY);
-      if (perpDist > 1.6) return;
-      if (t < bestT) {
-        bestT = t;
-        bestMob = mob;
-      }
-    });
-    const asteroidHit = findAsteroidHitAlongRay(ox, oy, beamCos, beamSin, reach);
-    const bestAsteroidT = asteroidHit ? asteroidHit.distance : Infinity;
-    const hitAsteroid = asteroidHit && bestAsteroidT <= bestT;
-
-    const endX = hitAsteroid ? asteroidHit.rock.x : bestMob ? bestMob.x : ox + beamCos * reach;
-    const endY = hitAsteroid ? asteroidHit.rock.y : bestMob ? bestMob.y : oy + beamSin * reach;
-
-    const event = {
-      type: "combat",
-      kind: "projectile",
-      weapon: "ship_turret",
-      projectileKind: "laser_bolt",
-      weaponStyle: "ship_laser",
-      weaponColor: ship.color || "#67f0ff",
-      attackerId: client.player.id,
-      x: Number(ox.toFixed(3)),
-      y: Number(oy.toFixed(3)),
-      facing: Number(facing.toFixed(3)),
-      range: reach,
-      hit: Boolean(bestMob || hitAsteroid),
-      endX: Number(endX.toFixed(3)),
-      endY: Number(endY.toFixed(3))
-    };
-
-    if (hitAsteroid) {
-      const damage = Math.max(1, Math.round(turretDamage * 0.85));
-      const result = applyAsteroidDamage(asteroidHit.rock, damage, now);
-      event.targetId = asteroidHit.rock.id;
-      event.targetKind = "asteroid";
-      event.damage = result.damage;
-      event.targetHp = result.targetHp;
-      if (result.destroyed) {
-        event.defeated = true;
-      }
-    } else if (bestMob) {
-      const damage = Math.max(1, Math.round(turretDamage + bestMob.level));
-      const result = applyShipMobDamage(bestMob, damage, now, ox, oy);
-      event.targetId = bestMob.id;
-      event.targetKind = "mob";
-      event.damage = result.damage;
-      event.shieldDamage = result.shieldDamage;
-      event.shieldHit = result.shieldHit;
-      event.targetHp = result.targetHp;
-      event.targetShieldHp = result.targetShieldHp;
-      if (bestMob.isShipPirate) {
-        alertPirateFleet(bestMob);
-      }
-      if (bestMob.hp <= 0) {
-        awardMobDefeatToClient(client, bestMob, event, now);
-      }
-    }
-
-    broadcastCombat(event);
+  ensureShipCrew(ship);
+  const count = getShipDroneCount(ship);
+  const drones = gunnerDroneSelection(ship, ctx.stationId);
+  for (const droneIndex of drones) {
+    fireOneShipDrone(ship, client, droneIndex, count, tx, ty, now);
   }
   client.player.moving = true;
 }
 
-function handleShipMissile(client) {
-  const ship = client.player?.ship;
-  if (!ship?.boarded || ship.stationRole !== "gunner") return;
+function resolveCrewShipContext(client) {
+  const player = client?.player;
+  if (!player) return null;
+  if (player.ship?.boarded) {
+    return {
+      ship: player.ship,
+      role: player.shipStationRole || player.ship.stationRole || null,
+      stationId: player.shipStationId || player.ship.stationId || null,
+      isOwner: true
+    };
+  }
+  if (typeof player.aboardShipId === "string" && player.aboardShipId) {
+    const found = findShipById(player.aboardShipId);
+    if (found?.ship?.boarded) {
+      return {
+        ship: found.ship,
+        role: player.shipStationRole || null,
+        stationId: player.shipStationId || null,
+        isOwner: false
+      };
+    }
+  }
+  return null;
+}
+
+function handleShipMissile(client, shipOverride = null) {
+  const ship = shipOverride || client.player?.ship;
+  if (!ship?.boarded) return;
   client.lastShipMissileAt = Date.now();
 
   const center = shipCenter(ship);
@@ -5783,6 +6179,7 @@ function handleReturnToShip(client) {
 function boardPlayerOntoCurrentShip(player) {
   const ship = player?.ship;
   if (!ship) return false;
+  ensureShipCrew(ship);
   const center = shipCenter(ship, player);
   ship.boarded = true;
   ship.deckMode = (getShipLayout(ship).crewCapacity > 1);
@@ -8372,6 +8769,7 @@ function handleShopBuy(client, message) {
       laserTier: Math.min(5, Math.max(1, Number(template.laserTier) || 1)),
       thrustTier: Math.min(5, Math.max(1, Number(template.thrustTier) || 1))
     }) || createStarterShip(client.account?.key || client.player.id);
+    ensureShipCrew(newShip);
     ensurePlayerFleet(client.player);
     client.player.ships.push(newShip);
     selectPlayerShip(client.player, newShip.id);

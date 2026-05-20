@@ -2185,10 +2185,20 @@ function selfIsInPilotSeat(player = state.players.get(state.selfId)) {
   return Boolean(player.ship?.boarded || player.aboardShipId);
 }
 
+// For pilots/gunners seated on a multi-crew deck, the camera tracks the ship's
+// center (their seat is offset) rather than their own position.
+function getExteriorShipControlCenter(player = state.players.get(state.selfId)) {
+  const ship = player?.ship;
+  if (!ship?.boarded || !ship.deckMode) return null;
+  const role = ship.stationRole;
+  if (!isPilotShipRole(role) && role !== "gunner") return null;
+  return shipCenter(ship, player);
+}
+
 function getInteriorShipView(player = state.players.get(state.selfId)) {
   if (!player) return null;
-  if (selfIsInPilotSeat(player)) {
-    // Pilots and captains see the exterior view, not the locked interior camera.
+  if (selfIsInPilotSeat(player) || player.ship?.stationRole === "gunner") {
+    // Pilots and gunners ride the exterior view, not the locked interior camera.
     return null;
   }
   // Owners walking around their own deck.
@@ -2565,6 +2575,28 @@ function tickNpcContextMenuPosition() {
       return;
     }
     positionNpcContextMenu(lay.wx, lay.wy);
+    return;
+  }
+  if (state.npcContext.kind === "ship_crew") {
+    const self = state.players.get(state.selfId);
+    if (!self) { hideNpcContextMenu(); return; }
+    const { shipId, crewId } = state.npcContext;
+    let found = null;
+    for (const player of state.players.values()) {
+      const ship = player?.ship;
+      if (ship?.id === shipId && Array.isArray(ship.crew)) {
+        const crew = ship.crew.find((c) => c.id === crewId);
+        if (crew) { found = { ship, player, crew }; break; }
+      }
+    }
+    if (!found) { hideNpcContextMenu(); return; }
+    const center = shipCenter(found.ship, found.player);
+    const cx = center.x + (Number(found.crew.localX) || 0);
+    const cy = center.y + (Number(found.crew.localY) || 0);
+    const sx = Number.isFinite(self.renderX) ? self.renderX : self.x;
+    const sy = Number.isFinite(self.renderY) ? self.renderY : self.y;
+    if (Math.hypot(sx - cx, sy - cy) > 4.0) { hideNpcContextMenu(); return; }
+    positionNpcContextMenu(cx, cy);
     return;
   }
   const npc = state.npcs.get(state.npcContext.npcId);
@@ -3541,6 +3573,16 @@ function wireUi() {
     const btn = e.target.closest("[data-npc-action]");
     if (!btn || !state.npcContext) return;
     const act = btn.dataset.npcAction;
+    if (state.npcContext.kind === "ship_crew") {
+      const { crewId } = state.npcContext;
+      hideNpcContextMenu();
+      if (act === "crew_idle") {
+        send({ type: "shipCrewCommand", crewId, stationId: "idle" });
+      } else if (act.startsWith("crew_station:")) {
+        send({ type: "shipCrewCommand", crewId, stationId: act.slice("crew_station:".length) });
+      }
+      return;
+    }
     if (state.npcContext.kind === "house_companion") {
       hideNpcContextMenu();
       if (act === "hc_chat") {
@@ -4883,6 +4925,12 @@ function refreshWorldHoverTooltip(event) {
   const world = screenEventToWorld(event);
   const self = state.players.get(state.selfId);
   if (isSciFiWorld()) {
+    const crewHover = findShipCrewAt(world.x, world.y);
+    if (crewHover) {
+      state.hoverTooltipText = `${crewHover.crew.name} - assign post`;
+      state.hoverTooltipSmall = true;
+      return;
+    }
     const shipDeckHit = findShipDeckInteractionAt(world.x, world.y);
     if (shipDeckHit?.label) {
       state.hoverTooltipText = shipDeckHit.label;
@@ -5208,7 +5256,18 @@ function tryDockPortClickInteract(event) {
 }
 
 function tryShipDeckClickInteract(event) {
+  // While seated at a station (e.g. a gunner aiming), clicks should fire/aim,
+  // not trigger deck interactions. Standing up is done with the interact key.
+  const selfSeated = state.players.get(state.selfId);
+  if (selfSeated?.ship?.boarded && selfSeated.ship.stationRole) {
+    return false;
+  }
   const world = screenEventToWorld(event);
+  const crewHit = findShipCrewAt(world.x, world.y);
+  if (crewHit) {
+    showShipCrewMenu(crewHit.ship, crewHit.crew);
+    return true;
+  }
   const hit = findShipDeckInteractionAt(world.x, world.y);
   if (!hit) {
     return false;
@@ -5984,12 +6043,21 @@ function updateCamera(dt) {
 
   const follow = 1 - Math.pow(0.001, dt);
   const interiorView = getInteriorShipView(self);
+  const exteriorShipCenter = getExteriorShipControlCenter(self);
   if (interiorView) {
     state.camera.x = interiorView.center.x * TILE_SIZE;
     state.camera.y = interiorView.center.y * TILE_SIZE;
     state.camera.rotation = normalizeAngle(
       state.camera.rotation + normalizeAngle(interiorView.rotation - state.camera.rotation) * follow
     );
+  } else if (exteriorShipCenter) {
+    // Pilots and gunners on a multi-crew deck: keep the hull centered (their seat
+    // is offset from the ship's center) and don't lock-rotate the world.
+    const targetX = exteriorShipCenter.x * TILE_SIZE;
+    const targetY = exteriorShipCenter.y * TILE_SIZE;
+    state.camera.x += (targetX - state.camera.x) * follow;
+    state.camera.y += (targetY - state.camera.y) * follow;
+    state.camera.rotation = normalizeAngle(state.camera.rotation + normalizeAngle(0 - state.camera.rotation) * follow);
   } else {
     const targetX = self.renderX * TILE_SIZE;
     const targetY = self.renderY * TILE_SIZE;
@@ -8756,8 +8824,11 @@ function drawCargoCrateObject(obj, sx, sy) {
 }
 
 function shipHullDimensions(hullClass) {
-  if (hullClass === "crew4") return { w: 124, h: 62 };
-  if (hullClass === "crew2") return { w: 104, h: 52 };
+  // Exteriors stay modest so crew ships don't dwarf others in the shared view — the
+  // size jump between tiers is felt inside (deckW/deckH), not from outside.
+  if (hullClass === "crew4" || hullClass === "frigate") return { w: 116, h: 56 };
+  if (hullClass === "crew3" || hullClass === "cruiser") return { w: 104, h: 50 };
+  if (hullClass === "crew2" || hullClass === "corvette") return { w: 92, h: 44 };
   if (hullClass === "freighter") return { w: 82, h: 42 };
   if (hullClass === "hauler") return { w: 78, h: 40 };
   if (hullClass === "interceptor" || hullClass === "needle") return { w: 74, h: 28 };
@@ -8767,56 +8838,158 @@ function shipHullDimensions(hullClass) {
   return { w: 64, h: 36 };
 }
 
+// Mirror of the server's drone helpers so the rendered orbit lines up with where
+// the server fires bolts from (both keyed off Date.now()).
+const SHIP_DRONE_ORBIT_SPEED = 0.55;
+
+function getShipDroneCount(hullClass) {
+  const cls = typeof hullClass === "string" ? hullClass : hullClass?.hullClass;
+  if (cls === "crew4" || cls === "frigate" || cls === "freighter") return 3;
+  if (cls === "crew3" || cls === "cruiser") return 2;
+  return 1;
+}
+
+function getShipDroneOrbitRadius(hullClass) {
+  const cls = typeof hullClass === "string" ? hullClass : hullClass?.hullClass;
+  if (cls === "crew4" || cls === "frigate" || cls === "freighter") return 3.0;
+  if (cls === "crew3" || cls === "cruiser") return 2.7;
+  if (cls === "crew2" || cls === "corvette" || cls === "hauler" || cls === "yacht") return 2.4;
+  return 2.0;
+}
+
+function shipDroneOffset(hullClass, index, count, now) {
+  const radius = getShipDroneOrbitRadius(hullClass);
+  const slots = Math.max(1, count);
+  const angle = (Math.PI * 2 * index) / slots + (now / 1000) * SHIP_DRONE_ORBIT_SPEED;
+  return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
+}
+
+// Draws the combat drones orbiting a ship's exterior hull. `cx/cy` is the ship
+// center in world-unit screen space (inside the zoom transform).
+function drawShipOrbitDrones(hullClass, cx, cy, color) {
+  const count = getShipDroneCount(hullClass);
+  const now = Date.now();
+  ctx.save();
+  ctx.translate(cx, cy);
+  for (let i = 0; i < count; i += 1) {
+    const off = shipDroneOffset(hullClass, i, count, now);
+    const dx = off.x * TILE_SIZE;
+    const dy = off.y * TILE_SIZE;
+    ctx.fillStyle = "rgba(103,240,255,0.18)";
+    ctx.beginPath();
+    ctx.arc(dx, dy, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(8,16,28,0.95)";
+    ctx.beginPath();
+    ctx.arc(dx, dy, 4.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+    // Stub barrel pointing outward from the ship.
+    const ang = Math.atan2(dy, dx);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(dx, dy);
+    ctx.lineTo(dx + Math.cos(ang) * 6, dy + Math.sin(ang) * 6);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(180,245,255,0.95)";
+    ctx.beginPath();
+    ctx.arc(dx, dy, 1.7, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 function getShipLayout(shipOrClass = "skiff") {
   const hullClass = typeof shipOrClass === "string" ? shipOrClass : shipOrClass?.hullClass;
   if (hullClass === "crew4" || hullClass === "frigate" || hullClass === "freighter") {
     return {
       crewCapacity: 4,
-      deckW: 18,
-      deckH: 10,
-      entry: { x: -7, y: 0 },
-      teleporter: { x: -3.0, y: 0 },
+      npcCrew: 4,
+      deckW: 30,
+      deckH: 18,
+      entry: { x: -13, y: 0 },
+      teleporter: { x: -12, y: 0 },
       stations: [
-        { id: "captain", role: "captain", name: "Captain", x: 4.0, y: 0 },
-        { id: "pilot", role: "pilot", name: "Pilot", x: 6.5, y: -1.8 },
-        { id: "copilot", role: "copilot", name: "Co-Pilot", x: 6.5, y: 1.8 },
-        { id: "gunner_aft", role: "gunner", name: "Gunner", x: -6.0, y: 0 },
-        { id: "engineer_mid", role: "engineer", name: "Forward Engineering", x: 1.0, y: -3.5, defaultShieldFacing: "front" },
-        { id: "engineer_aux", role: "engineer", name: "Aft Engineering", x: 1.0, y: 3.5, defaultShieldFacing: "back" }
+        { id: "helm", role: "pilot", name: "Helm", x: 11.0, y: 0 },
+        { id: "engineer_fwd", role: "engineer", name: "Fore Engineering", x: 4.0, y: -4.0, defaultShieldFacing: "front" },
+        { id: "engineer_aft", role: "engineer", name: "Aft Engineering", x: 4.0, y: 4.0, defaultShieldFacing: "back" },
+        { id: "engineer_port", role: "engineer", name: "Port Engineering", x: -8.0, y: -3.0, defaultShieldFacing: "left" },
+        { id: "gunner_1", role: "gunner", name: "Gunner I", x: -2.0, y: -4.0, droneIndex: 0 },
+        { id: "gunner_2", role: "gunner", name: "Gunner II", x: -2.0, y: 4.0, droneIndex: 1 },
+        { id: "gunner_3", role: "gunner", name: "Gunner III", x: -8.0, y: 3.0, droneIndex: 2 }
+      ],
+      crewIdle: [
+        { x: -10.0, y: -1.5 },
+        { x: -10.0, y: 1.5 },
+        { x: -5.0, y: -1.5 },
+        { x: -5.0, y: 1.5 }
       ],
       amenities: [
-        { kind: "bed", x: -4.5, y: -3.0 },
-        { kind: "bed", x: -4.5, y: 3.0 },
-        { kind: "kitchen", x: -1.5, y: -4.0 },
-        { kind: "table", x: -1.5, y: 4.0 }
+        { kind: "bed", x: -11.0, y: -3.5 },
+        { kind: "bed", x: -11.0, y: 3.5 },
+        { kind: "kitchen", x: -6.5, y: -4.5 },
+        { kind: "table", x: 0.5, y: 0 }
+      ]
+    };
+  }
+  if (hullClass === "crew3" || hullClass === "cruiser") {
+    return {
+      crewCapacity: 3,
+      npcCrew: 2,
+      deckW: 23,
+      deckH: 14,
+      entry: { x: -10, y: 0 },
+      teleporter: { x: -8.5, y: 0 },
+      stations: [
+        { id: "helm", role: "pilot", name: "Helm", x: 8.5, y: 0 },
+        { id: "engineer_fwd", role: "engineer", name: "Fore Engineering", x: 2.5, y: -3.0, defaultShieldFacing: "front" },
+        { id: "engineer_aft", role: "engineer", name: "Aft Engineering", x: 2.5, y: 3.0, defaultShieldFacing: "back" },
+        { id: "gunner_1", role: "gunner", name: "Gunner I", x: -4.0, y: -3.0, droneIndex: 0 },
+        { id: "gunner_2", role: "gunner", name: "Gunner II", x: -4.0, y: 3.0, droneIndex: 1 }
+      ],
+      crewIdle: [
+        { x: -6.5, y: -1.5 },
+        { x: -6.5, y: 1.5 }
+      ],
+      amenities: [
+        { kind: "bed", x: -8.0, y: -3.0 },
+        { kind: "kitchen", x: -8.0, y: 3.0 }
       ]
     };
   }
   if (hullClass === "crew2" || hullClass === "corvette" || hullClass === "hauler" || hullClass === "yacht") {
     return {
       crewCapacity: 2,
-      deckW: 14,
-      deckH: 8,
-      entry: { x: -5, y: 0 },
-      teleporter: { x: -2.5, y: 0 },
+      npcCrew: 1,
+      deckW: 17,
+      deckH: 11,
+      entry: { x: -7, y: 0 },
+      teleporter: { x: -6.0, y: -1.5 },
       stations: [
-        { id: "pilot", role: "pilot", name: "Pilot", x: 4.5, y: -1.8 },
-        { id: "copilot", role: "copilot", name: "Co-Pilot", x: 4.5, y: 1.8 },
-        { id: "gunner_aft", role: "gunner", name: "Gunner", x: -4.0, y: -2.5 },
-        { id: "engineer_mid", role: "engineer", name: "Engineering", x: 1.0, y: 2.5, defaultShieldFacing: "front" }
+        { id: "helm", role: "pilot", name: "Helm", x: 6.0, y: 0 },
+        { id: "engineer_main", role: "engineer", name: "Engineering", x: 0.5, y: -2.5, defaultShieldFacing: "front" },
+        { id: "gunner_1", role: "gunner", name: "Gunner", x: -4.5, y: 2.0, droneIndex: 0 }
+      ],
+      crewIdle: [
+        { x: -4.5, y: -2.0 }
       ],
       amenities: [
-        { kind: "bed", x: -3.5, y: 2.5 },
-        { kind: "kitchen", x: -1.0, y: -3.0 }
+        { kind: "bed", x: -2.5, y: 2.5 },
+        { kind: "kitchen", x: -6.0, y: 2.0 }
       ]
     };
   }
   return {
     crewCapacity: 1,
-    deckW: 7,
-    deckH: 4,
+    npcCrew: 0,
+    deckW: 8,
+    deckH: 5,
     entry: { x: 0, y: 0 },
     stations: [{ id: "pilot", role: "pilot", name: "Pilot", x: 0, y: 0 }],
+    crewIdle: [],
     amenities: []
   };
 }
@@ -9093,7 +9266,75 @@ function findShipDeckInteractionAt(wx, wy) {
   return best;
 }
 
+// Returns the NPC crew member near (wx,wy) on the ship the viewer is standing in,
+// if the viewer is close enough to give them an order.
+function findShipCrewAt(wx, wy) {
+  if (!isSciFiWorld()) return null;
+  const self = state.players.get(state.selfId);
+  if (!self) return null;
+  const sx = Number.isFinite(self.renderX) ? self.renderX : self.x;
+  const sy = Number.isFinite(self.renderY) ? self.renderY : self.y;
+  for (const player of state.players.values()) {
+    const ship = player?.ship;
+    if (!ship?.boarded || !ship.deckMode || !Array.isArray(ship.crew) || !ship.crew.length) continue;
+    const onThis = self.ship?.id === ship.id || self.aboardShipId === ship.id;
+    if (!onThis) continue;
+    const center = shipCenter(ship, player);
+    for (const crew of ship.crew) {
+      const cx = center.x + (Number(crew.localX) || 0);
+      const cy = center.y + (Number(crew.localY) || 0);
+      if (Math.hypot(wx - cx, wy - cy) > 1.1) continue;
+      if (Math.hypot(sx - cx, sy - cy) > 3.2) continue;
+      return { ship, crew, x: cx, y: cy };
+    }
+  }
+  return null;
+}
+
+function shipStationTakenByOther(ship, stationId, exceptCrewId) {
+  if (Array.isArray(ship.crew)) {
+    for (const c of ship.crew) {
+      if (c.id === exceptCrewId) continue;
+      if (c.stationId === stationId) return true;
+    }
+  }
+  const self = state.players.get(state.selfId);
+  if (self?.ship?.id === ship.id && self.ship?.stationId === stationId) return true;
+  return false;
+}
+
+function showShipCrewMenu(ship, crew) {
+  const layout = getShipLayout(ship);
+  state.npcContext = { kind: "ship_crew", crewId: crew.id, shipId: ship.id };
+  if (npcContextMenuName) npcContextMenuName.textContent = `${crew.name} — assign post`;
+  if (npcContextMenuButtons) {
+    npcContextMenuButtons.replaceChildren();
+    for (const st of layout.stations) {
+      if (st.role === "pilot") continue;
+      if (shipStationTakenByOther(ship, st.id, crew.id)) continue;
+      const btn = document.createElement("button");
+      btn.dataset.npcAction = `crew_station:${st.id}`;
+      btn.textContent = (crew.stationId === st.id ? "✓ " : "") + st.name;
+      npcContextMenuButtons.append(btn);
+    }
+    if (crew.stationId) {
+      const idleBtn = document.createElement("button");
+      idleBtn.dataset.npcAction = "crew_idle";
+      idleBtn.className = "npc-ctx-shoo";
+      idleBtn.textContent = "Stand by";
+      npcContextMenuButtons.append(idleBtn);
+    }
+  }
+  const center = shipCenter(ship, null);
+  positionNpcContextMenu(center.x + (Number(crew.localX) || 0), center.y + (Number(crew.localY) || 0));
+  npcContextMenu?.classList.remove("hidden");
+}
+
 function getShipHullPolygonClient(hullClass) {
+  if (hullClass === "crew2" || hullClass === "crew3" || hullClass === "crew4" ||
+      hullClass === "corvette" || hullClass === "cruiser" || hullClass === "frigate") {
+    return [[0.96,0],[0.55,-0.55],[-0.55,-0.62],[-0.90,-0.30],[-0.90,0.30],[-0.55,0.62],[0.55,0.55]];
+  }
   if (hullClass === "hauler" || hullClass === "freighter") {
     return [[-0.90,0.24],[-0.60,-0.62],[0.56,-0.62],[0.94,-0.04],[0.56,0.62],[-0.60,0.62]];
   }
@@ -9177,6 +9418,19 @@ function clampPointToShipDeck(ship, x, y) {
 
 function buildShipHullPath(hullClass, x, y, w, h) {
   ctx.beginPath();
+  if (hullClass === "crew2" || hullClass === "crew3" || hullClass === "crew4" ||
+      hullClass === "corvette" || hullClass === "cruiser" || hullClass === "frigate") {
+    // Symmetric crew capsule: pointed bow (right), wide hull, flat stern (left).
+    ctx.moveTo(x + w * 0.98, y + h * 0.50);
+    ctx.lineTo(x + w * 0.775, y + h * 0.225);
+    ctx.lineTo(x + w * 0.225, y + h * 0.19);
+    ctx.lineTo(x + w * 0.05, y + h * 0.35);
+    ctx.lineTo(x + w * 0.05, y + h * 0.65);
+    ctx.lineTo(x + w * 0.225, y + h * 0.81);
+    ctx.lineTo(x + w * 0.775, y + h * 0.775);
+    ctx.closePath();
+    return;
+  }
   if (hullClass === "hauler" || hullClass === "freighter") {
     ctx.moveTo(x + w * 0.05, y + h * 0.62);
     ctx.lineTo(x + w * 0.20, y + h * 0.19);
@@ -9266,6 +9520,10 @@ function drawShipVehicleObject(obj, sx, sy, boarded = false, facing = 0, thrust 
   drawEllipseShadow(x - 6, y + h * 0.84, w + 12, 10, 0.22);
   drawShipHullShape(hullClass, x, y, w, h, color);
   ctx.restore();
+  // Combat drones orbit the hull (independent of ship facing) when underway.
+  if (boarded) {
+    drawShipOrbitDrones(hullClass, sx, sy, color);
+  }
   ctx.save();
   ctx.translate(sx, sy);
   ctx.font = "bold 10px ui-sans-serif, system-ui";
@@ -9593,6 +9851,33 @@ function drawShipDeckObject(ship, sx, sy) {
   ctx.fillStyle = "#67f0ff";
   ctx.fillRect(x + 12, y + h + 13, 36 * shp, 3);
   ctx.restore();
+}
+
+// Draws the bundled NPC crew standing at their posts (or idling) inside the
+// interior deck. `shipSx/shipSy` is the screen position of the ship center.
+function drawShipCrew(ship, shipSx, shipSy) {
+  if (!Array.isArray(ship?.crew) || !ship.crew.length) return;
+  for (const crew of ship.crew) {
+    const cx = shipSx + (Number(crew.localX) || 0) * TILE_SIZE;
+    const cy = shipSy + (Number(crew.localY) || 0) * TILE_SIZE;
+    const entity = {
+      id: `crew_${ship.id}_${crew.id}`,
+      facing: Number(crew.facing) || 0,
+      renderMoving: false,
+      torsoColor: crew.color || "#5cc8ff",
+      sciFiLook: "crew",
+      ship: { boarded: true, deckMode: true }
+    };
+    drawCharacter(entity, cx, cy, true, { insideShipDeck: true, restingBench: Boolean(crew.stationId) });
+    const label = crew.role ? `${crew.name} · ${crew.role}` : `${crew.name} · idle`;
+    ctx.font = "9px ui-sans-serif, system-ui";
+    ctx.textAlign = "center";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(4,8,16,0.85)";
+    ctx.fillStyle = crew.stationId ? "rgba(170,235,255,0.95)" : "rgba(190,200,215,0.85)";
+    ctx.strokeText(label, cx, cy - 15);
+    ctx.fillText(label, cx, cy - 15);
+  }
 }
 
 function drawStationObject(obj, sx, sy) {
@@ -10671,9 +10956,12 @@ function drawPlayers() {
   // shipStationRole so this works for both ship owners and party-teleport passengers.
   const selfStationRole = self?.ship?.stationRole || null;
   const selfPiloting = Boolean(selfStationRole && isPilotShipRole(selfStationRole));
+  // Gunners ride the exterior view too: they take over an orbiting drone and aim
+  // out into space, so they need to see the hull and the battlefield around it.
+  const selfControllingExterior = selfPiloting || selfStationRole === "gunner";
   let viewerInteriorShipId = null;
-  if (selfPiloting) {
-    // Sitting in a pilot/captain seat — get the exterior view of the host ship.
+  if (selfControllingExterior) {
+    // Sitting in a pilot or gunner seat — get the exterior view of the host ship.
     viewerInteriorShipId = null;
   } else if (selfAboardShipId) {
     viewerInteriorShipId = selfAboardShipId;
@@ -10709,7 +10997,10 @@ function drawPlayers() {
           const center = shipCenter(entity.ship, entity);
           const shipSx = Math.floor(center.x * TILE_SIZE - state.camera.x + halfW);
           const shipSy = Math.floor(center.y * TILE_SIZE - state.camera.y + halfH);
-          withCameraUnrotated(() => drawShipDeckObject(entity.ship, shipSx, shipSy));
+          withCameraUnrotated(() => {
+            drawShipDeckObject(entity.ship, shipSx, shipSy);
+            drawShipCrew(entity.ship, shipSx, shipSy);
+          });
         }
         const seated = Boolean(entity.ship.stationRole);
         withCameraUnrotated(() => {
