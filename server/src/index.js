@@ -3398,21 +3398,7 @@ function handlePortalTravel(client) {
   }
   // Returning from a planet surface re-boards the player's ship in orbit.
   if (portal.kind === "planet_return" && client.player.ship) {
-    const ship = client.player.ship;
-    ship.worldX = portal.targetX;
-    ship.worldY = portal.targetY;
-    ship.boarded = true;
-    ship.deckMode = (getShipLayout(ship).crewCapacity > 1);
-    ship.stationRole = ship.deckMode ? null : "pilot";
-    ship.stationId = ship.deckMode ? null : "pilot";
-    if (ship.deckMode) {
-      const layout = getShipLayout(ship);
-      client.player.x = ship.worldX + (layout?.entry?.x || 0);
-      client.player.y = ship.worldY + (layout?.entry?.y || 0);
-    } else {
-      client.player.x = ship.worldX;
-      client.player.y = ship.worldY;
-    }
+    boardPlayerOntoCurrentShip(client.player);
     saveClientCharacter(client);
   }
   client.input = normalizeInput();
@@ -5319,6 +5305,31 @@ function handleReturnToShip(client) {
   });
 }
 
+function boardPlayerOntoCurrentShip(player) {
+  const ship = player?.ship;
+  if (!ship) return false;
+  const center = shipCenter(ship, player);
+  ship.boarded = true;
+  ship.deckMode = (getShipLayout(ship).crewCapacity > 1);
+  ship.stationRole = ship.deckMode ? null : "pilot";
+  ship.stationId = ship.deckMode ? null : "pilot";
+  ship.docking = null;
+  ship.warp = null;
+  player.shipStationRole = null;
+  player.shipStationId = null;
+  player.aboardShipId = null;
+  if (ship.deckMode) {
+    const layout = getShipLayout(ship);
+    player.x = center.x + (layout?.entry?.x || 0);
+    player.y = center.y + (layout?.entry?.y || 0);
+  } else {
+    player.x = center.x;
+    player.y = center.y;
+  }
+  player.moving = false;
+  return true;
+}
+
 function teleportPlayerToPortal(client, portal) {
   const player = client.player;
   if (!player) return;
@@ -5326,21 +5337,7 @@ function teleportPlayerToPortal(client, portal) {
   player.y = portal.targetY + 3.2;
   player.moving = false;
   if (portal.kind === "planet_return" && player.ship) {
-    const ship = player.ship;
-    ship.worldX = portal.targetX;
-    ship.worldY = portal.targetY;
-    ship.boarded = true;
-    ship.deckMode = (getShipLayout(ship).crewCapacity > 1);
-    ship.stationRole = ship.deckMode ? null : "pilot";
-    ship.stationId = ship.deckMode ? null : "pilot";
-    if (ship.deckMode) {
-      const layout = getShipLayout(ship);
-      player.x = ship.worldX + (layout?.entry?.x || 0);
-      player.y = ship.worldY + (layout?.entry?.y || 0);
-    } else {
-      player.x = ship.worldX;
-      player.y = ship.worldY;
-    }
+    boardPlayerOntoCurrentShip(player);
     saveClientCharacter(client);
   }
   send(client, {

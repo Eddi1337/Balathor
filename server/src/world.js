@@ -75,7 +75,6 @@ const {
   getPlanetBySurfacePoint,
   getPlanetBySpacePoint,
   getPlanetsNearSpacePoint,
-  getPlanetsInSpaceChunk,
   getPlanetSurfaceTile: getPlanetWorldSurfaceTile,
   getPlanetSurfaceObjectsInChunk
 } = require("./worlds/planetWorlds.js");
@@ -594,24 +593,6 @@ function getSciFiObjectsInChunk(cx, cy) {
     const obj = { ...feature };
     if (sciFiFeatureTouchesChunk(feature, startX, startY, endX, endY)) {
       out.push(obj);
-    }
-  }
-
-  const seenPlanets = new Set();
-  for (const planet of SCI_FI_PLANETS) {
-    const obj = { ...planet, kind: "planet" };
-    if (sciFiObjectTouchesChunk(obj, startX, startY, endX, endY)) {
-      out.push(obj);
-      seenPlanets.add(obj.id);
-    }
-  }
-
-  for (const planet of getPlanetsInSpaceChunk(cx, cy, CHUNK_SIZE)) {
-    if (seenPlanets.has(planet.id)) continue;
-    const obj = { ...planet, kind: "planet" };
-    if (sciFiObjectTouchesChunk(obj, startX, startY, endX, endY)) {
-      out.push(obj);
-      seenPlanets.add(obj.id);
     }
   }
 
