@@ -2783,6 +2783,18 @@ body.mobile {
   --mobile-hotbar-gap: clamp(3px, 0.9vmin, 7px);
 }
 
+body.mobile button,
+body.mobile [role="button"],
+body.mobile .ability-slot,
+body.mobile .teleport-menu-row,
+body.mobile .ship-engage,
+body.mobile .safe-zone-indicator {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
 body.mobile .ability-bar {
   gap: var(--mobile-hotbar-gap);
   padding: clamp(4px, 1vmin, 8px);
