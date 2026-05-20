@@ -1923,6 +1923,7 @@ function clearPlayerBoardedShips(player) {
     return;
   }
   player.boardedShip = null;
+  player.aboardShipId = null;
   player.shipStationRole = null;
   player.shipStationId = null;
   player.shipLocalX = 0;
@@ -1933,6 +1934,8 @@ function clearPlayerBoardedShips(player) {
       ship.deckMode = false;
       ship.stationRole = null;
       ship.stationId = null;
+      ship.docking = null;
+      ship.warp = null;
     }
   }
   if (player.ship) {
@@ -1940,6 +1943,8 @@ function clearPlayerBoardedShips(player) {
     player.ship.deckMode = false;
     player.ship.stationRole = null;
     player.ship.stationId = null;
+    player.ship.docking = null;
+    player.ship.warp = null;
   }
 }
 
@@ -4217,11 +4222,13 @@ function handleHomeTeleport(client) {
   }
 
   client.lastHomeAt = now;
+  clearPlayerBoardedShips(client.player);
   const dest = resolveHomeTeleportDestination(client.player, client.account?.key);
   client.player.x = dest.x;
   client.player.y = dest.y;
   client.player.moving = false;
   client.input = normalizeInput();
+  saveClientCharacter(client);
 
   send(client, {
     type: "teleport",
