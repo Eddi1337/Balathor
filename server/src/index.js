@@ -681,6 +681,160 @@ const MOB_TYPES = Object.freeze({
     bossLevel: 22,
     bossPrimary: "#3a3a4e",
     bossAccent:  "#00ffff"
+  },
+  lush: {
+    enemies: [
+      { name: "Vineclaw Stalker", level: 8, hp: 96, damage: 18, speed: 1.9 },
+      { name: "Bloommaw", level: 9, hp: 112, damage: 21, speed: 1.6 },
+      { name: "Sporeback Runner", level: 10, hp: 102, damage: 22, speed: 2.0 },
+      { name: "Petal Ripper", level: 11, hp: 124, damage: 24, speed: 1.7 },
+    ],
+    primary: "#3aa46c",
+    accent: "#daf7b0",
+    bossName: "Canopy Devourer",
+    bossLevel: 15,
+    bossPrimary: "#1d6f48",
+    bossAccent: "#b7ff8d"
+  },
+  ice: {
+    enemies: [
+      { name: "Shard Hound", level: 9, hp: 104, damage: 20, speed: 1.8 },
+      { name: "Cryo Mite Swarm", level: 10, hp: 88, damage: 22, speed: 2.15 },
+      { name: "Glacier Prowler", level: 11, hp: 128, damage: 24, speed: 1.55 },
+      { name: "Rift Howler", level: 12, hp: 138, damage: 26, speed: 1.7 },
+    ],
+    primary: "#9fd8ff",
+    accent: "#f8fdff",
+    bossName: "Ice Maw Regent",
+    bossLevel: 16,
+    bossPrimary: "#4da3dd",
+    bossAccent: "#ffffff"
+  },
+  volcanic: {
+    enemies: [
+      { name: "Magma Skitter", level: 10, hp: 108, damage: 23, speed: 1.9 },
+      { name: "Cinderjaw", level: 11, hp: 132, damage: 25, speed: 1.6 },
+      { name: "Basalt Horror", level: 12, hp: 154, damage: 28, speed: 1.35 },
+      { name: "Ashwing Hunter", level: 13, hp: 118, damage: 29, speed: 1.95 },
+    ],
+    primary: "#ef4444",
+    accent: "#fb923c",
+    bossName: "Molten Spine Tyrant",
+    bossLevel: 17,
+    bossPrimary: "#7f1d1d",
+    bossAccent: "#ffb347"
+  },
+  ocean: {
+    enemies: [
+      { name: "Tide Raker", level: 8, hp: 92, damage: 18, speed: 2.0 },
+      { name: "Coral Fang", level: 9, hp: 110, damage: 21, speed: 1.75 },
+      { name: "Brine Leaper", level: 10, hp: 98, damage: 22, speed: 2.1 },
+      { name: "Shellcrusher", level: 11, hp: 136, damage: 24, speed: 1.45 },
+    ],
+    primary: "#2bb3ff",
+    accent: "#a0e7ff",
+    bossName: "Abyssal Waveback",
+    bossLevel: 15,
+    bossPrimary: "#0b5a8f",
+    bossAccent: "#d2f8ff"
+  },
+  jungle: {
+    enemies: [
+      { name: "Needle Ape", level: 9, hp: 106, damage: 20, speed: 1.95 },
+      { name: "Glowtooth Creeper", level: 10, hp: 116, damage: 22, speed: 1.85 },
+      { name: "Razor Fern Beast", level: 11, hp: 138, damage: 25, speed: 1.6 },
+      { name: "Canopy Lancer", level: 12, hp: 126, damage: 27, speed: 1.9 },
+    ],
+    primary: "#16a34a",
+    accent: "#86efac",
+    bossName: "Emerald Spinecaller",
+    bossLevel: 16,
+    bossPrimary: "#14532d",
+    bossAccent: "#bbf7d0"
+  },
+  crystal: {
+    enemies: [
+      { name: "Prism Skitter", level: 10, hp: 102, damage: 22, speed: 2.0 },
+      { name: "Facet Hound", level: 11, hp: 126, damage: 24, speed: 1.75 },
+      { name: "Resonance Wraith", level: 12, hp: 118, damage: 27, speed: 1.95 },
+      { name: "Shard Colossling", level: 13, hp: 152, damage: 29, speed: 1.45 },
+    ],
+    primary: "#a78bfa",
+    accent: "#ddd6fe",
+    bossName: "Prism Crown Behemoth",
+    bossLevel: 18,
+    bossPrimary: "#6d28d9",
+    bossAccent: "#f5f3ff"
+  },
+  fungal: {
+    enemies: [
+      { name: "Spore Husher", level: 8, hp: 98, damage: 19, speed: 1.85 },
+      { name: "Myco Pouncer", level: 9, hp: 112, damage: 21, speed: 1.9 },
+      { name: "Rotcap Bulker", level: 10, hp: 142, damage: 24, speed: 1.45 },
+      { name: "Hypha Stinger", level: 11, hp: 120, damage: 25, speed: 1.8 },
+    ],
+    primary: "#d946ef",
+    accent: "#fbcfe8",
+    bossName: "Queen of Mold",
+    bossLevel: 15,
+    bossPrimary: "#86198f",
+    bossAccent: "#f5d0fe"
+  },
+  barren: {
+    enemies: [
+      { name: "Dust Gnawer", level: 9, hp: 108, damage: 20, speed: 1.8 },
+      { name: "Slate Stalker", level: 10, hp: 126, damage: 23, speed: 1.7 },
+      { name: "Rubble Mauler", level: 11, hp: 150, damage: 26, speed: 1.4 },
+      { name: "Hollow Scree Beast", level: 12, hp: 136, damage: 27, speed: 1.55 },
+    ],
+    primary: "#64748b",
+    accent: "#cbd5e1",
+    bossName: "Gravemound Titan",
+    bossLevel: 16,
+    bossPrimary: "#334155",
+    bossAccent: "#e2e8f0"
+  },
+  toxic: {
+    enemies: [
+      { name: "Caustic Hopper", level: 10, hp: 104, damage: 23, speed: 2.05 },
+      { name: "Venom Bloom", level: 11, hp: 132, damage: 25, speed: 1.55 },
+      { name: "Sludge Manta", level: 12, hp: 120, damage: 27, speed: 1.85 },
+      { name: "Acidback Drifter", level: 13, hp: 146, damage: 30, speed: 1.6 },
+    ],
+    primary: "#84cc16",
+    accent: "#d9f99d",
+    bossName: "Blight Lung Sovereign",
+    bossLevel: 17,
+    bossPrimary: "#365314",
+    bossAccent: "#ecfccb"
+  },
+  aether: {
+    enemies: [
+      { name: "Phase Lynx", level: 10, hp: 100, damage: 22, speed: 2.1 },
+      { name: "Halo Drifter", level: 11, hp: 116, damage: 24, speed: 1.95 },
+      { name: "Skyglass Seraph", level: 12, hp: 138, damage: 27, speed: 1.65 },
+      { name: "Null Ray", level: 13, hp: 124, damage: 29, speed: 2.0 },
+    ],
+    primary: "#22d3ee",
+    accent: "#cffafe",
+    bossName: "Aether Choir Beast",
+    bossLevel: 18,
+    bossPrimary: "#155e75",
+    bossAccent: "#ecfeff"
+  },
+  ashland: {
+    enemies: [
+      { name: "Ash Prowler", level: 9, hp: 110, damage: 21, speed: 1.85 },
+      { name: "Cairn Hound", level: 10, hp: 128, damage: 24, speed: 1.7 },
+      { name: "Soothide Rammer", level: 11, hp: 146, damage: 26, speed: 1.5 },
+      { name: "Emberbone Lurker", level: 12, hp: 134, damage: 28, speed: 1.65 },
+    ],
+    primary: "#a8a29e",
+    accent: "#f5f5f4",
+    bossName: "Ashfall Leviathan",
+    bossLevel: 16,
+    bossPrimary: "#44403c",
+    bossAccent: "#fafaf9"
   }
 });
 const WILDERNESS_BOSSES = Object.freeze([
@@ -720,6 +874,61 @@ const CRITTERS_BY_BIOME = Object.freeze({
     { name: "Char Mouse",    maxHp: 9,  primary: "#6a6058", accent: "#d8d0c8", speed: 2.45 },
     { name: "Cinder Skink",  maxHp: 12, primary: "#7a5048", accent: "#ffa878", speed: 1.9 },
     { name: "Ash Sparrow",   maxHp: 7,  primary: "#787070", accent: "#d0ccc8", speed: 2.3 }
+  ],
+  lush: [
+    { name: "Glow Hare", maxHp: 12, primary: "#5ccf84", accent: "#daf7b0", speed: 2.7 },
+    { name: "Petal Moth", maxHp: 7, primary: "#7bd389", accent: "#fff7d6", speed: 2.4 },
+    { name: "Moss Pup", maxHp: 13, primary: "#2f855a", accent: "#bbf7d0", speed: 2.55 }
+  ],
+  ice: [
+    { name: "Frost Nibbler", maxHp: 10, primary: "#9fd8ff", accent: "#f8fdff", speed: 2.35 },
+    { name: "Shard Finch", maxHp: 7, primary: "#bfe9ff", accent: "#ffffff", speed: 2.5 },
+    { name: "Snow Paddler", maxHp: 12, primary: "#8ecae6", accent: "#e0fbff", speed: 2.2 }
+  ],
+  volcanic: [
+    { name: "Cinder Mite", maxHp: 9, primary: "#ef4444", accent: "#fb923c", speed: 2.25 },
+    { name: "Ash Beetle", maxHp: 11, primary: "#7f1d1d", accent: "#fdba74", speed: 2.0 },
+    { name: "Lava Skipper", maxHp: 10, primary: "#b91c1c", accent: "#fecaca", speed: 2.3 }
+  ],
+  ocean: [
+    { name: "Foam Hopper", maxHp: 11, primary: "#2bb3ff", accent: "#a0e7ff", speed: 2.55 },
+    { name: "Tide Mouse", maxHp: 9, primary: "#38bdf8", accent: "#e0f2fe", speed: 2.25 },
+    { name: "Coral Peep", maxHp: 8, primary: "#0ea5e9", accent: "#fef3c7", speed: 2.4 }
+  ],
+  jungle: [
+    { name: "Canopy Skipper", maxHp: 12, primary: "#16a34a", accent: "#86efac", speed: 2.75 },
+    { name: "Fern Mouse", maxHp: 9, primary: "#166534", accent: "#dcfce7", speed: 2.4 },
+    { name: "Bloom Drakelet", maxHp: 13, primary: "#22c55e", accent: "#fef9c3", speed: 2.35 }
+  ],
+  crystal: [
+    { name: "Prism Hopper", maxHp: 10, primary: "#a78bfa", accent: "#ddd6fe", speed: 2.5 },
+    { name: "Facet Finch", maxHp: 8, primary: "#8b5cf6", accent: "#f5f3ff", speed: 2.45 },
+    { name: "Shardling", maxHp: 12, primary: "#7c3aed", accent: "#ede9fe", speed: 2.2 }
+  ],
+  fungal: [
+    { name: "Spore Puff", maxHp: 8, primary: "#d946ef", accent: "#fbcfe8", speed: 2.2 },
+    { name: "Myco Hopper", maxHp: 11, primary: "#c026d3", accent: "#f5d0fe", speed: 2.45 },
+    { name: "Capling", maxHp: 12, primary: "#86198f", accent: "#f0abfc", speed: 2.25 }
+  ],
+  barren: [
+    { name: "Dust Scuttler", maxHp: 9, primary: "#64748b", accent: "#e2e8f0", speed: 2.3 },
+    { name: "Scree Hopper", maxHp: 10, primary: "#475569", accent: "#f8fafc", speed: 2.4 },
+    { name: "Pebble Pup", maxHp: 12, primary: "#94a3b8", accent: "#ffffff", speed: 2.2 }
+  ],
+  toxic: [
+    { name: "Fume Skink", maxHp: 10, primary: "#84cc16", accent: "#ecfccb", speed: 2.35 },
+    { name: "Acid Moth", maxHp: 7, primary: "#65a30d", accent: "#f7fee7", speed: 2.55 },
+    { name: "Sludge Toad", maxHp: 13, primary: "#4d7c0f", accent: "#d9f99d", speed: 2.05 }
+  ],
+  aether: [
+    { name: "Halo Wisp", maxHp: 8, primary: "#22d3ee", accent: "#ecfeff", speed: 2.7 },
+    { name: "Sky Glider", maxHp: 10, primary: "#06b6d4", accent: "#cffafe", speed: 2.5 },
+    { name: "Null Kit", maxHp: 12, primary: "#155e75", accent: "#f0fdfa", speed: 2.3 }
+  ],
+  ashland: [
+    { name: "Soot Hopper", maxHp: 9, primary: "#a8a29e", accent: "#fafaf9", speed: 2.3 },
+    { name: "Cairn Beetle", maxHp: 11, primary: "#78716c", accent: "#e7e5e4", speed: 2.0 },
+    { name: "Ashling", maxHp: 10, primary: "#57534e", accent: "#f5f5f4", speed: 2.35 }
   ],
   forest: [
     { name: "Brown Rabbit", maxHp: 14, primary: "#9c7355", accent: "#efe6dc", speed: 2.65 },
@@ -8320,7 +8529,7 @@ function createMobs() {
     { id: "mob_imp_ember_1", name: "Ember Imp", level: 9, homeX: 134, homeY: -121, primary: "#d85b35", accent: "#ffd06a", maxHp: 86, attackDamage: 19 },
     { id: "mob_imp_ember_2", name: "Ember Imp", level: 9, homeX: 158, homeY: -142, primary: "#d85b35", accent: "#ffd06a", maxHp: 86, attackDamage: 19 },
   ];
-  return [...fixedMobs, ...createWildernessMobs(), ...createRoamingMobs(), ...createCritterMobs(), ...createSciFiPirateMobs()].map((mob) => ({
+  return [...fixedMobs, ...createWildernessMobs(), ...createRoamingMobs(), ...createCritterMobs(), ...createPlanetSurfaceMobs(), ...createSciFiPirateMobs()].map((mob) => ({
     ...mob,
     x: mob.homeX,
     y: mob.homeY,
@@ -8785,6 +8994,92 @@ function createCritterMobs() {
     }
   }
 
+  return list;
+}
+
+function createPlanetSurfaceMobs() {
+  const list = [];
+  for (const [planetIndex, planet] of SCI_FI_PLANETS.entries()) {
+    const type = MOB_TYPES[planet.type] || MOB_TYPES.lush;
+    const critterPool = CRITTERS_BY_BIOME[planet.type] || CRITTERS_BY_BIOME.lush;
+    const ringRadius = Math.max(24, Math.min(planet.surfaceRadius - 36, 94));
+    const enemyCount = 10 + (planetIndex % 4) * 2;
+    const critterCount = 6 + (planetIndex % 3);
+
+    for (let i = 0; i < enemyCount; i += 1) {
+      const enemy = type.enemies[i % type.enemies.length];
+      const angle = hash2(planet.seed, i, 55100) * Math.PI * 2;
+      const radius = 18 + hash2(planet.seed, i, 55101) * ringRadius;
+      const rawX = planet.surfaceX + Math.cos(angle) * radius;
+      const rawY = planet.surfaceY + Math.sin(angle) * radius;
+      const home = findOpenMobHomeFromCandidates(Math.round(rawX), Math.round(rawY));
+      const level = enemy.level + Math.floor(planetIndex / 3);
+      list.push({
+        id: `mob_planet_${planet.id}_${i}`,
+        name: enemy.name,
+        level,
+        homeX: home.x,
+        homeY: home.y,
+        primary: type.primary,
+        accent: type.accent,
+        biome: planet.type,
+        faction: `planet_${planet.type}`,
+        maxHp: enemy.hp + level * 6 + Math.floor(hash2(planet.seed, i, 55102) * 18),
+        attackDamage: enemy.damage + Math.floor(level * 0.95),
+        roamRadius: 10 + hash2(planet.seed, i, 55103) * 7,
+        speed: enemy.speed + hash2(planet.seed, i, 55104) * 0.18
+      });
+    }
+
+    for (let i = 0; i < critterCount; i += 1) {
+      const critter = critterPool[i % critterPool.length];
+      const angle = hash2(planet.seed, i, 55200) * Math.PI * 2;
+      const radius = 8 + hash2(planet.seed, i, 55201) * (ringRadius * 0.82);
+      const rawX = planet.surfaceX + Math.cos(angle) * radius;
+      const rawY = planet.surfaceY + Math.sin(angle) * radius;
+      const home = findOpenMobHomeFromCandidates(Math.round(rawX), Math.round(rawY));
+      list.push({
+        id: `mob_planet_critter_${planet.id}_${i}`,
+        name: critter.name,
+        level: 1,
+        biome: planet.type,
+        isCritter: true,
+        critterXp: 3 + (planetIndex % 3),
+        attackDamage: 0,
+        homeX: home.x,
+        homeY: home.y,
+        primary: critter.primary,
+        accent: critter.accent,
+        maxHp: critter.maxHp,
+        roamRadius: 5 + hash2(planet.seed, i, 55202) * 4,
+        speed: critter.speed
+      });
+    }
+
+    const bossType = type;
+    const bossAngle = hash2(planet.seed, planetIndex, 55300) * Math.PI * 2;
+    const bossRadius = Math.min(planet.surfaceRadius - 44, 120);
+    const bossX = planet.surfaceX + Math.cos(bossAngle) * bossRadius;
+    const bossY = planet.surfaceY + Math.sin(bossAngle) * bossRadius;
+    const bossHome = findOpenMobHomeFromCandidates(Math.round(bossX), Math.round(bossY));
+    const bossLevel = (bossType.bossLevel || 14) + Math.floor(planetIndex / 2);
+    list.push({
+      id: `mob_planet_boss_${planet.id}`,
+      name: bossType.bossName,
+      level: bossLevel,
+      homeX: bossHome.x,
+      homeY: bossHome.y,
+      primary: bossType.bossPrimary,
+      accent: bossType.bossAccent,
+      biome: planet.type,
+      faction: `planet_boss_${planet.type}`,
+      isBoss: true,
+      maxHp: 220 + bossLevel * 22,
+      attackDamage: 22 + bossLevel * 2,
+      roamRadius: 14,
+      speed: 1.18 + hash2(planet.seed, planetIndex, 55301) * 0.12
+    });
+  }
   return list;
 }
 

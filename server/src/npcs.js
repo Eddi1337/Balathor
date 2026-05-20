@@ -1,5 +1,5 @@
 const WORLD = require("./world");
-const { isBlockedCircle, isBlockedCircleForShip } = WORLD;
+const { isBlockedCircle, isBlockedCircleForShip, SCI_FI_PLANETS } = WORLD;
 const { HUB_NPC_ORDER } = require("./hubRoundTown.js");
 const { SCI_FI_DOCK_PORTS, SCI_FI_STATION_FEATURES, RINGFORGE_CENTER } = require("./sciFiStationLayout.js");
 
@@ -2338,8 +2338,60 @@ const BASE_NPC_DEFINITIONS = [
   },
 ];
 
+function buildPlanetAlienNpcDefinitions() {
+  const friendlyNames = ["Vexa", "Kheli", "Orrin", "Saeva", "Nyth", "Talos", "Ilyr", "Vaani", "Rhel", "Xyra", "Moro", "Zeph"];
+  const flirtNames = ["Seli of the Bloom", "Vael Sigh", "Nyrra Coil", "Asha Drift", "Rhea Pulse", "Lumi Veil", "Syra Quell", "Tali Bloom"];
+  return SCI_FI_PLANETS.flatMap((planet, index) => {
+    const defs = [{
+      id: `npc_planet_guide_${planet.id}`,
+      name: `${friendlyNames[index % friendlyNames.length]} ${planet.name}`,
+      classId: index % 3 === 0 ? "mage" : index % 3 === 1 ? "ranger" : "knight",
+      primary: planet.surfacePrimary || "#67f0ff",
+      accent: planet.surfaceAccent || "#d9faff",
+      homeX: planet.surfaceX + 16 + (index % 3) * 3,
+      homeY: planet.surfaceY + 10 - (index % 4) * 2,
+      patrolRadius: 12,
+      npcTheme: "sci-fi",
+      sciFiRole: "alien_local",
+      sciFiLook: "alien",
+      dialogue: [
+        `Welcome to ${planet.name}. Keep your suit sealed if the wind changes.`,
+        "The wildlife here is curious. Some of it is hungry. Some of it is both.",
+        "The shuttle marker stays hot if you need to get back to orbit fast.",
+        "We trade stories more often than credits out here.",
+      ]
+    }];
+    if (index % 2 === 0) {
+      defs.push({
+        id: `npc_planet_flirt_${planet.id}`,
+        name: flirtNames[index % flirtNames.length],
+        classId: index % 2 === 0 ? "ranger" : "mage",
+        primary: planet.surfaceAccent || "#fbcfe8",
+        accent: planet.surfacePrimary || "#8affd2",
+        homeX: planet.surfaceX - 18 - (index % 4) * 2,
+        homeY: planet.surfaceY + 14 + (index % 3) * 2,
+        patrolRadius: 10,
+        npcTheme: "sci-fi",
+        sciFiRole: "alien_pilgrim",
+        sciFiLook: "alien",
+        courtPlayer: true,
+        companionPrice: 620 + index * 8,
+        bondTag: "gf",
+        dialogue: [
+          "You carry yourself like someone worth lingering near.",
+          "Stay a little longer. The sky is prettier when shared.",
+          "If you ever build a home between the stars, I'd like the tour.",
+          "You look dangerous in a way I find reassuring.",
+        ]
+      });
+    }
+    return defs;
+  });
+}
+
 const DEFINITIONS = BASE_NPC_DEFINITIONS.concat(
   buildHydratedHubNpcExtras(),
+  buildPlanetAlienNpcDefinitions(),
   buildSciFiShopkeeperNpcDefinitions(),
   buildSciFiTrafficNpcDefinitions()
 );

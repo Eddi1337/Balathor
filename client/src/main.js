@@ -574,7 +574,7 @@ function rarityIconColor(rarity) {
 }
 
 function isSciFiWorld() {
-  return state.worldTheme === SCI_FI_THEME;
+  return state.worldTheme === SCI_FI_THEME || state.worldTheme === ALIEN_THEME;
 }
 
 function isPlanetSurfaceWorld() {
@@ -854,11 +854,9 @@ function drawDebugHud() {
   const posLabel = self
     ? `Map: ${Math.round(self.renderX)}, ${Math.round(self.renderY)} (chunk ${Math.floor(self.renderX / CHUNK_SIZE)}, ${Math.floor(self.renderY / CHUNK_SIZE)})`
     : "Map: —";
-  const themeLabel = state.worldTheme === SCI_FI_THEME
+  const themeLabel = isSciFiWorld()
     ? "Realm: sci-fi"
-    : state.worldTheme === ALIEN_THEME
-      ? "Realm: alien"
-      : "Realm: fantasy";
+    : "Realm: fantasy";
 
   const simLabel =
     typeof state.debugServerSimHz === "number" && Number.isFinite(state.debugServerSimHz)
