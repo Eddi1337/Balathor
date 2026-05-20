@@ -7308,6 +7308,10 @@ function drawShipRadar() {
     if (kind === "lane" || kind === "ship-port" || kind === "ship-console" || kind === "sci-shop-terminal") continue;
     drawRadarBlip(cx, cy, obj.x, obj.y, radius, () => {
       if (kind === "planet") {
+        ctx.fillStyle = obj.color || obj.surfacePrimary || "#8bd346";
+        ctx.beginPath();
+        ctx.arc(0, 0, 4.5, 0, Math.PI * 2);
+        ctx.fill();
         return;
       }
       if (kind === "asteroid_field") {
@@ -8353,7 +8357,7 @@ function drawSpaceObjects() {
     } else if (String(obj.kind || "").startsWith("alien_")) {
       drawAlienSurfaceObject(obj, sx, sy);
     } else if (obj.kind === "planet" || obj.type === "planet") {
-      continue;
+      drawPlanetObject(obj, sx, sy);
     } else if (obj.kind === "asteroid_field") {
       drawAsteroidFieldObject(obj, sx, sy);
     } else if (obj.kind === "lane" || obj.type === "lane") {

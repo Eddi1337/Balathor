@@ -75,6 +75,7 @@ const {
   getPlanetBySurfacePoint,
   getPlanetBySpacePoint,
   getPlanetsNearSpacePoint,
+  getPlanetsInSpaceChunk,
   getPlanetSurfaceTile: getPlanetWorldSurfaceTile,
   getPlanetSurfaceObjectsInChunk
 } = require("./worlds/planetWorlds.js");
@@ -593,6 +594,24 @@ function getSciFiObjectsInChunk(cx, cy) {
     const obj = { ...feature };
     if (sciFiFeatureTouchesChunk(feature, startX, startY, endX, endY)) {
       out.push(obj);
+    }
+  }
+
+  const seenPlanets = new Set();
+  for (const planet of SCI_FI_PLANETS) {
+    const obj = { ...planet, kind: "planet" };
+    if (sciFiObjectTouchesChunk(obj, startX, startY, endX, endY)) {
+      out.push(obj);
+      seenPlanets.add(obj.id);
+    }
+  }
+
+  for (const planet of getPlanetsInSpaceChunk(cx, cy, CHUNK_SIZE)) {
+    if (seenPlanets.has(planet.id)) continue;
+    const obj = { ...planet, kind: "planet" };
+    if (sciFiObjectTouchesChunk(obj, startX, startY, endX, endY)) {
+      out.push(obj);
+      seenPlanets.add(obj.id);
     }
   }
 
@@ -2007,10 +2026,6 @@ function getBiome(x, y) {
     if (station) {
       return station.kind === "spawn" ? "station_spawn" : "station";
     }
-    const planet = sciFiPlanetAt(x, y);
-    if (planet) {
-      return planet.type || "planet";
-    }
     return "space";
   }
 
@@ -2102,20 +2117,6 @@ function generateExteriorTile(x, y) {
       const promenade = Math.abs(dx - dy) <= 2 || Math.abs(x - station.x) <= 2 || Math.abs(y - station.y) <= 2;
       if (promenade) return TILE.WALKWAY;
       return ((x + y) & 1) === 0 ? TILE.METAL : TILE.WALKWAY;
-    }
-
-    const planet = sciFiPlanetAt(x, y);
-    if (planet) {
-      const localX = x - planet.x;
-      const localY = y - planet.y;
-      const dist = Math.hypot(localX, localY);
-      if (dist > planet.radius - 3) {
-        return TILE.HULL;
-      }
-      if (dist > planet.radius - 8 && hash2(x, y, planet.seed + 19) > 0.74) {
-        return TILE.WALKWAY;
-      }
-      return sciFiPlanetSurfaceTile(planet, x, y);
     }
 
     const laneDistSq = SCI_FI_LANES.reduce((best, lane) => {

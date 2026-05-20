@@ -138,7 +138,10 @@ const STARTING_GOLD = 120;
 const SHIP_BUY_PRICE = 850;
 const SHIP_SPEED = 9.75;
 const SHIP_COORD_LIMIT = 100000000;
-const SHIP_WARP_SPEED = 145;
+const SHIP_WARP_APPROACH_SPEED = 26;
+const SHIP_WARP_APPROACH_MS = 800;
+const SHIP_WARP_JUMP_MS = 1700;
+const SHIP_ORBIT_VIEW_OFFSET = 18;
 const SHIP_WARP_ARRIVE_RADIUS = 7;
 const SHIP_DOCK_RADIUS = 4.25;
 const SHIP_TURN_SPEED = 2.65;
@@ -1469,16 +1472,22 @@ function sanitizeShipWarp(warp) {
   if (!warp || typeof warp !== "object" || !warp.active) return null;
   const targetX = clampNumber(warp.targetX, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, NaN);
   const targetY = clampNumber(warp.targetY, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, NaN);
-  if (!Number.isFinite(targetX) || !Number.isFinite(targetY)) return null;
+  const arrivalX = clampNumber(warp.arrivalX, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, targetX);
+  const arrivalY = clampNumber(warp.arrivalY, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, targetY);
+  if (!Number.isFinite(targetX) || !Number.isFinite(targetY) || !Number.isFinite(arrivalX) || !Number.isFinite(arrivalY)) return null;
   return {
     active: true,
+    phase: typeof warp.phase === "string" ? warp.phase.slice(0, 16) : "approach",
     targetX,
     targetY,
+    arrivalX,
+    arrivalY,
     destinationName: typeof warp.destinationName === "string" ? warp.destinationName.slice(0, 80) : "Destination",
     destinationKind: typeof warp.destinationKind === "string" ? warp.destinationKind.slice(0, 32) : "warp",
     destinationId: typeof warp.destinationId === "string" ? warp.destinationId.slice(0, 96) : null,
     color: typeof warp.color === "string" ? warp.color.slice(0, 22) : "#67f0ff",
-    startedAt: clampNumber(warp.startedAt, 0, Number.MAX_SAFE_INTEGER, Date.now())
+    startedAt: clampNumber(warp.startedAt, 0, Number.MAX_SAFE_INTEGER, Date.now()),
+    jumpStartedAt: clampNumber(warp.jumpStartedAt, 0, Number.MAX_SAFE_INTEGER, 0)
   };
 }
 
@@ -2766,6 +2775,19 @@ function moveShipOccupantsWithWarp(ownerClient, ship, shipDx, shipDy, aboardShip
   }
 }
 
+function orbitalArrivalPointForPlanet(planet, fromX, fromY) {
+  const dx = Number(planet.x) - Number(fromX);
+  const dy = Number(planet.y) - Number(fromY);
+  const dist = Math.hypot(dx, dy) || 1;
+  const ux = dx / dist;
+  const uy = dy / dist;
+  const offset = SHIP_ORBIT_VIEW_OFFSET;
+  return {
+    x: Number((planet.x - ux * offset).toFixed(3)),
+    y: Number((planet.y - uy * offset).toFixed(3))
+  };
+}
+
 function updateShipWarpForClient(client, dt, aboardShipClients) {
   const player = client.player;
   const ship = player?.ship;
@@ -2775,17 +2797,48 @@ function updateShipWarpForClient(client, dt, aboardShipClients) {
     return false;
   }
 
+  const now = Date.now();
   const center = shipCenter(ship, player);
-  const dx = warp.targetX - center.x;
-  const dy = warp.targetY - center.y;
-  const dist = Math.hypot(dx, dy);
-  if (dist <= SHIP_WARP_ARRIVE_RADIUS) {
+  if (warp.phase !== "jump") {
+    const dx = warp.targetX - center.x;
+    const dy = warp.targetY - center.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 1e-4) {
+      const step = Math.min(dist, SHIP_WARP_APPROACH_SPEED * dt);
+      const ux = dx / dist;
+      const uy = dy / dist;
+      const prevX = center.x;
+      const prevY = center.y;
+      ship.facing = Math.atan2(uy, ux);
+      ship.worldX = center.x + ux * step;
+      ship.worldY = center.y + uy * step;
+      moveShipOccupantsWithWarp(client, ship, ship.worldX - prevX, ship.worldY - prevY, aboardShipClients);
+    }
+    ship.speed = SHIP_WARP_APPROACH_SPEED;
+    if (now - warp.startedAt >= SHIP_WARP_APPROACH_MS) {
+      warp.phase = "jump";
+      warp.jumpStartedAt = now;
+      ship.speed = 0;
+      ship.warp = warp;
+      send(client, {
+        type: "shipWarp",
+        destinationName: warp.destinationName,
+        color: warp.color,
+        durationMs: SHIP_WARP_JUMP_MS
+      });
+      return true;
+    }
+    ship.warp = warp;
+    return true;
+  }
+
+  if (now - warp.jumpStartedAt >= SHIP_WARP_JUMP_MS) {
     const prevX = center.x;
     const prevY = center.y;
-    ship.worldX = warp.targetX;
-    ship.worldY = warp.targetY;
-    ship.dockX = warp.targetX;
-    ship.dockY = warp.targetY;
+    ship.worldX = warp.arrivalX;
+    ship.worldY = warp.arrivalY;
+    ship.dockX = warp.arrivalX;
+    ship.dockY = warp.arrivalY;
     ship.speed = 0;
     ship.warp = null;
     moveShipOccupantsWithWarp(client, ship, ship.worldX - prevX, ship.worldY - prevY, aboardShipClients);
@@ -2794,17 +2847,8 @@ function updateShipWarpForClient(client, dt, aboardShipClients) {
     return true;
   }
 
-  const step = Math.min(dist, SHIP_WARP_SPEED * dt);
-  const ux = dx / dist;
-  const uy = dy / dist;
-  const prevX = center.x;
-  const prevY = center.y;
-  ship.facing = Math.atan2(uy, ux);
-  ship.worldX = center.x + ux * step;
-  ship.worldY = center.y + uy * step;
-  ship.speed = SHIP_WARP_SPEED;
+  ship.speed = 0;
   ship.warp = warp;
-  moveShipOccupantsWithWarp(client, ship, ship.worldX - prevX, ship.worldY - prevY, aboardShipClients);
   return true;
 }
 
@@ -5165,26 +5209,27 @@ function startShipWarp(client, destination) {
     return false;
   }
   const center = shipCenter(ship, player);
-  const dist = Math.hypot(targetX - center.x, targetY - center.y);
+  const arrival =
+    destination?.kind === "planet"
+      ? orbitalArrivalPointForPlanet(destination, center.x, center.y)
+      : { x: targetX, y: targetY };
   ship.warp = {
     active: true,
+    phase: "approach",
     targetX,
     targetY,
+    arrivalX: arrival.x,
+    arrivalY: arrival.y,
     destinationName: String(destination.name || destination.label || "Destination").slice(0, 80),
     destinationKind: String(destination.kind || "warp").slice(0, 32),
     destinationId: typeof destination.id === "string" ? destination.id.slice(0, 96) : null,
     color: typeof destination.color === "string" ? destination.color : "#67f0ff",
-    startedAt: Date.now()
+    startedAt: Date.now(),
+    jumpStartedAt: 0
   };
   ship.docking = null;
-  ship.speed = SHIP_WARP_SPEED;
+  ship.speed = SHIP_WARP_APPROACH_SPEED;
   ship.facing = Math.atan2(targetY - center.y, targetX - center.x);
-  send(client, {
-    type: "shipWarp",
-    destinationName: ship.warp.destinationName,
-    color: ship.warp.color,
-    durationMs: Math.max(1200, Math.round((dist / SHIP_WARP_SPEED) * 1000))
-  });
   saveClientCharacter(client);
   broadcastSnapshot();
   return true;
