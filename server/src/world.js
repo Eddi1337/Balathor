@@ -273,7 +273,7 @@ function sciFiPlanetSurfaceTile(planet, x, y) {
 
 const PROCEDURAL_SPACE_STATION_GRID = 760;
 const PROCEDURAL_SPACE_STATION_SEED = 51001;
-const PROCEDURAL_ASTEROID_GRID = 360;
+const PROCEDURAL_ASTEROID_GRID = 245;
 const PROCEDURAL_ASTEROID_SEED = 62011;
 
 function proceduralSpaceStationId(gx, gy) {
@@ -345,9 +345,9 @@ function proceduralSpaceStationsNear(x, y, radius) {
 
 function proceduralAsteroidFieldForCell(gx, gy) {
   if (!Number.isFinite(gx) || !Number.isFinite(gy)) return null;
-  if (hash2(gx, gy, PROCEDURAL_ASTEROID_SEED) < 0.30) return null;
-  const x = gx * PROCEDURAL_ASTEROID_GRID + 80 + hash2(gx, gy, 62021) * (PROCEDURAL_ASTEROID_GRID - 160);
-  const y = gy * PROCEDURAL_ASTEROID_GRID + 80 + hash2(gx, gy, 62022) * (PROCEDURAL_ASTEROID_GRID - 160);
+  if (hash2(gx, gy, PROCEDURAL_ASTEROID_SEED) < 0.12) return null;
+  const x = gx * PROCEDURAL_ASTEROID_GRID + 48 + hash2(gx, gy, 62021) * (PROCEDURAL_ASTEROID_GRID - 96);
+  const y = gy * PROCEDURAL_ASTEROID_GRID + 48 + hash2(gx, gy, 62022) * (PROCEDURAL_ASTEROID_GRID - 96);
   if (isFantasyWorldPoint(x, y)) return null;
   return {
     id: `asteroid_proc_${gx}_${gy}`,
@@ -355,8 +355,8 @@ function proceduralAsteroidFieldForCell(gx, gy) {
     type: "asteroid_field",
     x: Number(x.toFixed(3)),
     y: Number(y.toFixed(3)),
-    radius: 12 + Math.floor(hash2(gx, gy, 62023) * 22),
-    density: 7 + Math.floor(hash2(gx, gy, 62024) * 16),
+    radius: 16 + Math.floor(hash2(gx, gy, 62023) * 28),
+    density: 12 + Math.floor(hash2(gx, gy, 62024) * 22),
     seed: 40000 + Math.abs(gx * 181 + gy * 313),
     procedural: true
   };

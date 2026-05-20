@@ -137,6 +137,9 @@ const SHOP_INTERACT_RADIUS = 1.75;
 const STARTING_GOLD = 120;
 const SHIP_BUY_PRICE = 850;
 const SHIP_SPEED = 9.75;
+const SHIP_COORD_LIMIT = 100000000;
+const SHIP_WARP_SPEED = 145;
+const SHIP_WARP_ARRIVE_RADIUS = 7;
 const SHIP_DOCK_RADIUS = 4.25;
 const SHIP_TURN_SPEED = 2.65;
 const SHIP_REPAIR_PER_SECOND = 7;
@@ -1429,12 +1432,12 @@ function serializeShip(ship) {
     color: typeof ship.color === "string" ? ship.color : "#67f0ff",
     hullClass: typeof ship.hullClass === "string" ? ship.hullClass.slice(0, 24) : "skiff",
     boarded: Boolean(ship.boarded),
-    dockX: clampNumber(ship.dockX, -10000, 10000, STARGATE_LANDING.x),
-    dockY: clampNumber(ship.dockY, -10000, 10000, STARGATE_LANDING.y),
+    dockX: clampNumber(ship.dockX, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, STARGATE_LANDING.x),
+    dockY: clampNumber(ship.dockY, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, STARGATE_LANDING.y),
     dockStationId: typeof ship.dockStationId === "string" ? ship.dockStationId : "station_ringforge",
     dockPortId: typeof ship.dockPortId === "string" ? ship.dockPortId.slice(0, 48) : null,
-    worldX: clampNumber(ship.worldX, -10000, 10000, ship.dockX ?? STARGATE_LANDING.x),
-    worldY: clampNumber(ship.worldY, -10000, 10000, ship.dockY ?? STARGATE_LANDING.y),
+    worldX: clampNumber(ship.worldX, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, ship.dockX ?? STARGATE_LANDING.x),
+    worldY: clampNumber(ship.worldY, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, ship.dockY ?? STARGATE_LANDING.y),
     facing: normalizeAngle(clampNumber(ship.facing, -Math.PI * 2, Math.PI * 2, 0)),
     speed: clampNumber(ship.speed, 0, 1000, SHIP_SPEED),
     laserTier: clampInteger(ship.laserTier ?? 1, 1, 5),
@@ -1449,7 +1452,8 @@ function serializeShip(ship) {
     maxShields,
     shieldFacing: normalizeShieldFacing(ship.shieldFacing || Object.values(shieldSections)[0]),
     shieldSections,
-    docking: null
+    docking: null,
+    warp: sanitizeShipWarp(ship.warp)
   };
 }
 
@@ -1459,6 +1463,23 @@ function serializeShipForPlayer(player, ship = player?.ship) {
   snap.stationRole = typeof player?.shipStationRole === "string" ? player.shipStationRole : snap.stationRole;
   snap.stationId = typeof player?.shipStationId === "string" ? player.shipStationId : snap.stationId;
   return snap;
+}
+
+function sanitizeShipWarp(warp) {
+  if (!warp || typeof warp !== "object" || !warp.active) return null;
+  const targetX = clampNumber(warp.targetX, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, NaN);
+  const targetY = clampNumber(warp.targetY, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, NaN);
+  if (!Number.isFinite(targetX) || !Number.isFinite(targetY)) return null;
+  return {
+    active: true,
+    targetX,
+    targetY,
+    destinationName: typeof warp.destinationName === "string" ? warp.destinationName.slice(0, 80) : "Destination",
+    destinationKind: typeof warp.destinationKind === "string" ? warp.destinationKind.slice(0, 32) : "warp",
+    destinationId: typeof warp.destinationId === "string" ? warp.destinationId.slice(0, 96) : null,
+    color: typeof warp.color === "string" ? warp.color.slice(0, 22) : "#67f0ff",
+    startedAt: clampNumber(warp.startedAt, 0, Number.MAX_SAFE_INTEGER, Date.now())
+  };
 }
 
 function getShipTurrets(shipOrClass) {
@@ -1795,12 +1816,12 @@ function sanitizeShip(ship, fallbackId = null) {
     color: typeof ship.color === "string" ? ship.color.slice(0, 22) : "#67f0ff",
     hullClass: typeof ship.hullClass === "string" ? ship.hullClass.slice(0, 24) : "skiff",
     boarded: Boolean(ship.boarded),
-    dockX: clampNumber(ship.dockX, -10000, 10000, STARGATE_LANDING.x),
-    dockY: clampNumber(ship.dockY, -10000, 10000, STARGATE_LANDING.y),
+    dockX: clampNumber(ship.dockX, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, STARGATE_LANDING.x),
+    dockY: clampNumber(ship.dockY, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, STARGATE_LANDING.y),
     dockStationId: typeof ship.dockStationId === "string" ? ship.dockStationId.slice(0, 48) : "station_ringforge",
     dockPortId: typeof ship.dockPortId === "string" ? ship.dockPortId.slice(0, 48) : null,
-    worldX: clampNumber(ship.worldX, -10000, 10000, ship.dockX ?? STARGATE_LANDING.x),
-    worldY: clampNumber(ship.worldY, -10000, 10000, ship.dockY ?? STARGATE_LANDING.y),
+    worldX: clampNumber(ship.worldX, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, ship.dockX ?? STARGATE_LANDING.x),
+    worldY: clampNumber(ship.worldY, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, ship.dockY ?? STARGATE_LANDING.y),
     facing: normalizeAngle(clampNumber(ship.facing, -Math.PI * 2, Math.PI * 2, 0)),
     speed: clampNumber(ship.speed, 0, 1000, SHIP_SPEED),
     laserTier: clampInteger(ship.laserTier ?? 1, 1, 5),
@@ -1809,7 +1830,8 @@ function sanitizeShip(ship, fallbackId = null) {
     stationRole: typeof ship.stationRole === "string" ? ship.stationRole.slice(0, 24) : null,
     stationId: typeof ship.stationId === "string" ? ship.stationId.slice(0, 48) : null,
     shieldFacing: normalizeShieldFacing(ship.shieldFacing),
-    shieldSections: sanitizeShipShieldSections(ship)
+    shieldSections: sanitizeShipShieldSections(ship),
+    warp: sanitizeShipWarp(ship.warp)
   };
   out.maxHealth = getShipMaxHealth(out);
   out.health = clampNumber(ship.health, 0, out.maxHealth, out.maxHealth);
@@ -2723,6 +2745,64 @@ function buildAboardShipClientIndex() {
   return out;
 }
 
+function moveShipOccupantsWithWarp(ownerClient, ship, shipDx, shipDy, aboardShipClients) {
+  if (!shipDx && !shipDy) return;
+  const owner = ownerClient?.player;
+  if (owner?.ship === ship && ship.boarded && ship.deckMode && !owner.shipStationRole) {
+    owner.x += shipDx;
+    owner.y += shipDy;
+  }
+  const passengers = aboardShipClients.get(ship.id) || [];
+  for (const passengerClient of passengers) {
+    const passenger = passengerClient.player;
+    if (!passenger) continue;
+    passenger.x += shipDx;
+    passenger.y += shipDy;
+  }
+}
+
+function updateShipWarpForClient(client, dt, aboardShipClients) {
+  const player = client.player;
+  const ship = player?.ship;
+  const warp = sanitizeShipWarp(ship?.warp);
+  if (!ship || !warp) {
+    if (ship?.warp) ship.warp = null;
+    return false;
+  }
+
+  const center = shipCenter(ship, player);
+  const dx = warp.targetX - center.x;
+  const dy = warp.targetY - center.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist <= SHIP_WARP_ARRIVE_RADIUS) {
+    const prevX = center.x;
+    const prevY = center.y;
+    ship.worldX = warp.targetX;
+    ship.worldY = warp.targetY;
+    ship.dockX = warp.targetX;
+    ship.dockY = warp.targetY;
+    ship.speed = 0;
+    ship.warp = null;
+    moveShipOccupantsWithWarp(client, ship, ship.worldX - prevX, ship.worldY - prevY, aboardShipClients);
+    saveClientCharacter(client);
+    send(client, { type: "serverMessage", message: "ship_warp_complete", destination: warp.destinationName });
+    return true;
+  }
+
+  const step = Math.min(dist, SHIP_WARP_SPEED * dt);
+  const ux = dx / dist;
+  const uy = dy / dist;
+  const prevX = center.x;
+  const prevY = center.y;
+  ship.facing = Math.atan2(uy, ux);
+  ship.worldX = center.x + ux * step;
+  ship.worldY = center.y + uy * step;
+  ship.speed = SHIP_WARP_SPEED;
+  ship.warp = warp;
+  moveShipOccupantsWithWarp(client, ship, ship.worldX - prevX, ship.worldY - prevY, aboardShipClients);
+  return true;
+}
+
 function simulate() {
   recordSimulateWallInterval();
   tick += 1;
@@ -2746,6 +2826,7 @@ function simulate() {
       Boolean(client.player.ship?.boarded) &&
       isPilotShipRole(client.player.shipStationRole || client.player.ship.stationRole) &&
       getWorldThemeAt(client.player.x, client.player.y) === "sci-fi";
+    const shipWarping = updateShipWarpForClient(client, dt, aboardShipClients);
 
     if (shipPilot) {
       const ship = client.player.ship;
@@ -2758,10 +2839,12 @@ function simulate() {
       const aimLength = Math.hypot(dx, dy);
       if (aimLength > 0) {
         client.player.facing = Math.atan2(dy, dx);
-        ship.facing = client.player.facing;
+        if (!shipWarping) {
+          ship.facing = client.player.facing;
+        }
       }
       // Engage thrusts forward in the facing direction
-      if (input.engage) {
+      if (input.engage && !shipWarping) {
         const sp = getPlayerSpeed(client.player);
         const vx = Math.cos(client.player.facing) * sp * dt;
         const vy = Math.sin(client.player.facing) * sp * dt;
@@ -2801,7 +2884,7 @@ function simulate() {
       setPlayerShipLocal(client.player, Number(station.x) || 0, Number(station.y) || 0);
       client.player.x = seat.x;
       client.player.y = seat.y;
-      client.player.moving = Boolean(input.engage);
+      client.player.moving = Boolean(input.engage || shipWarping);
     } else if (client.player.ship?.boarded && client.player.ship.deckMode) {
       const ship = client.player.ship;
       const role = client.player.shipStationRole || ship.stationRole;
@@ -5000,7 +5083,7 @@ function buildTeleportDestinations(player, fromFlight = false) {
   if (world === "scifi") {
     // Show deterministic planets near the ship. This includes authored hub
     // planets and procedurally generated worlds discovered as players fly out.
-    const ranked = getPlanetsNearSpacePoint(px, py, 2600).slice(0, 12);
+    const ranked = getPlanetsNearSpacePoint(px, py, fromFlight ? 2600 : 260).slice(0, fromFlight ? 12 : 5);
     for (const planet of ranked) {
       const dist = Math.hypot(planet.x - px, planet.y - py);
       destinations.push({
@@ -5070,12 +5153,66 @@ function handleTeleportMenuOpen(client, message = {}) {
   });
 }
 
+function startShipWarp(client, destination) {
+  const player = client.player;
+  const ship = player?.ship;
+  if (!player || !ship?.boarded) {
+    send(client, { type: "serverMessage", message: "teleport_not_here" });
+    return false;
+  }
+  const role = player.shipStationRole || ship.stationRole;
+  if (ship.deckMode && !isPilotShipRole(role)) {
+    send(client, { type: "serverMessage", message: "ship_dock_not_piloting" });
+    return false;
+  }
+  const targetX = Number(destination?.x);
+  const targetY = Number(destination?.y);
+  if (!Number.isFinite(targetX) || !Number.isFinite(targetY)) {
+    send(client, { type: "serverMessage", message: "teleport_unknown" });
+    return false;
+  }
+  const center = shipCenter(ship, player);
+  const dist = Math.hypot(targetX - center.x, targetY - center.y);
+  ship.warp = {
+    active: true,
+    targetX,
+    targetY,
+    destinationName: String(destination.name || destination.label || "Destination").slice(0, 80),
+    destinationKind: String(destination.kind || "warp").slice(0, 32),
+    destinationId: typeof destination.id === "string" ? destination.id.slice(0, 96) : null,
+    color: typeof destination.color === "string" ? destination.color : "#67f0ff",
+    startedAt: Date.now()
+  };
+  ship.docking = null;
+  ship.speed = SHIP_WARP_SPEED;
+  ship.facing = Math.atan2(targetY - center.y, targetX - center.x);
+  send(client, {
+    type: "shipWarp",
+    destinationName: ship.warp.destinationName,
+    color: ship.warp.color,
+    durationMs: Math.max(1200, Math.round((dist / SHIP_WARP_SPEED) * 1000))
+  });
+  saveClientCharacter(client);
+  broadcastSnapshot();
+  return true;
+}
+
 function handleTeleportMenuTravel(client, message = {}) {
   const player = client.player;
   if (!player) return;
   const kind = String(message.kind || "");
   const id = typeof message.id === "string" ? message.id : "";
+  const fromFlight = Boolean(message.fromFlight);
   if (kind === "planet") {
+    const planet = getPlanetById(id);
+    if (!planet) {
+      send(client, { type: "serverMessage", message: "teleport_unknown" });
+      return;
+    }
+    if (fromFlight) {
+      startShipWarp(client, { id: planet.id, kind: "planet", name: planet.name, x: planet.x, y: planet.y, color: planet.surfacePrimary || "#67f0ff" });
+      return;
+    }
     handleTravelToPlanet(client, { planetId: id });
     return;
   }
@@ -5099,6 +5236,10 @@ function handleTeleportMenuTravel(client, message = {}) {
       planetId: planet.id
     };
     teleportPlayerToPortal(client, fakePortal);
+    return;
+  }
+  if (kind === "station" && fromFlight) {
+    startShipWarp(client, { id: "station_ringforge", kind: "station", name: "Orbital Square", x: SCI_FI_STATION_CENTER.x, y: SCI_FI_STATION_CENTER.y, color: "#67f0ff" });
     return;
   }
   if (kind === "station") {
@@ -5139,7 +5280,6 @@ function handleTeleportMenuTravel(client, message = {}) {
     return;
   }
   if (kind === "warp_pirate" || kind === "warp_asteroid") {
-    // Warp the ship to the target coordinates — player stays aboard.
     const lookup = kind === "warp_pirate"
       ? WARP_PIRATE_OUTPOSTS.find((o) => o.id === id)
       : WARP_ASTEROID_BELTS.find((b) => b.id === id);
@@ -5147,34 +5287,7 @@ function handleTeleportMenuTravel(client, message = {}) {
       send(client, { type: "serverMessage", message: "teleport_unknown" });
       return;
     }
-    const ship = player.ship;
-    if (!ship || !ship.boarded) {
-      send(client, { type: "serverMessage", message: "teleport_not_here" });
-      return;
-    }
-    const wx = lookup.x;
-    const wy = lookup.y;
-    ship.worldX = wx;
-    ship.worldY = wy;
-    ship.speed = 0;
-    if (ship.deckMode) {
-      const layout = getShipLayout(ship);
-      player.x = wx + (layout?.entry?.x || 0);
-      player.y = wy + (layout?.entry?.y || 0);
-    } else {
-      player.x = wx;
-      player.y = wy;
-    }
-    player.moving = false;
-    saveClientCharacter(client);
-    send(client, {
-      type: "shipWarp",
-      destinationName: lookup.name,
-      color: lookup.color || "#67f0ff",
-      x: wx,
-      y: wy
-    });
-    broadcastSnapshot();
+    startShipWarp(client, { ...lookup, kind });
     return;
   }
   send(client, { type: "serverMessage", message: "teleport_unknown" });

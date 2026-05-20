@@ -1393,7 +1393,7 @@ function handleServerMessage(message) {
   if (message.type === "shipWarp") {
     state.warpAnimation = {
       startedAt: performance.now(),
-      duration: 2200,
+      duration: Math.max(1200, Number(message.durationMs) || 2200),
       color: message.color || "#67f0ff",
       destinationName: message.destinationName || "Unknown"
     };
@@ -1593,6 +1593,8 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: "No dock port within range" });
     } else if (message.message === "ship_dock_not_piloting") {
       appendChat({ kind: "system", name: "Realm", text: "Take a pilot station to dock" });
+    } else if (message.message === "ship_warp_complete") {
+      appendChat({ kind: "system", name: "Realm", text: `Warp arrived at ${message.destination || "destination"}` });
     } else if (message.message === "planet_arrived") {
       appendChat({ kind: "system", name: "Realm", text: `Landed on ${message.planetName || "planet"}` });
     } else if (message.message === "planet_travel_not_in_space") {
@@ -2989,7 +2991,7 @@ function wireUi() {
       send({ type: "returnToShip" });
       return;
     }
-    send({ type: "teleportMenuOpen", fromFlight: isSelfOnShip() });
+    send({ type: "teleportMenuOpen", fromFlight: isSelfFlyingShip() });
   });
   teleportMenuPanel?.addEventListener("pointerdown", (event) => {
     const row = event.target.closest("[data-teleport-kind]");
@@ -2999,7 +3001,8 @@ function wireUi() {
     send({
       type: "teleportMenuTravel",
       kind: row.dataset.teleportKind,
-      id: row.dataset.teleportId
+      id: row.dataset.teleportId,
+      fromFlight: Boolean(state.teleportMenu?.fromFlight)
     });
     closeTeleportMenu();
   });
@@ -4003,12 +4006,13 @@ function renderAbilityBar() {
   // any sci-fi context (in space, on a ship deck) or on a planet surface.
   if (teleportHotbarBtn) {
     const planetSurface = isPlanetSurfaceWorld();
+    const shipFlight = isSelfFlyingShip();
     const showTeleport = isSciFiWorld() || planetSurface;
     teleportHotbarBtn.classList.toggle("hidden", !showTeleport);
     teleportHotbarBtn.classList.toggle("ship-return-btn", planetSurface);
-    teleportHotbarBtn.classList.toggle("warp-drive-btn", !planetSurface && shipMode);
-    teleportHotbarBtn.textContent = planetSurface ? "Ship" : shipMode ? "Warp Drive" : "Teleport";
-    teleportHotbarBtn.title = planetSurface ? "Return to ship" : shipMode ? "Warp drive menu" : "Teleport menu";
+    teleportHotbarBtn.classList.toggle("warp-drive-btn", !planetSurface && shipFlight);
+    teleportHotbarBtn.textContent = planetSurface ? "Ship" : shipFlight ? "Warp Drive" : "Teleport";
+    teleportHotbarBtn.title = planetSurface ? "Return to ship" : shipFlight ? "Warp drive menu" : "Teleport menu";
   }
 
   // Ship mode: replace spell slots with the active ship-station control.
@@ -6687,7 +6691,7 @@ function closeQuestOffer() {
 function showTeleportMenu(payload) {
   if (!teleportMenuPanel || !teleportMenuList) return;
   const destinations = Array.isArray(payload?.destinations) ? payload.destinations : [];
-  state.teleportMenu = { open: true, destinations };
+  state.teleportMenu = { open: true, destinations, fromFlight: Boolean(payload?.fromFlight) };
   if (teleportMenuTitle) teleportMenuTitle.textContent = payload?.title || "Teleport";
   teleportMenuList.replaceChildren();
   if (!destinations.length) {
@@ -7451,7 +7455,8 @@ function drawWarpAnimation() {
 
   const now = performance.now();
   const elapsed = now - anim.startedAt;
-  const pct = Math.min(1, elapsed / anim.duration);
+  const duration = Math.max(1200, Number(anim.duration) || 2200);
+  const pct = Math.min(1, elapsed / duration);
 
   if (pct >= 1) {
     state.warpAnimation = null;
@@ -7463,10 +7468,13 @@ function drawWarpAnimation() {
   const cx = canvas.width / 2;
   const cy = canvas.height / 2;
 
-  // Phase: 0-0.22 = charge, 0.22-0.65 = tunnel, 0.65-1 = emerge
-  const chargeT = Math.min(1, pct / 0.22);
-  const tunnelT = pct < 0.22 ? 0 : pct < 0.65 ? (pct - 0.22) / 0.43 : 1;
-  const emergeT = pct < 0.65 ? 0 : (pct - 0.65) / 0.35;
+  const chargeMs = 520;
+  const emergeMs = 760;
+  const tunnelStart = Math.min(chargeMs, duration * 0.32);
+  const emergeStart = Math.max(tunnelStart + 1, duration - emergeMs);
+  const chargeT = Math.min(1, elapsed / tunnelStart);
+  const tunnelT = elapsed < tunnelStart ? 0 : elapsed < emergeStart ? 1 : Math.max(0, 1 - (elapsed - emergeStart) / Math.max(1, duration - emergeStart));
+  const emergeT = elapsed < emergeStart ? 0 : Math.min(1, (elapsed - emergeStart) / Math.max(1, duration - emergeStart));
 
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -10143,7 +10151,9 @@ function drawAsteroidFieldObject(obj, sx, sy) {
 }
 
 function drawPlanetObject(obj, sx, sy) {
-  const radius = Math.max(20, Number(obj.radius || 48)) * TILE_SIZE;
+  // Space planets use a compact sprite radius so they read as orbit targets
+  // from the cockpit instead of filling the whole screen with collision scale.
+  const radius = Math.max(22, Math.min(76, Number(obj.radius || 48) * 1.15));
   const gradient = ctx.createRadialGradient(sx - radius * 0.28, sy - radius * 0.34, radius * 0.14, sx, sy, radius);
   const type = String(obj.type || "").toLowerCase();
   switch (type) {
