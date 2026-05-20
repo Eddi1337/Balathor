@@ -3530,6 +3530,11 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "returnToShip") {
+    handleReturnToShip(client);
+    return;
+  }
+
   if (message.type === "caravanRide") {
     handleCaravanRide(client, message);
     return;
@@ -5173,6 +5178,32 @@ function handleTeleportMenuTravel(client, message = {}) {
     return;
   }
   send(client, { type: "serverMessage", message: "teleport_unknown" });
+}
+
+function handleReturnToShip(client) {
+  const player = client.player;
+  if (!player) return;
+  const world = worldForPosition(player.x, player.y);
+  if (!world?.startsWith("planet:")) {
+    send(client, { type: "serverMessage", message: "teleport_not_here" });
+    return;
+  }
+  const planetId = world.slice("planet:".length);
+  const planet = getPlanetById(planetId);
+  if (!planet || !player.ship) {
+    send(client, { type: "serverMessage", message: "teleport_unknown" });
+    return;
+  }
+  teleportPlayerToPortal(client, {
+    id: `portal_${planet.id}_return_hotbar`,
+    kind: "planet_return",
+    targetX: planet.x,
+    targetY: planet.y,
+    color: planet.surfacePrimary || "#67f0ff",
+    style: "stargate",
+    name: `${planet.name} Orbit`,
+    planetId: planet.id
+  });
 }
 
 function teleportPlayerToPortal(client, portal) {

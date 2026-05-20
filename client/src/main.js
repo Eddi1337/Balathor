@@ -577,6 +577,10 @@ function isSciFiWorld() {
   return state.worldTheme === SCI_FI_THEME;
 }
 
+function isPlanetSurfaceWorld() {
+  return state.worldTheme === ALIEN_THEME;
+}
+
 function displayItemName(item) {
   if (!item) {
     return "Item";
@@ -2204,11 +2208,22 @@ function getInteriorShipView(player = state.players.get(state.selfId)) {
 }
 
 function getEffectiveWorldZoom(player = state.players.get(state.selfId)) {
-  const baseZoom = state.zoom || 1;
+  const baseZoom = Math.min(state.zoom || 1, getMobileWorldZoomCap());
   const role = player?.ship?.stationRole;
   if (selfIsInPilotSeat(player)) return baseZoom * 0.7;
   if (role === "gunner" || role === "engineer") return baseZoom * 0.5;
   return baseZoom;
+}
+
+function getMobileWorldZoomCap() {
+  if (!isMobile) return 1;
+  const width = Number(canvas?.width) || Number(window.visualViewport?.width) || window.innerWidth || 1;
+  const height = Number(canvas?.height) || Number(window.visualViewport?.height) || window.innerHeight || 1;
+  const shortSide = Math.min(width, height);
+  if (shortSide < 390) return 0.72;
+  if (shortSide < 470) return 0.78;
+  if (shortSide < 620) return 0.86;
+  return 1;
 }
 
 function sciFiFeatureAtClient(x, y, kind = null) {
@@ -2970,7 +2985,11 @@ function wireUi() {
   teleportMenuCloseBtn?.addEventListener("click", () => closeTeleportMenu());
   teleportHotbarBtn?.addEventListener("click", () => {
     if (!state.joined || state.menuOpen) return;
-    send({ type: "teleportMenuOpen" });
+    if (isPlanetSurfaceWorld()) {
+      send({ type: "returnToShip" });
+      return;
+    }
+    send({ type: "teleportMenuOpen", fromFlight: isSelfOnShip() });
   });
   teleportMenuPanel?.addEventListener("pointerdown", (event) => {
     const row = event.target.closest("[data-teleport-kind]");
@@ -3430,7 +3449,9 @@ function wireUi() {
     input.addEventListener("focus", clearMovementInput);
   });
 
-  window.addEventListener("resize", resize);
+  window.addEventListener("resize", scheduleCanvasResize, { passive: true });
+  window.addEventListener("orientationchange", scheduleCanvasResize, { passive: true });
+  window.visualViewport?.addEventListener("resize", scheduleCanvasResize, { passive: true });
 
   canvas.addEventListener("pointerdown", (event) => {
     if (!state.joined || state.menuOpen || isTextEntryTarget(event.target)) {
@@ -3981,10 +4002,13 @@ function renderAbilityBar() {
   // Teleport button shows whenever the player is somewhere a teleport menu makes sense:
   // any sci-fi context (in space, on a ship deck) or on a planet surface.
   if (teleportHotbarBtn) {
-    const showTeleport = isSciFiWorld();
+    const planetSurface = isPlanetSurfaceWorld();
+    const showTeleport = isSciFiWorld() || planetSurface;
     teleportHotbarBtn.classList.toggle("hidden", !showTeleport);
-    teleportHotbarBtn.textContent = shipMode ? "Warp Drive" : "Teleport";
-    teleportHotbarBtn.title = shipMode ? "Warp drive menu" : "Teleport menu";
+    teleportHotbarBtn.classList.toggle("ship-return-btn", planetSurface);
+    teleportHotbarBtn.classList.toggle("warp-drive-btn", !planetSurface && shipMode);
+    teleportHotbarBtn.textContent = planetSurface ? "Ship" : shipMode ? "Warp Drive" : "Teleport";
+    teleportHotbarBtn.title = planetSurface ? "Return to ship" : shipMode ? "Warp drive menu" : "Teleport menu";
   }
 
   // Ship mode: replace spell slots with the active ship-station control.
@@ -15760,10 +15784,39 @@ function parseHexColor(hex) {
   };
 }
 
+let resizeRaf = 0;
+
+function canvasCssSize() {
+  const rect = canvas.getBoundingClientRect();
+  const vv = window.visualViewport;
+  const width = Math.round(rect.width || vv?.width || window.innerWidth || 1);
+  const height = Math.round(rect.height || vv?.height || window.innerHeight || 1);
+  return {
+    width: Math.max(1, width),
+    height: Math.max(1, height)
+  };
+}
+
 function resize() {
-  canvas.width  = window.innerWidth;
-  canvas.height = window.innerHeight;
+  const size = canvasCssSize();
+  canvas.width = size.width;
+  canvas.height = size.height;
   chunkCanvasCache.clear();
+  if (state?.joined) {
+    state.requestedChunks.clear();
+    requestVisibleChunks();
+    sendViewUpdate();
+  }
+}
+
+function scheduleCanvasResize() {
+  if (resizeRaf) cancelAnimationFrame(resizeRaf);
+  resizeRaf = requestAnimationFrame(() => {
+    resizeRaf = 0;
+    resize();
+  });
+  setTimeout(resize, 180);
+  setTimeout(resize, 420);
 }
 
 function makeDraggable(panel) {
