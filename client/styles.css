@@ -1013,10 +1013,14 @@ button:focus-visible {
 }
 
 .item-icon.lightsaber {
-  clip-path: polygon(48% 0, 58% 0, 58% 70%, 80% 70%, 80% 100%, 20% 100%, 20% 70%, 42% 70%);
+  clip-path: polygon(45% 0, 61% 0, 61% 72%, 82% 72%, 82% 100%, 18% 100%, 18% 72%, 39% 72%);
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.9) 0 12%, transparent 12% 100%),
-    linear-gradient(180deg, rgba(103,240,255,0.15), rgba(103,240,255,0.95));
+    linear-gradient(180deg, rgba(255,255,255,0.98) 0 56%, transparent 56% 100%),
+    linear-gradient(180deg, rgba(103,240,255,0.95) 0 70%, rgba(20, 34, 48, 0.95) 70% 100%);
+  box-shadow:
+    0 0 6px rgba(103, 240, 255, 0.72),
+    0 0 12px rgba(103, 240, 255, 0.42);
+  filter: drop-shadow(0 0 5px rgba(103, 240, 255, 0.76));
 }
 
 .item-icon.blaster {
@@ -1815,6 +1819,10 @@ button:focus-visible {
     min-width: 76px;
     background: rgba(255, 209, 102, 0.9);
     color: #1d2430;
+  }
+
+  .mobile-controls.ship-mode .mobile-actions {
+    display: none;
   }
 
 }

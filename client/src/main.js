@@ -3975,16 +3975,19 @@ function renderAbilityBar() {
   if (!self || !state.joined) return;
   const bar = self.abilityBar || [null, null, null, null, null];
   abilityBar.classList.remove("hidden");
+  const shipMode = isSelfOnShip();
+  mobileControls?.classList.toggle("ship-mode", shipMode);
 
   // Teleport button shows whenever the player is somewhere a teleport menu makes sense:
   // any sci-fi context (in space, on a ship deck) or on a planet surface.
   if (teleportHotbarBtn) {
     const showTeleport = isSciFiWorld();
     teleportHotbarBtn.classList.toggle("hidden", !showTeleport);
+    teleportHotbarBtn.textContent = shipMode ? "Warp Drive" : "Teleport";
+    teleportHotbarBtn.title = shipMode ? "Warp drive menu" : "Teleport menu";
   }
 
   // Ship mode: replace spell slots with the active ship-station control.
-  const shipMode = isSelfOnShip();
   abilitySlotsEl.classList.toggle("hidden", shipMode);
   const engageEl = document.getElementById("shipEngage");
   if (engageEl) {
@@ -10825,12 +10828,34 @@ function drawItemIcon(item, x, y) {
 
   if (isSciFiWorld() && item?.type === "weapon") {
     if (item.weaponKind === "sword") {
-      ctx.fillStyle = color;
-      ctx.fillRect(x - 1, y - 10, 3, 18);
-      ctx.fillStyle = "#eafcff";
-      ctx.fillRect(x, y - 14, 2, 16);
-      ctx.fillStyle = "rgba(103,240,255,0.8)";
-      ctx.fillRect(x - 6, y - 2, 12, 2);
+      const bladeColor = item.visual?.weaponColor || color || "#67f0ff";
+      ctx.save();
+      ctx.translate(x, y + 8);
+      ctx.rotate(-0.18);
+      ctx.strokeStyle = bladeColor;
+      ctx.shadowColor = bladeColor;
+      ctx.shadowBlur = 18;
+      ctx.lineCap = "round";
+      ctx.lineWidth = 7;
+      ctx.beginPath();
+      ctx.moveTo(0, -6);
+      ctx.lineTo(0, -34);
+      ctx.stroke();
+      ctx.shadowBlur = 6;
+      ctx.strokeStyle = "#f5ffff";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(0, -8);
+      ctx.lineTo(0, -33);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "#172532";
+      ctx.fillRect(-3, -5, 6, 11);
+      ctx.fillStyle = bladeColor;
+      ctx.fillRect(-8, -8, 16, 3);
+      ctx.fillStyle = "#d8fbff";
+      ctx.fillRect(-2, -2, 4, 4);
+      ctx.restore();
       ctx.restore();
       return;
     }
@@ -11756,6 +11781,62 @@ function roundedRect(x, y, width, height, radius) {
   ctx.quadraticCurveTo(x, y, x + r, y);
 }
 
+function drawHeldLightsaber(rHandX, rHandY, dirX, dirY, sideX, sideY, bladeColor, ks = 1, heavy = false) {
+  const bladeLength = (heavy ? 58 : 52) * ks;
+  const start = 7 * ks;
+  const hiltLength = 13 * ks;
+  const guard = 8 * ks;
+  const baseWidth = (heavy ? 8.5 : 7) * Math.min(ks, 1.35);
+  const coreWidth = Math.max(2.5, baseWidth * 0.36);
+  const hiltBaseX = rHandX - dirX * (hiltLength * 0.44);
+  const hiltBaseY = rHandY - dirY * (hiltLength * 0.44);
+  const bladeStartX = rHandX + dirX * start;
+  const bladeStartY = rHandY + dirY * start;
+  const bladeTipX = rHandX + dirX * bladeLength;
+  const bladeTipY = rHandY + dirY * bladeLength;
+
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = bladeColor;
+  ctx.shadowColor = bladeColor;
+  ctx.shadowBlur = 22 * Math.min(ks, 1.2);
+  ctx.lineWidth = baseWidth;
+  ctx.beginPath();
+  ctx.moveTo(bladeStartX, bladeStartY);
+  ctx.lineTo(bladeTipX, bladeTipY);
+  ctx.stroke();
+
+  ctx.shadowBlur = 10 * Math.min(ks, 1.2);
+  ctx.strokeStyle = "rgba(245, 255, 255, 0.98)";
+  ctx.lineWidth = coreWidth;
+  ctx.beginPath();
+  ctx.moveTo(bladeStartX, bladeStartY);
+  ctx.lineTo(bladeTipX, bladeTipY);
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = "#172532";
+  ctx.lineWidth = Math.max(4, 5 * ks);
+  ctx.beginPath();
+  ctx.moveTo(hiltBaseX, hiltBaseY);
+  ctx.lineTo(rHandX + dirX * (hiltLength * 0.56), rHandY + dirY * (hiltLength * 0.56));
+  ctx.stroke();
+
+  ctx.strokeStyle = bladeColor;
+  ctx.lineWidth = Math.max(2, 2.5 * ks);
+  ctx.beginPath();
+  ctx.moveTo(rHandX - sideX * guard, rHandY - sideY * guard);
+  ctx.lineTo(rHandX + sideX * guard, rHandY + sideY * guard);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(232, 252, 255, 0.9)";
+  ctx.beginPath();
+  ctx.arc(rHandX - dirX * (2 * ks), rHandY - dirY * (2 * ks), Math.max(1.6, 2.1 * ks), 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHandX, rHandY, lHandX, lHandY, moving = false, walkSin = 0, eqS = 3) {
   const style = entity.weaponStyle || "classic";
   const weaponKind = entity.weaponKind || (entity.classId === "mage" ? "staff" : entity.classId === "knight" ? "sword" : "bow");
@@ -11826,22 +11907,7 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
     }
 
     if (weaponKind === "sword") {
-      ctx.strokeStyle = ornateWeapon ? accent : "#67f0ff";
-      ctx.lineWidth = style === "heavy" ? 8 : 6 * Math.min(ks, 1.25);
-      ctx.beginPath();
-      ctx.moveTo(rHandX, rHandY);
-      ctx.lineTo(rHandX + dirX * (30 * ks), rHandY + dirY * (30 * ks));
-      ctx.stroke();
-      ctx.strokeStyle = "#eafcff";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(rHandX - sideX * (4 * ks), rHandY - sideY * (4 * ks));
-      ctx.lineTo(rHandX + sideX * (4 * ks), rHandY + sideY * (4 * ks));
-      ctx.stroke();
-      ctx.fillStyle = accent;
-      ctx.fillRect(lHandX - 2 * ks, lHandY - 10 * ks, 4 * ks, 16 * ks);
-      ctx.fillStyle = "rgba(255,255,255,0.65)";
-      ctx.fillRect(rHandX + dirX * (12 * ks), rHandY + dirY * (12 * ks) - 2, 16 * ks, 4 * ks);
+      drawHeldLightsaber(rHandX, rHandY, dirX, dirY, sideX, sideY, ornateWeapon ? accent : "#67f0ff", ks, style === "heavy");
       if (isLegendary || isAscendant) {
         ctx.restore();
       }
