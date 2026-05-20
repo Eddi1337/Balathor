@@ -2738,18 +2738,28 @@ body.theme-sci-fi .ship-engage button.pressed {
   letter-spacing: 0.02em;
 }
 
-/* ── Mobile ability bar: vertical stack on right side, 3 slots ── */
+/* Mobile ability bar: portrait on right, landscape along bottom. */
+body.mobile {
+  --mobile-hotbar-slot: clamp(42px, 9.5vmin, 62px);
+  --mobile-hotbar-mini: clamp(40px, 8.7vmin, 56px);
+  --mobile-hotbar-gap: clamp(3px, 0.9vmin, 7px);
+}
+
 body.mobile .ability-bar {
-  bottom: auto;
-  left: auto;
-  top: 50%;
-  right: 16px;
-  transform: translateY(-50%);
-  flex-direction: column;
-  gap: 6px;
-  /** Above joystick row / overlays so taps reach spells */
+  gap: var(--mobile-hotbar-gap);
+  padding: clamp(4px, 1vmin, 8px);
+  max-width: calc(100svw - 16px - env(safe-area-inset-left) - env(safe-area-inset-right));
+  max-height: calc(100svh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow: visible;
   z-index: 120;
   touch-action: manipulation;
+}
+
+body.mobile .ability-slot {
+  width: var(--mobile-hotbar-slot);
+  min-height: var(--mobile-hotbar-slot);
+  height: var(--mobile-hotbar-slot);
+  padding: 3px 2px 16px;
 }
 
 body.mobile .ability-slot:not(.cooling-down) {
@@ -2758,30 +2768,119 @@ body.mobile .ability-slot:not(.cooling-down) {
   user-select: none;
 }
 
+body.mobile .ability-slot canvas,
+body.mobile .ability-slot-fill .item-icon {
+  width: min(32px, calc(var(--mobile-hotbar-slot) * 0.56));
+  height: min(32px, calc(var(--mobile-hotbar-slot) * 0.56));
+}
+
+body.mobile .ability-slot-name {
+  font-size: clamp(7px, 1.65vmin, 9px);
+  line-height: 1.05;
+  max-height: 2.1em;
+  overflow: hidden;
+}
+
+body.mobile .ability-key {
+  font-size: clamp(8px, 1.8vmin, 10px);
+}
+
+body.mobile .ability-cooldown-text {
+  font-size: clamp(12px, 3vmin, 16px);
+}
+
 body.mobile .potion-slot,
 body.mobile .home-teleport-slot,
-body.mobile .ability-bar-toggle {
+body.mobile .safe-zone-indicator {
+  width: var(--mobile-hotbar-mini);
+  min-height: var(--mobile-hotbar-mini);
+  height: var(--mobile-hotbar-mini);
+}
+
+body.mobile .potion-slot,
+body.mobile .home-teleport-slot,
+body.mobile .ability-bar-toggle,
+body.mobile .hotbar-teleport-btn {
   touch-action: manipulation;
 }
 
 body.mobile .ability-slots {
-  flex-direction: column;
-  gap: 4px;
-}
-
-body.mobile .ability-bar-divider {
-  width: 40px;
-  height: 1px;
-  align-self: center;
+  gap: var(--mobile-hotbar-gap);
 }
 
 body.mobile .ability-bar-toggle {
   order: -1;
+  width: clamp(22px, 4.8vmin, 30px);
+  height: clamp(22px, 4.8vmin, 30px);
+  font-size: clamp(14px, 3vmin, 18px);
 }
 
-body.mobile .ability-slot[data-slot="3"],
-body.mobile .ability-slot[data-slot="4"] {
-  display: none;
+body.mobile .hotbar-teleport-btn {
+  margin-left: 0;
+  min-height: var(--mobile-hotbar-mini);
+  padding: 0 clamp(7px, 1.8vmin, 12px);
+  font-size: clamp(10px, 2vmin, 12px);
+}
+
+body.mobile .ship-engage {
+  gap: var(--mobile-hotbar-gap);
+}
+
+body.mobile .ship-engage button {
+  min-width: clamp(78px, 17vmin, 108px);
+  height: var(--mobile-hotbar-mini);
+  padding: 0 clamp(8px, 2vmin, 14px);
+  font-size: clamp(11px, 2.4vmin, 14px);
+}
+
+body.mobile .ship-station-stats {
+  min-width: clamp(116px, 25vmin, 148px);
+  font-size: clamp(8px, 1.8vmin, 10px);
+}
+
+body.mobile.mobile-portrait .ability-bar {
+  bottom: auto;
+  left: auto;
+  top: 50%;
+  right: max(8px, env(safe-area-inset-right));
+  transform: translateY(-50%);
+  flex-direction: column;
+}
+
+body.mobile.mobile-portrait .ability-slots {
+  flex-direction: column;
+}
+
+body.mobile.mobile-portrait .ability-bar-divider {
+  width: calc(var(--mobile-hotbar-mini) - 8px);
+  height: 1px;
+  align-self: center;
+}
+
+body.mobile.mobile-portrait .hotbar-teleport-btn {
+  width: var(--mobile-hotbar-mini);
+  padding: 0 4px;
+  white-space: normal;
+  line-height: 1.05;
+}
+
+body.mobile.mobile-landscape .ability-bar {
+  top: auto;
+  right: auto;
+  bottom: max(8px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  flex-direction: row;
+}
+
+body.mobile.mobile-landscape .ability-slots {
+  flex-direction: row;
+}
+
+body.mobile.mobile-landscape .ability-bar-divider {
+  width: 1px;
+  height: calc(var(--mobile-hotbar-mini) - 8px);
+  align-self: center;
 }
 
 /* —— Party / player context / trade / friends window —— */

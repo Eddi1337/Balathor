@@ -1,5 +1,22 @@
 const isMobile = navigator.maxTouchPoints > 0 || window.matchMedia("(pointer: coarse)").matches;
-if (isMobile) document.body.classList.add("mobile");
+const mobileOrientationQuery = window.matchMedia("(orientation: portrait)");
+
+function updateMobileLayoutClasses() {
+  document.body.classList.toggle("mobile", isMobile);
+  if (!isMobile) {
+    document.body.classList.remove("mobile-portrait", "mobile-landscape");
+    return;
+  }
+  const portrait = mobileOrientationQuery.matches || window.innerHeight >= window.innerWidth;
+  document.body.classList.toggle("mobile-portrait", portrait);
+  document.body.classList.toggle("mobile-landscape", !portrait);
+}
+
+updateMobileLayoutClasses();
+window.addEventListener("resize", updateMobileLayoutClasses, { passive: true });
+window.addEventListener("orientationchange", updateMobileLayoutClasses, { passive: true });
+mobileOrientationQuery.addEventListener?.("change", updateMobileLayoutClasses);
+window.visualViewport?.addEventListener("resize", updateMobileLayoutClasses, { passive: true });
 
 const canvas = document.querySelector("#game");
 let ctx = canvas.getContext("2d", {
