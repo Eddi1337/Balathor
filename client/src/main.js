@@ -9888,6 +9888,7 @@ function drawShipCrew(ship, shipSx, shipSy) {
     const cy = shipSy + (Number(crew.localY) || 0) * TILE_SIZE;
     const entity = {
       id: `crew_${ship.id}_${crew.id}`,
+      name: crew.name || "Crew",
       facing: Number(crew.facing) || 0,
       renderMoving: false,
       torsoColor: crew.color || "#5cc8ff",
@@ -11766,8 +11767,9 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   ctx.strokeStyle = "rgba(8,12,18,0.82)";
   ctx.fillStyle = sciFiNpc ? "#9fefff" : isNpc ? "#ffd27a" : entity.isMod ? "#b8efd0" : "#f7f3df";
   const nameLift = entity.isMod ? 38 : 28;
-  ctx.strokeText(entity.name, x, y - nameLift);
-  ctx.fillText(entity.name, x, y - nameLift);
+  const name = typeof entity.name === "string" && entity.name.trim() ? entity.name : "Crew";
+  ctx.strokeText(name, x, y - nameLift);
+  ctx.fillText(name, x, y - nameLift);
 
   if (flirtLine) {
     const ly = lyingBedPose ? y - 12 : y - 40;
