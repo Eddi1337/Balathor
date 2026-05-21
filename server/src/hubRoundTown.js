@@ -892,6 +892,19 @@ function computeHubDistrict() {
     });
   }
 
+  const SPECIAL_WORKSHOP_RECTS = [
+    { x: -28, y: 78, w: 10, h: 8, name: "Pip's Bakery", type: "house", professionId: "baking" },
+    { x: 48, y: 34, w: 12, h: 9, name: "Ren's Forge House", type: "house", professionId: "blacksmithing" },
+    { x: 30, y: 48, w: 11, h: 8, name: "Server Admin House", type: "house", professionId: "server_admin" },
+  ];
+  for (const b of SPECIAL_WORKSHOP_RECTS) {
+    rects.push({ x: b.x, y: b.y, w: b.w, h: b.h });
+    hubBuildings.push({
+      ...b,
+      forSale: false,
+    });
+  }
+
   const wallKeys = new Set();
   const pathKeys = new Set();
   const gardenKeys = new Set();

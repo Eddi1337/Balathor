@@ -1648,6 +1648,10 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Quest", text: "Move closer to the quest giver." });
     } else if (message.message === "quest_none") {
       appendChat({ kind: "system", name: "Quest", text: "They have no quest for you right now." });
+    } else if (message.message === "profession_learned") {
+      appendChat({ kind: "system", name: "Profession", text: `Learned ${message.professionName || "profession"}` });
+    } else if (message.message === "profession_unknown") {
+      appendChat({ kind: "system", name: "Profession", text: `Learn ${message.professionName || "that profession"} from a trainer first.` });
     } else if (message.message === "ship_already_owned") {
       appendChat({ kind: "system", name: "Realm", text: "You already own a ship." });
     } else if (message.message === "ship_not_owned") {
@@ -1731,6 +1735,8 @@ function handleServerMessage(message) {
   if (message.type === "fletchingMinigame") {
     state.fletchingGame = {
       sessionId: message.sessionId,
+      title: message.title || "Fletching",
+      product: message.product || "arrows",
       totalShafts: message.totalShafts || 6,
       beatIntervalMs: message.beatIntervalMs || 1600,
       windowMs: message.windowMs || 320,
@@ -1747,6 +1753,8 @@ function handleServerMessage(message) {
     if (!state.fletchingGame) return;
     state.fletchingGame.lastQuality = message.quality;
     state.fletchingGame.lastGold = message.gold || 0;
+    if (message.product) state.fletchingGame.product = message.product;
+    if (message.professionName) state.fletchingGame.title = message.professionName;
     state.fletchingGame.shaft = message.shaft || state.fletchingGame.shaft + 1;
     state.fletchingGame.beatStartedAt = performance.now();
     if (message.done) {
@@ -8153,7 +8161,8 @@ function drawFletchingMinigameOverlay() {
   ctx.font = "bold 12px monospace";
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  ctx.fillText(`Fletching — shaft ${Math.min(game.shaft + 1, game.totalShafts)} / ${game.totalShafts}`, cx, by - 28);
+  const title = game.title || "Fletching";
+  ctx.fillText(`${title} — step ${Math.min(game.shaft + 1, game.totalShafts)} / ${game.totalShafts}`, cx, by - 28);
 
   // Track background
   ctx.fillStyle = "#3a2008";
@@ -8194,7 +8203,8 @@ function drawFletchingMinigameOverlay() {
     ctx.fillRect(bx, by, barW, barH);
     ctx.fillStyle = "#80ff80";
     ctx.font = "bold 14px monospace";
-    ctx.fillText("Done! Arrows ready.", cx, by + barH / 2 - 6);
+    const product = game.product || "work";
+    ctx.fillText(`Done! ${product} ready.`, cx, by + barH / 2 - 6);
   }
 
   ctx.restore();

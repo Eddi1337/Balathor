@@ -247,11 +247,24 @@ const STAT_POINT_ARMOUR_REDUCTION = 0.04;
 const STAT_POINT_ARMOUR_CAP = 0.55;
 const CLASS_IDS = ["ranger", "mage", "knight"];
 const QUEST_INTERACT_RADIUS = 4.5;
+const PROFESSION_INTERACT_RADIUS = 5.5;
+const PROFESSION_DEFINITIONS = Object.freeze({
+  fletching: { id: "fletching", name: "Fletching", label: "Fletching", product: "arrows", rewardGold: 12, xp: 10 },
+  baking: { id: "baking", name: "Baking", label: "Baking", product: "ration loaves", rewardGold: 14, xp: 12 },
+  blacksmithing: { id: "blacksmithing", name: "Blacksmithing", label: "Smithing", product: "tempered blanks", rewardGold: 18, xp: 14 },
+  surveying: { id: "surveying", name: "Surveying", label: "Surveying", product: "map notes", rewardGold: 16, xp: 12 },
+  prospecting: { id: "prospecting", name: "Prospecting", label: "Prospecting", product: "ore scans", rewardGold: 20, xp: 15 },
+  salvaging: { id: "salvaging", name: "Salvaging", label: "Salvage", product: "usable scrap", rewardGold: 18, xp: 14 },
+  server_admin: { id: "server_admin", name: "Server Admin", label: "Admin Debug", product: "clean logs", rewardGold: 22, xp: 16 }
+});
 const SPACE_JOB_FREIGHT_ORIGIN = Object.freeze({ x: SCI_FI_STATION_CENTER.x - 29, y: SCI_FI_STATION_CENTER.y + 21, radius: 18, name: "Ringforge Freight Deck" });
 const SPACE_JOB_FREIGHT_DESTINATION = Object.freeze(sciFiStationById("station_proc_3_-2") || { id: "station_proc_3_-2", name: "Kestrel Harbor 155", x: 2750, y: -1192, radius: 34 });
 const SPACE_JOB_SURVEY_DESTINATION = Object.freeze(getPlanetById("planet_proc_2_1") || { id: "planet_proc_2_1", name: "Zorara-45 Desert", x: 2383, y: 1641, radius: 58 });
 const SPACE_JOB_MINING_TARGET = Object.freeze({ x: 1990, y: 290, radius: 34, name: "South Belt" });
 const SPACE_JOB_SALVAGE_TARGET = Object.freeze({ x: 2128, y: 318, radius: 30, name: "Derelict Helix" });
+const PLANET_AURELIA = Object.freeze(getPlanetById("planet_aurelia") || { id: "planet_aurelia", name: "Aurelia", surfaceX: 5000, surfaceY: -2600 });
+const PLANET_ICEFALL = Object.freeze(getPlanetById("planet_icefall") || { id: "planet_icefall", name: "Icefall", surfaceX: 7300, surfaceY: -2600 });
+const PLANET_RUST = Object.freeze(getPlanetById("planet_rust") || { id: "planet_rust", name: "Rust", surfaceX: 9600, surfaceY: -2600 });
 const QUEST_DEFINITIONS = Object.freeze({
   q_first_hunt: {
     id: "q_first_hunt",
@@ -420,6 +433,119 @@ const QUEST_DEFINITIONS = Object.freeze({
     steps: [
       { type: "location", text: "Sweep the Derelict Helix field", target: { x: SPACE_JOB_SALVAGE_TARGET.x, y: SPACE_JOB_SALVAGE_TARGET.y }, radius: SPACE_JOB_SALVAGE_TARGET.radius },
       { type: "talk", text: "Bring the salvage markers back to Dockmaster Lyra", npcId: "npc_lyra_station", target: { x: 1866, y: -34 } }
+    ]
+  },
+  q_wild_swamp_trace: {
+    id: "q_wild_swamp_trace",
+    giverId: "npc_quest_iona_swamp",
+    title: "Boglight Trail",
+    summary: "Iona wants the swamp paths checked before night raiders use them.",
+    rewardGold: 52,
+    rewardXp: 170,
+    steps: [
+      { type: "kill", text: "Defeat 4 swamp creatures near the bog trail", count: 4, biome: "swamp", target: { x: -320, y: 290 } },
+      { type: "location", text: "Inspect the old bog marker", target: { x: -334, y: 304 }, radius: 12 },
+      { type: "talk", text: "Report back to Iona Marsh", npcId: "npc_quest_iona_swamp", target: { x: -250, y: 248 } }
+    ]
+  },
+  q_wild_dune_bones: {
+    id: "q_wild_dune_bones",
+    giverId: "npc_quest_orren_dunes",
+    title: "Bones in the Glass Dunes",
+    summary: "Orren needs the desert camp disrupted before it finds the caravan road.",
+    rewardGold: 58,
+    rewardXp: 190,
+    steps: [
+      { type: "kill", text: "Defeat 5 desert enemies", count: 5, biome: "desert", target: { x: 450, y: 385 } },
+      { type: "talk", text: "Return to Orren Sandglass", npcId: "npc_quest_orren_dunes", target: { x: 376, y: 334 } }
+    ]
+  },
+  q_wild_frost_signal: {
+    id: "q_wild_frost_signal",
+    giverId: "npc_quest_vaela_frost",
+    title: "Signal Under Snow",
+    summary: "Vaela hears a pattern under the frost road and wants the source quieted.",
+    rewardGold: 62,
+    rewardXp: 205,
+    steps: [
+      { type: "kill", text: "Defeat 4 frost enemies", count: 4, biome: "frost", target: { x: -450, y: -365 } },
+      { type: "location", text: "Stand by the buried signal stone", target: { x: -462, y: -352 }, radius: 12 },
+      { type: "talk", text: "Return to Vaela Snowmend", npcId: "npc_quest_vaela_frost", target: { x: -366, y: -318 } }
+    ]
+  },
+  q_space_nav_beacons: {
+    id: "q_space_nav_beacons",
+    giverId: "npc_orin_station",
+    title: "Beacon Calibration",
+    summary: "Navigator Orin needs three deep-space beacon passes logged.",
+    rewardGold: 150,
+    rewardXp: 260,
+    steps: [
+      { type: "location", text: "Sweep the Northeast Cluster beacon", target: { x: 2290, y: -370 }, radius: 42 },
+      { type: "location", text: "Sweep the Rim Fragment beacon", target: { x: 1920, y: -510 }, radius: 42 },
+      { type: "talk", text: "Upload the route to Navigator Orin", npcId: "npc_orin_station", target: { x: 1920, y: -46 } }
+    ]
+  },
+  q_space_medgel_run: {
+    id: "q_space_medgel_run",
+    giverId: "npc_sera_station",
+    title: "Medgel Under Fire",
+    summary: "Medic Sera wants raiders cleared from a medical courier route.",
+    rewardGold: 132,
+    rewardXp: 245,
+    steps: [
+      { type: "kill", text: "Destroy 5 pirate ships near the courier lane", count: 5, isShipPirate: true, target: { x: 1582, y: 372 } },
+      { type: "talk", text: "Confirm the route with Medic Sera", npcId: "npc_sera_station", target: { x: 1866, y: 18 } }
+    ]
+  },
+  q_space_quartermaster_manifest: {
+    id: "q_space_quartermaster_manifest",
+    giverId: "npc_tess_station",
+    title: "Lost Manifest",
+    summary: "Quartermaster Tess lost a manifest near the salvage field.",
+    rewardGold: 118,
+    rewardXp: 225,
+    steps: [
+      { type: "location", text: "Scan the salvage crates near Derelict Helix", target: { x: SPACE_JOB_SALVAGE_TARGET.x, y: SPACE_JOB_SALVAGE_TARGET.y }, radius: SPACE_JOB_SALVAGE_TARGET.radius },
+      { type: "talk", text: "Bring the manifest back to Quartermaster Tess", npcId: "npc_tess_station", target: { x: 1974, y: 18 } }
+    ]
+  },
+  q_planet_aurelia_spores: {
+    id: "q_planet_aurelia_spores",
+    giverId: "npc_planet_guide_planet_aurelia",
+    title: "Aurelia Spore Count",
+    summary: "The Aurelia guide needs aggressive bloom predators cleared from the landing grove.",
+    rewardGold: 86,
+    rewardXp: 210,
+    steps: [
+      { type: "kill", text: "Defeat 5 Aurelia predators", count: 5, faction: "planet_lush", target: { x: PLANET_AURELIA.surfaceX + 42, y: PLANET_AURELIA.surfaceY + 28 } },
+      { type: "talk", text: "Return to the Aurelia guide", npcId: "npc_planet_guide_planet_aurelia", target: { x: PLANET_AURELIA.surfaceX + 16, y: PLANET_AURELIA.surfaceY + 10 } }
+    ]
+  },
+  q_planet_icefall_shards: {
+    id: "q_planet_icefall_shards",
+    giverId: "npc_planet_guide_planet_icefall",
+    title: "Icefall Shardline",
+    summary: "Icefall locals need the crystal trail made safe.",
+    rewardGold: 92,
+    rewardXp: 230,
+    steps: [
+      { type: "kill", text: "Defeat 4 shard creatures", count: 4, faction: "planet_ice", target: { x: PLANET_ICEFALL.surfaceX - 56, y: PLANET_ICEFALL.surfaceY + 30 } },
+      { type: "location", text: "Check the blue shardline", target: { x: PLANET_ICEFALL.surfaceX - 70, y: PLANET_ICEFALL.surfaceY + 42 }, radius: 14 },
+      { type: "talk", text: "Return to the Icefall guide", npcId: "npc_planet_guide_planet_icefall", target: { x: PLANET_ICEFALL.surfaceX + 19, y: PLANET_ICEFALL.surfaceY + 8 } }
+    ]
+  },
+  q_planet_rust_relay: {
+    id: "q_planet_rust_relay",
+    giverId: "npc_planet_guide_planet_rust",
+    title: "Rust Relay Bones",
+    summary: "The Rust guide wants an old relay ridge scanned and secured.",
+    rewardGold: 96,
+    rewardXp: 240,
+    steps: [
+      { type: "location", text: "Scan the relay ridge on Rust", target: { x: PLANET_RUST.surfaceX + 88, y: PLANET_RUST.surfaceY - 44 }, radius: 16 },
+      { type: "kill", text: "Defeat 4 desert lifeforms near the relay", count: 4, faction: "planet_desert", target: { x: PLANET_RUST.surfaceX + 88, y: PLANET_RUST.surfaceY - 44 } },
+      { type: "talk", text: "Return to the Rust guide", npcId: "npc_planet_guide_planet_rust", target: { x: PLANET_RUST.surfaceX + 22, y: PLANET_RUST.surfaceY + 6 } }
     ]
   }
 });
@@ -1692,6 +1818,37 @@ function sanitizeQuestLog(raw) {
   return out;
 }
 
+function sanitizeProfessions(raw) {
+  const out = {};
+  if (!raw || typeof raw !== "object") {
+    return out;
+  }
+  for (const id of Object.keys(PROFESSION_DEFINITIONS)) {
+    const entry = raw[id];
+    if (!entry || typeof entry !== "object") continue;
+    out[id] = {
+      id,
+      level: clampInteger(entry.level ?? 1, 1, 100),
+      xp: clampInteger(entry.xp ?? 0, 0, 1000000)
+    };
+  }
+  return out;
+}
+
+function awardProfessionXp(player, professionId, xp) {
+  const def = PROFESSION_DEFINITIONS[professionId];
+  if (!player || !def) return null;
+  player.professions = sanitizeProfessions(player.professions || {});
+  const current = player.professions[professionId] || { id: professionId, level: 1, xp: 0 };
+  current.xp += Math.max(0, Math.round(Number(xp) || 0));
+  while (current.xp >= current.level * 40 && current.level < 100) {
+    current.xp -= current.level * 40;
+    current.level += 1;
+  }
+  player.professions[professionId] = current;
+  return current;
+}
+
 function serializeQuestLog(quests) {
   const out = {};
   for (const [questId, quest] of Object.entries(quests || {})) {
@@ -1744,6 +1901,7 @@ function serializePlayer(player) {
     inventory: player.inventory,
     equipment: player.equipment,
     quests: serializeQuestLog(player.quests),
+    professions: sanitizeProfessions(player.professions),
     x: Number(player.x.toFixed(3)),
     y: Number(player.y.toFixed(3)),
     facing: Number(player.facing.toFixed(3)),
@@ -4881,6 +5039,7 @@ function joinWorld(client, message, savedCharacter = null) {
     stats: sanitizeStats(savedCharacter?.stats),
     gold: clampInteger(savedCharacter?.gold ?? STARTING_GOLD, 0, 100000000),
     quests: sanitizeQuestLog(savedCharacter?.quests),
+    professions: sanitizeProfessions(savedCharacter?.professions),
     inventory: sanitizeInventory(savedCharacter?.inventory),
     equipment: sanitizeEquipment(savedCharacter?.equipment) || createStarterEquipment(classId, {
       torsoStyle: baseTorsoStyle,
@@ -6729,6 +6888,7 @@ function mobMatchesQuestStep(mob, step) {
   if (step.isShipPirate && mob.isShipPirate) return true;
   if (step.campId && mob.campId === step.campId) return true;
   if (step.faction && mob.faction === step.faction) return true;
+  if (step.biome && mob.biome === step.biome) return true;
   if (step.matchName && String(mob.name || "").toLowerCase().includes(String(step.matchName).toLowerCase())) return true;
   return false;
 }
@@ -6757,6 +6917,111 @@ function recordMobDefeatForQuests(client, mob) {
   }
 }
 
+function nearestProfessionNpc(player, message = {}) {
+  const tx = Number(message.x);
+  const ty = Number(message.y);
+  const useTarget = Number.isFinite(tx) && Number.isFinite(ty);
+  let best = null;
+  let bestDist = Infinity;
+  for (const npc of getNpcSnapshot()) {
+    if (!npc?.professionTrainer || !PROFESSION_DEFINITIONS[npc.professionTrainer]) continue;
+    const px = useTarget ? tx : player.x;
+    const py = useTarget ? ty : player.y;
+    const d = Math.hypot(px - npc.x, py - npc.y);
+    const playerReach = Math.hypot(player.x - npc.x, player.y - npc.y);
+    if (d <= 1.6 && playerReach <= PROFESSION_INTERACT_RADIUS && d < bestDist) {
+      best = npc;
+      bestDist = d;
+    }
+  }
+  return best;
+}
+
+function learnProfessionFromNpc(client, npc) {
+  const player = client.player;
+  const professionId = npc?.professionTrainer;
+  const def = PROFESSION_DEFINITIONS[professionId];
+  if (!player || !def) return false;
+  player.professions = sanitizeProfessions(player.professions || {});
+  if (!player.professions[professionId]) {
+    player.professions[professionId] = { id: professionId, level: 1, xp: 0 };
+    saveClientCharacter(client);
+    send(client, {
+      type: "serverMessage",
+      message: "profession_learned",
+      professionName: def.name
+    });
+    pushChat({ kind: "system", name: "Realm", text: `${npc.name} teaches you ${def.name}.` });
+    broadcastSnapshot();
+  } else {
+    startProfessionMinigame(client, professionId, npc.name || def.name);
+  }
+  return true;
+}
+
+function nearestProfessionBuilding(player) {
+  let best = null;
+  let bd = Infinity;
+  for (const b of BUILDING_LIST) {
+    if (!b.professionId || !PROFESSION_DEFINITIONS[b.professionId]) continue;
+    const cx = b.x + b.w / 2;
+    const cy = b.y + b.h / 2;
+    const d = Math.hypot(player.x - cx, player.y - cy);
+    if (d < bd && d <= PROFESSION_INTERACT_RADIUS) {
+      bd = d;
+      best = b;
+    }
+  }
+  return best;
+}
+
+function startProfessionMinigame(client, professionId, sourceName = "workbench") {
+  const player = client.player;
+  const def = PROFESSION_DEFINITIONS[professionId];
+  if (!player || !def) return false;
+  player.professions = sanitizeProfessions(player.professions || {});
+  if (!player.professions[professionId]) {
+    send(client, { type: "serverMessage", message: "profession_unknown", professionName: def.name });
+    pushChat({ kind: "system", name: "Realm", text: `Learn ${def.name} from a trainer before using the ${sourceName}.` });
+    return true;
+  }
+  const now = Date.now();
+  if (player._professionGame?.active || player._fletchingGame?.active) {
+    return true;
+  }
+  if ((player._professionCooldownAt || 0) + FLETCHING_GAME_COOLDOWN_MS > now) {
+    return true;
+  }
+  const sessionId = Math.random().toString(36).slice(2, 10);
+  player._professionGame = {
+    sessionId,
+    active: true,
+    professionId,
+    hit: 0,
+    total: FLETCHING_GAME_SHAFTS,
+    startedAt: now,
+    beatStartedAt: now,
+    goldEarned: 0
+  };
+  send(client, {
+    type: "fletchingMinigame",
+    sessionId,
+    title: def.label,
+    product: def.product,
+    totalShafts: FLETCHING_GAME_SHAFTS,
+    beatIntervalMs: FLETCHING_BEAT_INTERVAL_MS,
+    windowMs: FLETCHING_WINDOW_MS
+  });
+  return true;
+}
+
+function handleProfessionBuildingInteract(client, message) {
+  if (!client.player) return false;
+  const building = nearestProfessionBuilding(client.player);
+  if (!building) return false;
+  return startProfessionMinigame(client, building.professionId, building.name || "workbench");
+}
+
 function handleInteract(client, message = {}) {
   if (!client.player) {
     return;
@@ -6772,6 +7037,10 @@ function handleInteract(client, message = {}) {
   }
 
   if (handleShipTerminalInteract(client, message)) {
+    return;
+  }
+
+  if (handleProfessionBuildingInteract(client, message)) {
     return;
   }
 
@@ -6800,6 +7069,11 @@ function handleInteract(client, message = {}) {
   const questNpc = nearestQuestNpc(client.player, message);
   if (questNpc) {
     handleQuestNpc(client, { npcId: questNpc.id });
+    return;
+  }
+
+  const professionNpc = nearestProfessionNpc(client.player, message);
+  if (professionNpc && learnProfessionFromNpc(client, professionNpc)) {
     return;
   }
 
@@ -6976,6 +7250,10 @@ function handleFletcherBuildingInteract(client, message) {
 function handleFletchingTap(client, message) {
   if (!client.player) return;
   const player = client.player;
+  if (player._professionGame?.active && player._professionGame.sessionId === message.sessionId) {
+    handleProfessionTap(client, message);
+    return;
+  }
   const game = player._fletchingGame;
   if (!game || !game.active || game.sessionId !== message.sessionId) return;
 
@@ -7002,6 +7280,9 @@ function handleFletchingTap(client, message) {
     game.active = false;
     player.carryingArrows = FLETCHER_ARROW_PICKUP_COUNT;
     player._fletcherPickupAt = now;
+    if (player.professions?.fletching) {
+      awardProfessionXp(player, "fletching", FLETCHING_GAME_SHAFTS * 2);
+    }
     if (game.goldEarned > 0) {
       player.gold = Math.min(100000000, (player.gold || 0) + game.goldEarned);
       saveClientCharacter(client);
@@ -7011,6 +7292,73 @@ function handleFletchingTap(client, message) {
     broadcastSnapshot();
   } else {
     send(client, { type: "fletchingResult", sessionId: game.sessionId, quality, gold, shaft: game.shaft, totalShafts: game.totalShafts, done: false });
+  }
+}
+
+function handleProfessionTap(client, message) {
+  const player = client.player;
+  const game = player?._professionGame;
+  if (!player || !game || !game.active || game.sessionId !== message.sessionId) return;
+  const def = PROFESSION_DEFINITIONS[game.professionId];
+  if (!def) {
+    game.active = false;
+    return;
+  }
+
+  const now = Date.now();
+  const elapsed = now - game.beatStartedAt;
+  const center = FLETCHING_BEAT_INTERVAL_MS / 2;
+  const dist = Math.abs(elapsed - center);
+  let quality = "miss";
+  let gold = 0;
+  let xp = 1;
+  if (dist <= FLETCHING_WINDOW_MS / 4) {
+    quality = "perfect";
+    gold = Math.max(1, Math.round(def.rewardGold / 3));
+    xp = Math.max(2, Math.round(def.xp / 2));
+  } else if (dist <= FLETCHING_WINDOW_MS / 2) {
+    quality = "good";
+    gold = Math.max(1, Math.round(def.rewardGold / 6));
+    xp = Math.max(1, Math.round(def.xp / 3));
+  }
+
+  game.goldEarned += gold;
+  game.hit += 1;
+  game.beatStartedAt = now;
+  awardProfessionXp(player, game.professionId, xp);
+
+  const done = game.hit >= game.total;
+  if (done) {
+    game.active = false;
+    player._professionCooldownAt = now;
+    if (game.goldEarned > 0) {
+      player.gold = Math.min(100000000, (player.gold || 0) + game.goldEarned);
+    }
+    const profession = player.professions?.[game.professionId];
+    saveClientCharacter(client);
+    send(client, {
+      type: "fletchingResult",
+      sessionId: game.sessionId,
+      quality,
+      gold,
+      totalGold: game.goldEarned,
+      done: true,
+      professionName: def.name,
+      product: def.product,
+      professionLevel: profession?.level || 1
+    });
+    pushChat({ kind: "system", name: "Realm", text: `${def.name} task complete. Produced ${def.product}, earned ${game.goldEarned} gold, level ${profession?.level || 1}.` });
+    broadcastSnapshot();
+  } else {
+    send(client, {
+      type: "fletchingResult",
+      sessionId: game.sessionId,
+      quality,
+      gold,
+      shaft: game.hit,
+      totalShafts: game.total,
+      done: false
+    });
   }
 }
 
@@ -8005,6 +8353,7 @@ function broadcastSnapshot() {
       gold: p.gold,
       inventory: p.inventory,
       equipment: p.equipment,
+      professions: sanitizeProfessions(p.professions),
       ship: p.ship ? serializeShipForPlayer(p, p.ship) : null,
       ...(p.id === viewerId
         ? {

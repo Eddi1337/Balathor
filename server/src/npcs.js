@@ -1318,6 +1318,7 @@ function buildHydratedHubNpcExtras() {
       patrolRadius: 0,
       isTrader: true,
       isFletcher: true,
+      professionTrainer: "fletching",
       shopType: "fletcher",
       arrowStock: FLETCHER_ARROW_STOCK_MAX,
       arrowStockMax: FLETCHER_ARROW_STOCK_MAX,
@@ -1668,6 +1669,92 @@ const BASE_NPC_DEFINITIONS = [
       "A clean forge needs dirty work outside town.",
     ],
   },
+  {
+    id: "npc_quest_iona_swamp",
+    name: "Iona Marsh",
+    classId: "ranger",
+    primary: "#355f4d",
+    accent: "#a7f3d0",
+    homeX: -250,
+    homeY: 248,
+    patrolRadius: 8,
+    questGiver: true,
+    questIds: ["q_wild_swamp_trace"],
+    professionTrainer: "surveying",
+    dialogue: [
+      "The bog keeps records in footprints and bubbles.",
+      "Learn to survey properly and the wild stops looking random.",
+      "Something has been walking the old marker trail after dusk.",
+    ],
+  },
+  {
+    id: "npc_quest_orren_dunes",
+    name: "Orren Sandglass",
+    classId: "knight",
+    primary: "#8a6238",
+    accent: "#fde68a",
+    homeX: 376,
+    homeY: 334,
+    patrolRadius: 8,
+    questGiver: true,
+    questIds: ["q_wild_dune_bones"],
+    dialogue: [
+      "Glass dunes cut boots and confidence in equal measure.",
+      "The caravan road needs fewer teeth beside it.",
+      "Bring water, bring shade, bring proof.",
+    ],
+  },
+  {
+    id: "npc_quest_vaela_frost",
+    name: "Vaela Snowmend",
+    classId: "mage",
+    primary: "#5f7f9f",
+    accent: "#e0fbff",
+    homeX: -366,
+    homeY: -318,
+    patrolRadius: 8,
+    questGiver: true,
+    questIds: ["q_wild_frost_signal"],
+    dialogue: [
+      "The snow hums when danger gets close.",
+      "I do not like patterns I did not make.",
+      "If the signal stone glows, step back before it answers.",
+    ],
+  },
+  {
+    id: "npc_baker_pip",
+    name: "Baker Pip",
+    classId: "mage",
+    primary: "#8b5e34",
+    accent: "#f9d58c",
+    homeX: -18,
+    homeY: 84,
+    patrolRadius: 7,
+    professionTrainer: "baking",
+    dialogue: [
+      "Good bread is timing, heat, and not panicking.",
+      "I can teach baking if you can keep rhythm.",
+      "Adventurers run farther with a loaf in the pack.",
+    ],
+  },
+  {
+    id: "npc_admin_ed",
+    name: "Ed",
+    classId: "mage",
+    primary: "#202a44",
+    accent: "#67f0ff",
+    weaponKind: "staff",
+    weaponStyle: "runic",
+    homeX: 38,
+    homeY: 54,
+    patrolRadius: 5,
+    professionTrainer: "server_admin",
+    dialogue: [
+      "The server is fine until someone says the word fine.",
+      "Staff work is mostly reading logs and making calm decisions.",
+      "I have a staff. It is for production incidents.",
+    ],
+  },
   // --- North Village ---
   {
     id: "npc_mara", name: "Innkeeper Mara",
@@ -1724,6 +1811,7 @@ const BASE_NPC_DEFINITIONS = [
     id: "npc_ren", name: "Blacksmith Ren",
     classId: "knight", primary: "#3a3a3a", accent: "#ff6600",
     homeX: 60, homeY: 10, patrolRadius: 6,
+    professionTrainer: "blacksmithing",
     dialogue: [
       "Steel and fire — that is all you need in this world.",
       "I forged the eastern gate with my own hands.",
@@ -1749,6 +1837,7 @@ const BASE_NPC_DEFINITIONS = [
     id: "npc_brom", name: "Apprentice Brom",
     classId: "ranger", primary: "#5a7a5a", accent: "#ff8c00",
     homeX: 57, homeY: 12, patrolRadius: 5,
+    professionTrainer: "blacksmithing",
     dialogue: [
       "Master Ren says I still have much to learn.",
       "I burned myself on the forge again today...",
@@ -1800,6 +1889,7 @@ const BASE_NPC_DEFINITIONS = [
     id: "npc_dot", name: "Miller Dot",
     classId: "mage", primary: "#c8a86b", accent: "#fff8dc",
     homeX: -8, homeY: 61, patrolRadius: 7,
+    professionTrainer: "baking",
     dialogue: [
       "Fresh flour, ground this very morning!",
       "The mill wheel turns as long as the river flows.",
@@ -2172,6 +2262,7 @@ const BASE_NPC_DEFINITIONS = [
     npcTheme: "sci-fi",
     sciFiRole: "engineer",
     sciFiLook: "alien",
+    professionTrainer: "salvaging",
     dialogue: [
       "The conduit lights look clean today. That is a rare joy.",
       "I can hear the whole station through the floor panels.",
@@ -2192,6 +2283,8 @@ const BASE_NPC_DEFINITIONS = [
     npcTheme: "sci-fi",
     sciFiRole: "medic",
     sciFiLook: "alien",
+    questGiver: true,
+    questIds: ["q_space_medgel_run"],
     dialogue: [
       "If you burn yourself on the drive coils, come straight here.",
       "No blood on the cargo bay floor. I have enough work already.",
@@ -2212,6 +2305,9 @@ const BASE_NPC_DEFINITIONS = [
     npcTheme: "sci-fi",
     sciFiRole: "navigator",
     sciFiLook: "android",
+    questGiver: true,
+    questIds: ["q_space_nav_beacons"],
+    professionTrainer: "surveying",
     dialogue: [
       "I keep the lanes plotted so the pilots can pretend it was easy.",
       "We have three safe routes and a dozen reckless ones.",
@@ -2233,6 +2329,8 @@ const BASE_NPC_DEFINITIONS = [
     sciFiRole: "quartermaster",
     sciFiLook: "alien",
     isTrader: true,
+    questGiver: true,
+    questIds: ["q_space_quartermaster_manifest"],
     dialogue: [
       "Supplies, ration packs, and replacement gear. No nonsense.",
       "I can outfit a crew in one stop if the credits are right.",
@@ -2272,6 +2370,7 @@ const BASE_NPC_DEFINITIONS = [
     npcTheme: "sci-fi",
     sciFiRole: "alien_vendor",
     sciFiLook: "alien",
+    professionTrainer: "prospecting",
     dialogue: [
       "I have six eyes for bargains and seven for trouble.",
       "Photon blades, pulse coils, hull charms. You need at least one.",
@@ -2342,6 +2441,11 @@ function buildPlanetAlienNpcDefinitions() {
   const friendlyNames = ["Vexa", "Kheli", "Orrin", "Saeva", "Nyth", "Talos", "Ilyr", "Vaani", "Rhel", "Xyra", "Moro", "Zeph"];
   const flirtNames = ["Seli of the Bloom", "Vael Sigh", "Nyrra Coil", "Asha Drift", "Rhea Pulse", "Lumi Veil", "Syra Quell", "Tali Bloom"];
   return SCI_FI_PLANETS.flatMap((planet, index) => {
+    const planetQuestIds = {
+      planet_aurelia: ["q_planet_aurelia_spores"],
+      planet_icefall: ["q_planet_icefall_shards"],
+      planet_rust: ["q_planet_rust_relay"]
+    };
     const defs = [{
       id: `npc_planet_guide_${planet.id}`,
       name: `${friendlyNames[index % friendlyNames.length]} ${planet.name}`,
@@ -2354,6 +2458,8 @@ function buildPlanetAlienNpcDefinitions() {
       npcTheme: "sci-fi",
       sciFiRole: "alien_local",
       sciFiLook: "alien",
+      ...(planetQuestIds[planet.id] ? { questGiver: true, questIds: planetQuestIds[planet.id] } : {}),
+      professionTrainer: planet.type === "barren" || planet.type === "crystal" ? "prospecting" : "surveying",
       dialogue: [
         `Welcome to ${planet.name}. Keep your suit sealed if the wind changes.`,
         "The wildlife here is curious. Some of it is hungry. Some of it is both.",
@@ -3604,6 +3710,7 @@ function getNpcSnapshot() {
       ...(npc.isArrowCourier ? { isArrowCourier: true } : {}),
       ...(npc.isArrowCourier && npc.assignedFletcherId ? { assignedFletcherId: npc.assignedFletcherId } : {}),
       ...(npc.questGiver ? { questGiver: true, questIds: Array.isArray(npc.questIds) ? npc.questIds : [] } : {}),
+      ...(npc.professionTrainer ? { professionTrainer: npc.professionTrainer } : {}),
       ...(npc.bondTag ? { bondTag: npc.bondTag } : {}),
       ...(npc.longHair ? { longHair: true } : {}),
       ...(npc.romanceSilhouette ? { romanceSilhouette: npc.romanceSilhouette } : {}),
