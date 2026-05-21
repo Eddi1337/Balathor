@@ -110,6 +110,8 @@ const CHUNK_WORKER_COUNT = readIntEnv("CHUNK_WORKERS", Math.max(1, Math.min(4, C
 const MAX_CONNECTED_CLIENTS = Number(process.env.MAX_CLIENTS || 500);
 const LISTEN_BACKLOG = readIntEnv("LISTEN_BACKLOG", 1024, 128, 8192);
 const MAX_SOCKET_BUFFER_BYTES = readIntEnv("MAX_SOCKET_BUFFER_BYTES", 1_000_000, 64_000, 16_000_000);
+const IDLE_DISCONNECT_MS = readIntEnv("IDLE_DISCONNECT_MS", 30 * 60 * 1000, 60_000, 24 * 60 * 60 * 1000);
+const NO_CLIENT_SIM_DELAY_MS = readIntEnv("NO_CLIENT_SIM_DELAY_MS", 1000, 100, 60_000);
 const MSG_RATE_LIMIT = 240; // max messages per second per client before dropping
 // Base player movement speed (tiles per second).
 const PLAYER_SPEED = 5.2;
@@ -1576,6 +1578,8 @@ const server = http.createServer((req, res) => {
       players: [...clients.values()].filter((client) => client.player).length,
       connections: clients.size,
       maxClients: MAX_CONNECTED_CLIENTS,
+      idleDisconnectMs: IDLE_DISCONNECT_MS,
+      simulationPaused: clients.size === 0,
       tickRate: TICK_RATE,
       snapshotRate: SNAPSHOT_RATE,
       aiTickDivisor: AI_TICK_DIVISOR,
@@ -1639,6 +1643,8 @@ server.on("upgrade", (req, socket) => {
     lastDoorAt: 0,
     lastPortalAt: 0,
     lastHomeAt: 0,
+    connectedAt: Date.now(),
+    lastActivityAt: Date.now(),
     _msgCount: 0,
     _msgWindowEnd: 0,
     input: { up: false, down: false, left: false, right: false },
@@ -1668,6 +1674,13 @@ server.listen(PORT, HOST, LISTEN_BACKLOG, () => {
 /** Single-threaded clock: never overlap simulate(); avoids setInterval piling callbacks when ticks overrun. */
 let simulateTimer = null;
 function queueSimulate() {
+  if (clients.size === 0) {
+    simulateTimer = setTimeout(queueSimulate, NO_CLIENT_SIM_DELAY_MS);
+    if (typeof simulateTimer.unref === "function") {
+      simulateTimer.unref();
+    }
+    return;
+  }
   const elapsed = simulateCore();
   const delay = Math.max(0, 1000 / TICK_RATE - elapsed);
   simulateTimer = setTimeout(queueSimulate, delay);
@@ -3856,6 +3869,10 @@ function updateShipWarpForClient(client, dt, aboardShipClients) {
 }
 
 function simulate() {
+  disconnectIdleClients(Date.now());
+  if (clients.size === 0) {
+    return;
+  }
   recordSimulateWallInterval();
   tick += 1;
   const dt = 1 / TICK_RATE;
@@ -4502,6 +4519,31 @@ function receive(client, data) {
   }
 }
 
+function inputHasActivity(keys = {}) {
+  return Boolean(
+    keys.up ||
+    keys.down ||
+    keys.left ||
+    keys.right ||
+    keys.engage ||
+    keys.fire ||
+    keys.repair
+  );
+}
+
+function isActivityMessage(message) {
+  if (!message || typeof message.type !== "string") {
+    return false;
+  }
+  if (message.type === "ping" || message.type === "view" || message.type === "requestChunks") {
+    return false;
+  }
+  if (message.type === "input") {
+    return inputHasActivity(message.keys);
+  }
+  return true;
+}
+
 function handleMessage(client, raw) {
   // Per-client rate limiting — drop burst traffic that would overwhelm the sim
   const nowMs = Date.now();
@@ -4520,6 +4562,9 @@ function handleMessage(client, raw) {
   } catch {
     send(client, { type: "serverMessage", message: "invalid_json" });
     return;
+  }
+  if (isActivityMessage(message)) {
+    client.lastActivityAt = nowMs;
   }
 
   if (message.type === "ping") {
@@ -10918,6 +10963,20 @@ function send(client, message) {
   }
 
   client.socket.write(encodeFrame(Buffer.from(JSON.stringify(message)), 1));
+}
+
+function disconnectIdleClients(now = Date.now()) {
+  for (const client of clients.values()) {
+    if (!client?.alive) continue;
+    const lastActivityAt = Number(client.lastActivityAt) || Number(client.connectedAt) || now;
+    if (now - lastActivityAt < IDLE_DISCONNECT_MS) continue;
+    send(client, {
+      type: "serverMessage",
+      message: "idle_disconnect",
+      idleMinutes: Math.round(IDLE_DISCONNECT_MS / 60000)
+    });
+    disconnect(client, "idle");
+  }
 }
 
 function disconnect(client) {
