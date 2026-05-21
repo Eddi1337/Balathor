@@ -6136,6 +6136,7 @@ function handleShipMissile(client, shipOverride = null) {
 // and major asteroid belts are also included.
 
 const TELEPORT_NEAR_RANGE = 220; // tiles — used to decide "nearby" planets / stations.
+const RINGFORGE_WARP_ARRIVAL_RADIUS = 92;
 
 const WARP_PIRATE_OUTPOSTS = Object.freeze([
   { id: "outpost_breach",    name: "Breach Depot",      sublabel: "Pirate stronghold",   x: 2192, y: -428, color: "#ff6b6b" },
@@ -6151,6 +6152,21 @@ const WARP_ASTEROID_BELTS = Object.freeze([
   { id: "belt_rim",       name: "Rim Fragment",    sublabel: "Far sector debris",    x: 1920, y: -510, color: "#9ab0c0" },
   { id: "belt_mideast",   name: "Mid-Sector Field", sublabel: "Navigation hazard",  x: 2140, y: -175, color: "#a8c0c8" },
 ]);
+
+function ringforgeWarpArrivalPoint(fromX, fromY) {
+  let dx = (Number(fromX) || 0) - SCI_FI_STATION_CENTER.x;
+  let dy = (Number(fromY) || 0) - SCI_FI_STATION_CENTER.y;
+  let len = Math.hypot(dx, dy);
+  if (len < 0.01) {
+    dx = 0;
+    dy = -1;
+    len = 1;
+  }
+  return {
+    x: SCI_FI_STATION_CENTER.x + (dx / len) * RINGFORGE_WARP_ARRIVAL_RADIUS,
+    y: SCI_FI_STATION_CENTER.y + (dy / len) * RINGFORGE_WARP_ARRIVAL_RADIUS
+  };
+}
 
 function buildTeleportDestinations(player, fromFlight = false) {
   const destinations = [];
@@ -6253,6 +6269,8 @@ function startShipWarp(client, destination) {
   const arrival =
     destination?.kind === "planet"
       ? orbitalArrivalPointForPlanet(destination, center.x, center.y)
+      : destination?.kind === "station" && destination?.id === "station_ringforge"
+        ? ringforgeWarpArrivalPoint(center.x, center.y)
       : { x: targetX, y: targetY };
   ship.warp = {
     active: true,
