@@ -3586,6 +3586,14 @@ function wireUi() {
       hideNpcContextMenu();
       if (act === "crew_idle") {
         send({ type: "shipCrewCommand", crewId, stationId: "idle" });
+      } else if (act === "crew_chill") {
+        send({ type: "shipCrewCommand", crewId, idleKind: "chill" });
+      } else if (act === "crew_bed") {
+        send({ type: "shipCrewCommand", crewId, idleKind: "bed" });
+      } else if (act === "crew_role:gunner") {
+        send({ type: "shipCrewCommand", crewId, role: "gunner" });
+      } else if (act === "crew_role:engineer") {
+        send({ type: "shipCrewCommand", crewId, role: "engineer" });
       } else if (act.startsWith("crew_station:")) {
         send({ type: "shipCrewCommand", crewId, stationId: act.slice("crew_station:".length) });
       }
@@ -4935,7 +4943,7 @@ function refreshWorldHoverTooltip(event) {
   if (isSciFiWorld()) {
     const crewHover = findShipCrewAt(world.x, world.y);
     if (crewHover) {
-      state.hoverTooltipText = `${crewHover.crew.name} - assign post`;
+      state.hoverTooltipText = `${crewHover.crew.name || "Crew"} - assign post`;
       state.hoverTooltipSmall = true;
       return;
     }
@@ -5273,6 +5281,7 @@ function tryShipDeckClickInteract(event) {
   const world = screenEventToWorld(event);
   const crewHit = findShipCrewAt(world.x, world.y);
   if (crewHit) {
+    event.stopPropagation();
     showShipCrewMenu(crewHit.ship, crewHit.crew);
     return true;
   }
@@ -9293,8 +9302,8 @@ function findShipCrewAt(wx, wy) {
     for (const crew of ship.crew) {
       const cx = center.x + (Number(crew.localX) || 0);
       const cy = center.y + (Number(crew.localY) || 0);
-      if (Math.hypot(wx - cx, wy - cy) > 1.1) continue;
-      if (Math.hypot(sx - cx, sy - cy) > 3.2) continue;
+      if (Math.hypot(wx - cx, wy - cy) > 1.8) continue;
+      if (Math.hypot(sx - cx, sy - cy) > 4.2) continue;
       return { ship, crew, x: cx, y: cy };
     }
   }
@@ -9316,24 +9325,31 @@ function shipStationTakenByOther(ship, stationId, exceptCrewId) {
 function showShipCrewMenu(ship, crew) {
   const layout = getShipLayout(ship);
   state.npcContext = { kind: "ship_crew", crewId: crew.id, shipId: ship.id };
-  if (npcContextMenuName) npcContextMenuName.textContent = `${crew.name} — assign post`;
+  const labelRole = crew.role === "gunner" ? "Gunner" : crew.role === "engineer" ? "Engineering" : crew.idleKind === "bed" ? "Bed" : "Chilling";
+  if (npcContextMenuName) npcContextMenuName.textContent = `${crew.name || "Crew"} - ${labelRole}`;
   if (npcContextMenuButtons) {
     npcContextMenuButtons.replaceChildren();
-    for (const st of layout.stations) {
-      if (st.role === "pilot") continue;
-      if (shipStationTakenByOther(ship, st.id, crew.id)) continue;
+    const roles = [
+      { id: "gunner", label: "Gunner" },
+      { id: "engineer", label: "Engineering" }
+    ];
+    for (const role of roles) {
+      const stations = layout.stations.filter((st) => st.role === role.id);
+      if (!stations.length) continue;
+      const available = stations.some((st) => !shipStationTakenByOther(ship, st.id, crew.id));
+      if (!available && crew.role !== role.id) continue;
       const btn = document.createElement("button");
-      btn.dataset.npcAction = `crew_station:${st.id}`;
-      btn.textContent = (crew.stationId === st.id ? "✓ " : "") + st.name;
+      btn.dataset.npcAction = `crew_role:${role.id}`;
+      btn.textContent = (crew.role === role.id ? "* " : "") + role.label;
       npcContextMenuButtons.append(btn);
     }
-    if (crew.stationId) {
-      const idleBtn = document.createElement("button");
-      idleBtn.dataset.npcAction = "crew_idle";
-      idleBtn.className = "npc-ctx-shoo";
-      idleBtn.textContent = "Stand by";
-      npcContextMenuButtons.append(idleBtn);
-    }
+    const chillBtn = document.createElement("button");
+    chillBtn.dataset.npcAction = "crew_chill";
+    chillBtn.textContent = (!crew.stationId && crew.idleKind !== "bed" ? "* " : "") + "Chilling";
+    const bedBtn = document.createElement("button");
+    bedBtn.dataset.npcAction = "crew_bed";
+    bedBtn.textContent = (crew.idleKind === "bed" ? "* " : "") + "Bed";
+    npcContextMenuButtons.append(chillBtn, bedBtn);
   }
   const center = shipCenter(ship, null);
   positionNpcContextMenu(center.x + (Number(crew.localX) || 0), center.y + (Number(crew.localY) || 0));
@@ -9879,7 +9895,12 @@ function drawShipCrew(ship, shipSx, shipSy) {
       ship: { boarded: true, deckMode: true }
     };
     drawCharacter(entity, cx, cy, true, { insideShipDeck: true, restingBench: Boolean(crew.stationId) });
-    const label = crew.role ? `${crew.name} · ${crew.role}` : `${crew.name} · idle`;
+    const status = crew.role === "gunner"
+      ? "gunner"
+      : crew.role === "engineer"
+        ? "engineering"
+        : crew.idleKind === "bed" ? "bed" : "chilling";
+    const label = `${crew.name || "Crew"} - ${status}`;
     ctx.font = "9px ui-sans-serif, system-ui";
     ctx.textAlign = "center";
     ctx.lineWidth = 3;

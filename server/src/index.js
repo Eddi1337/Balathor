@@ -2206,13 +2206,18 @@ const SHIP_CREW_COLORS = ["#5cc8ff", "#7ce0c0", "#ffb27a", "#c9a6ff", "#ff8f9e",
 const SHIP_CREW_NPC_FIRE_COOLDOWN_MS = 620;
 const SHIP_CREW_NPC_TARGET_RANGE = 22;
 
-function makeShipCrewMember(ship, index) {
+function shipCrewNameFor(ship, index) {
   const seed = (index + (typeof ship?.id === "string" ? ship.id.length : 0)) % SHIP_CREW_NAMES.length;
+  return SHIP_CREW_NAMES[seed];
+}
+
+function makeShipCrewMember(ship, index) {
   return {
     id: `crew_${index}`,
-    name: SHIP_CREW_NAMES[seed],
+    name: shipCrewNameFor(ship, index),
     color: SHIP_CREW_COLORS[index % SHIP_CREW_COLORS.length],
     stationId: null,
+    idleKind: "chill",
     localX: 0,
     localY: 0,
     facing: Math.PI,
@@ -2235,6 +2240,8 @@ function assignDefaultCrewStations(ship, layout = getShipLayout(ship)) {
 
 function placeShipCrew(ship, layout = getShipLayout(ship)) {
   const idle = Array.isArray(layout.crewIdle) ? layout.crewIdle : [];
+  const amenitySpots = Array.isArray(layout.amenities) ? layout.amenities : [];
+  const restSpots = idle.concat(amenitySpots.filter((spot) => spot.kind === "bed"));
   let idleIdx = 0;
   for (const crew of ship.crew) {
     const station = crew.stationId ? layout.stations.find((s) => s.id === crew.stationId) : null;
@@ -2243,11 +2250,14 @@ function placeShipCrew(ship, layout = getShipLayout(ship)) {
       crew.localY = Number(station.y) || 0;
       crew.facing = station.role === "pilot" ? 0 : (Number(station.x) >= 0 ? 0 : Math.PI);
     } else {
-      const spot = idle[idleIdx % Math.max(1, idle.length)] || { x: (layout.entry?.x || 0) + 1.5, y: 0 };
+      const kind = crew.idleKind === "bed" ? "bed" : "chill";
+      const matching = restSpots.filter((spot) => kind === "bed" ? spot.kind === "bed" : spot.kind !== "bed");
+      const pool = matching.length ? matching : restSpots;
+      const spot = pool[idleIdx % Math.max(1, pool.length)] || { x: (layout.entry?.x || 0) + 1.5, y: 0 };
       idleIdx += 1;
       crew.localX = Number(spot.x) || 0;
       crew.localY = Number(spot.y) || 0;
-      crew.facing = 0;
+      crew.facing = kind === "bed" ? -Math.PI / 2 : 0;
     }
   }
 }
@@ -2260,6 +2270,14 @@ function ensureShipCrew(ship) {
   if (ship.crew.length > target) ship.crew.length = target;
   while (ship.crew.length < target) {
     ship.crew.push(makeShipCrewMember(ship, ship.crew.length));
+  }
+  for (let i = 0; i < ship.crew.length; i += 1) {
+    const crew = ship.crew[i];
+    if (!crew || typeof crew !== "object") continue;
+    if (typeof crew.id !== "string" || !crew.id) crew.id = `crew_${i}`;
+    if (typeof crew.name !== "string" || !crew.name.trim() || crew.name === "Crew") crew.name = shipCrewNameFor(ship, i);
+    if (typeof crew.color !== "string" || !crew.color) crew.color = SHIP_CREW_COLORS[i % SHIP_CREW_COLORS.length];
+    if (crew.idleKind !== "bed") crew.idleKind = "chill";
   }
   // Drop assignments that no longer map to a valid non-pilot station.
   const validStationIds = new Set(layout.stations.filter((s) => s.role !== "pilot").map((s) => s.id));
@@ -2320,6 +2338,7 @@ function serializeShipCrew(ship) {
       color: crew.color,
       stationId: crew.stationId || null,
       role: station ? station.role : null,
+      idleKind: station ? null : (crew.idleKind === "bed" ? "bed" : "chill"),
       localX: Number(crew.localX) || 0,
       localY: Number(crew.localY) || 0,
       facing: Number(crew.facing) || 0
@@ -2522,18 +2541,48 @@ function handleShipCrewCommand(client, message = {}) {
   if (Math.hypot(player.x - cx, player.y - cy) > 3.2) return;
 
   const requested = typeof message.stationId === "string" ? message.stationId : null;
-  if (!requested || requested === "idle") {
+  const requestedRole = typeof message.role === "string" ? message.role : null;
+  const idleKind = typeof message.idleKind === "string" ? message.idleKind : null;
+  if (idleKind === "bed" || requested === "bed") {
     crew.stationId = null;
+    crew.idleKind = "bed";
+  } else if (idleKind === "chill" || requested === "chill" || requested === "chilling" || requested === "idle") {
+    crew.stationId = null;
+    crew.idleKind = "chill";
+  } else if (requestedRole === "gunner" || requestedRole === "engineer") {
+    const station = layout.stations.find((s) =>
+      s.role === requestedRole &&
+      !shipStationPlayerOccupant(ship, s.id) &&
+      (!shipStationNpcOccupant(ship, s.id) || shipStationNpcOccupant(ship, s.id).id === crew.id)
+    );
+    if (!station) {
+      send(client, { type: "serverMessage", message: "ship_crew_no_station", role: requestedRole });
+      return;
+    }
+    const other = shipStationNpcOccupant(ship, station.id);
+    if (other && other.id !== crew.id) {
+      other.stationId = null;
+      other.idleKind = "chill";
+    }
+    crew.stationId = station.id;
+    crew.idleKind = "chill";
   } else {
     const station = layout.stations.find((s) => s.id === requested);
     if (!station || station.role === "pilot") return;
     if (shipStationPlayerOccupant(ship, station.id)) return;
     const other = shipStationNpcOccupant(ship, station.id);
-    if (other && other.id !== crew.id) other.stationId = null;
+    if (other && other.id !== crew.id) {
+      other.stationId = null;
+      other.idleKind = "chill";
+    }
     crew.stationId = station.id;
+    crew.idleKind = "chill";
   }
   placeShipCrew(ship, layout);
-  send(client, { type: "serverMessage", message: "ship_crew_assigned", crewName: crew.name, stationName: crew.stationId ? (layout.stations.find((s) => s.id === crew.stationId)?.name || "station") : "stand by" });
+  const stationName = crew.stationId
+    ? (layout.stations.find((s) => s.id === crew.stationId)?.name || "station")
+    : crew.idleKind === "bed" ? "bed" : "chilling";
+  send(client, { type: "serverMessage", message: "ship_crew_assigned", crewName: crew.name, stationName });
   broadcastSnapshot();
 }
 
@@ -2831,9 +2880,10 @@ function sanitizeShip(ship, fallbackId = null) {
     crew: Array.isArray(ship.crew)
       ? ship.crew.slice(0, 8).map((c, i) => ({
           id: typeof c?.id === "string" ? c.id.slice(0, 24) : `crew_${i}`,
-          name: typeof c?.name === "string" ? c.name.slice(0, 24) : "Crew",
+          name: typeof c?.name === "string" && c.name.trim() && c.name !== "Crew" ? c.name.slice(0, 24) : shipCrewNameFor(ship, i),
           color: typeof c?.color === "string" ? c.color.slice(0, 22) : "#5cc8ff",
-          stationId: typeof c?.stationId === "string" ? c.stationId.slice(0, 48) : null
+          stationId: typeof c?.stationId === "string" ? c.stationId.slice(0, 48) : null,
+          idleKind: c?.idleKind === "bed" ? "bed" : "chill"
         }))
       : [],
     warp: sanitizeShipWarp(ship.warp)
