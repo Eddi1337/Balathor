@@ -2489,16 +2489,16 @@ function showNpcContextMenu(npc) {
   const sy = Number.isFinite(self.renderY) ? self.renderY : self.y;
   if (Math.hypot(nx - sx, ny - sy) > NPC_CTX_PLAYER_RADIUS) return;
 
-  const kind = npc.questGiver ? "quest" : npc.bondTag ? "romance" : npc.wandersToPlayer ? "hawker" : "comment";
+  const kind = npc.onboardingGuide ? "intro" : npc.questGiver ? "quest" : npc.bondTag ? "romance" : npc.wandersToPlayer ? "hawker" : "comment";
   state.npcContext = { npcId: npc.id, kind };
 
   if (npcContextMenuName) npcContextMenuName.textContent = npcWorldStatusLabel(npc);
   if (npcContextMenuButtons) {
     npcContextMenuButtons.replaceChildren();
-    if (kind === "quest") {
+    if (kind === "quest" || kind === "intro") {
       const questBtn = document.createElement("button");
       questBtn.dataset.npcAction = "quest";
-      questBtn.textContent = "Quest";
+      questBtn.textContent = kind === "intro" ? "Tour" : "Quest";
       const shooBtn = document.createElement("button");
       shooBtn.dataset.npcAction = "shoo";
       shooBtn.className = "npc-ctx-shoo";

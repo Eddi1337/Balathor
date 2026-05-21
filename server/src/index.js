@@ -266,6 +266,24 @@ const PLANET_AURELIA = Object.freeze(getPlanetById("planet_aurelia") || { id: "p
 const PLANET_ICEFALL = Object.freeze(getPlanetById("planet_icefall") || { id: "planet_icefall", name: "Icefall", surfaceX: 7300, surfaceY: -2600 });
 const PLANET_RUST = Object.freeze(getPlanetById("planet_rust") || { id: "planet_rust", name: "Rust", surfaceX: 9600, surfaceY: -2600 });
 const QUEST_DEFINITIONS = Object.freeze({
+  q_town_intro_tour: {
+    id: "q_town_intro_tour",
+    giverId: "npc_town_guide_rin",
+    title: "A Quick Look Around",
+    summary: "Guide Rin can show new arrivals the useful places around the starting town: quests, crafting games, shops, the gate, and the stargate.",
+    rewardGold: 18,
+    rewardXp: 60,
+    steps: [
+      { type: "location", text: "Start at the home tree and quest givers", target: { x: -3, y: 4 }, radius: 9 },
+      { type: "location", text: "Visit Pip's Bakery minigame", target: { x: -23, y: 82 }, radius: 10 },
+      { type: "location", text: "Visit Ren's Forge House", target: { x: 54, y: 38 }, radius: 10 },
+      { type: "location", text: "Visit a fletcher workshop for arrow making", target: { x: 28, y: 75 }, radius: 10 },
+      { type: "location", text: "Visit the market stalls and shops", target: { x: 24, y: 18 }, radius: 12 },
+      { type: "location", text: "Visit the north gate guard post", target: { x: 11, y: -18 }, radius: 11 },
+      { type: "location", text: "Visit the stargate path", target: { x: 20, y: 0 }, radius: 12 },
+      { type: "talk", text: "Return to Guide Rin", npcId: "npc_town_guide_rin", target: { x: 2, y: 6 } }
+    ]
+  },
   q_first_hunt: {
     id: "q_first_hunt",
     giverId: "npc_quest_wynn_hearth",

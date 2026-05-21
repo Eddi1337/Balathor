@@ -55,6 +55,7 @@ function hubScheduleEligible(npc) {
     npc._followHubPaths &&
     !npc.isTrader &&
     !npc.isGuard &&
+    !npc.onboardingGuide &&
     !npc.isTownArcher &&
     !npc.isFletcher &&
     !npc.isFletcherWorker &&
@@ -1568,6 +1569,25 @@ function buildHydratedHubNpcExtras() {
 
 const BASE_NPC_DEFINITIONS = [
   {
+    id: "npc_town_guide_rin",
+    name: "Guide Rin",
+    classId: "ranger",
+    primary: "#2f6f77",
+    accent: "#ffe08a",
+    homeX: 2,
+    homeY: 6,
+    patrolRadius: 3,
+    questGiver: true,
+    questIds: ["q_town_intro_tour"],
+    onboardingGuide: true,
+    wandersToNewPlayer: true,
+    dialogue: [
+      "New here? I can give you a quick tour of the useful places in town.",
+      "Press E on me, or tap me, if you want the quick introduction.",
+      "I can show you quests, crafting games, shops, the gate, and the stargate path.",
+    ],
+  },
+  {
     id: "npc_quest_wynn_hearth",
     name: "Sage Wynn",
     classId: "mage",
@@ -2608,6 +2628,8 @@ function refreshHubPathFollowingFlags() {
       idStr.startsWith("hub_arrow_courier_")
     ) {
       follow = !soldCompanionNpcIds.has(idStr);
+    } else if (n.onboardingGuide) {
+      follow = Math.hypot(n.homeX, n.homeY) <= hubBubble;
     } else if (hubLinkedNpcIds.has(idStr)) {
       if (!(n.isTrader && n.patrolRadius <= 1.251)) {
         follow = Math.hypot(n.homeX, n.homeY) <= hubBubble && Number(n.patrolRadius ?? 0) >= 3;
@@ -3001,6 +3023,19 @@ function playerAttractionScore(player) {
 const APPROACH_ORBIT_RADIUS = 2.0;
 const APPROACH_GIVE_UP_MS = 20000;
 const APPROACH_COOLDOWN_MS = 45000;
+const INTRO_TOUR_QUEST_ID = "q_town_intro_tour";
+const INTRO_GUIDE_RANGE = 38;
+const INTRO_GUIDE_SPAWN_RADIUS = 46;
+const INTRO_TOUR_STOPS = Object.freeze([
+  { x: -3, y: 4, radius: 9, line: "This is the home tree. Wynn and Elm usually have starter work nearby." },
+  { x: -23, y: 82, radius: 10, line: "Pip's bakery runs a quick timing job if you want a crafting break." },
+  { x: 54, y: 38, radius: 10, line: "Ren's forge is where smithing work starts." },
+  { x: 28, y: 75, radius: 10, line: "The fletchers make arrows for the wall archers. You can help here too." },
+  { x: 24, y: 18, radius: 12, line: "The market is good for shops, errands, and town gossip." },
+  { x: 11, y: -18, radius: 11, line: "The north gate is guarded, but it is where the wilds start getting dangerous." },
+  { x: 20, y: 0, radius: 12, line: "The stargate route leads toward the sci-fi side of the game." },
+  { x: 2, y: 6, radius: 7, line: "That is the loop. Come back to me and I will mark the tour complete." }
+]);
 
 /**
  * Picks a position on the orbit circle around (tx, ty) for this NPC that
@@ -3036,6 +3071,107 @@ function approachGiveUp(npc, now) {
   npc._targetX = npc.homeX;
   npc._targetY = npc.homeY;
   invalidateNpcHubRoadPath(npc);
+}
+
+function isFantasyStarterPlayer(player) {
+  if (!player || player.hp <= 0) return false;
+  if (WORLD.worldForPosition(player.x, player.y) !== "fantasy") return false;
+  return Math.hypot((Number(player.x) || 0), (Number(player.y) || 0)) <= INTRO_GUIDE_SPAWN_RADIUS;
+}
+
+function introQuestState(player) {
+  return player?.quests?.[INTRO_TOUR_QUEST_ID] || null;
+}
+
+function needsIntroOffer(player) {
+  const quest = introQuestState(player);
+  return isFantasyStarterPlayer(player) && !quest;
+}
+
+function activeIntroTourStep(player) {
+  const quest = introQuestState(player);
+  if (!quest || quest.completed) return null;
+  const index = Math.max(0, Math.min(INTRO_TOUR_STOPS.length - 1, Number(quest.step) || 0));
+  return INTRO_TOUR_STOPS[index] || null;
+}
+
+function guideMoveToward(npc, target, stopDistance = 2.3) {
+  if (!target) return false;
+  const dx = target.x - npc.x;
+  const dy = target.y - npc.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist <= stopDistance) return false;
+  const angle = Math.atan2(dy, dx);
+  npc._targetX = target.x - Math.cos(angle) * stopDistance;
+  npc._targetY = target.y - Math.sin(angle) * stopDistance;
+  invalidateNpcHubRoadPath(npc);
+  return true;
+}
+
+function applyIntroGuideTour(npc, companionCtx, onChat, now) {
+  if (!npc.onboardingGuide || !companionCtx?.allPlayers) return false;
+  let best = null;
+  let bestStep = null;
+  let bestDsq = 80 * 80;
+  for (const { player: p } of companionCtx.allPlayers) {
+    const step = activeIntroTourStep(p);
+    if (!step || WORLD.worldForPosition(p.x, p.y) !== "fantasy") continue;
+    const dsq = (npc.x - p.x) ** 2 + (npc.y - p.y) ** 2;
+    if (dsq < bestDsq) {
+      bestDsq = dsq;
+      best = p;
+      bestStep = step;
+    }
+  }
+  if (!best || !bestStep) return false;
+
+  const playerNearStop = Math.hypot(best.x - bestStep.x, best.y - bestStep.y) <= Math.max(6, bestStep.radius || 8);
+  const target = playerNearStop ? { x: best.x, y: best.y } : bestStep;
+  const moved = guideMoveToward(npc, target, playerNearStop ? 2.0 : 1.8);
+  if (now - (npc._tourLineAt || 0) > 11000) {
+    npc._tourLineAt = now;
+    onChat({ kind: "npc", fromId: npc.id, name: npc.name, text: bestStep.line, x: npc.x, y: npc.y });
+  }
+  return moved || Math.hypot(npc.x - best.x, npc.y - best.y) < 8;
+}
+
+function applyIntroGuideApproach(npc, companionCtx, onChat, now) {
+  if (!npc.wandersToNewPlayer || !companionCtx?.allPlayers) return false;
+  if ((npc._shooedUntil || 0) > now) {
+    npc._targetX = npc.homeX;
+    npc._targetY = npc.homeY;
+    invalidateNpcHubRoadPath(npc);
+    return false;
+  }
+
+  let best = null;
+  let bestDsq = INTRO_GUIDE_RANGE * INTRO_GUIDE_RANGE;
+  for (const { player: p } of companionCtx.allPlayers) {
+    if (!needsIntroOffer(p)) continue;
+    const dsq = (npc.x - p.x) ** 2 + (npc.y - p.y) ** 2;
+    if (dsq < bestDsq) {
+      bestDsq = dsq;
+      best = p;
+    }
+  }
+  if (!best) return false;
+
+  const dist = Math.sqrt(bestDsq);
+  if (dist > 2.4) {
+    const angle = Math.atan2(best.y - npc.y, best.x - npc.x);
+    npc._targetX = best.x - Math.cos(angle) * 2.0;
+    npc._targetY = best.y - Math.sin(angle) * 2.0;
+    invalidateNpcHubRoadPath(npc);
+  }
+
+  const lineKey = `${best.id || best.name || "player"}`;
+  npc._introLineByPlayer = npc._introLineByPlayer || {};
+  if (dist < 3.0 && now - (npc._introLineByPlayer[lineKey] || 0) > 16000) {
+    npc._introLineByPlayer[lineKey] = now;
+    const line = npc.dialogue[Math.floor(Math.random() * npc.dialogue.length)];
+    onChat({ kind: "npc", fromId: npc.id, name: npc.name, text: line, x: npc.x, y: npc.y });
+  }
+  return dist > 1.7;
 }
 
 /**
@@ -3336,7 +3472,7 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
     if (
       !npc ||
       activeNpcIds.has(npc.id) ||
-      (!npc.wandersToPlayer && !npc.wandersToFlirt && !npc.courtPlayer && !npc.isArrowCourier && !npc.sciFiShipTraffic)
+      (!npc.wandersToPlayer && !npc.wandersToNewPlayer && !npc.wandersToFlirt && !npc.courtPlayer && !npc.isArrowCourier && !npc.sciFiShipTraffic)
     ) {
       continue;
     }
@@ -3403,7 +3539,11 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
 
     const inMeetTalk = tickNpcMeeting(npc, now, dt, onChat);
     let courtSteers = false;
-    if (npc.wandersToPlayer) {
+    if (npc.onboardingGuide) {
+      courtSteers =
+        applyIntroGuideTour(npc, companionCtx, onChat, now) ||
+        applyIntroGuideApproach(npc, companionCtx, onChat, now);
+    } else if (npc.wandersToPlayer) {
       courtSteers = applyHawkerApproach(npc, companionCtx, onChat, now);
     } else if (npc.wandersToFlirt) {
       const followerRow = companionCtx?.allPlayers?.find(
@@ -3711,10 +3851,12 @@ function getNpcSnapshot() {
       ...(npc.isArrowCourier && npc.assignedFletcherId ? { assignedFletcherId: npc.assignedFletcherId } : {}),
       ...(npc.questGiver ? { questGiver: true, questIds: Array.isArray(npc.questIds) ? npc.questIds : [] } : {}),
       ...(npc.professionTrainer ? { professionTrainer: npc.professionTrainer } : {}),
+      ...(npc.onboardingGuide ? { onboardingGuide: true } : {}),
       ...(npc.bondTag ? { bondTag: npc.bondTag } : {}),
       ...(npc.longHair ? { longHair: true } : {}),
       ...(npc.romanceSilhouette ? { romanceSilhouette: npc.romanceSilhouette } : {}),
       ...(npc.wandersToPlayer ? { wandersToPlayer: true } : {}),
+      ...(npc.wandersToNewPlayer ? { wandersToNewPlayer: true } : {}),
       ...(npc.wandersToFlirt ? { wandersToFlirt: true } : {})
     }));
 }
