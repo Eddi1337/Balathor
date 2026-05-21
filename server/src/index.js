@@ -2250,14 +2250,18 @@ function placeShipCrew(ship, layout = getShipLayout(ship)) {
       crew.localY = Number(station.y) || 0;
       crew.facing = station.role === "pilot" ? 0 : (Number(station.x) >= 0 ? 0 : Math.PI);
     } else {
-      const kind = crew.idleKind === "bed" ? "bed" : "chill";
-      const matching = restSpots.filter((spot) => kind === "bed" ? spot.kind === "bed" : spot.kind !== "bed");
+      const kind = crew.idleKind === "bed" ? "bed" : crew.idleKind === "galley" ? "galley" : "chill";
+      const matching = restSpots.filter((spot) =>
+        kind === "bed" ? spot.kind === "bed" :
+          kind === "galley" ? spot.kind === "kitchen" || spot.kind === "table" :
+            spot.kind !== "bed" && spot.kind !== "kitchen" && spot.kind !== "table"
+      );
       const pool = matching.length ? matching : restSpots;
       const spot = pool[idleIdx % Math.max(1, pool.length)] || { x: (layout.entry?.x || 0) + 1.5, y: 0 };
       idleIdx += 1;
       crew.localX = Number(spot.x) || 0;
       crew.localY = Number(spot.y) || 0;
-      crew.facing = kind === "bed" ? -Math.PI / 2 : 0;
+      crew.facing = kind === "bed" ? -Math.PI / 2 : kind === "galley" ? Math.PI / 2 : 0;
     }
   }
 }
@@ -2277,7 +2281,7 @@ function ensureShipCrew(ship) {
     if (typeof crew.id !== "string" || !crew.id) crew.id = `crew_${i}`;
     if (typeof crew.name !== "string" || !crew.name.trim() || crew.name === "Crew") crew.name = shipCrewNameFor(ship, i);
     if (typeof crew.color !== "string" || !crew.color) crew.color = SHIP_CREW_COLORS[i % SHIP_CREW_COLORS.length];
-    if (crew.idleKind !== "bed") crew.idleKind = "chill";
+    if (crew.idleKind !== "bed" && crew.idleKind !== "galley") crew.idleKind = "chill";
   }
   // Drop assignments that no longer map to a valid non-pilot station.
   const validStationIds = new Set(layout.stations.filter((s) => s.role !== "pilot").map((s) => s.id));
@@ -2338,7 +2342,7 @@ function serializeShipCrew(ship) {
       color: crew.color,
       stationId: crew.stationId || null,
       role: station ? station.role : null,
-      idleKind: station ? null : (crew.idleKind === "bed" ? "bed" : "chill"),
+      idleKind: station ? null : (crew.idleKind === "bed" ? "bed" : crew.idleKind === "galley" ? "galley" : "chill"),
       localX: Number(crew.localX) || 0,
       localY: Number(crew.localY) || 0,
       facing: Number(crew.facing) || 0
@@ -2546,6 +2550,9 @@ function handleShipCrewCommand(client, message = {}) {
   if (idleKind === "bed" || requested === "bed") {
     crew.stationId = null;
     crew.idleKind = "bed";
+  } else if (idleKind === "galley" || requested === "galley" || requested === "kitchen") {
+    crew.stationId = null;
+    crew.idleKind = "galley";
   } else if (idleKind === "chill" || requested === "chill" || requested === "chilling" || requested === "idle") {
     crew.stationId = null;
     crew.idleKind = "chill";
@@ -2581,7 +2588,7 @@ function handleShipCrewCommand(client, message = {}) {
   placeShipCrew(ship, layout);
   const stationName = crew.stationId
     ? (layout.stations.find((s) => s.id === crew.stationId)?.name || "station")
-    : crew.idleKind === "bed" ? "bed" : "chilling";
+    : crew.idleKind === "bed" ? "bed" : crew.idleKind === "galley" ? "galley" : "chilling";
   send(client, { type: "serverMessage", message: "ship_crew_assigned", crewName: crew.name, stationName });
   broadcastSnapshot();
 }
@@ -2883,7 +2890,7 @@ function sanitizeShip(ship, fallbackId = null) {
           name: typeof c?.name === "string" && c.name.trim() && c.name !== "Crew" ? c.name.slice(0, 24) : shipCrewNameFor(ship, i),
           color: typeof c?.color === "string" ? c.color.slice(0, 22) : "#5cc8ff",
           stationId: typeof c?.stationId === "string" ? c.stationId.slice(0, 48) : null,
-          idleKind: c?.idleKind === "bed" ? "bed" : "chill"
+          idleKind: c?.idleKind === "bed" ? "bed" : c?.idleKind === "galley" ? "galley" : "chill"
         }))
       : [],
     warp: sanitizeShipWarp(ship.warp)
@@ -4061,6 +4068,7 @@ function simulate() {
         let dy = Number(input.down) - Number(input.up);
         const length = Math.hypot(dx, dy);
         if (length > 0) {
+          client.player.shipAmenityPose = null;
           dx /= length;
           dy /= length;
           const speed = (PLAYER_SPEED + client.player.stats.speed * STAT_POINT_SPEED + getEquipmentStats(client.player).speed) * 0.82;
@@ -4097,6 +4105,7 @@ function simulate() {
       }
 
       if (length > 0 || (inZeroG && Math.hypot(Number(client.player.zeroGDriftX) || 0, Number(client.player.zeroGDriftY) || 0) > 0)) {
+        client.player.shipAmenityPose = null;
         client.player._stillAccumulator = 0;
         if (length > 0) {
           dx /= length;
@@ -5828,6 +5837,58 @@ function targetInsideActiveShipDeck(player, message = {}) {
   );
 }
 
+function nearestShipAmenityOn(ship, player, message = {}) {
+  if (!ship?.boarded || !ship.deckMode) return null;
+  const layout = getShipLayout(ship);
+  const tx = Number(message.x);
+  const ty = Number(message.y);
+  const useTarget = Number.isFinite(tx) && Number.isFinite(ty);
+  const center = shipCenter(ship);
+  let best = null;
+  let bestDist = Infinity;
+  for (const amenity of layout.amenities || []) {
+    if (amenity.kind !== "bed" && amenity.kind !== "kitchen") continue;
+    const ax = center.x + (Number(amenity.x) || 0);
+    const ay = center.y + (Number(amenity.y) || 0);
+    const clickDist = useTarget ? Math.hypot(tx - ax, ty - ay) : Number.POSITIVE_INFINITY;
+    const playerDist = Math.hypot(player.x - ax, player.y - ay);
+    const dist = useTarget ? clickDist : playerDist;
+    if (((useTarget && clickDist <= 1.35) || playerDist <= 1.9) && dist < bestDist) {
+      bestDist = dist;
+      best = { ...amenity, worldX: ax, worldY: ay };
+    }
+  }
+  return best;
+}
+
+function useShipAmenity(client, ship, amenity) {
+  const player = client.player;
+  if (!player || !ship || !amenity) return false;
+  player.shipStationRole = null;
+  player.shipStationId = null;
+  player.shipAmenityPose = {
+    kind: amenity.kind === "bed" ? "sleep" : "eat",
+    until: Date.now() + (amenity.kind === "bed" ? 180000 : 14000)
+  };
+  if (ship.deckMode) {
+    setPlayerShipLocal(player, Number(amenity.x) || 0, Number(amenity.y) || 0);
+  } else {
+    player.x = amenity.worldX;
+    player.y = amenity.worldY;
+  }
+  player.facing = amenity.kind === "bed" ? -Math.PI / 2 : Math.PI / 2;
+  player.moving = false;
+  client.input = normalizeInput();
+  send(client, {
+    type: "serverMessage",
+    message: "ship_fixture_used",
+    fixtureKind: amenity.kind,
+    pose: player.shipAmenityPose.kind
+  });
+  broadcastSnapshot();
+  return true;
+}
+
 function handleShipInteract(client, message = {}) {
   const player = client.player;
   if (!player) return false;
@@ -5870,6 +5931,10 @@ function handleShipInteract(client, message = {}) {
       send(client, { type: "serverMessage", message: "ship_station_entered", stationName: station.name, stationRole: station.role });
       broadcastSnapshot();
       return true;
+    }
+    const amenity = nearestShipAmenityOn(hostShip, player, message);
+    if (amenity) {
+      return useShipAmenity(client, hostShip, amenity);
     }
     // Teleporter fixture on multi-crew decks.
     const layout = getShipLayout(hostShip);
@@ -6028,14 +6093,16 @@ function awardMobDefeatToClient(client, mob, event, now = Date.now()) {
 
 function handleShipFire(client, message = {}) {
   const ctx = resolveCrewShipContext(client);
-  if (!ctx || ctx.role !== "gunner") return;
+  const pilotForwardMissile = ctx && isPilotShipRole(ctx.role) && message.weaponMode === "missile";
+  if (!ctx || (ctx.role !== "gunner" && !pilotForwardMissile)) return;
   const ship = ctx.ship;
   if (message.weaponMode === "missile") {
     if (Date.now() - (client.lastShipMissileAt || 0) > SHIP_MISSILE_COOLDOWN_MS) {
-      handleShipMissile(client, ship);
+      handleShipMissile(client, ship, { forward: pilotForwardMissile || Boolean(message.forward) });
     }
     return;
   }
+  if (ctx.role !== "gunner") return;
   const now = Date.now();
   if (now - (client.lastShipFireAt || 0) < SHIP_GUNNER_COOLDOWN_MS) {
     return;
@@ -6087,7 +6154,7 @@ function resolveCrewShipContext(client) {
   return null;
 }
 
-function handleShipMissile(client, shipOverride = null) {
+function handleShipMissile(client, shipOverride = null, opts = {}) {
   const ship = shipOverride || client.player?.ship;
   if (!ship?.boarded) return;
   client.lastShipMissileAt = Date.now();
@@ -6096,43 +6163,98 @@ function handleShipMissile(client, shipOverride = null) {
   const tier = Math.max(1, Number(ship.laserTier) || 1);
   const missileDamage = Math.round((12 + tier * 6) * 3);
   const missileRange = (9 + tier * 2) * 2;
+  const forwardShot = Boolean(opts.forward);
+  let originX = center.x;
+  let originY = center.y;
+  let facing = Number.isFinite(ship.facing) ? ship.facing : Number(client.player?.facing) || 0;
 
   // Find nearest mob — prefer ship pirates but fall back to any mob.
   let target = null;
   let bestDist = Infinity;
-  forEachMobNear(center.x, center.y, missileRange + 4, (mob) => {
-    if (mob.dead) return;
-    const dx = mob.x - center.x;
-    const dy = mob.y - center.y;
-    const d = Math.hypot(dx, dy);
-    if (d > missileRange) return;
-    if (target === null || (mob.isShipPirate && !target.isShipPirate) || d < bestDist) {
-      target = mob;
-      bestDist = d;
-    }
-  });
 
   let asteroidTarget = null;
   let asteroidTargetState = null;
   let asteroidDist = Infinity;
-  forEachAsteroidRockNear(center.x, center.y, missileRange + 4, (rock, state) => {
-    const d = Math.hypot(rock.x - center.x, rock.y - center.y);
-    if (d > missileRange) return;
-    if (d < asteroidDist) {
-      asteroidTarget = rock;
-      asteroidTargetState = state;
-      asteroidDist = d;
-    }
-  });
 
-  if (!target && !asteroidTarget) return;
+  if (forwardShot) {
+    const layout = getShipLayout(ship);
+    const noseOffset = Math.max(3.5, (Number(layout.deckW) || 8) * 0.58);
+    const cos = Math.cos(facing);
+    const sin = Math.sin(facing);
+    originX = center.x + cos * noseOffset;
+    originY = center.y + sin * noseOffset;
+    forEachMobNear(originX, originY, missileRange + 4, (mob) => {
+      if (mob.dead) return;
+      const mx = mob.x - originX;
+      const my = mob.y - originY;
+      const t = mx * cos + my * sin;
+      if (t < 0 || t > missileRange) return;
+      const perpX = mx - cos * t;
+      const perpY = my - sin * t;
+      if (Math.hypot(perpX, perpY) > 1.8) return;
+      if (!target || t < bestDist) {
+        target = mob;
+        bestDist = t;
+      }
+    });
+    const asteroidHit = findAsteroidHitAlongRay(originX, originY, cos, sin, missileRange);
+    if (asteroidHit) {
+      asteroidTarget = asteroidHit.rock;
+      asteroidTargetState = asteroidHit.state;
+      asteroidDist = asteroidHit.distance;
+    }
+  } else {
+    forEachMobNear(center.x, center.y, missileRange + 4, (mob) => {
+      if (mob.dead) return;
+      const dx = mob.x - center.x;
+      const dy = mob.y - center.y;
+      const d = Math.hypot(dx, dy);
+      if (d > missileRange) return;
+      if (target === null || (mob.isShipPirate && !target.isShipPirate) || d < bestDist) {
+        target = mob;
+        bestDist = d;
+      }
+    });
+
+    forEachAsteroidRockNear(center.x, center.y, missileRange + 4, (rock, state) => {
+      const d = Math.hypot(rock.x - center.x, rock.y - center.y);
+      if (d > missileRange) return;
+      if (d < asteroidDist) {
+        asteroidTarget = rock;
+        asteroidTargetState = state;
+        asteroidDist = d;
+      }
+    });
+  }
+
+  if (!target && !asteroidTarget) {
+    if (forwardShot) {
+      broadcastCombat({
+        type: "combat",
+        kind: "projectile",
+        weapon: "ship_missile",
+        projectileKind: "ship_missile",
+        weaponColor: "#ff7b3a",
+        attackerId: client.player.id,
+        x: Number(originX.toFixed(3)),
+        y: Number(originY.toFixed(3)),
+        facing: Number(facing.toFixed(3)),
+        range: Number(missileRange.toFixed(3)),
+        hit: false,
+        endX: Number((originX + Math.cos(facing) * missileRange).toFixed(3)),
+        endY: Number((originY + Math.sin(facing) * missileRange).toFixed(3))
+      });
+      client.player.moving = true;
+    }
+    return;
+  }
 
   const hitAsteroid = !target || (asteroidTarget && asteroidDist < bestDist);
   const targetX = hitAsteroid ? asteroidTarget.x : target.x;
   const targetY = hitAsteroid ? asteroidTarget.y : target.y;
   const hitDistance = hitAsteroid ? asteroidDist : bestDist;
 
-  const facing = Math.atan2(targetY - center.y, targetX - center.x);
+  if (!forwardShot) facing = Math.atan2(targetY - center.y, targetX - center.x);
   const event = {
     type: "combat",
     kind: "projectile",
@@ -6140,8 +6262,8 @@ function handleShipMissile(client, shipOverride = null) {
     projectileKind: "ship_missile",
     weaponColor: "#ff7b3a",
     attackerId: client.player.id,
-    x: Number(center.x.toFixed(3)),
-    y: Number(center.y.toFixed(3)),
+    x: Number(originX.toFixed(3)),
+    y: Number(originY.toFixed(3)),
     facing: Number(facing.toFixed(3)),
     range: Number(hitDistance.toFixed(3)),
     hit: true,
@@ -6161,7 +6283,7 @@ function handleShipMissile(client, shipOverride = null) {
       event.defeated = true;
     }
   } else {
-    const result = applyShipMobDamage(target, missileDamage, Date.now(), center.x, center.y);
+    const result = applyShipMobDamage(target, missileDamage, Date.now(), originX, originY);
     event.damage = result.damage;
     event.shieldDamage = result.shieldDamage;
     event.shieldHit = result.shieldHit;
@@ -6338,7 +6460,9 @@ function startShipWarp(client, destination) {
   };
   ship.docking = null;
   ship.speed = SHIP_WARP_APPROACH_SPEED;
-  ship.facing = Math.atan2(targetY - center.y, targetX - center.x);
+  const travelFacing = Math.atan2(targetY - center.y, targetX - center.x);
+  ship.facing = travelFacing;
+  player.facing = travelFacing;
   saveClientCharacter(client);
   broadcastSnapshot();
   return true;
@@ -8502,6 +8626,12 @@ function broadcastSnapshot() {
       facing: Number(p.facing.toFixed(3)),
       moving: p.moving,
       swimming: Boolean(p.swimming),
+      shipAmenityPose: (p.shipAmenityPose && p.shipAmenityPose.until > Date.now())
+        ? {
+            kind: p.shipAmenityPose.kind === "sleep" ? "sleep" : "eat",
+            until: p.shipAmenityPose.until
+          }
+        : null,
       isMod: p.isMod || false,
       emote: (p.emote && p.emote.until > Date.now()) ? p.emote.kind : null,
       aboardShipId: typeof p.aboardShipId === "string" ? p.aboardShipId : null,

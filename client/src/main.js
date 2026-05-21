@@ -3590,6 +3590,8 @@ function wireUi() {
         send({ type: "shipCrewCommand", crewId, idleKind: "chill" });
       } else if (act === "crew_bed") {
         send({ type: "shipCrewCommand", crewId, idleKind: "bed" });
+      } else if (act === "crew_galley") {
+        send({ type: "shipCrewCommand", crewId, idleKind: "galley" });
       } else if (act === "crew_role:gunner") {
         send({ type: "shipCrewCommand", crewId, role: "gunner" });
       } else if (act === "crew_role:engineer") {
@@ -4941,17 +4943,20 @@ function refreshWorldHoverTooltip(event) {
   const world = screenEventToWorld(event);
   const self = state.players.get(state.selfId);
   if (isSciFiWorld()) {
-    const crewHover = findShipCrewAt(world.x, world.y);
-    if (crewHover) {
-      state.hoverTooltipText = `${crewHover.crew.name || "Crew"} - assign post`;
-      state.hoverTooltipSmall = true;
-      return;
-    }
-    const shipDeckHit = findShipDeckInteractionAt(world.x, world.y);
-    if (shipDeckHit?.label) {
-      state.hoverTooltipText = shipDeckHit.label;
-      state.hoverTooltipSmall = true;
-      return;
+    const pilotSeatView = Boolean(self?.ship?.boarded && isPilotShipRole(self.ship.stationRole));
+    if (!pilotSeatView) {
+      const crewHover = findShipCrewAt(world.x, world.y);
+      if (crewHover) {
+        state.hoverTooltipText = `${crewHover.crew.name || "Crew"} - assign post`;
+        state.hoverTooltipSmall = true;
+        return;
+      }
+      const shipDeckHit = findShipDeckInteractionAt(world.x, world.y);
+      if (shipDeckHit?.label) {
+        state.hoverTooltipText = shipDeckHit.label;
+        state.hoverTooltipSmall = true;
+        return;
+      }
     }
     let bestStationObject = null;
     let bestStationDist = Infinity;
@@ -5775,12 +5780,9 @@ function sendAttack() {
     return;
   }
 
-  // When piloting a ship, always fire forward in the ship's facing direction
-  if (self?.ship?.boarded) {
-    if (Number.isFinite(self.facing)) {
-      payload.facing = Number(self.facing.toFixed(6));
-    }
-    send(payload);
+  // Pilots fire a forward missile from the nose of the ship.
+  if (self?.ship?.boarded && isPilotShipRole(self.ship.stationRole)) {
+    send({ type: "shipFire", weaponMode: "missile", forward: true });
     return;
   }
 
@@ -9325,7 +9327,11 @@ function shipStationTakenByOther(ship, stationId, exceptCrewId) {
 function showShipCrewMenu(ship, crew) {
   const layout = getShipLayout(ship);
   state.npcContext = { kind: "ship_crew", crewId: crew.id, shipId: ship.id };
-  const labelRole = crew.role === "gunner" ? "Gunner" : crew.role === "engineer" ? "Engineering" : crew.idleKind === "bed" ? "Bed" : "Chilling";
+  const labelRole = crew.role === "gunner"
+    ? "Gunner"
+    : crew.role === "engineer"
+      ? "Engineering"
+      : crew.idleKind === "bed" ? "Bed" : crew.idleKind === "galley" ? "Galley" : "Chilling";
   if (npcContextMenuName) npcContextMenuName.textContent = `${crew.name || "Crew"} - ${labelRole}`;
   if (npcContextMenuButtons) {
     npcContextMenuButtons.replaceChildren();
@@ -9345,11 +9351,14 @@ function showShipCrewMenu(ship, crew) {
     }
     const chillBtn = document.createElement("button");
     chillBtn.dataset.npcAction = "crew_chill";
-    chillBtn.textContent = (!crew.stationId && crew.idleKind !== "bed" ? "* " : "") + "Chilling";
+    chillBtn.textContent = (!crew.stationId && crew.idleKind !== "bed" && crew.idleKind !== "galley" ? "* " : "") + "Chilling";
+    const galleyBtn = document.createElement("button");
+    galleyBtn.dataset.npcAction = "crew_galley";
+    galleyBtn.textContent = (crew.idleKind === "galley" ? "* " : "") + "Galley";
     const bedBtn = document.createElement("button");
     bedBtn.dataset.npcAction = "crew_bed";
     bedBtn.textContent = (crew.idleKind === "bed" ? "* " : "") + "Bed";
-    npcContextMenuButtons.append(chillBtn, bedBtn);
+    npcContextMenuButtons.append(chillBtn, galleyBtn, bedBtn);
   }
   const center = shipCenter(ship, null);
   positionNpcContextMenu(center.x + (Number(crew.localX) || 0), center.y + (Number(crew.localY) || 0));
@@ -9895,12 +9904,17 @@ function drawShipCrew(ship, shipSx, shipSy) {
       sciFiLook: "crew",
       ship: { boarded: true, deckMode: true }
     };
-    drawCharacter(entity, cx, cy, true, { insideShipDeck: true, restingBench: Boolean(crew.stationId) });
+    drawCharacter(entity, cx, cy, true, {
+      insideShipDeck: true,
+      restingBench: Boolean(crew.stationId) || crew.idleKind === "galley",
+      lyingBed: crew.idleKind === "bed",
+      eating: crew.idleKind === "galley"
+    });
     const status = crew.role === "gunner"
       ? "gunner"
       : crew.role === "engineer"
         ? "engineering"
-        : crew.idleKind === "bed" ? "bed" : "chilling";
+        : crew.idleKind === "bed" ? "bed" : crew.idleKind === "galley" ? "galley" : "chilling";
     const label = `${crew.name || "Crew"} - ${status}`;
     ctx.font = "9px ui-sans-serif, system-ui";
     ctx.textAlign = "center";
@@ -11036,7 +11050,7 @@ function drawPlayers() {
         }
         const seated = Boolean(entity.ship.stationRole);
         withCameraUnrotated(() => {
-          drawCharacter(entity, sx, sy, isNpc, { restingBench: seated });
+          drawCharacter(entity, sx, sy, isNpc, shipAmenityPoseOpts(entity, { restingBench: seated }));
           drawShieldBuff(entity, sx, sy);
         });
       } else {
@@ -11089,11 +11103,11 @@ function drawPlayers() {
       const lockToShip = insideShipDeck && viewerInteriorShipId;
       if (lockToShip) {
         withCameraUnrotated(() => {
-          drawCharacter(entity, sx, sy, isNpc, { restingBench, insideShipDeck });
+          drawCharacter(entity, sx, sy, isNpc, shipAmenityPoseOpts(entity, { restingBench, insideShipDeck }));
           if (!isNpc) drawShieldBuff(entity, sx, sy);
         });
       } else {
-        drawCharacter(entity, sx, sy, isNpc, { restingBench, insideShipDeck });
+        drawCharacter(entity, sx, sy, isNpc, shipAmenityPoseOpts(entity, { restingBench, insideShipDeck }));
         if (!isNpc) drawShieldBuff(entity, sx, sy);
       }
       if (isNpc) {
@@ -11104,6 +11118,14 @@ function drawPlayers() {
       }
     }
   }
+}
+
+function shipAmenityPoseOpts(entity, base = {}) {
+  const pose = entity?.shipAmenityPose;
+  if (!pose || (Number(pose.until) || 0) <= Date.now()) return base;
+  if (pose.kind === "sleep") return { ...base, lyingBed: true };
+  if (pose.kind === "eat") return { ...base, restingBench: true, eating: true };
+  return base;
 }
 
 function drawWorldLoot() {
@@ -11460,11 +11482,12 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
 
   const lyingBedPose = !!(poseOpts && poseOpts.lyingBed);
   const restingBenchPose = !!(poseOpts && poseOpts.restingBench);
+  const eatingPose = !!(poseOpts && poseOpts.eating);
   const selfBenchSit =
     !isNpc &&
     entity.id === state.selfId &&
     ((state.benchSeatIndefinite || false) || (state.benchSitUntil || 0) > performance.now());
-  const benchSeatPose = restingBenchPose || selfBenchSit;
+  const benchSeatPose = restingBenchPose || eatingPose || selfBenchSit;
   const compressLowerBody = benchSeatPose || lyingBedPose;
   const swimming = Boolean(entity.renderSwimming) && !compressLowerBody && !entity.ship?.boarded;
 
@@ -11599,6 +11622,20 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
     ctx.fillRect(lAX, lAY, lw, lh);
     ctx.fillRect(rAX, rAY, lw, lh);
     ctx.shadowBlur = 0;
+    ctx.restore();
+  } else if (eatingPose && !lyingBedPose) {
+    const chew = Math.round(Math.sin(nowArm / 135) * s);
+    lAX = bx - 6 * s;
+    lAY = by - 2 * s;
+    rAX = bx + 3 * s;
+    rAY = by - 5 * s + chew;
+    ctx.fillRect(lAX, lAY, 2 * s, 4 * s);
+    ctx.fillRect(rAX, rAY, 2 * s, 4 * s);
+    ctx.save();
+    ctx.fillStyle = "#f7d86a";
+    ctx.fillRect(rAX + 1 * s, rAY + 1 * s, Math.max(2, 2 * s), Math.max(2, 2 * s));
+    ctx.fillStyle = "rgba(103, 240, 255, 0.6)";
+    ctx.fillRect(bx - 3 * s, by + 1 * s, 6 * s, Math.max(2, s));
     ctx.restore();
   } else if (poseOpts && poseOpts.companionReachOut && isNpc) {
     const wig = Math.round(Math.sin(nowArm / 118) * (1.6 * s));
