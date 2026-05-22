@@ -6438,6 +6438,7 @@ function startShipWarp(client, destination) {
     return false;
   }
   const center = shipCenter(ship, player);
+  const travelFacing = Math.atan2(targetY - center.y, targetX - center.x);
   const arrival =
     destination?.kind === "planet"
       ? orbitalArrivalPointForPlanet(destination, center.x, center.y)
@@ -6460,7 +6461,6 @@ function startShipWarp(client, destination) {
   };
   ship.docking = null;
   ship.speed = SHIP_WARP_APPROACH_SPEED;
-  const travelFacing = Math.atan2(targetY - center.y, targetX - center.x);
   ship.facing = travelFacing;
   player.facing = travelFacing;
   saveClientCharacter(client);

@@ -4943,7 +4943,7 @@ function refreshWorldHoverTooltip(event) {
   const world = screenEventToWorld(event);
   const self = state.players.get(state.selfId);
   if (isSciFiWorld()) {
-    const pilotSeatView = Boolean(self?.ship?.boarded && isPilotShipRole(self.ship.stationRole));
+    const pilotSeatView = selfIsInPilotSeat(self);
     if (!pilotSeatView) {
       const crewHover = findShipCrewAt(world.x, world.y);
       if (crewHover) {
@@ -5781,7 +5781,7 @@ function sendAttack() {
   }
 
   // Pilots fire a forward missile from the nose of the ship.
-  if (self?.ship?.boarded && isPilotShipRole(self.ship.stationRole)) {
+  if (selfIsInPilotSeat(self)) {
     send({ type: "shipFire", weaponMode: "missile", forward: true });
     return;
   }
