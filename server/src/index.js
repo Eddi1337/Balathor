@@ -112,6 +112,7 @@ const MAX_CONNECTED_CLIENTS = Number(process.env.MAX_CLIENTS || 500);
 const LISTEN_BACKLOG = readIntEnv("LISTEN_BACKLOG", 1024, 128, 8192);
 const MAX_SOCKET_BUFFER_BYTES = readIntEnv("MAX_SOCKET_BUFFER_BYTES", 1_000_000, 64_000, 16_000_000);
 const IDLE_DISCONNECT_MS = readIntEnv("IDLE_DISCONNECT_MS", 30 * 60 * 1000, 60_000, 24 * 60 * 60 * 1000);
+const WS_CLOSE_IDLE_TIMEOUT = 4000;
 const NO_CLIENT_SIM_DELAY_MS = readIntEnv("NO_CLIENT_SIM_DELAY_MS", 1000, 100, 60_000);
 const MSG_RATE_LIMIT = 240; // max messages per second per client before dropping
 // Base player movement speed (tiles per second).
@@ -11185,7 +11186,7 @@ function disconnectIdleClients(now = Date.now()) {
   }
 }
 
-function disconnect(client) {
+function disconnect(client, reason = null) {
   if (!client.alive) {
     return;
   }
@@ -11199,7 +11200,7 @@ function disconnect(client) {
   clients.delete(client.id);
 
   if (!client.socket.destroyed) {
-    client.socket.end(encodeFrame(Buffer.alloc(0), 8));
+    client.socket.end(encodeCloseFrame(reason));
   }
 
   if (playerName) {
@@ -11292,6 +11293,17 @@ function encodeFrame(payload, opcode = 1) {
   }
 
   return Buffer.concat([header, payload]);
+}
+
+function encodeCloseFrame(reason = null) {
+  if (reason === "idle") {
+    const reasonBytes = Buffer.from("idle_timeout");
+    const payload = Buffer.alloc(2 + reasonBytes.length);
+    payload.writeUInt16BE(WS_CLOSE_IDLE_TIMEOUT, 0);
+    reasonBytes.copy(payload, 2);
+    return encodeFrame(payload, 8);
+  }
+  return encodeFrame(Buffer.alloc(0), 8);
 }
 
 function normalizeInput(keys = {}) {

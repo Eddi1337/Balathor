@@ -37,6 +37,7 @@ const usernameInput = document.querySelector("#usernameInput");
 const passwordInput = document.querySelector("#passwordInput");
 const loginButton = document.querySelector("#loginButton");
 const createAccountButton = document.querySelector("#createAccountButton");
+const reconnectButton = document.querySelector("#reconnectButton");
 const form = document.querySelector("#characterForm");
 const playButton = document.querySelector("#playButton");
 const nameInput = document.querySelector("#nameInput");
@@ -714,6 +715,7 @@ const state = {
   joined: false,
   _reconnectAttempt: 0,
   _reconnectTimer: null,
+  _manualReconnectRequired: false,
   selfId: null,
   selectedClass: "ranger",
   torsoStyle: "tunic",
@@ -1084,6 +1086,8 @@ function connect(url) {
 
   setStatus("Connecting to realm");
   state.activeServerUrl = normalizedUrl;
+  state._manualReconnectRequired = false;
+  reconnectButton?.classList.add("hidden");
   const socket = new WebSocket(normalizedUrl);
   state.socket = socket;
 
@@ -1115,14 +1119,23 @@ function connect(url) {
     handleServerMessage(message);
   });
 
-  socket.addEventListener("close", () => {
+  socket.addEventListener("close", (event) => {
     if (state.ignoreNextClose) {
       state.ignoreNextClose = false;
       return;
     }
     state.connected = false;
     const wasJoined = state.joined;
-    resetToConnection(wasJoined ? "Realm connection closed" : "Unable to connect");
+    const idleClose = event.code === 4000 || event.reason === "idle_timeout" || state._manualReconnectRequired;
+    resetToConnection(idleClose ? "Disconnected for inactivity. Press Reconnect to return." : wasJoined ? "Realm connection closed" : "Unable to connect", {
+      reconnectOnly: idleClose
+    });
+    if (idleClose) {
+      state._manualReconnectRequired = true;
+      clearTimeout(state._reconnectTimer);
+      reconnectButton?.classList.remove("hidden");
+      return;
+    }
     scheduleReconnect(wasJoined);
   });
 
@@ -1561,6 +1574,14 @@ function handleServerMessage(message) {
         kind: "system",
         name: "Realm",
         text: "Only mod_ed can change world time"
+      });
+    } else if (message.message === "idle_disconnect") {
+      state._manualReconnectRequired = true;
+      clearTimeout(state._reconnectTimer);
+      appendChat({
+        kind: "system",
+        name: "Realm",
+        text: `Disconnected after ${Number(message.idleMinutes) || 30} minutes idle. Use Reconnect to return.`
       });
     } else if (message.message === "inventory_full") {
       appendChat({ kind: "system", name: "Realm", text: "Inventory is full" });
@@ -2918,6 +2939,14 @@ function wireUi() {
       username: usernameInput.value,
       password: passwordInput.value
     });
+  });
+
+  reconnectButton?.addEventListener("click", () => {
+    clearTimeout(state._reconnectTimer);
+    state._manualReconnectRequired = false;
+    reconnectButton.classList.add("hidden");
+    const url = state.activeServerUrl || state.config?.gameServerUrl || PRODUCTION_SERVER_URL;
+    connect(url);
   });
 
   serverForm.addEventListener("submit", (event) => {
@@ -5636,7 +5665,7 @@ function syncMenuSessionInfo() {
   syncModTimeControls();
 }
 
-function resetToConnection(message) {
+function resetToConnection(message, opts = {}) {
   state.connected = false;
   state.joined = false;
   state.selfId = null;
@@ -5650,7 +5679,8 @@ function resetToConnection(message) {
   playButton.disabled = false;
   setStatus(message);
   bootPanel.classList.remove("hidden");
-  accountForm.classList.add("hidden");
+  reconnectButton?.classList.toggle("hidden", !opts.reconnectOnly);
+  accountForm.classList.toggle("hidden", Boolean(opts.reconnectOnly));
   modTimeControls?.classList.add("hidden");
   form.classList.add("hidden");
   progression.classList.add("hidden");
@@ -5679,6 +5709,8 @@ function resetToConnection(message) {
 function logout() {
   clearSavedCreds();
   clearTimeout(state._reconnectTimer);
+  state._manualReconnectRequired = false;
+  reconnectButton?.classList.add("hidden");
   if (state.socket && state.socket.readyState !== WebSocket.CLOSED) {
     state.ignoreNextClose = true;
     state.socket.close();
