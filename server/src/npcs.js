@@ -2525,6 +2525,23 @@ const DEFINITIONS = BASE_NPC_DEFINITIONS.concat(
 const soldCompanionNpcIds = new Set();
 const SOCIAL_PAIR_INTERVAL_MS = 9200;
 const SOCIAL_NEAR_HOME = 168;
+const FLO_COMPLIMENT_DURATION_MS = 120000;
+const FLO_COMPLIMENT_CHAT_MS = 7600;
+const FLO_COMPLIMENT_RANGE = 150;
+const FLO_COMPLIMENT_LINES = Object.freeze([
+  "Flo, you light up the whole town.",
+  "Flo! Your style is absolutely legendary.",
+  "Flo, everyone was hoping you would visit today.",
+  "Flo, your energy makes the home tree feel brighter.",
+  "Flo, you have the best adventurer aura in Balathor.",
+  "Flo, the town is better when you are here.",
+  "Flo, your outfit is flawless.",
+  "Flo, you make even the guards stand a little taller.",
+  "Flo, your smile could outshine a mage lantern.",
+  "Flo, you are the main character today.",
+  "Flo, the whole starting town is lucky to know you.",
+  "Flo, that is hero energy if I have ever seen it."
+]);
 /** Generic lines overheard during NPC→NPC chatter */
 const SOCIAL_OVERHEARD = [
   "Any news from the east road?",
@@ -2535,6 +2552,7 @@ const SOCIAL_OVERHEARD = [
 ];
 
 let lastNpcSocialAttempt = 0;
+let floComplimentEvent = null;
 
 function npcPatrolIntersectsBounds(npc, bounds) {
   if (!bounds) {
@@ -2727,6 +2745,119 @@ function unregisterCompanionSold(npcId) {
   if (typeof npcId === "string") {
     soldCompanionNpcIds.delete(npcId.slice(0, 96));
   }
+}
+
+function isFloPlayer(player) {
+  return typeof player?.name === "string" && player.name.trim().toLowerCase() === "flo";
+}
+
+function isStartingTownNpc(npc) {
+  if (!npc || soldCompanionNpcIds.has(npc.id)) return false;
+  if (npc.sciFiShipTraffic || npc.sciFiRole || npc.npcTheme === "sci-fi" || npc.ship) return false;
+  if (npc.isTownArcher || npc.isGateKeeper || npc.isFletcher || npc.isFletcherWorker || npc.isArrowCourier) return false;
+  if (WORLD.worldForPosition(Number(npc.homeX) || 0, Number(npc.homeY) || 0) !== "fantasy") return false;
+  const townRadius = Number(WORLD.HUB_TOWN_GRASS_RADIUS) || 132;
+  return Math.hypot(Number(npc.homeX) || 0, Number(npc.homeY) || 0) <= townRadius + 20;
+}
+
+function startFloComplimentEvent(player, now = Date.now()) {
+  if (!isFloPlayer(player)) return false;
+  const townRadius = Number(WORLD.HUB_TOWN_GRASS_RADIUS) || 132;
+  if (
+    WORLD.worldForPosition(player.x, player.y) !== "fantasy" ||
+    Math.hypot(Number(player.x) || 0, Number(player.y) || 0) > townRadius + 45
+  ) {
+    return false;
+  }
+  floComplimentEvent = {
+    playerId: player.id,
+    startedAt: now,
+    until: now + FLO_COMPLIMENT_DURATION_MS
+  };
+  for (const npc of npcs) {
+    if (!isStartingTownNpc(npc)) continue;
+    npc._floComplimentLineIndex = Math.abs(npcIdHashSeed(`${npc.id}|flo`)) % FLO_COMPLIMENT_LINES.length;
+    npc._floComplimentNextAt = now + (Math.abs(npcIdHashSeed(`${npc.id}|flo_delay`)) % 4200);
+    npc._floComplimentWasActive = true;
+    npc._meetPeerId = null;
+    npc._meetPhase = null;
+    npc._engagedAt = null;
+    npc._givenUpUntil = null;
+    invalidateNpcHubRoadPath(npc);
+  }
+  return true;
+}
+
+function stopFloComplimentEvent() {
+  floComplimentEvent = null;
+  const now = Date.now();
+  for (const npc of npcs) {
+    if (!npc._floComplimentWasActive) continue;
+    npc._floComplimentWasActive = false;
+    npc._floComplimentNextAt = 0;
+    npc._floComplimentLineIndex = 0;
+    npc._targetX = npc.homeX;
+    npc._targetY = npc.homeY;
+    npc._nextMoveAt = Math.min(npc._nextMoveAt || now, now + 800 + Math.random() * 1800);
+    invalidateNpcHubRoadPath(npc);
+    if (hubScheduleEligible(npc)) {
+      npc._schedPhase = SCHED_RETURN;
+      npc._schedUntil = now + 200;
+      npc._schedMingleUntil = 0;
+    }
+  }
+}
+
+function applyFloComplimentEvent(npc, companionCtx, onChat, now) {
+  if (!floComplimentEvent || now >= floComplimentEvent.until) {
+    if (floComplimentEvent) stopFloComplimentEvent();
+    return false;
+  }
+  if (!isStartingTownNpc(npc) || !companionCtx?.allPlayers) return false;
+  const row = companionCtx.allPlayers.find(({ player }) => player?.id === floComplimentEvent.playerId && isFloPlayer(player));
+  const flo = row?.player;
+  if (!flo || WORLD.worldForPosition(flo.x, flo.y) !== "fantasy") {
+    stopFloComplimentEvent();
+    return false;
+  }
+  const townRadius = Number(WORLD.HUB_TOWN_GRASS_RADIUS) || 132;
+  if (Math.hypot(flo.x, flo.y) > townRadius + 45) {
+    stopFloComplimentEvent();
+    return false;
+  }
+
+  const dx = flo.x - npc.x;
+  const dy = flo.y - npc.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist > FLO_COMPLIMENT_RANGE) {
+    return false;
+  }
+
+  const slotSeed = Math.abs(npcIdHashSeed(`${npc.id}|flo_slot`)) % 24;
+  const ring = 2.4 + (slotSeed % 4) * 0.65;
+  const angle = (Math.PI * 2 * slotSeed) / 24 + ((Math.floor(now / 5000) % 3) - 1) * 0.05;
+  const tx = flo.x + Math.cos(angle) * ring;
+  const ty = flo.y + Math.sin(angle) * ring;
+  if (dist > 2.4 || Math.hypot(npc.x - tx, npc.y - ty) > 0.8) {
+    npc._targetX = tx;
+    npc._targetY = ty;
+    invalidateNpcHubRoadPath(npc);
+  }
+
+  if (dist < 7.0 && now >= (npc._floComplimentNextAt || 0)) {
+    const index = Math.max(0, Number(npc._floComplimentLineIndex) || 0) % FLO_COMPLIMENT_LINES.length;
+    onChat({
+      kind: "npc",
+      fromId: npc.id,
+      name: npc.name,
+      text: FLO_COMPLIMENT_LINES[index],
+      x: flo.x,
+      y: flo.y
+    });
+    npc._floComplimentLineIndex = (index + 1) % FLO_COMPLIMENT_LINES.length;
+    npc._floComplimentNextAt = now + FLO_COMPLIMENT_CHAT_MS + (Math.abs(npcIdHashSeed(`${npc.id}|${index}`)) % 2600);
+  }
+  return true;
 }
 
 function pickHouseCompanionComplimentLine(hc) {
@@ -3533,13 +3664,17 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
       continue;
     }
 
+    const floComplimentSteers = applyFloComplimentEvent(npc, companionCtx, onChat, now);
+
     if (hubScheduleEligible(npc)) {
       tickNpcStuckCheck(npc, now, navSetStatic);
     }
 
     const inMeetTalk = tickNpcMeeting(npc, now, dt, onChat);
     let courtSteers = false;
-    if (npc.onboardingGuide) {
+    if (floComplimentSteers) {
+      courtSteers = true;
+    } else if (npc.onboardingGuide) {
       courtSteers =
         applyIntroGuideTour(npc, companionCtx, onChat, now) ||
         applyIntroGuideApproach(npc, companionCtx, onChat, now);
@@ -3578,6 +3713,7 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
       npc._followHubPaths &&
       navSetStatic &&
       navSetStatic.size > 96 &&
+      !floComplimentSteers &&
       !(loveSeeking && courtSteers) &&
       !(socialWalkTowardPeer);
 
@@ -3900,6 +4036,7 @@ module.exports = {
   syncSoldCompanionIdsFromAccounts,
   registerCompanionSold,
   unregisterCompanionSold,
+  startFloComplimentEvent,
   pickHouseCompanionComplimentLine,
   getCompanionNpcTemplate,
   pickPubDreamGirlfriendNpcId,

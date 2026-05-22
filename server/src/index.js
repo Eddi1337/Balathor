@@ -58,6 +58,7 @@ const {
   syncSoldCompanionIdsFromAccounts,
   registerCompanionSold,
   unregisterCompanionSold,
+  startFloComplimentEvent,
   pickHouseCompanionComplimentLine,
   getCompanionNpcTemplate,
   pickPubDreamGirlfriendNpcId,
@@ -5253,6 +5254,13 @@ function joinWorld(client, message, savedCharacter = null) {
     name: "Realm",
     text: `${client.player.name} entered the hub`
   });
+  if (startFloComplimentEvent(client.player)) {
+    pushChat({
+      kind: "system",
+      name: "Realm",
+      text: "The starting town turns to welcome Flo."
+    });
+  }
   broadcastSnapshot();
 }
 
