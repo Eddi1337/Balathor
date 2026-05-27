@@ -1,5 +1,18 @@
 const CHUNK_SIZE = 16;
 
+const { readJson } = require("./worlds/contentLoader.js");
+const {
+  worldIdAt,
+  sameWorldAt,
+  resolveWorldAt,
+  getThemeAt,
+  isFantasyBounds,
+  isInteriorPlane,
+  isSciFiBounds
+} = require("./worlds/registry.js");
+const { getHandmadeTileAt } = require("./maps/mapLoader.js");
+const { getPirateTile } = require("./worlds/pirateWorld.js");
+
 const TILE = {
   GRASS: 0,
   TREE: 1,
@@ -173,18 +186,15 @@ function hubPlazaLawnGrassTile(x, y) {
 }
 
 function isFantasyWorldPoint(x, y) {
-  return x > -1000 && x < 1000 && y > -1000 && y < 1000;
+  return isFantasyBounds(x, y);
 }
 
 function isInteriorPlanePoint(x, y) {
-  return x >= INTERIOR_BASE_X - INTERIOR_EXTERIOR_MARGIN && y >= INTERIOR_BASE_Y - INTERIOR_EXTERIOR_MARGIN;
+  return isInteriorPlane(x, y);
 }
 
 function isSciFiSector(x, y) {
-  if (isFantasyWorldPoint(x, y) || isInteriorPlanePoint(x, y) || getPlanetBySurfacePoint(x, y)) {
-    return false;
-  }
-  return true;
+  return isSciFiBounds(x, y);
 }
 
 /**
@@ -197,17 +207,11 @@ function isSciFiSector(x, y) {
  *  - "void"             → nowhere; off-limits to everyone
  */
 function worldForPosition(x, y) {
-  const planetSurface = getPlanetBySurfacePoint(x, y);
-  if (planetSurface) return `planet:${planetSurface.id}`;
-  if (isSciFiSector(x, y)) return "scifi";
-  // Fantasy world: a generous square around the origin that captures the hub,
-  // all wilderness, and the portal-realm satellite zones.
-  if (isFantasyWorldPoint(x, y)) return "fantasy";
-  return "void";
+  return worldIdAt(x, y);
 }
 
 function sameWorld(a, b) {
-  return worldForPosition(a.x, a.y) === worldForPosition(b.x, b.y);
+  return sameWorldAt(a.x, a.y, b.x, b.y);
 }
 
 function sciFiStationById(id) {
@@ -923,16 +927,37 @@ function findRoadsideFeatureNear(wx, wy, radiusTiles = 1.35) {
   return best;
 }
 
-const PORTALS = [
-  { id: "portal_oasis", name: "Oasis Gate",  x:  46, y: -76, targetX: 600, targetY: 522, color: "#f2c45f" },
-  { id: "portal_frost", name: "Frost Gate",   x: -46, y: -76, targetX: -600, targetY: -458, color: "#9ee7ff" },
-  { id: "portal_ember", name: "Ember Gate",   x:   0, y: -76, targetX: 580, targetY: -503, color: "#ff7a45" },
-  { id: "portal_stargate", name: "Stargate",   x: STARGATE_HUB_TILE.x, y: STARGATE_HUB_TILE.y, targetX: STARGATE_LANDING.x, targetY: STARGATE_LANDING.y, color: "#67f0ff", style: "stargate" },
-  { id: "portal_hub_oasis", name: "Oasis Gate", x: 600, y: 522, targetX: 46, targetY: -76, color: "#f2c45f" },
-  { id: "portal_hub_frost", name: "Frost Gate", x: -600, y: -458, targetX: -46, targetY: -76, color: "#9ee7ff" },
-  { id: "portal_hub_ember", name: "Ember Gate", x: 580, y: -503, targetX: 0, targetY: -76, color: "#ff7a45" },
-  { id: "portal_stargate_return", name: "Stargate", x: STARGATE_LANDING.x, y: STARGATE_LANDING.y, targetX: STARGATE_HUB_TILE.x, targetY: STARGATE_HUB_TILE.y, color: "#67f0ff", style: "stargate" },
-];
+const _portalDoc = readJson("worlds/fantasy/portals.json");
+const PORTALS = Array.isArray(_portalDoc?.portals) && _portalDoc.portals.length > 0
+  ? _portalDoc.portals
+  : [
+      { id: "portal_oasis", name: "Oasis Gate", x: 46, y: -76, targetX: 600, targetY: 522, color: "#f2c45f" },
+      { id: "portal_frost", name: "Frost Gate", x: -46, y: -76, targetX: -600, targetY: -458, color: "#9ee7ff" },
+      { id: "portal_ember", name: "Ember Gate", x: 0, y: -76, targetX: 580, targetY: -503, color: "#ff7a45" },
+      {
+        id: "portal_stargate",
+        name: "Stargate",
+        x: STARGATE_HUB_TILE.x,
+        y: STARGATE_HUB_TILE.y,
+        targetX: STARGATE_LANDING.x,
+        targetY: STARGATE_LANDING.y,
+        color: "#67f0ff",
+        style: "stargate"
+      },
+      { id: "portal_hub_oasis", name: "Oasis Gate", x: 600, y: 522, targetX: 46, targetY: -76, color: "#f2c45f" },
+      { id: "portal_hub_frost", name: "Frost Gate", x: -600, y: -458, targetX: -46, targetY: -76, color: "#9ee7ff" },
+      { id: "portal_hub_ember", name: "Ember Gate", x: 580, y: -503, targetX: 0, targetY: -76, color: "#ff7a45" },
+      {
+        id: "portal_stargate_return",
+        name: "Stargate",
+        x: STARGATE_LANDING.x,
+        y: STARGATE_LANDING.y,
+        targetX: STARGATE_HUB_TILE.x,
+        targetY: STARGATE_HUB_TILE.y,
+        color: "#67f0ff",
+        style: "stargate"
+      }
+    ];
 
 /** Stone disk under portals (tile-space, portal at integer lattice point). */
 const PORTAL_CLEAR_STONE_RADIUS = 10;
@@ -2132,7 +2157,7 @@ function lerp(a, b, t) {
 }
 
 function getWorldThemeAt(x, y) {
-  return sciFiThemeForPoint(x, y);
+  return getThemeAt(x, y);
 }
 
 function getBiome(x, y) {
@@ -2186,7 +2211,15 @@ function generateTile(x, y) {
   return generateExteriorTile(x, y);
 }
 
-function generateExteriorTile(x, y) {
+function applyHandmadeOverlay(x, y, baseTile) {
+  const hit = getHandmadeTileAt(worldIdAt(x, y), x, y);
+  if (!hit || hit.map.replaceBase) {
+    return baseTile;
+  }
+  return hit.tile;
+}
+
+function generateExteriorTileCore(x, y) {
   const portal = getPortalAtTile(x, y);
   if (portal) {
     return TILE.PORTAL;
@@ -2450,11 +2483,29 @@ function generateExteriorTile(x, y) {
   return TILE.GRASS;
 }
 
+function generateExteriorTile(x, y) {
+  const worldId = worldIdAt(x, y);
+
+  if (worldId === "pirate") {
+    return getPirateTile(x, y, TILE);
+  }
+
+  const handmadeBase = getHandmadeTileAt(worldId, x, y);
+  if (handmadeBase && handmadeBase.map.replaceBase) {
+    return handmadeBase.tile;
+  }
+
+  return applyHandmadeOverlay(x, y, generateExteriorTileCore(x, y));
+}
+
 function generateChunk(cx, cy) {
   const tiles = [];
   const startX = cx * CHUNK_SIZE;
   const startY = cy * CHUNK_SIZE;
-  const theme = getWorldThemeAt(startX + CHUNK_SIZE / 2, startY + CHUNK_SIZE / 2);
+  const midX = startX + CHUNK_SIZE / 2;
+  const midY = startY + CHUNK_SIZE / 2;
+  const theme = getWorldThemeAt(midX, midY);
+  const worldId = worldIdAt(midX, midY);
 
   for (let y = 0; y < CHUNK_SIZE; y += 1) {
     for (let x = 0; x < CHUNK_SIZE; x += 1) {
@@ -2471,6 +2522,7 @@ function generateChunk(cx, cy) {
     cx,
     cy,
     size: CHUNK_SIZE,
+    worldId,
     theme,
     tiles,
     portals: getPortalsInChunk(cx, cy),
@@ -2728,8 +2780,13 @@ module.exports = {
   proceduralSpaceStationsNear,
   PLANET_SURFACE_LANDING_OFFSET,
   worldForPosition,
+  worldIdAt,
+  resolveWorldAt,
   sameWorld,
   isSciFiSector,
+  listGameModes: () => require("./worlds/registry.js").listGameModes(),
+  listWorlds: (gameMode) => require("./worlds/registry.js").listWorlds(gameMode),
+  listMapCatalog: () => require("./maps/mapLoader.js").listMapCatalog(),
   spawnPoint,
   southDoorWorldXs,
   southDoorAnchorWorldX,

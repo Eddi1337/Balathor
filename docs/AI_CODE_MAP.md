@@ -28,8 +28,12 @@ When changing behavior, confine edits to the smallest section possible and avoid
 
 ### World generation and layout
 
-- `world.js`: biome, collision, terrain/chunk generation, portals/doors.
-- `worlds/`: themed world extensions (`sciFiWorld`, `planetWorlds`).
+- `world.js`: biome, collision, terrain/chunk generation, portals/doors (orchestration).
+- `worlds/registry.js`: logical world ids, game modes, coordinate resolution.
+- `worlds/`: themed world extensions (`sciFiWorld`, `planetWorlds`, `pirateWorld`).
+- `maps/mapLoader.js`: hand-made maps from `content/maps/*.json`.
+- `content/worlds/`: manifest, per-realm data (e.g. `fantasy/portals.json`).
+- `docs/ADDING_MAPS.md`: how to add maps/worlds (for humans and AI agents).
 - `sciFiStationLayout.js`, `hubRoundTown.js`: authored layout data.
 
 ### Systems modules

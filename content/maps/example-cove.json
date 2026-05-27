@@ -1,0 +1,22 @@
+{
+  "id": "example_cove",
+  "label": "Example cove (hand-made overlay)",
+  "worldId": "fantasy",
+  "originX": 180,
+  "originY": 220,
+  "width": 12,
+  "height": 10,
+  "replaceBase": false,
+  "comment": "Small sandy cove on the fantasy coast. TILE: 2=WATER, 10=SAND, 0=GRASS, 1=TREE",
+  "tiles": {
+    "encoding": "rle",
+    "data": [
+      [2, 48],
+      [10, 24],
+      [0, 18],
+      [1, 6],
+      [0, 12],
+      [10, 12]
+    ]
+  }
+}

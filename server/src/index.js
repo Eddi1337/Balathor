@@ -49,7 +49,10 @@ const {
   proceduralSpaceStationsNear,
   SCI_FI_PLANETS,
   PLANET_SURFACE_LANDING_OFFSET,
-  worldForPosition
+  worldForPosition,
+  listGameModes,
+  listWorlds,
+  listMapCatalog
 } = require("./world");
 const {
   updateNpcs,
@@ -1599,7 +1602,10 @@ const server = http.createServer((req, res) => {
       perf: perfLastSnapshot,
       chunkWorkers: chunkWorkerPool.length,
       chunkQueue: chunkGenQueue.length,
-      chunkSize: CHUNK_SIZE
+      chunkSize: CHUNK_SIZE,
+      gameModes: listGameModes(),
+      worlds: listWorlds(),
+      maps: listMapCatalog()
     });
     return;
   }
