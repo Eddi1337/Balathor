@@ -19,25 +19,25 @@ const MINIGAME_SITES = Object.freeze([
   { id: "mg_caravan_escort", gameId: "caravan_escort", world: "fantasy", x: 0, y: -118, footprintW: 2, footprintH: 2, prop: "bounty_board", label: "Caravan charter — escort contract" },
   { id: "mg_hollow", gameId: "seasonal", world: "fantasy", x: -48, y: -188, footprintW: 2, footprintH: 2, prop: "hollow_stone", label: "Hollow stone — night offering" },
   { id: "mg_trophy", gameId: "trophy", world: "fantasy", x: 14, y: -42, footprintW: 1, footprintH: 1, prop: "pedestal", label: "Trophy pedestal — display a prize" },
-  { id: "mg_relay_0", gameId: "relay", world: "fantasy", x: -24, y: -8, footprintW: 1, footprintH: 1, prop: "relay_ring", label: "Relay post I", relayIndex: 0 },
-  { id: "mg_relay_1", gameId: "relay", world: "fantasy", x: 24, y: -8, footprintW: 1, footprintH: 1, prop: "relay_ring", label: "Relay post II", relayIndex: 1 },
-  { id: "mg_relay_2", gameId: "relay", world: "fantasy", x: 24, y: 32, footprintW: 1, footprintH: 1, prop: "relay_ring", label: "Relay post III", relayIndex: 2 },
-  { id: "mg_relay_3", gameId: "relay", world: "fantasy", x: -24, y: 32, footprintW: 1, footprintH: 1, prop: "relay_ring", label: "Relay post IV", relayIndex: 3 },
-  { id: "mg_swim_0", gameId: "swim", world: "fantasy", x: 108, y: 12, footprintW: 1, footprintH: 1, prop: "swim_buoy", label: "Swim buoy I", swimIndex: 0 },
-  { id: "mg_swim_1", gameId: "swim", world: "fantasy", x: 118, y: 18, footprintW: 1, footprintH: 1, prop: "swim_buoy", label: "Swim buoy II", swimIndex: 1 },
-  { id: "mg_swim_2", gameId: "swim", world: "fantasy", x: 124, y: 28, footprintW: 1, footprintH: 1, prop: "swim_buoy", label: "Swim buoy III", swimIndex: 2 },
-  { id: "mg_swim_3", gameId: "swim", world: "fantasy", x: 112, y: 34, footprintW: 1, footprintH: 1, prop: "swim_buoy", label: "Swim buoy IV", swimIndex: 3 },
+  { id: "mg_relay_0", gameId: "relay", world: "fantasy", x: -24, y: -8, footprintW: 1, footprintH: 1, prop: "relay_ring", label: "Town perimeter relay — Checkpoint 1/4: northwest path (solo — touch to begin)", relayIndex: 0 },
+  { id: "mg_relay_1", gameId: "relay", world: "fantasy", x: 24, y: -8, footprintW: 1, footprintH: 1, prop: "relay_ring", label: "Town perimeter relay — Checkpoint 2/4: east avenue ring", relayIndex: 1 },
+  { id: "mg_relay_2", gameId: "relay", world: "fantasy", x: 24, y: 32, footprintW: 1, footprintH: 1, prop: "relay_ring", label: "Town perimeter relay — Checkpoint 3/4: southeast lawn", relayIndex: 2 },
+  { id: "mg_relay_3", gameId: "relay", world: "fantasy", x: -24, y: 32, footprintW: 1, footprintH: 1, prop: "relay_ring", label: "Town perimeter relay — Checkpoint 4/4: south gate (finish)", relayIndex: 3 },
+  { id: "mg_swim_0", gameId: "swim", world: "fantasy", x: 108, y: 12, footprintW: 1, footprintH: 1, prop: "swim_buoy", label: "River swim trial — Buoy 1/4: east shallows (solo — swim to each buoy in order)", swimIndex: 0 },
+  { id: "mg_swim_1", gameId: "swim", world: "fantasy", x: 118, y: 18, footprintW: 1, footprintH: 1, prop: "swim_buoy", label: "River swim trial — Buoy 2/4: mid channel", swimIndex: 1 },
+  { id: "mg_swim_2", gameId: "swim", world: "fantasy", x: 124, y: 28, footprintW: 1, footprintH: 1, prop: "swim_buoy", label: "River swim trial — Buoy 3/4: south bend", swimIndex: 2 },
+  { id: "mg_swim_3", gameId: "swim", world: "fantasy", x: 112, y: 34, footprintW: 1, footprintH: 1, prop: "swim_buoy", label: "River swim trial — Buoy 4/4: finish cove", swimIndex: 3 },
   { id: "mg_delivery", gameId: "delivery", world: "fantasy", x: -66, y: -20, footprintW: 2, footprintH: 2, prop: "courier_crate", label: "Fletcher crate — arrow delivery" },
-  { id: "mg_delivery_drop", gameId: "delivery", world: "fantasy", x: 588, y: 480, footprintW: 1, footprintH: 1, prop: "relay_ring", label: "Oasis drop — deliver crate", deliveryDrop: true },
+  { id: "mg_delivery_drop", gameId: "delivery", world: "fantasy", x: 588, y: 480, footprintW: 1, footprintH: 1, prop: "relay_ring", label: "Oasis courier drop — hand off the fletcher crate here", deliveryDrop: true },
 
   // Camp bounty boards (one per starter camp)
   { id: "mg_camp_bracken", gameId: "camp_bounty", world: "fantasy", x: -3, y: -102, footprintW: 2, footprintH: 2, prop: "bounty_board", label: "Camp bounty — clear Bracken Post", campId: "bracken_post" },
   { id: "mg_camp_muddy", gameId: "camp_bounty", world: "fantasy", x: 90, y: -4, footprintW: 2, footprintH: 2, prop: "bounty_board", label: "Camp bounty — clear Muddy Bank", campId: "muddy_bank" },
 
   // Biome scavenger markers (visit via emote at ring)
-  { id: "mg_visit_oasis", gameId: "scavenger", world: "fantasy", x: 588, y: 488, footprintW: 1, footprintH: 1, prop: "relay_ring", label: "Oasis marker", visitKey: "oasis" },
-  { id: "mg_visit_frost", gameId: "scavenger", world: "fantasy", x: -590, y: -488, footprintW: 1, footprintH: 1, prop: "relay_ring", label: "Frost marker", visitKey: "frost" },
-  { id: "mg_visit_ember", gameId: "scavenger", world: "fantasy", x: 568, y: -512, footprintW: 1, footprintH: 1, prop: "relay_ring", label: "Ember marker", visitKey: "ember" },
+  { id: "mg_visit_oasis", gameId: "scavenger", world: "fantasy", x: 588, y: 488, footprintW: 1, footprintH: 1, prop: "relay_ring", label: "Wayfarer beacon — Oasis sands (use /wave at the ring)", visitKey: "oasis" },
+  { id: "mg_visit_frost", gameId: "scavenger", world: "fantasy", x: -590, y: -488, footprintW: 1, footprintH: 1, prop: "relay_ring", label: "Wayfarer beacon — Frost expanse (use /wave at the ring)", visitKey: "frost" },
+  { id: "mg_visit_ember", gameId: "scavenger", world: "fantasy", x: 568, y: -512, footprintW: 1, footprintH: 1, prop: "relay_ring", label: "Wayfarer beacon — Ember coast (use /wave at the ring)", visitKey: "ember" },
 
   // ── Sci-fi orbital ────────────────────────────────────────────────────────
   { id: "mg_turret", gameId: "turret", world: "scifi", x: 1940, y: -8, footprintW: 3, footprintH: 3, prop: "turret_pad", label: "Defense pad — hold the line" },
@@ -77,6 +77,25 @@ function getMinigameSitesInChunk(cx, cy) {
   return out;
 }
 
+/**
+ * True when a tile is inside a minigame footprint (plus buffer) — blocks benches/trees.
+ */
+function isTileNearMinigameSite(tx, ty, worldId = "fantasy", buffer = 2) {
+  const bx = Math.floor(Number(tx));
+  const by = Math.floor(Number(ty));
+  if (!Number.isFinite(bx) || !Number.isFinite(by)) return false;
+  const pad = Math.max(0, Math.floor(Number(buffer) || 0));
+  for (const site of MINIGAME_SITES) {
+    if (site.world !== worldId) continue;
+    const w = Math.max(1, Math.floor(Number(site.footprintW) || 1));
+    const h = Math.max(1, Math.floor(Number(site.footprintH) || 1));
+    if (bx >= site.x - pad && bx < site.x + w + pad && by >= site.y - pad && by < site.y + h + pad) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function findMinigameSiteNear(wx, wy, radius = 2.1, worldId = "fantasy") {
   let best = null;
   let bestD = radius;
@@ -98,5 +117,6 @@ function findMinigameSiteNear(wx, wy, radius = 2.1, worldId = "fantasy") {
 module.exports = {
   MINIGAME_SITES,
   getMinigameSitesInChunk,
-  findMinigameSiteNear
+  findMinigameSiteNear,
+  isTileNearMinigameSite
 };
