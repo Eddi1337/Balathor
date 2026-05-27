@@ -84,6 +84,10 @@ const { createSocialSystem } = require("./social.js");
 const { createMinigameSystem } = require("./minigames.js");
 const { postAuthEventToDiscord, isAllowedDiscordWebhookUrl, resolveDiscordAuthWebhookUrl } = require("./discordWebhook");
 
+// =============================
+// SECTION 1: Boot, imports, env, and simulation constants
+// =============================
+
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 8080);
 const ACCOUNT_STORE_PATH = process.env.ACCOUNT_STORE_PATH || path.join(__dirname, "..", "data", "accounts.json");
