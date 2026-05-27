@@ -1324,6 +1324,9 @@ let nextItemId = 1;
 let nextGroundItemId = 1;
 let tick = 0;
 let snapshotAccumulator = 0;
+/** Coalesce multiple snapshot requests within one simulate() tick into a single send. */
+let snapshotPending = false;
+let snapshotInSimTick = false;
 
 /** Rolling wall-clock intervals between simulate() runs (for debug pong). */
 let lastSimulateWallMs = Date.now();
@@ -2118,6 +2121,41 @@ function serializeShipForPlayer(player, ship = player?.ship) {
   const snap = serializeShip(ship);
   snap.stationRole = typeof player?.shipStationRole === "string" ? player.shipStationRole : snap.stationRole;
   snap.stationId = typeof player?.shipStationId === "string" ? player.shipStationId : snap.stationId;
+  return snap;
+}
+
+/** Minimal ship payload for other players — full ship state is only sent to the owner. */
+function serializeShipForViewer(player, ship, viewerId) {
+  if (!ship) return null;
+  const viewer = viewerId ? getPlayerById(viewerId) : null;
+  const viewerAboardThisShip = Boolean(
+    viewer &&
+      (viewer.aboardShipId === ship.id ||
+        (viewer.ship?.id === ship.id && viewer.ship?.boarded))
+  );
+  const snap = {
+    id: typeof ship.id === "string" ? ship.id.slice(0, 64) : "starter_ship",
+    templateId: typeof ship.templateId === "string" ? ship.templateId : "starter_ship",
+    name: typeof ship.name === "string" ? ship.name : "Nova Skiff",
+    color: typeof ship.color === "string" ? ship.color : "#67f0ff",
+    hullClass: typeof ship.hullClass === "string" ? ship.hullClass.slice(0, 24) : "skiff",
+    boarded: Boolean(ship.boarded),
+    deckMode: Boolean(ship.deckMode),
+    dockX: clampNumber(ship.dockX, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, STARGATE_LANDING.x),
+    dockY: clampNumber(ship.dockY, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, STARGATE_LANDING.y),
+    worldX: clampNumber(ship.worldX, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, ship.dockX ?? STARGATE_LANDING.x),
+    worldY: clampNumber(ship.worldY, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, ship.dockY ?? STARGATE_LANDING.y),
+    facing: normalizeAngle(clampNumber(ship.facing, -Math.PI * 2, Math.PI * 2, 0)),
+    stationRole: typeof player?.shipStationRole === "string" ? player.shipStationRole : null,
+    stationId: typeof player?.shipStationId === "string" ? player.shipStationId : null
+  };
+  if (viewerAboardThisShip && ship.deckMode) {
+    snap.crew = serializeShipCrew(ship);
+  }
+  const warp = sanitizeShipWarp(ship.warp);
+  if (warp) {
+    snap.warp = warp;
+  }
   return snap;
 }
 
@@ -4059,6 +4097,7 @@ function simulate() {
   if (clients.size === 0) {
     return;
   }
+  snapshotInSimTick = true;
   recordSimulateWallInterval();
   tick += 1;
   const dt = 1 / TICK_RATE;
@@ -4355,12 +4394,10 @@ function simulate() {
   }
 
   snapshotAccumulator += SNAPSHOT_RATE;
-  let _pt = process.hrtime.bigint();
   if (snapshotAccumulator >= TICK_RATE) {
     snapshotAccumulator -= TICK_RATE;
     broadcastSnapshot();
   }
-  perfAcc.snapshot += Number(process.hrtime.bigint() - _pt) / 1e3;
 
   if (tick % PERF_LOG_INTERVAL === 0) {
     const total = Object.values(perfAcc).reduce((a, b) => a + b, 0);
@@ -4372,6 +4409,11 @@ function simulate() {
     console.log(`[perf] tick=${tick} total=${fmt(total)}/tick players=${clients.size}\n${lines}`);
     for (const k of Object.keys(perfAcc)) perfAcc[k] = 0;
   }
+
+  const _snapshotPt = process.hrtime.bigint();
+  flushPendingSnapshot();
+  perfAcc.snapshot += Number(process.hrtime.bigint() - _snapshotPt) / 1e3;
+  snapshotInSimTick = false;
 }
 
 function handleDoorTravel(client) {
@@ -8588,6 +8630,59 @@ function isMessageVisibleToClient(message, client) {
   );
 }
 
+function isPointVisibleToClient(x, y, client, pad = CHAT_VIEW_MARGIN_TILES) {
+  if (!client.player || !Number.isFinite(x) || !Number.isFinite(y)) {
+    return false;
+  }
+  const view = client.view || defaultViewForPlayer(client.player);
+  const viewerWorld = worldForPosition(client.player.x, client.player.y);
+  if (worldForPosition(x, y) !== viewerWorld) {
+    return false;
+  }
+  return (
+    x >= view.x - view.halfW - pad &&
+    x <= view.x + view.halfW + pad &&
+    y >= view.y - view.halfH - pad &&
+    y <= view.y + view.halfH + pad
+  );
+}
+
+/** View/world filter for combat FX and spell casts (mirrors chat visibility). */
+function isStreamEventVisibleToClient(event, client) {
+  if (!client.player) {
+    return false;
+  }
+  if (event.attackerId === client.player.id || event.casterId === client.player.id) {
+    return true;
+  }
+  if (event.targetId === client.player.id) {
+    return true;
+  }
+
+  const points = [];
+  if (Number.isFinite(event.x) && Number.isFinite(event.y)) {
+    points.push([event.x, event.y]);
+  }
+  if (Number.isFinite(event.endX) && Number.isFinite(event.endY)) {
+    points.push([event.endX, event.endY]);
+  }
+  if (Number.isFinite(event.gx) && Number.isFinite(event.gy)) {
+    points.push([event.gx, event.gy]);
+  }
+  if (!points.length) {
+    return false;
+  }
+
+  const pad = CHAT_VIEW_MARGIN_TILES;
+  const range = Number.isFinite(event.range) ? Math.max(0, event.range) : 0;
+  for (const [px, py] of points) {
+    if (isPointVisibleToClient(px, py, client, pad + range)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function defaultViewForPlayer(player) {
   return {
     x: player.x,
@@ -8821,6 +8916,21 @@ function snapshotForEachCellInWorldRect(minX, maxX, minY, maxY, cellSize, visito
 }
 
 function broadcastSnapshot() {
+  snapshotPending = true;
+  if (!snapshotInSimTick) {
+    flushPendingSnapshot();
+  }
+}
+
+function flushPendingSnapshot() {
+  if (!snapshotPending) {
+    return;
+  }
+  snapshotPending = false;
+  emitSnapshot();
+}
+
+function emitSnapshot() {
   const joinedClients = [];
   for (const client of clients.values()) {
     if (client.player) {
@@ -8858,6 +8968,7 @@ function broadcastSnapshot() {
       return snap;
     }
     const appearance = getPlayerAppearance(p);
+    const isSelf = Boolean(viewerId && p.id === viewerId);
     snap = {
       id: p.id,
       name: p.name,
@@ -8871,28 +8982,9 @@ function broadcastSnapshot() {
       accent: appearance.weaponColor,
       hp: p.hp,
       maxHp: p.maxHp,
-      xp: p.xp,
-      level: p.level,
-      xpToNext: p.xpToNext,
-      statPoints: p.statPoints,
-      stats: p.stats,
-      gold: p.gold,
-      inventory: p.inventory,
-      equipment: p.equipment,
-      professions: sanitizeProfessions(p.professions),
-      ship: p.ship ? serializeShipForPlayer(p, p.ship) : null,
-      ...(p.id === viewerId
-        ? {
-            ships: Array.isArray(p.ships) ? p.ships.map(serializeShip) : [],
-            activeShipId: p.activeShipId || getOwnedActiveShip(p)?.id || null,
-            quests: buildQuestSnapshot(p),
-            minigameStats: minigames ? minigames.serializeMinigameStats(p) : null
-          }
-        : {}),
-      talentPoints: p.talentPoints || 0,
-      talents: p.talents || {},
-      abilityBar: p.abilityBar || [null, null, null, null, null],
-      moveSpeed: Number(getPlayerSpeed(p).toFixed(2)),
+      ship: p.ship
+        ? (isSelf ? serializeShipForPlayer(p, p.ship) : serializeShipForViewer(p, p.ship, viewerId))
+        : null,
       x: Number(p.x.toFixed(3)),
       y: Number(p.y.toFixed(3)),
       facing: Number(p.facing.toFixed(3)),
@@ -8918,6 +9010,27 @@ function broadcastSnapshot() {
           }
         : null
     };
+    if (isSelf) {
+      Object.assign(snap, {
+        xp: p.xp,
+        level: p.level,
+        xpToNext: p.xpToNext,
+        statPoints: p.statPoints,
+        stats: p.stats,
+        gold: p.gold,
+        inventory: p.inventory,
+        equipment: p.equipment,
+        professions: sanitizeProfessions(p.professions),
+        ships: Array.isArray(p.ships) ? p.ships.map(serializeShip) : [],
+        activeShipId: p.activeShipId || getOwnedActiveShip(p)?.id || null,
+        quests: buildQuestSnapshot(p),
+        minigameStats: minigames ? minigames.serializeMinigameStats(p) : null,
+        talentPoints: p.talentPoints || 0,
+        talents: p.talents || {},
+        abilityBar: p.abilityBar || [null, null, null, null, null],
+        moveSpeed: Number(getPlayerSpeed(p).toFixed(2))
+      });
+    }
     if (
       viewerId &&
       p.id === viewerId &&
@@ -9084,7 +9197,9 @@ function broadcastSnapshot() {
 
 function broadcastCombat(event) {
   for (const client of clients.values()) {
-    send(client, event);
+    if (isStreamEventVisibleToClient(event, client)) {
+      send(client, event);
+    }
   }
 }
 
@@ -11880,17 +11995,24 @@ function handleCastSpell(client, spellId) {
   const gx = Math.floor(p.x) + 0.5;
   const gy = Math.floor(p.y) + 0.5;
   for (const c of clients.values()) {
-    send(c, {
+    if (isStreamEventVisibleToClient({
       type: "spellCast",
       casterId: p.id,
-      spellId,
       x: spellId === "consecration" ? gx : p.x,
-      y: spellId === "consecration" ? gy : p.y,
-      groundAnchor: spellId === "consecration",
-      facing: p.facing,
-      cooldownMs: cd,
-      readyAt: now + cd
-    });
+      y: spellId === "consecration" ? gy : p.y
+    }, c)) {
+      send(c, {
+        type: "spellCast",
+        casterId: p.id,
+        spellId,
+        x: spellId === "consecration" ? gx : p.x,
+        y: spellId === "consecration" ? gy : p.y,
+        groundAnchor: spellId === "consecration",
+        facing: p.facing,
+        cooldownMs: cd,
+        readyAt: now + cd
+      });
+    }
   }
   send(client, { type: "spellCooldown", spellId, cooldownMs: cd, readyAt: now + cd });
   broadcastSnapshot();
