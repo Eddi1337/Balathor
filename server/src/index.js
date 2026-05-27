@@ -43,6 +43,7 @@ const {
   getPlanetById,
   getPlanetBySpacePoint,
   getPlanetsNearSpacePoint,
+  planetShipSpriteRadiusTiles,
   sciFiStationById,
   proceduralAsteroidFieldsNear,
   proceduralSpaceStationsNear,
@@ -150,7 +151,7 @@ const SHIP_WARP_APPROACH_SPEED = 26;
 const SHIP_WARP_APPROACH_MS = 800;
 const SHIP_WARP_JUMP_MS = 1700;
 const SHIP_ORBIT_VIEW_OFFSET = 18;
-const SHIP_WARP_ARRIVE_RADIUS = 7;
+const SHIP_WARP_CLEARANCE = 5;
 const SHIP_DOCK_RADIUS = 4.25;
 const SHIP_TURN_SPEED = 2.65;
 const SHIP_REPAIR_PER_SECOND = 7;
@@ -3853,14 +3854,51 @@ function orbitalArrivalPointForPlanet(planet, fromX, fromY) {
   const dist = Math.hypot(dx, dy) || 1;
   const ux = dx / dist;
   const uy = dy / dist;
-  const offset = Math.max(
-    SHIP_ORBIT_VIEW_OFFSET,
-    (Number(planet.radius) || 0) + SHIP_ORBIT_VIEW_OFFSET + 6
-  );
+  const offset = planetShipSpriteRadiusTiles(planet) + SHIP_WARP_CLEARANCE + 2;
   return {
     x: Number((planet.x - ux * offset).toFixed(3)),
     y: Number((planet.y - uy * offset).toFixed(3))
   };
+}
+
+function resolveClearShipArrivalPoint(arrivalX, arrivalY, anchorX, anchorY) {
+  const ax = Number(anchorX);
+  const ay = Number(anchorY);
+  let x = Number(arrivalX);
+  let y = Number(arrivalY);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    return { x: 0, y: 0 };
+  }
+  if (!isBlockedCircleForShip(x, y)) {
+    return { x, y };
+  }
+  let awayAngle = Math.atan2(y - ay, x - ax);
+  if (!Number.isFinite(awayAngle)) {
+    awayAngle = 0;
+  }
+  const step = 2.5;
+  const maxRings = 14;
+  for (let ring = 1; ring <= maxRings; ring += 1) {
+    const push = step * ring;
+    for (let i = 0; i < 8; i += 1) {
+      const angle = awayAngle + (i * Math.PI) / 4;
+      const tx = x + Math.cos(angle) * push;
+      const ty = y + Math.sin(angle) * push;
+      if (!isBlockedCircleForShip(tx, ty)) {
+        return { x: tx, y: ty };
+      }
+    }
+  }
+  const ux = Math.cos(awayAngle);
+  const uy = Math.sin(awayAngle);
+  for (let extra = step; extra <= step * maxRings; extra += step) {
+    const tx = x + ux * extra;
+    const ty = y + uy * extra;
+    if (!isBlockedCircleForShip(tx, ty)) {
+      return { x: tx, y: ty };
+    }
+  }
+  return { x, y };
 }
 
 function updateShipWarpForClient(client, dt, aboardShipClients) {
@@ -3875,8 +3913,8 @@ function updateShipWarpForClient(client, dt, aboardShipClients) {
   const now = Date.now();
   const center = shipCenter(ship, player);
   if (warp.phase !== "jump") {
-    const dx = warp.targetX - center.x;
-    const dy = warp.targetY - center.y;
+    const dx = warp.arrivalX - center.x;
+    const dy = warp.arrivalY - center.y;
     const dist = Math.hypot(dx, dy);
     if (dist > 1e-4) {
       const step = Math.min(dist, SHIP_WARP_APPROACH_SPEED * dt);
@@ -3910,10 +3948,16 @@ function updateShipWarpForClient(client, dt, aboardShipClients) {
   if (now - warp.jumpStartedAt >= SHIP_WARP_JUMP_MS) {
     const prevX = center.x;
     const prevY = center.y;
-    ship.worldX = warp.arrivalX;
-    ship.worldY = warp.arrivalY;
-    ship.dockX = warp.arrivalX;
-    ship.dockY = warp.arrivalY;
+    const cleared = resolveClearShipArrivalPoint(
+      warp.arrivalX,
+      warp.arrivalY,
+      warp.targetX,
+      warp.targetY
+    );
+    ship.worldX = cleared.x;
+    ship.worldY = cleared.y;
+    ship.dockX = cleared.x;
+    ship.dockY = cleared.y;
     ship.speed = 0;
     ship.warp = null;
     moveShipOccupantsWithWarp(client, ship, ship.worldX - prevX, ship.worldY - prevY, aboardShipClients);
@@ -6317,7 +6361,8 @@ function handleShipMissile(client, shipOverride = null, opts = {}) {
 // and major asteroid belts are also included.
 
 const TELEPORT_NEAR_RANGE = 220; // tiles — used to decide "nearby" planets / stations.
-const RINGFORGE_WARP_ARRIVAL_RADIUS = 92;
+const RINGFORGE_STATION_W = 71;
+const RINGFORGE_STATION_H = 61;
 
 const WARP_PIRATE_OUTPOSTS = Object.freeze([
   { id: "outpost_breach",    name: "Breach Depot",      sublabel: "Pirate stronghold",   x: 2192, y: -428, color: "#ff6b6b" },
@@ -6343,9 +6388,12 @@ function ringforgeWarpArrivalPoint(fromX, fromY) {
     dy = -1;
     len = 1;
   }
+  const halfW = Math.floor(RINGFORGE_STATION_W / 2);
+  const halfH = Math.floor(RINGFORGE_STATION_H / 2);
+  const offset = Math.hypot(halfW, halfH) + SHIP_WARP_CLEARANCE + 4;
   return {
-    x: SCI_FI_STATION_CENTER.x + (dx / len) * RINGFORGE_WARP_ARRIVAL_RADIUS,
-    y: SCI_FI_STATION_CENTER.y + (dy / len) * RINGFORGE_WARP_ARRIVAL_RADIUS
+    x: SCI_FI_STATION_CENTER.x + (dx / len) * offset,
+    y: SCI_FI_STATION_CENTER.y + (dy / len) * offset
   };
 }
 
@@ -6448,12 +6496,13 @@ function startShipWarp(client, destination) {
   }
   const center = shipCenter(ship, player);
   const travelFacing = Math.atan2(targetY - center.y, targetX - center.x);
-  const arrival =
+  const rawArrival =
     destination?.kind === "planet"
       ? orbitalArrivalPointForPlanet(destination, center.x, center.y)
       : destination?.kind === "station" && destination?.id === "station_ringforge"
         ? ringforgeWarpArrivalPoint(center.x, center.y)
       : { x: targetX, y: targetY };
+  const arrival = resolveClearShipArrivalPoint(rawArrival.x, rawArrival.y, targetX, targetY);
   ship.warp = {
     active: true,
     phase: "approach",
@@ -6678,8 +6727,9 @@ function handleTravelToPlanet(client, message = {}) {
   const parkedX = Number.isFinite(ship.worldX) ? ship.worldX : Number(player.x) || 0;
   const parkedY = Number.isFinite(ship.worldY) ? ship.worldY : Number(player.y) || 0;
   const parkedDist = Math.hypot(parkedX - planet.x, parkedY - planet.y);
+  const orbitKeepRadius = planetShipSpriteRadiusTiles(planet) + SHIP_WARP_CLEARANCE + 6;
   const orbitalParking =
-    parkedDist <= (Number(planet.radius) || 0) + SHIP_ORBIT_VIEW_OFFSET + 18
+    parkedDist <= orbitKeepRadius
       ? { x: parkedX, y: parkedY }
       : orbitalArrivalPointForPlanet(planet, parkedX, parkedY);
 

@@ -71,6 +71,8 @@ const {
 const {
   SCI_FI_PLANETS,
   PLANET_SURFACE_LANDING_OFFSET,
+  planetBlocksShipAt,
+  planetShipSpriteRadiusTiles,
   getPlanetById,
   getPlanetBySurfacePoint,
   getPlanetBySpacePoint,
@@ -2404,17 +2406,12 @@ function isBlockedForShip(x, y) {
     return isBlocked(x, y);
   }
 
-  if (sciFiStationAt(tx, ty) || sciFiPlanetAt(tx, ty)) {
+  // Ship flight uses compact sprite footprints (see drawPlanetObject / drawStationObject).
+  if (planetBlocksShipAt(x, y) || sciFiStationAt(tx, ty)) {
     return true;
   }
 
-  const feature = sciFiStationFeatureAt(tx, ty);
-  if (feature?.kind === "ship-port") {
-    return false;
-  }
-
-  const tile = generateTile(tx, ty);
-  return tile !== TILE.VOID && tile !== TILE.WALKWAY && tile !== TILE.ENERGY;
+  return false;
 }
 
 /**
@@ -2630,6 +2627,7 @@ module.exports = {
   SCI_FI_SAFE_RADIUS,
   SCI_FI_DEFENSES,
   SCI_FI_PLANETS,
+  planetShipSpriteRadiusTiles,
   getPlanetById,
   getPlanetBySurfacePoint,
   getPlanetBySpacePoint,

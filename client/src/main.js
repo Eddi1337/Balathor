@@ -486,6 +486,13 @@ function clientIsBlockedCircle(wx, wy, radius = PLAYER_COLLISION_RADIUS) {
   return points.some(([px, py]) => CLIENT_BLOCKED_TILES.has(getTile(Math.floor(px), Math.floor(py))));
 }
 
+/** Mirrors server planetShipSpriteRadiusTiles / drawPlanetObject sprite size. */
+function clientPlanetShipSpriteRadiusTiles(planet) {
+  const dataRadius = Number(planet?.radius) || 48;
+  const spritePx = Math.max(22, Math.min(76, dataRadius * 1.15));
+  return spritePx / TILE_SIZE + 0.34;
+}
+
 function clientSpaceObjectBlocksShip(wx, wy) {
   const tx = Math.floor(wx);
   const ty = Math.floor(wy);
@@ -500,9 +507,9 @@ function clientSpaceObjectBlocksShip(wx, wy) {
         return true;
       }
     } else if (obj.kind === "planet" || obj.type === "planet") {
-      const radius = Math.max(1, Number(obj.radius || 1));
-      const dx = tx - obj.x;
-      const dy = ty - obj.y;
+      const radius = clientPlanetShipSpriteRadiusTiles(obj);
+      const dx = wx - obj.x;
+      const dy = wy - obj.y;
       if (dx * dx + dy * dy <= radius * radius) {
         return true;
       }
@@ -512,11 +519,14 @@ function clientSpaceObjectBlocksShip(wx, wy) {
 }
 
 function clientIsBlockedForShip(wx, wy) {
-  const tx = Math.floor(wx);
-  const ty = Math.floor(wy);
   if (clientSpaceObjectBlocksShip(wx, wy)) {
     return true;
   }
+  if (isSciFiWorld()) {
+    return false;
+  }
+  const tx = Math.floor(wx);
+  const ty = Math.floor(wy);
   const tile = getTile(tx, ty);
   return tile !== TILE.VOID && tile !== TILE.WALKWAY && tile !== TILE.ENERGY;
 }
