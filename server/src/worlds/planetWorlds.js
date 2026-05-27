@@ -436,10 +436,55 @@ function getPlanetSurfaceObjectsInChunk(cx, cy, chunkSize, hash2) {
   return out;
 }
 
+/** Matches client drawPlanetObject sprite radius (pixels → tiles). */
+const SHIP_PLANET_SPRITE_MIN_PX = 22;
+const SHIP_PLANET_SPRITE_MAX_PX = 76;
+const SHIP_PLANET_SPRITE_SCALE = 1.15;
+const SHIP_TILE_PX = 32;
+const SHIP_PLANET_COLLISION_PAD_TILES = 0.34;
+
+function planetShipSpriteRadiusTiles(planet) {
+  const dataRadius = Number(planet?.radius) || 48;
+  const spritePx = Math.max(
+    SHIP_PLANET_SPRITE_MIN_PX,
+    Math.min(SHIP_PLANET_SPRITE_MAX_PX, dataRadius * SHIP_PLANET_SPRITE_SCALE)
+  );
+  return spritePx / SHIP_TILE_PX + SHIP_PLANET_COLLISION_PAD_TILES;
+}
+
+function planetBlocksShipAt(x, y) {
+  const px = Number(x);
+  const py = Number(y);
+  if (!Number.isFinite(px) || !Number.isFinite(py)) return false;
+
+  const inside = (planet) => {
+    const r = planetShipSpriteRadiusTiles(planet);
+    const dx = px - planet.x;
+    const dy = py - planet.y;
+    return dx * dx + dy * dy <= r * r;
+  };
+
+  for (const planet of SCI_FI_PLANETS) {
+    if (inside(planet)) return true;
+  }
+
+  const gx = Math.floor(px / PROCEDURAL_PLANET_SPACE_GRID);
+  const gy = Math.floor(py / PROCEDURAL_PLANET_SPACE_GRID);
+  for (let ox = -1; ox <= 1; ox += 1) {
+    for (let oy = -1; oy <= 1; oy += 1) {
+      const planet = makeProceduralPlanet(gx + ox, gy + oy);
+      if (planet && inside(planet)) return true;
+    }
+  }
+  return false;
+}
+
 module.exports = {
   SCI_FI_PLANETS,
   PLANET_SURFACE_LANDING_OFFSET,
   PLANET_SURFACE_EDGE_MARGIN,
+  planetShipSpriteRadiusTiles,
+  planetBlocksShipAt,
   getPlanetById,
   getPlanetBySurfacePoint,
   getPlanetBySpacePoint,
