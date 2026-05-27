@@ -1217,16 +1217,38 @@ const BUILDING_INTERIORS = BUILDINGS.map((building, index) => createInteriorForB
 // ---------------------------------------------------------------------------
 // Procedural settlement system
 // ---------------------------------------------------------------------------
-const SETTLE_GRID = 80;
+const SETTLE_GRID = 96;
 
-// Fixed relative building positions within a procedural settlement.
-const SETTLE_SLOTS = [
-  { dx: -19, dy: -13, w: 9, h: 7, type: "hut"   },
-  { dx:   7, dy: -13, w: 9, h: 7, type: "hut"   },
-  { dx: -20, dy:   5, w:10, h: 7, type: "house"  },
-  { dx:   7, dy:   5, w:10, h: 7, type: "house"  },
-  { dx:  -8, dy:  -4, w: 8, h: 6, type: "hut"   },
-];
+const SETTLEMENT_STYLE = {
+  forest: {
+    pathTile: TILE.PATH,
+    ringRoad: true,
+    clearRadiusMin: 29,
+    clearRadiusMax: 41,
+    slots: [
+      { dx: -27, dy: -20, w: 8, h: 6, type: "hut" },
+      { dx: -14, dy: -21, w: 10, h: 7, type: "house" },
+      { dx: 3, dy: -22, w: 10, h: 7, type: "house" },
+      { dx: 17, dy: -19, w: 12, h: 8, type: "big_house" },
+      { dx: -30, dy: -2, w: 10, h: 7, type: "house" },
+      { dx: 20, dy: -2, w: 10, h: 7, type: "house" },
+      { dx: -25, dy: 15, w: 12, h: 8, type: "big_house" },
+      { dx: -6, dy: 17, w: 10, h: 7, type: "house" },
+      { dx: 10, dy: 16, w: 10, h: 7, type: "house" },
+      { dx: 22, dy: 13, w: 8, h: 6, type: "hut" }
+    ]
+  },
+  meadow: { pathTile: TILE.PATH, ringRoad: true },
+  desert: { pathTile: TILE.SAND, ringRoad: true },
+  frost: { pathTile: TILE.SNOW, ringRoad: true },
+  ember: { pathTile: TILE.STONE, ringRoad: true },
+  swamp: { pathTile: TILE.DARK_GRASS, ringRoad: false },
+  savanna: { pathTile: TILE.SAND, ringRoad: true },
+  tundra: { pathTile: TILE.SNOW, ringRoad: true },
+  badlands: { pathTile: TILE.STONE, ringRoad: true }
+};
+
+const DEFAULT_SETTLEMENT_SLOTS = SETTLEMENT_STYLE.forest.slots;
 
 const SETTLE_NAMES = {
   forest:   ["Forest Hut", "Woodland Rest", "Ranger Shelter", "Forest Cabin", "Woodsman Hut"],
@@ -1240,9 +1262,20 @@ const SETTLE_NAMES = {
   badlands: ["Scorch Hut", "Cinder Shelter", "Ash Cabin", "Char Post", "Brimstone Hut"],
 };
 
-function getSettlementAt(gx, gy) {
-  if (hash2(gx * 7919, gy * 6271, 9991) > 0.18) return null;
+const SETTLEMENT_WALKWAY_PAD = 2;
 
+function rectsOverlapWithPad(a, b, pad = 0) {
+  return !(
+    a.x + a.w + pad <= b.x ||
+    b.x + b.w + pad <= a.x ||
+    a.y + a.h + pad <= b.y ||
+    b.y + b.h + pad <= a.y
+  );
+}
+
+function getSettlementAt(gx, gy) {
+  if (hash2(gx * 7919, gy * 6271, 9991) > 0.23) return null;
+  const ownRank = hash2(gx, gy, 205);
   const cx = gx * SETTLE_GRID + 10 + Math.floor(hash2(gx, gy, 201) * (SETTLE_GRID - 20));
   const cy = gy * SETTLE_GRID + 10 + Math.floor(hash2(gx, gy, 202) * (SETTLE_GRID - 20));
 
@@ -1254,20 +1287,50 @@ function getSettlementAt(gx, gy) {
   if (Math.hypot(cx + 600, cy + 490) < 56) return null;
   if (Math.hypot(cx - 580, cy + 530) < 56) return null;
 
-  const numSlots = 2 + Math.floor(hash2(gx, gy, 203) * 4);
-  const clearRadius = 20 + Math.floor(hash2(gx, gy, 204) * 12);
+  const biome = getBiome(cx, cy);
+  const style = SETTLEMENT_STYLE[biome] || SETTLEMENT_STYLE.forest;
+  const slots = style.slots || DEFAULT_SETTLEMENT_SLOTS;
+  const minSlots = Math.min(6, slots.length);
+  const maxSlots = Math.max(minSlots, slots.length);
+  const numSlots = minSlots + Math.floor(hash2(gx, gy, 203) * (maxSlots - minSlots + 1));
+  const clearMin = Number(style.clearRadiusMin) || 28;
+  const clearMax = Number(style.clearRadiusMax) || 42;
+  const clearRadius = clearMin + Math.floor(hash2(gx, gy, 204) * Math.max(2, clearMax - clearMin + 1));
+  for (let ox = -1; ox <= 1; ox += 1) {
+    for (let oy = -1; oy <= 1; oy += 1) {
+      if (ox === 0 && oy === 0) continue;
+      const ngx = gx + ox;
+      const ngy = gy + oy;
+      if (hash2(ngx * 7919, ngy * 6271, 9991) > 0.23) continue;
+      const ncx = ngx * SETTLE_GRID + 10 + Math.floor(hash2(ngx, ngy, 201) * (SETTLE_GRID - 20));
+      const ncy = ngy * SETTLE_GRID + 10 + Math.floor(hash2(ngx, ngy, 202) * (SETTLE_GRID - 20));
+      if (isSciFiSector(ncx, ncy)) continue;
+      const nBiome = getBiome(ncx, ncy);
+      const nStyle = SETTLEMENT_STYLE[nBiome] || SETTLEMENT_STYLE.forest;
+      const nMin = Number(nStyle.clearRadiusMin) || 28;
+      const nMax = Number(nStyle.clearRadiusMax) || 42;
+      const nRadius = nMin + Math.floor(hash2(ngx, ngy, 204) * Math.max(2, nMax - nMin + 1));
+      const minSeparation = clearRadius + nRadius + SETTLEMENT_WALKWAY_PAD * 3;
+      if (Math.hypot(cx - ncx, cy - ncy) < minSeparation) {
+        const neighborRank = hash2(ngx, ngy, 205);
+        if (neighborRank <= ownRank) return null;
+      }
+    }
+  }
 
-  return { cx, cy, gx, gy, numSlots, clearRadius };
+  return { cx, cy, gx, gy, numSlots, clearRadius, biome };
 }
 
 function getSettlementBuildingList(s) {
-  const biome = getBiome(s.cx, s.cy);
+  const biome = s.biome || getBiome(s.cx, s.cy);
+  const style = SETTLEMENT_STYLE[biome] || SETTLEMENT_STYLE.forest;
+  const slots = style.slots || DEFAULT_SETTLEMENT_SLOTS;
   const names = SETTLE_NAMES[biome] || SETTLE_NAMES.forest;
-  const count = Math.min(s.numSlots, SETTLE_SLOTS.length);
+  const count = Math.min(s.numSlots, slots.length);
   const result = [];
   for (let i = 0; i < count; i++) {
-    const slot = SETTLE_SLOTS[i];
-    result.push({
+    const slot = slots[i];
+    const candidate = {
       x: s.cx + slot.dx,
       y: s.cy + slot.dy,
       w: slot.w,
@@ -1277,7 +1340,15 @@ function getSettlementBuildingList(s) {
       gx: s.gx,
       gy: s.gy,
       slotIndex: i,
-    });
+    };
+    let conflict = false;
+    for (const placed of result) {
+      if (rectsOverlapWithPad(candidate, placed, SETTLEMENT_WALKWAY_PAD)) {
+        conflict = true;
+        break;
+      }
+    }
+    if (!conflict) result.push(candidate);
   }
   return result;
 }
@@ -1320,16 +1391,34 @@ function getProceduralSettlementTile(x, y) {
       return getBuildingInteriorTile(lx, ly, b.w, b.h, b.type || "hut", seed, false, false);
     }
 
+    const biome = s.biome || getBiome(s.cx, s.cy);
+    const style = SETTLEMENT_STYLE[biome] || SETTLEMENT_STYLE.forest;
+    const roadTile = style.pathTile ?? TILE.PATH;
+
     // Cross roads through settlement center.
     const dx = Math.abs(x - s.cx);
     const dy = Math.abs(y - s.cy);
     if ((dy <= 1 && dx <= s.clearRadius) || (dx <= 1 && dy <= s.clearRadius)) {
-      return TILE.PATH;
+      return roadTile;
+    }
+
+    // Ring road to make larger, connected towns.
+    if (style.ringRoad && Math.abs(Math.hypot(x - s.cx, y - s.cy) - Math.max(10, s.clearRadius - 8)) <= 1.25) {
+      return roadTile;
+    }
+
+    // Decorative "bunting" lines between blocks (flower + stone accents).
+    const relX = x - s.cx;
+    const relY = y - s.cy;
+    if (Math.abs(relY + 10) <= 0 && relX >= -24 && relX <= 24 && hash2(x, y, 5201) > 0.3) {
+      return hash2(x, y, 5202) > 0.55 ? TILE.FLOWERS : TILE.STONE;
+    }
+    if (Math.abs(relY - 10) <= 0 && relX >= -24 && relX <= 24 && hash2(x, y, 5203) > 0.3) {
+      return hash2(x, y, 5204) > 0.55 ? TILE.FLOWERS : TILE.STONE;
     }
 
     // Clearing ground.
     if (dist <= s.clearRadius) {
-      const biome = getBiome(x, y);
       if (biome === "desert")   return hash2(x, y, 77) > 0.93 ? TILE.STONE : TILE.SAND;
       if (biome === "frost")    return hash2(x, y, 77) > 0.92 ? TILE.STONE : TILE.SNOW;
       if (biome === "ember")    return hash2(x, y, 77) > 0.92 ? TILE.STONE : TILE.DARK_GRASS;
