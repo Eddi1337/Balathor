@@ -7588,6 +7588,11 @@ function handleInteract(client, message = {}) {
     return;
   }
 
+  const minigameSite = minigames?.findSiteNear(client.player, message);
+  if (minigameSite && minigames.handleInteract(client, minigameSite)) {
+    return;
+  }
+
   const roadside = resolveInteractRoadside(client.player, message);
   if (roadside) {
     if (roadside.kind === "bench") {
@@ -7653,11 +7658,6 @@ function handleInteract(client, message = {}) {
   }
 
   if (handleCaveEntranceInteract(client, message)) {
-    return;
-  }
-
-  const minigameSite = minigames?.findSiteNear(client.player, message);
-  if (minigameSite && minigames.handleInteract(client, minigameSite)) {
     return;
   }
 

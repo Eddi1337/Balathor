@@ -106,6 +106,19 @@
       ctx.stroke();
       ctx.fillStyle = prop === "swim_buoy" ? "rgba(78,197,255,0.25)" : "rgba(116,242,156,0.2)";
       ctx.fill();
+      const idx = Number.isFinite(site.relayIndex)
+        ? site.relayIndex
+        : Number.isFinite(site.swimIndex)
+          ? site.swimIndex
+          : null;
+      if (idx !== null) {
+        const tag = prop === "swim_buoy" ? `Buoy ${idx + 1}/4` : `Relay ${idx + 1}/4`;
+        ctx.font = "bold 9px ui-sans-serif, system-ui";
+        ctx.fillStyle = prop === "swim_buoy" ? "#b8ecff" : "#c8ffd8";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        ctx.fillText(tag, sx, sy + 18);
+      }
     } else if (prop === "courier_crate") {
       ctx.fillStyle = "#6b4c28";
       ctx.fillRect(sx - 16, sy - 14, 32, 22);

@@ -1,5 +1,7 @@
 "use strict";
 
+const { isTileNearMinigameSite } = require("./minigameSites.js");
+
 const TWO_PI = Math.PI * 2;
 
 const HUB_CLEARING_RADIUS = 132;
@@ -589,6 +591,7 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
   for (const [key, cel] of lawnEdge) {
     const [nx, ny] = key.split(",").map(Number);
     if (hz(nx, ny, 7721) < 0.965) continue;
+    if (isTileNearMinigameSite(nx, ny, "fantasy", 2)) continue;
 
     const pick = hz(nx, ny, 7722);
     const kind = pick < 0.55 ? "bench" : "small_tree";
@@ -629,6 +632,7 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
         continue;
       }
       if (buildingBlock(nx, ny) || buildingBlock(nx + 1, ny)) continue;
+      if (isTileNearMinigameSite(nx, ny, "fantasy", 2) || isTileNearMinigameSite(nx + 1, ny, "fantasy", 2)) continue;
       if (!isPath(nx, ny + 1) || !isPath(nx + 1, ny + 1)) continue;
       if (isUsed(nx, ny) || isUsed(nx + 1, ny)) continue;
       if (hz(nx, ny, 9911) < 0.987) continue;
@@ -727,6 +731,7 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
         if (isPath(tx, ty) || wallKeys.has(`${tx},${ty}`)) continue;
         if (buildingBlock(tx, ty)) continue;
         if (isUsed(tx, ty)) continue;
+        if (isTileNearMinigameSite(tx, ty, "fantasy", 2)) continue;
         const r = hz(tx, ty, 3344);
         const dist = Math.hypot(dx, dy);
         let kind;

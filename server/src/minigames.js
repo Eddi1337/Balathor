@@ -573,28 +573,32 @@ function placeTrophy(client, site) {
 
 function touchRelay(client, site) {
   const p = client.player;
-  const party = deps.getPartyView(client);
-  if (!party?.members || party.members.length < 2) {
-    deps.send(client, { type: "serverMessage", message: "minigame_party_only" });
-    return true;
-  }
   const idx = site.relayIndex ?? 0;
   p._relayProgress = p._relayProgress || { next: 0, startedAt: Date.now() };
   if (idx !== p._relayProgress.next) {
-    deps.pushChat({ kind: "system", name: "Realm", text: "Wrong checkpoint — follow the posts in order." });
+    const need = p._relayProgress.next + 1;
+    deps.pushChat({
+      kind: "system",
+      name: "Realm",
+      text: `Wrong checkpoint — touch post ${need} of 4 next (run the town perimeter ring clockwise from the northwest post).`
+    });
     return true;
   }
   p._relayProgress.next += 1;
   if (p._relayProgress.next >= 4) {
-    const members = deps.getPartyMemberClients(client) || [client];
-    for (const c of members) {
-      if (c.player) grantReward(c, { gold: 20, xp: 30 });
-    }
+    grantReward(client, { gold: 20, xp: 30, trophy: "relay_runner", scoreKey: "relay_time", scoreValue: Date.now() - p._relayProgress.startedAt });
     p._relayProgress = null;
-    deps.pushChat({ kind: "system", name: "Realm", text: "Relay complete — your party shares the purse." });
+    deps.pushChat({ kind: "system", name: "Realm", text: "Perimeter relay complete — you collect the runner's purse." });
+    deps.saveClientCharacter(client);
     deps.broadcastSnapshot();
   } else {
-    deps.pushChat({ kind: "system", name: "Realm", text: `Relay post ${idx + 1} touched — onward!` });
+    const labels = ["northwest", "east avenue", "southeast lawn", "south gate"];
+    const nextLabel = labels[p._relayProgress.next] || "next post";
+    deps.pushChat({
+      kind: "system",
+      name: "Realm",
+      text: `Checkpoint ${idx + 1}/4 logged — run to the ${nextLabel} ring.`
+    });
   }
   return true;
 }

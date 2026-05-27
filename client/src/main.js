@@ -1803,8 +1803,6 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: `You need at least ${message.amount || 1} gold.` });
     } else if (message.message === "minigame_busy") {
       appendChat({ kind: "system", name: "Realm", text: "Finish your current activity first." });
-    } else if (message.message === "minigame_party_only") {
-      appendChat({ kind: "system", name: "Realm", text: "Party relay needs at least two members." });
     } else if (message.message === "minigame_knight_only") {
       appendChat({ kind: "system", name: "Realm", text: "Only knights may trial the sanctum ring." });
     } else if (message.message === "minigame_night_only") {
