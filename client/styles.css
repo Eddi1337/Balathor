@@ -319,6 +319,9 @@ button:focus-visible {
   justify-content: space-between;
   gap: 8px;
   padding: 6px 10px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
   background: linear-gradient(180deg, #2e1e08 0%, #1a1208 100%);
   border-bottom: 1px solid #7a5a1e;
   border-radius: 2px 2px 0 0;
@@ -952,6 +955,9 @@ button:focus-visible {
   background: linear-gradient(180deg, #2e1e08 0%, #1a1208 100%);
   border-bottom: 1px solid #7a5a1e;
   border-radius: 2px 2px 0 0;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
 }
 
 .window-head strong {
@@ -1322,6 +1328,9 @@ button:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
 }
 
 .chat-toggle {
@@ -1690,6 +1699,9 @@ button:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
 }
 
 .menu-head strong {
@@ -2959,6 +2971,9 @@ body.mobile.mobile-landscape .ability-bar-divider {
   gap: 8px;
   margin-bottom: 6px;
   font-size: 12px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
 }
 
 .party-min {

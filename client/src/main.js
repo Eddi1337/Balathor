@@ -3388,15 +3388,7 @@ function wireUi() {
     homeTeleportSlotEl.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   });
 
-  makeDraggable(equipmentPanel);
-  makeDraggable(bagsPanel);
-  makeDraggable(shopPanel);
-  makeDraggable(shipTerminalPanel);
-  makeDraggable(traderPanel);
-  if (buyHousePanel) makeDraggable(buyHousePanel);
-  if (companionOfferPanel) makeDraggable(companionOfferPanel);
-  makeDraggable(talentPanel);
-  if (tradePanel) makeDraggable(tradePanel);
+  initDraggablePanels();
 
   // Delegated dragstart for ability slots (avoids listener accumulation across renders)
   abilitySlotsEl.addEventListener("dragstart", (e) => {
@@ -17126,45 +17118,91 @@ function scheduleCanvasResize() {
   setTimeout(resize, 420);
 }
 
+const PANEL_DRAG_HANDLE_SELECTOR =
+  ".window-head, .party-panel-head, .chat-head, .progression-head, .menu-head";
+
+function initDraggablePanels() {
+  const panels = [
+    equipmentPanel,
+    bagsPanel,
+    shopPanel,
+    shipTerminalPanel,
+    traderPanel,
+    talentPanel,
+    questPanel,
+    teleportMenuPanel,
+    questOfferPanel,
+    partyPanel,
+    friendsWindow,
+    tradePanel,
+    buyHousePanel,
+    companionOfferPanel,
+    document.querySelector("#progression"),
+    document.querySelector("#chat"),
+    document.querySelector("#menu")
+  ];
+  for (const panel of panels) {
+    makeDraggable(panel);
+  }
+}
+
 function makeDraggable(panel) {
-  const head = panel.querySelector(".window-head");
+  if (!panel || panel.dataset.dragReady === "1") return;
+  const head = panel.querySelector(PANEL_DRAG_HANDLE_SELECTOR);
   if (!head) return;
-  let startX, startY, startLeft, startTop;
+  panel.dataset.dragReady = "1";
+
+  let startX = 0;
+  let startY = 0;
+  let startLeft = 0;
+  let startTop = 0;
+  let dragging = false;
 
   head.style.cursor = "grab";
+  head.style.touchAction = "none";
 
   head.addEventListener("pointerdown", (e) => {
-    if (e.target.closest("button")) return; // don't drag when clicking buttons
+    if (e.target.closest("button, input, select, textarea, a, label")) return;
     e.preventDefault();
     head.setPointerCapture(e.pointerId);
     head.style.cursor = "grabbing";
+    dragging = true;
 
-    // Get current position — convert from fixed positioning
     const rect = panel.getBoundingClientRect();
     startX = e.clientX;
     startY = e.clientY;
     startLeft = rect.left;
     startTop = rect.top;
 
-    // Switch from right/top to left/top positioning
     panel.style.right = "auto";
-    panel.style.left = startLeft + "px";
-    panel.style.top = startTop + "px";
+    panel.style.bottom = "auto";
+    panel.style.left = `${startLeft}px`;
+    panel.style.top = `${startTop}px`;
   });
 
   head.addEventListener("pointermove", (e) => {
-    if (e.buttons === 0) return;
+    if (!dragging || e.buttons === 0) return;
     const dx = e.clientX - startX;
     const dy = e.clientY - startY;
     const newLeft = Math.max(0, Math.min(window.innerWidth - 80, startLeft + dx));
     const newTop = Math.max(0, Math.min(window.innerHeight - 40, startTop + dy));
-    panel.style.left = newLeft + "px";
-    panel.style.top = newTop + "px";
+    panel.style.left = `${newLeft}px`;
+    panel.style.top = `${newTop}px`;
   });
 
-  head.addEventListener("pointerup", () => {
+  const endDrag = (e) => {
+    if (!dragging) return;
+    dragging = false;
     head.style.cursor = "grab";
-  });
+    try {
+      head.releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released */
+    }
+  };
+
+  head.addEventListener("pointerup", endDrag);
+  head.addEventListener("pointercancel", endDrag);
 }
 
 function setStatus(text) {
