@@ -1052,7 +1052,11 @@ function getTileColors(tile, theme = state.worldTheme) {
 }
 
 resize();
-wireUi();
+try {
+  wireUi();
+} catch (error) {
+  console.error("[boot] UI init failed:", error);
+}
 if (globalThis.BalathorMinigames) {
   BalathorMinigames.init({
     ctx,
@@ -1086,19 +1090,24 @@ requestAnimationFrame(frame);
 setInterval(sendInput, 33);
 
 async function start() {
-  globalThis.__balathorClearChunkCache = () => chunkCanvasCache.clear();
-  if (globalThis.TechDungeonSprites) {
-    void TechDungeonSprites.load().then((ok) => {
-      if (ok) {
-        chunkCanvasCache.clear();
-      }
-    });
+  try {
+    globalThis.__balathorClearChunkCache = () => chunkCanvasCache.clear();
+    if (globalThis.TechDungeonSprites) {
+      void TechDungeonSprites.load().then((ok) => {
+        if (ok) {
+          chunkCanvasCache.clear();
+        }
+      });
+    }
+    setStatus("Loading realm config");
+    state.config = await loadConfig();
+    const serverUrl = localStorage.getItem(SERVER_URL_STORAGE_KEY) || state.config.gameServerUrl;
+    setStatus("Connecting to realm");
+    connect(serverUrl);
+  } catch (error) {
+    console.error("[boot] start failed:", error);
+    setStatus(`Could not start (${error?.message || "check console"})`);
   }
-  setStatus("Loading realm config");
-  state.config = await loadConfig();
-  const serverUrl = localStorage.getItem(SERVER_URL_STORAGE_KEY) || state.config.gameServerUrl;
-  setStatus("Connecting to realm");
-  connect(serverUrl);
 }
 
 async function loadConfig() {
@@ -1114,7 +1123,7 @@ async function loadConfig() {
 
   for (const source of sources) {
     try {
-      const response = await fetch(source, { cache: "no-store" });
+      const response = await fetchWithTimeout(source, { cache: "no-store" }, 8000);
       if (response.ok) {
         const config = await response.json();
         return {
@@ -1127,6 +1136,12 @@ async function loadConfig() {
   }
 
   return { gameServerUrl: fallbackUrl };
+}
+
+function fetchWithTimeout(url, options, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
 function connect(url) {

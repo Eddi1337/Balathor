@@ -1324,9 +1324,6 @@ let nextItemId = 1;
 let nextGroundItemId = 1;
 let tick = 0;
 let snapshotAccumulator = 0;
-/** Coalesce multiple snapshot requests within one simulate() tick into a single send. */
-let snapshotPending = false;
-let snapshotInSimTick = false;
 
 /** Rolling wall-clock intervals between simulate() runs (for debug pong). */
 let lastSimulateWallMs = Date.now();
@@ -1726,7 +1723,11 @@ function queueSimulate() {
 
 function simulateCore() {
   const t0 = Date.now();
-  simulate();
+  try {
+    simulate();
+  } catch (error) {
+    console.error("[simulate] tick failed:", error);
+  }
   return Date.now() - t0;
 }
 
@@ -2127,7 +2128,15 @@ function serializeShipForPlayer(player, ship = player?.ship) {
 /** Minimal ship payload for other players — full ship state is only sent to the owner. */
 function serializeShipForViewer(player, ship, viewerId) {
   if (!ship) return null;
-  const viewer = viewerId ? getPlayerById(viewerId) : null;
+  let viewer = null;
+  if (viewerId) {
+    for (const client of clients.values()) {
+      if (client.player?.id === viewerId) {
+        viewer = client.player;
+        break;
+      }
+    }
+  }
   const viewerAboardThisShip = Boolean(
     viewer &&
       (viewer.aboardShipId === ship.id ||
@@ -4097,7 +4106,6 @@ function simulate() {
   if (clients.size === 0) {
     return;
   }
-  snapshotInSimTick = true;
   recordSimulateWallInterval();
   tick += 1;
   const dt = 1 / TICK_RATE;
@@ -4394,10 +4402,12 @@ function simulate() {
   }
 
   snapshotAccumulator += SNAPSHOT_RATE;
+  let _pt = process.hrtime.bigint();
   if (snapshotAccumulator >= TICK_RATE) {
     snapshotAccumulator -= TICK_RATE;
     broadcastSnapshot();
   }
+  perfAcc.snapshot += Number(process.hrtime.bigint() - _pt) / 1e3;
 
   if (tick % PERF_LOG_INTERVAL === 0) {
     const total = Object.values(perfAcc).reduce((a, b) => a + b, 0);
@@ -4409,11 +4419,6 @@ function simulate() {
     console.log(`[perf] tick=${tick} total=${fmt(total)}/tick players=${clients.size}\n${lines}`);
     for (const k of Object.keys(perfAcc)) perfAcc[k] = 0;
   }
-
-  const _snapshotPt = process.hrtime.bigint();
-  flushPendingSnapshot();
-  perfAcc.snapshot += Number(process.hrtime.bigint() - _snapshotPt) / 1e3;
-  snapshotInSimTick = false;
 }
 
 function handleDoorTravel(client) {
@@ -8916,18 +8921,11 @@ function snapshotForEachCellInWorldRect(minX, maxX, minY, maxY, cellSize, visito
 }
 
 function broadcastSnapshot() {
-  snapshotPending = true;
-  if (!snapshotInSimTick) {
-    flushPendingSnapshot();
+  try {
+    emitSnapshot();
+  } catch (error) {
+    console.error("[snapshot] emit failed:", error);
   }
-}
-
-function flushPendingSnapshot() {
-  if (!snapshotPending) {
-    return;
-  }
-  snapshotPending = false;
-  emitSnapshot();
 }
 
 function emitSnapshot() {
