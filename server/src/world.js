@@ -1280,7 +1280,7 @@ function getSettlementAt(gx, gy) {
   const cx = gx * SETTLE_GRID + 10 + Math.floor(hash2(gx, gy, 201) * (SETTLE_GRID - 20));
   const cy = gy * SETTLE_GRID + 10 + Math.floor(hash2(gx, gy, 202) * (SETTLE_GRID - 20));
 
-  if (isSciFiSector(cx, cy)) return null;
+  if (isSciFiSector(cx, cy) || getPlanetBySurfacePoint(cx, cy)) return null;
 
   // Stay clear of starting town and portal destinations.
   if (Math.hypot(cx, cy) < Math.max(86, HUB_TOWN_GRASS_RADIUS + 18)) return null;
@@ -1355,7 +1355,7 @@ function getSettlementBuildingList(s) {
 }
 
 function getNearbySettlements(x, y) {
-  if (isSciFiSector(x, y)) {
+  if (isSciFiSector(x, y) || getPlanetBySurfacePoint(x, y)) {
     return [];
   }
   const gx = Math.floor(x / SETTLE_GRID);
