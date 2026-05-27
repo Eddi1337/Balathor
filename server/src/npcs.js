@@ -1,7 +1,7 @@
 const WORLD = require("./world");
-const { isBlockedCircle, isBlockedCircleForShip, SCI_FI_PLANETS } = WORLD;
+const { isBlockedCircle, SCI_FI_PLANETS } = WORLD;
 const { HUB_NPC_ORDER } = require("./hubRoundTown.js");
-const { SCI_FI_DOCK_PORTS, SCI_FI_STATION_FEATURES, RINGFORGE_CENTER } = require("./sciFiStationLayout.js");
+const { SCI_FI_STATION_FEATURES, RINGFORGE_CENTER, STATION_INTERIOR_WAYPOINTS, stationInteriorPoint, clampToStationInterior, isInsideStationInterior } = require("./sciFiStationLayout.js");
 
 const NPC_SPEED = 2.0;
 const NPC_STOP_DISTANCE = 0.08;
@@ -746,7 +746,50 @@ function tickNpcStuckCheck(npc, now, navSet) {
   }
 }
 
+function isOrbitalSquareStationNpc(npc) {
+  if (!npc || npc.npcTheme !== "sci-fi") return false;
+  const hx = Number(npc.homeX) || 0;
+  const hy = Number(npc.homeY) || 0;
+  if (Math.abs(hx) > 4000) return false;
+  return Math.hypot(hx - RINGFORGE_CENTER.x, hy - RINGFORGE_CENTER.y) <= 80;
+}
+
+function enforceStationInteriorBounds(npc) {
+  if (!isOrbitalSquareStationNpc(npc)) return;
+  if (!isInsideStationInterior(npc.x, npc.y, 0)) {
+    const clamped = clampToStationInterior(npc.x, npc.y);
+    npc.x = clamped.x;
+    npc.y = clamped.y;
+  }
+  if (Number.isFinite(npc._targetX) && Number.isFinite(npc._targetY)) {
+    const target = clampToStationInterior(npc._targetX, npc._targetY);
+    npc._targetX = target.x;
+    npc._targetY = target.y;
+  }
+}
+
+function chooseStationPatrolTarget(npc) {
+  for (let attempt = 0; attempt < NPC_PATROL_TARGET_ATTEMPTS; attempt += 1) {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = Math.random() * Math.min(Number(npc.patrolRadius) || 4, 6);
+    const rawX = npc.homeX + Math.cos(angle) * radius;
+    const rawY = npc.homeY + Math.sin(angle) * radius;
+    const clamped = clampToStationInterior(rawX, rawY);
+    if (!isBlockedCircle(clamped.x, clamped.y)) {
+      return { tx: clamped.x, ty: clamped.y };
+    }
+  }
+  if (!isBlockedCircle(npc.homeX, npc.homeY)) {
+    return { tx: npc.homeX, ty: npc.homeY };
+  }
+  const fallback = clampToStationInterior(npc.homeX, npc.homeY);
+  return { tx: fallback.x, ty: fallback.y };
+}
+
 function chooseOpenPatrolTarget(npc) {
+  if (isOrbitalSquareStationNpc(npc)) {
+    return chooseStationPatrolTarget(npc);
+  }
   for (let attempt = 0; attempt < NPC_PATROL_TARGET_ATTEMPTS; attempt += 1) {
     const angle = Math.random() * Math.PI * 2;
     const radius = Math.random() * npc.patrolRadius;
@@ -983,9 +1026,6 @@ function romanceCourtAggressiveFromId(idStr) {
   return (npcIdHashSeed(idStr) % 100) < 70;
 }
 
-const SCI_FI_TRAFFIC_DWELL_MIN_MS = 5200;
-const SCI_FI_TRAFFIC_DWELL_MAX_MS = 11800;
-const SCI_FI_TRAFFIC_OUTER_RADIUS = 92;
 const SCI_FI_TRAFFIC_NAMES = Object.freeze([
   "Pilot Zhara",
   "Courier Vo",
@@ -1000,71 +1040,31 @@ const SCI_FI_TRAFFIC_NAMES = Object.freeze([
   "Sable Dray",
   "Kito Nara"
 ]);
-const SCI_FI_TRAFFIC_HULLS = Object.freeze([
-  { hullClass: "skiff", templateId: "npc_skiff", color: "#67f0ff", speed: 9.2 },
-  { hullClass: "runner", templateId: "npc_runner", color: "#8affd2", speed: 10.6 },
-  { hullClass: "fighter", templateId: "npc_fighter", color: "#ff8f6b", speed: 11.4 },
-  { hullClass: "hauler", templateId: "npc_hauler", color: "#f7d86a", speed: 7.8 },
-  { hullClass: "interceptor", templateId: "npc_interceptor", color: "#c084fc", speed: 12.5 },
-  { hullClass: "courier", templateId: "npc_courier", color: "#9edfff", speed: 10.2 }
-]);
-
-function trafficVectorForPort(port) {
-  const dx = Number(port.x) - RINGFORGE_CENTER.x;
-  const dy = Number(port.y) - RINGFORGE_CENTER.y;
-  const len = Math.max(0.001, Math.hypot(dx, dy));
-  return { nx: dx / len, ny: dy / len };
-}
-
-function trafficOuterPointForPort(port, index = 0) {
-  const { nx, ny } = trafficVectorForPort(port);
-  const side = ((index % 5) - 2) * 7.5;
-  return {
-    x: port.x + nx * SCI_FI_TRAFFIC_OUTER_RADIUS + -ny * side,
-    y: port.y + ny * SCI_FI_TRAFFIC_OUTER_RADIUS + nx * side
-  };
-}
 
 function buildSciFiTrafficNpcDefinitions() {
-  const ports = SCI_FI_DOCK_PORTS.filter((_, index) => index % 2 === 0);
-  return ports.slice(0, SCI_FI_TRAFFIC_NAMES.length).map((port, index) => {
-    const hull = SCI_FI_TRAFFIC_HULLS[index % SCI_FI_TRAFFIC_HULLS.length];
-    return {
-      id: `npc_ship_traffic_${index}`,
-      name: SCI_FI_TRAFFIC_NAMES[index],
-      classId: index % 3 === 0 ? "ranger" : index % 3 === 1 ? "mage" : "knight",
-      primary: "#243447",
-      accent: hull.color,
-      homeX: RINGFORGE_CENTER.x,
-      homeY: RINGFORGE_CENTER.y,
-      patrolRadius: 220,
-      npcTheme: "sci-fi",
-      sciFiLook: index % 4 === 1 ? "android" : "alien",
-      sciFiRole: "pilot",
-      sciFiShipTraffic: true,
-      _trafficPortIndex: index % Math.max(1, SCI_FI_DOCK_PORTS.length),
-      ship: {
-        templateId: hull.templateId,
-        name: `${SCI_FI_TRAFFIC_NAMES[index]}'s Ship`,
-        color: hull.color,
-        hullClass: hull.hullClass,
-        boarded: true,
-        dockX: port.x,
-        dockY: port.y,
-        dockStationId: "station_ringforge",
-        dockPortId: port.id,
-        speed: hull.speed,
-        laserTier: 1 + (index % 3),
-        thrustTier: 1 + (index % 3)
-      },
-      dialogue: [
-        "Clearance received. Vectoring to dock.",
-        "Mind the mag-clamps, station crew.",
-        "Cargo seal is green. I am coming in.",
-        "Orbital Square, this is final approach.",
-      ]
-    };
-  });
+  const walkableWaypoints = STATION_INTERIOR_WAYPOINTS.filter(
+    (waypoint) => isInsideStationInterior(waypoint.x, waypoint.y) && !isBlockedCircle(waypoint.x, waypoint.y)
+  );
+  return walkableWaypoints.slice(0, SCI_FI_TRAFFIC_NAMES.length).map((waypoint, index) => ({
+    id: `npc_station_pilot_${index}`,
+    name: SCI_FI_TRAFFIC_NAMES[index],
+    classId: index % 3 === 0 ? "ranger" : index % 3 === 1 ? "mage" : "knight",
+    primary: "#243447",
+    accent: index % 2 === 0 ? "#67f0ff" : "#8affd2",
+    homeX: waypoint.x,
+    homeY: waypoint.y,
+    patrolRadius: 4.5,
+    npcTheme: "sci-fi",
+    sciFiLook: index % 4 === 1 ? "android" : "alien",
+    sciFiRole: "pilot",
+    sciFiStationInterior: true,
+    dialogue: [
+      "Dock lane is clear on my side of the concourse.",
+      "Mind the mag-clamps, station crew.",
+      "Cargo seal is green. Heading to the terminal.",
+      "Orbital Square traffic is steady today.",
+    ]
+  }));
 }
 
 function buildSciFiShopkeeperNpcDefinitions() {
@@ -1096,6 +1096,7 @@ function buildSciFiShopkeeperNpcDefinitions() {
         npcTheme: "sci-fi",
         sciFiRole: role,
         sciFiLook: index % 2 === 0 ? "android" : "alien",
+        sciFiStationInterior: true,
         managedShopId: shop.id,
         dialogue: [
           `${shop.name} terminal is live. Browse from the console.`,
@@ -1105,141 +1106,6 @@ function buildSciFiShopkeeperNpcDefinitions() {
         ]
       };
     });
-}
-
-function initSciFiTrafficRuntime(npc) {
-  const port = SCI_FI_DOCK_PORTS[npc._trafficPortIndex % SCI_FI_DOCK_PORTS.length] || SCI_FI_DOCK_PORTS[0];
-  const out = trafficOuterPointForPort(port, npc._trafficPortIndex || 0);
-  npc.x = out.x;
-  npc.y = out.y;
-  npc._targetX = port.x;
-  npc._targetY = port.y;
-  npc._trafficPhase = "inbound";
-  npc._trafficPortId = port.id;
-  npc._trafficDockUntil = 0;
-  npc.facing = Math.atan2(port.y - npc.y, port.x - npc.x);
-  npc.moving = true;
-  if (npc.ship) {
-    npc.ship.boarded = true;
-    npc.ship.dockX = port.x;
-    npc.ship.dockY = port.y;
-    npc.ship.dockStationId = "station_ringforge";
-    npc.ship.dockPortId = port.id;
-  }
-}
-
-function nextTrafficPort(npc) {
-  if (!SCI_FI_DOCK_PORTS.length) {
-    return null;
-  }
-  npc._trafficPortIndex = ((npc._trafficPortIndex || 0) + 5) % SCI_FI_DOCK_PORTS.length;
-  return SCI_FI_DOCK_PORTS[npc._trafficPortIndex];
-}
-
-function dockedPilotPoint(port) {
-  const { nx, ny } = trafficVectorForPort(port);
-  return {
-    x: port.x - nx * 10,
-    y: port.y - ny * 10
-  };
-}
-
-function tickSciFiTraffic(npc, dt, now) {
-  if (!npc._trafficPhase || !SCI_FI_DOCK_PORTS.length) {
-    initSciFiTrafficRuntime(npc);
-  }
-
-  let port = SCI_FI_DOCK_PORTS.find((p) => p.id === npc._trafficPortId) || SCI_FI_DOCK_PORTS[0];
-  if (npc._trafficPhase === "docked") {
-    npc.moving = false;
-    if (npc.ship) {
-      npc.ship.boarded = false;
-      npc.ship.dockX = port.x;
-      npc.ship.dockY = port.y;
-      npc.ship.dockStationId = "station_ringforge";
-      npc.ship.dockPortId = port.id;
-    }
-    if (now < (npc._trafficDockUntil || 0)) {
-      return;
-    }
-    npc._trafficPhase = "outbound";
-    npc.x = port.x;
-    npc.y = port.y;
-    const out = trafficOuterPointForPort(port, npc._trafficPortIndex || 0);
-    npc._targetX = out.x;
-    npc._targetY = out.y;
-    if (npc.ship) {
-      npc.ship.boarded = true;
-    }
-  }
-
-  const dx = npc._targetX - npc.x;
-  const dy = npc._targetY - npc.y;
-  const dist = Math.hypot(dx, dy);
-  if (dist < 0.7) {
-    if (npc._trafficPhase === "inbound") {
-      const pilot = dockedPilotPoint(port);
-      npc.x = pilot.x;
-      npc.y = pilot.y;
-      npc._targetX = pilot.x;
-      npc._targetY = pilot.y;
-      npc._trafficPhase = "docked";
-      npc._trafficDockUntil =
-        now +
-        SCI_FI_TRAFFIC_DWELL_MIN_MS +
-        ((npcIdHashSeed(`${npc.id}|${now >>> 10}`) >>> 0) %
-          (SCI_FI_TRAFFIC_DWELL_MAX_MS - SCI_FI_TRAFFIC_DWELL_MIN_MS));
-      npc.moving = false;
-      if (npc.ship) {
-        npc.ship.boarded = false;
-      }
-      return;
-    }
-
-    if (npc._trafficPhase === "outbound") {
-      port = nextTrafficPort(npc) || port;
-      const out = trafficOuterPointForPort(port, npc._trafficPortIndex || 0);
-      npc.x = out.x;
-      npc.y = out.y;
-      npc._trafficPortId = port.id;
-      npc._trafficPhase = "inbound";
-      npc._targetX = port.x;
-      npc._targetY = port.y;
-      if (npc.ship) {
-        npc.ship.dockX = port.x;
-        npc.ship.dockY = port.y;
-        npc.ship.dockStationId = "station_ringforge";
-        npc.ship.dockPortId = port.id;
-        npc.ship.boarded = true;
-      }
-    }
-  }
-
-  const ndx = npc._targetX - npc.x;
-  const ndy = npc._targetY - npc.y;
-  const nd = Math.hypot(ndx, ndy);
-  if (nd < 0.001) {
-    npc.moving = false;
-    return;
-  }
-  const speed = Math.max(5.5, Math.min(14, Number(npc.ship?.speed) || 9.2));
-  const step = Math.min(speed * dt, nd);
-  const nextX = npc.x + (ndx / nd) * step;
-  const nextY = npc.y + (ndy / nd) * step;
-  if (isBlockedCircleForShip(nextX, nextY)) {
-    const safe = trafficOuterPointForPort(port, npc._trafficPortIndex || 0);
-    npc.x = safe.x;
-    npc.y = safe.y;
-    npc._targetX = port.x;
-    npc._targetY = port.y;
-    npc._trafficPhase = "inbound";
-    npc.moving = true;
-    return;
-  }
-  npc.x = nextX;
-  npc.y = nextY;
-  npc.facing = Math.atan2(ndy, ndx);
-  npc.moving = true;
 }
 
 function buildHydratedHubNpcExtras() {
@@ -2188,6 +2054,7 @@ const BASE_NPC_DEFINITIONS = [
     npcTheme: "sci-fi",
     sciFiRole: "security",
     sciFiLook: "android",
+    sciFiStationInterior: true,
     dialogue: ["Station defense grid is armed.", "Pirate vectors are tracked.", "Keep clear of cannon arcs."]
   },
   {
@@ -2204,6 +2071,7 @@ const BASE_NPC_DEFINITIONS = [
     npcTheme: "sci-fi",
     sciFiRole: "security",
     sciFiLook: "android",
+    sciFiStationInterior: true,
     dialogue: ["Outer ring clear.", "Turrets are slaved to the station core.", "No pirate crosses my scope."]
   },
   {
@@ -2220,6 +2088,7 @@ const BASE_NPC_DEFINITIONS = [
     npcTheme: "sci-fi",
     sciFiRole: "security",
     sciFiLook: "android",
+    sciFiStationInterior: true,
     dialogue: ["South battery ready.", "Pirate signatures get one warning.", "The station holds."]
   },
   {
@@ -2236,6 +2105,7 @@ const BASE_NPC_DEFINITIONS = [
     npcTheme: "sci-fi",
     sciFiRole: "security",
     sciFiLook: "android",
+    sciFiStationInterior: true,
     dialogue: ["West battery tracking.", "Keep your transponder clean.", "Defense drones are awake."]
   },
   {
@@ -2244,12 +2114,13 @@ const BASE_NPC_DEFINITIONS = [
     classId: "knight",
     primary: "#243447",
     accent: "#67f0ff",
-    homeX: RINGFORGE_CENTER.x - 54,
-    homeY: RINGFORGE_CENTER.y - 34,
-    patrolRadius: 9,
+    homeX: stationInteriorPoint(-18, -20).x,
+    homeY: stationInteriorPoint(-18, -20).y,
+    patrolRadius: 4,
     npcTheme: "sci-fi",
     sciFiRole: "dockmaster",
     sciFiLook: "android",
+    sciFiStationInterior: true,
     isTrader: true,
     questGiver: true,
     questIds: [
@@ -2276,12 +2147,13 @@ const BASE_NPC_DEFINITIONS = [
     classId: "mage",
     primary: "#30415a",
     accent: "#9fefff",
-    homeX: RINGFORGE_CENTER.x + 50,
-    homeY: RINGFORGE_CENTER.y - 4,
-    patrolRadius: 8,
+    homeX: stationInteriorPoint(18, -8).x,
+    homeY: stationInteriorPoint(18, -8).y,
+    patrolRadius: 4,
     npcTheme: "sci-fi",
     sciFiRole: "engineer",
     sciFiLook: "alien",
+    sciFiStationInterior: true,
     professionTrainer: "salvaging",
     dialogue: [
       "The conduit lights look clean today. That is a rare joy.",
@@ -2297,12 +2169,13 @@ const BASE_NPC_DEFINITIONS = [
     classId: "ranger",
     primary: "#24303f",
     accent: "#7dd3fc",
-    homeX: RINGFORGE_CENTER.x - 54,
-    homeY: RINGFORGE_CENTER.y + 18,
-    patrolRadius: 7,
+    homeX: stationInteriorPoint(-18, 8).x,
+    homeY: stationInteriorPoint(-18, 8).y,
+    patrolRadius: 4,
     npcTheme: "sci-fi",
     sciFiRole: "medic",
     sciFiLook: "alien",
+    sciFiStationInterior: true,
     questGiver: true,
     questIds: ["q_space_medgel_run"],
     dialogue: [
@@ -2319,12 +2192,13 @@ const BASE_NPC_DEFINITIONS = [
     classId: "mage",
     primary: "#2b3b52",
     accent: "#c4f1ff",
-    homeX: RINGFORGE_CENTER.x,
-    homeY: RINGFORGE_CENTER.y - 46,
-    patrolRadius: 6,
+    homeX: stationInteriorPoint(0, -18).x,
+    homeY: stationInteriorPoint(0, -18).y,
+    patrolRadius: 4,
     npcTheme: "sci-fi",
     sciFiRole: "navigator",
     sciFiLook: "android",
+    sciFiStationInterior: true,
     questGiver: true,
     questIds: ["q_space_nav_beacons"],
     professionTrainer: "surveying",
@@ -2342,12 +2216,13 @@ const BASE_NPC_DEFINITIONS = [
     classId: "knight",
     primary: "#223044",
     accent: "#fbbf24",
-    homeX: RINGFORGE_CENTER.x + 54,
-    homeY: RINGFORGE_CENTER.y + 18,
-    patrolRadius: 6,
+    homeX: stationInteriorPoint(20, 10).x,
+    homeY: stationInteriorPoint(20, 10).y,
+    patrolRadius: 4,
     npcTheme: "sci-fi",
     sciFiRole: "quartermaster",
     sciFiLook: "alien",
+    sciFiStationInterior: true,
     isTrader: true,
     questGiver: true,
     questIds: ["q_space_quartermaster_manifest"],
@@ -2365,12 +2240,13 @@ const BASE_NPC_DEFINITIONS = [
     classId: "mage",
     primary: "#1f3f48",
     accent: "#8affd2",
-    homeX: RINGFORGE_CENTER.x - 14,
-    homeY: RINGFORGE_CENTER.y + 18,
-    patrolRadius: 14,
+    homeX: stationInteriorPoint(-10, 12).x,
+    homeY: stationInteriorPoint(-10, 12).y,
+    patrolRadius: 4,
     npcTheme: "sci-fi",
     sciFiRole: "alien_crew",
     sciFiLook: "alien",
+    sciFiStationInterior: true,
     dialogue: [
       "Your atmosphere mix is loud, but agreeable.",
       "I trade in three currencies and one excellent soup.",
@@ -2384,12 +2260,13 @@ const BASE_NPC_DEFINITIONS = [
     classId: "ranger",
     primary: "#2d3656",
     accent: "#fbcfe8",
-    homeX: RINGFORGE_CENTER.x - 34,
-    homeY: RINGFORGE_CENTER.y - 24,
-    patrolRadius: 8,
+    homeX: stationInteriorPoint(-20, -14).x,
+    homeY: stationInteriorPoint(-20, -14).y,
+    patrolRadius: 4,
     npcTheme: "sci-fi",
     sciFiRole: "alien_vendor",
     sciFiLook: "alien",
+    sciFiStationInterior: true,
     professionTrainer: "prospecting",
     dialogue: [
       "I have six eyes for bargains and seven for trouble.",
@@ -2404,12 +2281,13 @@ const BASE_NPC_DEFINITIONS = [
     classId: "knight",
     primary: "#293241",
     accent: "#d9fbff",
-    homeX: RINGFORGE_CENTER.x + 8,
-    homeY: RINGFORGE_CENTER.y + 34,
-    patrolRadius: 18,
+    homeX: stationInteriorPoint(8, 18).x,
+    homeY: stationInteriorPoint(8, 18).y,
+    patrolRadius: 4,
     npcTheme: "sci-fi",
     sciFiRole: "android_courier",
     sciFiLook: "android",
+    sciFiStationInterior: true,
     dialogue: [
       "Courier route recalculated. Please enjoy the delay.",
       "I have delivered parcels to three moons and one fish tank.",
@@ -2423,12 +2301,13 @@ const BASE_NPC_DEFINITIONS = [
     classId: "mage",
     primary: "#25394a",
     accent: "#c084fc",
-    homeX: RINGFORGE_CENTER.x + 30,
-    homeY: RINGFORGE_CENTER.y - 10,
-    patrolRadius: 16,
+    homeX: stationInteriorPoint(14, -10).x,
+    homeY: stationInteriorPoint(14, -10).y,
+    patrolRadius: 4,
     npcTheme: "sci-fi",
     sciFiRole: "alien_pilgrim",
     sciFiLook: "alien",
+    sciFiStationInterior: true,
     dialogue: [
       "The stars outside this wall are older than all our maps.",
       "A station is a campfire with better doors.",
@@ -2442,12 +2321,13 @@ const BASE_NPC_DEFINITIONS = [
     classId: "ranger",
     primary: "#203044",
     accent: "#7dd3fc",
-    homeX: RINGFORGE_CENTER.x + 48,
-    homeY: RINGFORGE_CENTER.y + 36,
-    patrolRadius: 10,
+    homeX: stationInteriorPoint(10, 16).x,
+    homeY: stationInteriorPoint(10, 16).y,
+    patrolRadius: 4,
     npcTheme: "sci-fi",
     sciFiRole: "customs_android",
     sciFiLook: "android",
+    sciFiStationInterior: true,
     dialogue: [
       "Customs scan complete. You are only mildly suspicious.",
       "Declare weapons, pets, moons, and haunted artifacts.",
@@ -2597,8 +2477,26 @@ const npcs = DEFINITIONS.map((def) => {
     npc._targetX = npc.homeX;
     npc._targetY = npc.homeY;
   }
-  if (npc.sciFiShipTraffic) {
-    initSciFiTrafficRuntime(npc);
+  if (isOrbitalSquareStationNpc(npc)) {
+    const home = clampToStationInterior(npc.homeX, npc.homeY);
+    npc.homeX = home.x;
+    npc.homeY = home.y;
+    npc.patrolRadius = Math.min(Number(npc.patrolRadius) || 4, 6);
+    const spawn = clampToStationInterior(
+      npc.homeX + (Math.random() * 0.6 - 0.3),
+      npc.homeY + (Math.random() * 0.6 - 0.3)
+    );
+    npc.x = spawn.x;
+    npc.y = spawn.y;
+    npc._targetX = spawn.x;
+    npc._targetY = spawn.y;
+    if (isBlockedCircle(npc.x, npc.y)) {
+      const fallback = stationInteriorPoint(0, 0);
+      npc.x = fallback.x;
+      npc.y = fallback.y;
+      npc._targetX = fallback.x;
+      npc._targetY = fallback.y;
+    }
   }
   return npc;
 });
@@ -2753,7 +2651,7 @@ function isFloPlayer(player) {
 
 function isStartingTownNpc(npc) {
   if (!npc || soldCompanionNpcIds.has(npc.id)) return false;
-  if (npc.sciFiShipTraffic || npc.sciFiRole || npc.npcTheme === "sci-fi" || npc.ship) return false;
+  if (npc.sciFiRole || npc.npcTheme === "sci-fi" || npc.ship) return false;
   if (npc.isTownArcher || npc.isGateKeeper || npc.isFletcher || npc.isFletcherWorker || npc.isArrowCourier) return false;
   if (WORLD.worldForPosition(Number(npc.homeX) || 0, Number(npc.homeY) || 0) !== "fantasy") return false;
   const townRadius = Number(WORLD.HUB_TOWN_GRASS_RADIUS) || 132;
@@ -3603,7 +3501,7 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
     if (
       !npc ||
       activeNpcIds.has(npc.id) ||
-      (!npc.wandersToPlayer && !npc.wandersToNewPlayer && !npc.wandersToFlirt && !npc.courtPlayer && !npc.isArrowCourier && !npc.sciFiShipTraffic)
+      (!npc.wandersToPlayer && !npc.wandersToNewPlayer && !npc.wandersToFlirt && !npc.courtPlayer && !npc.isArrowCourier)
     ) {
       continue;
     }
@@ -3646,11 +3544,6 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
 
     if (npc.isArrowCourier) {
       tickArrowCourier(npc, dt, now, navSetStatic);
-      continue;
-    }
-
-    if (npc.sciFiShipTraffic) {
-      tickSciFiTraffic(npc, dt, now);
       continue;
     }
 
@@ -3888,6 +3781,8 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
         CHAT_INTERVAL_MIN +
         Math.random() * (CHAT_INTERVAL_MAX - CHAT_INTERVAL_MIN);
     }
+
+    enforceStationInteriorBounds(npc);
   }
 
   // Separation pass: push NPCs apart so they walk around each other instead of through each other.
