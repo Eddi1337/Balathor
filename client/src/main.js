@@ -7945,7 +7945,6 @@ function drawRoadsideFeatures(minTileX, maxTileX, minTileY, maxTileY) {
 
   /** Local-space bench after translate(cx, gy) + optional rotate(facing). */
   const drawBenchLocal = () => {
-    drawEllipseShadow(-26, 4, 54, 9, 0.22);
     ctx.fillStyle = "#4a3828";
     ctx.fillRect(-28, -8, 56, 10);
     ctx.fillStyle = "#6a5040";
