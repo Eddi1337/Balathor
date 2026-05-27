@@ -1,3 +1,7 @@
+// =============================
+// SECTION 1: Boot-time device/layout checks and DOM wiring
+// =============================
+
 const isMobile = navigator.maxTouchPoints > 0 || window.matchMedia("(pointer: coarse)").matches;
 const mobileOrientationQuery = window.matchMedia("(orientation: portrait)");
 

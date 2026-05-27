@@ -140,6 +140,10 @@ The client dev server reads `GAME_SERVER_URL`, so a custom endpoint can be used 
 GAME_SERVER_URL=ws://localhost:8080/ws npm run client
 ```
 
+## AI-Friendly Code Navigation
+
+For future AI-assisted edits, use the project section map in `docs/AI_CODE_MAP.md`. It breaks server/client code into stable areas and recommends scoped-edit workflows.
+
 ## Current Architecture
 
 The server owns:
