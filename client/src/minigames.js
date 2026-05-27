@@ -21,13 +21,86 @@
     return { x: site.x + w / 2, y: site.y + h / 2, w, h };
   }
 
+  function minigameAccentColor(site) {
+    const prop = site.prop || "marker";
+    if (prop === "swim_buoy") return "#4ec5ff";
+    if (prop === "relay_ring") return "#74f29c";
+    if (prop === "dart_board") return "#ffd166";
+    if (prop === "bounty_board" || prop === "courier_crate") return "#e8c86a";
+    if (prop === "holy_ring") return "#ffe08a";
+    if (prop === "turret_pad" || prop === "dungeon_terminal" || prop === "lane_beacon") return "#67f0ff";
+    if (prop === "training_dummy") return "#c9a227";
+    return "#9edfff";
+  }
+
+  function drawMinigameBeacon(ctx, sx, sy, pulse, color) {
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const ringAlpha = 0.2 + pulse * 0.25;
+    let stroke = `rgba(103, 240, 255, ${ringAlpha})`;
+    if (typeof color === "string" && color.startsWith("#") && color.length >= 7) {
+      const r = Number.parseInt(color.slice(1, 3), 16);
+      const g = Number.parseInt(color.slice(3, 5), 16);
+      const b = Number.parseInt(color.slice(5, 7), 16);
+      stroke = `rgba(${r},${g},${b},${ringAlpha})`;
+    }
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 32 + pulse * 8, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(sx, sy, 22 + pulse * 4, 0, Math.PI * 2);
+    ctx.stroke();
+    const beam = ctx.createLinearGradient(sx, sy - 56, sx, sy + 4);
+    beam.addColorStop(0, "rgba(103, 240, 255, 0)");
+    beam.addColorStop(0.55, "rgba(103, 240, 255, 0.12)");
+    beam.addColorStop(1, "rgba(103, 240, 255, 0.38)");
+    ctx.fillStyle = beam;
+    ctx.fillRect(sx - 3, sy - 56, 6, 56);
+    ctx.restore();
+  }
+
+  function drawMinigameWorldLabel(ctx, site, sx, sy) {
+    const raw = String(site.label || site.gameId || "Minigame");
+    const text = raw.length > 46 ? `${raw.slice(0, 44)}…` : raw;
+    ctx.font = "bold 10px ui-sans-serif, system-ui";
+    const tw = ctx.measureText(text).width;
+    const padX = 7;
+    const padY = 5;
+    const bw = tw + padX * 2;
+    const bh = 18;
+    const bx = sx - bw / 2;
+    const by = sy - 58;
+    ctx.fillStyle = "rgba(8, 14, 24, 0.88)";
+    ctx.strokeStyle = "rgba(103, 240, 255, 0.55)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, bh, 5);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#e8f4ff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, sx, by + bh / 2);
+    ctx.beginPath();
+    ctx.moveTo(sx, by + bh);
+    ctx.lineTo(sx, sy - 20);
+    ctx.strokeStyle = "rgba(103, 240, 255, 0.35)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
   function drawMinigameSites(minTileX, maxTileX, minTileY, maxTileY) {
     if (!deps?.ctx) return;
     const { ctx, TILE_SIZE, camera, canvas } = deps;
     const halfW = canvas.width / 2;
     const halfH = canvas.height / 2;
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 420);
+    const worldId = deps.getWorldId?.() || "fantasy";
 
     for (const site of state.sites.values()) {
+      if (site.world && site.world !== worldId) continue;
       const w = Math.max(1, Math.floor(Number(site.footprintW) || 1));
       const h = Math.max(1, Math.floor(Number(site.footprintH) || 1));
       if (site.x > maxTileX || site.y > maxTileY || site.x + w < minTileX || site.y + h < minTileY) {
@@ -36,7 +109,11 @@
       const { x: ax, y: ay } = siteAnchor(site);
       const sx = Math.floor(ax * TILE_SIZE - camera.x + halfW);
       const sy = Math.floor(ay * TILE_SIZE - camera.y + halfH);
+      const accent = minigameAccentColor(site);
+
+      drawMinigameBeacon(ctx, sx, sy, pulse, accent);
       drawSiteProp(ctx, site, sx, sy);
+      drawMinigameWorldLabel(ctx, site, sx, sy);
     }
   }
 
@@ -44,6 +121,10 @@
     ctx.save();
     const prop = site.prop || "marker";
     const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 420);
+    const scale = 1.22;
+    ctx.translate(sx, sy);
+    ctx.scale(scale, scale);
+    ctx.translate(-sx, -sy);
 
     if (prop === "dart_board") {
       ctx.fillStyle = "#4a2814";
@@ -100,11 +181,13 @@
       ctx.fillText("BOUNTY", sx, sy - 22);
     } else if (prop === "relay_ring" || prop === "swim_buoy") {
       ctx.strokeStyle = prop === "swim_buoy" ? "#4ec5ff" : "#74f29c";
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(sx, sy, 14 + pulse * 3, 0, Math.PI * 2);
+      ctx.arc(sx, sy, 18 + pulse * 4, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.fillStyle = prop === "swim_buoy" ? "rgba(78,197,255,0.25)" : "rgba(116,242,156,0.2)";
+      ctx.fillStyle = prop === "swim_buoy" ? "rgba(78,197,255,0.32)" : "rgba(116,242,156,0.28)";
+      ctx.beginPath();
+      ctx.arc(sx, sy, 12 + pulse * 2, 0, Math.PI * 2);
       ctx.fill();
       const idx = Number.isFinite(site.relayIndex)
         ? site.relayIndex
@@ -174,53 +257,8 @@
   }
 
 
-  function nearbySites(maxDistance = 34) {
-    const self = deps.getSelf();
-    if (!self) return [];
-    const worldId = deps.getWorldId();
-    const hits = [];
-    for (const site of state.sites.values()) {
-      if (site.world && site.world !== worldId) continue;
-      const a = siteAnchor(site);
-      const d = Math.hypot(self.x - a.x, self.y - a.y);
-      if (d <= maxDistance) hits.push({ site, anchor: a, dist: d });
-    }
-    hits.sort((a, b) => a.dist - b.dist);
-    return hits;
-  }
-
-  function drawDiscoveryPanel() {
-    if (!deps?.ctx || !deps.getJoined()) return;
-    const { ctx } = deps;
-    const rows = nearbySites(34).slice(0, 3);
-    if (!rows.length) return;
-
-    const title = "Nearby Minigames (click prop to start)";
-    const lines = rows.map(({ site, dist }) => `${site.label || site.gameId} (${Math.round(dist)} tiles)`);
-    ctx.save();
-    ctx.font = "bold 12px ui-sans-serif, system-ui";
-    const w = Math.max(ctx.measureText(title).width, ...lines.map((l) => ctx.measureText(l).width)) + 20;
-    const h = 28 + lines.length * 16 + 8;
-    const x = 12;
-    const y = 62;
-    ctx.fillStyle = "rgba(12, 18, 28, 0.82)";
-    ctx.strokeStyle = "rgba(116, 200, 255, 0.45)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.roundRect(x, y, w, h, 8);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = "#e8f4ff";
-    ctx.fillText(title, x + 10, y + 8);
-    ctx.font = "11px ui-sans-serif, system-ui";
-    lines.forEach((line, i) => ctx.fillText(line, x + 10, y + 26 + i * 16));
-    ctx.restore();
-  }
-
   function drawOverlay() {
     if (!deps?.ctx) return;
-    drawDiscoveryPanel();
     if (!state.session) return;
     const { ctx, worldToScreenPoint, canvas } = deps;
     const self = deps.getSelf();
@@ -360,7 +398,7 @@
       deps.appendChat({
         kind: "system",
         name: "Guide",
-        text: "Minigames found nearby. Click their world props to start (look for dart boards, bounty boards, rings, crates, and glowing markers)."
+        text: "Minigames appear on the map as glowing markers with labels — walk up and click the prop to play."
       });
       state.discoveryHintShown = true;
     }
