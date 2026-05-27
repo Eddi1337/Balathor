@@ -328,6 +328,57 @@ function sciFiDockPortForPlayerId(playerId) {
   return SCI_FI_DOCK_PORTS[h % SCI_FI_DOCK_PORTS.length];
 }
 
+/** Inset from the station hull so NPCs stay on interior walkways, not outer plating. */
+const STATION_INTERIOR_INSET = 2;
+
+function stationInteriorPoint(offsetX, offsetY) {
+  const maxX = HALF_W - STATION_INTERIOR_INSET;
+  const maxY = HALF_H - STATION_INTERIOR_INSET;
+  return Object.freeze({
+    x: CX + Math.max(-maxX, Math.min(maxX, Number(offsetX) || 0)),
+    y: CY + Math.max(-maxY, Math.min(maxY, Number(offsetY) || 0))
+  });
+}
+
+function clampToStationInterior(x, y) {
+  const maxX = HALF_W - STATION_INTERIOR_INSET;
+  const maxY = HALF_H - STATION_INTERIOR_INSET;
+  const dx = (Number(x) || 0) - CX;
+  const dy = (Number(y) || 0) - CY;
+  return {
+    x: CX + Math.max(-maxX, Math.min(maxX, dx)),
+    y: CY + Math.max(-maxY, Math.min(maxY, dy))
+  };
+}
+
+function isInsideStationInterior(x, y, extraInset = 0) {
+  const maxX = HALF_W - STATION_INTERIOR_INSET - extraInset;
+  const maxY = HALF_H - STATION_INTERIOR_INSET - extraInset;
+  const dx = Math.abs((Number(x) || 0) - CX);
+  const dy = Math.abs((Number(y) || 0) - CY);
+  return dx <= maxX && dy <= maxY;
+}
+
+const STATION_INTERIOR_WAYPOINTS = Object.freeze([
+  stationInteriorPoint(0, 0),
+  stationInteriorPoint(-20, -14),
+  stationInteriorPoint(20, -14),
+  stationInteriorPoint(-20, 10),
+  stationInteriorPoint(20, 10),
+  stationInteriorPoint(-12, 0),
+  stationInteriorPoint(12, 0),
+  stationInteriorPoint(0, -18),
+  stationInteriorPoint(0, 18),
+  stationInteriorPoint(-8, -8),
+  stationInteriorPoint(8, -8),
+  stationInteriorPoint(-8, 8),
+  stationInteriorPoint(8, 8),
+  ...SCI_FI_DOCK_PORTS.map((port) => Object.freeze({
+    x: Number(port.terminalX) || port.x,
+    y: Number(port.terminalY) || port.y
+  }))
+]);
+
 module.exports = {
   RINGFORGE_CENTER: Object.freeze({ x: CX, y: CY }),
   STARGATE_LANDING: Object.freeze({ x: CX, y: CY }),
@@ -335,5 +386,9 @@ module.exports = {
   SCI_FI_STATION_FEATURES,
   SCI_FI_DOCK_PORTS,
   SCI_FI_LANES,
+  STATION_INTERIOR_WAYPOINTS,
+  stationInteriorPoint,
+  clampToStationInterior,
+  isInsideStationInterior,
   sciFiDockPortForPlayerId
 };
