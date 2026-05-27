@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "description": "World and game-mode catalog. Built-in worlds (fantasy, scifi, pirate) are registered in server/src/worlds/registry.js; add optional extension worlds here.",
+  "gameModes": [
+    {
+      "id": "balathor",
+      "label": "Balathor — fantasy MMO prototype"
+    },
+    {
+      "id": "pirate",
+      "label": "Pirate seas — ships, islands, quests (in development)"
+    }
+  ],
+  "worlds": [
+    {
+      "id": "fantasy",
+      "builtin": true,
+      "gameMode": "balathor",
+      "generation": "procedural",
+      "theme": "fantasy",
+      "bounds": { "xMin": -1000, "xMax": 1000, "yMin": -1000, "yMax": 1000 }
+    },
+    {
+      "id": "scifi",
+      "builtin": true,
+      "gameMode": "balathor",
+      "generation": "procedural",
+      "theme": "sci-fi",
+      "note": "Everything outside fantasy/planet/interior slabs until pirate bounds"
+    },
+    {
+      "id": "pirate",
+      "builtin": true,
+      "gameMode": "pirate",
+      "generation": "hybrid",
+      "theme": "pirate",
+      "bounds": { "xMin": 200000, "xMax": 280000, "yMin": -40000, "yMax": 40000 }
+    }
+  ],
+  "handmadeMapsDir": "content/maps",
+  "tileReference": "server/src/world.js TILE enum (0=GRASS … 27=ENERGY)"
+}

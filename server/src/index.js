@@ -50,6 +50,9 @@ const {
   SCI_FI_PLANETS,
   PLANET_SURFACE_LANDING_OFFSET,
   worldForPosition,
+  listGameModes,
+  listWorlds,
+  listMapCatalog,
   DUNGEON_THEME,
   TILE
 } = require("./world");
@@ -1616,7 +1619,10 @@ const server = http.createServer((req, res) => {
       perf: perfLastSnapshot,
       chunkWorkers: chunkWorkerPool.length,
       chunkQueue: chunkGenQueue.length,
-      chunkSize: CHUNK_SIZE
+      chunkSize: CHUNK_SIZE,
+      gameModes: listGameModes(),
+      worlds: listWorlds(),
+      maps: listMapCatalog()
     });
     return;
   }

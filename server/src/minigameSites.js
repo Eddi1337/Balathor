@@ -51,7 +51,7 @@ const MINIGAME_SITES = Object.freeze([
   { id: "mg_mining_rust", gameId: "mining", world: "planet:planet_rust", x: 5304, y: 2, footprintW: 2, footprintH: 2, prop: "mining_rig", label: "Mining rig — extract ore" }
 ]);
 
-const CHUNK_SIZE = 32;
+const CHUNK_SIZE = 16;
 
 function siteTouchesChunk(site, startX, startY, endX, endY) {
   const w = Math.max(1, Math.floor(Number(site.footprintW) || 1));

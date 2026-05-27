@@ -17,6 +17,15 @@ for (const camp of world.ENEMY_CAMPS) {
 }
 const originChunk = world.generateChunk(0, 0);
 assert.equal(originChunk.tiles.length, world.CHUNK_SIZE * world.CHUNK_SIZE);
+assert.equal(originChunk.worldId, "fantasy");
+assert.equal(world.worldIdAt(0, 0), "fantasy");
+assert.equal(world.worldIdAt(1920, 0), "scifi");
+assert.equal(world.worldIdAt(210_000, 0), "pirate");
+assert.equal(world.worldIdAt(15_000, 15_000), "dungeon:whispering_crypt");
+assert.ok(world.listMapCatalog().some((m) => m.id === "example_cove"));
+const pirateChunk = world.generateChunk(Math.floor(210_000 / world.CHUNK_SIZE), 0);
+assert.equal(pirateChunk.worldId, "pirate");
+assert.equal(pirateChunk.theme, "pirate");
 assert.equal(world.isBlocked(0, 0), false);
 const home = world.BUILDINGS.find((building) => building.name === "Home");
 const homeDoorX = home.x + Math.floor(home.w / 2);

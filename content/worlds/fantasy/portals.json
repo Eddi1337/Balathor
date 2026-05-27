@@ -1,0 +1,31 @@
+{
+  "description": "Fantasy realm portal gates. Loaded at server boot; stargate coords match sciFiStationLayout STARGATE_LANDING.",
+  "portals": [
+    { "id": "portal_oasis", "name": "Oasis Gate", "x": 46, "y": -76, "targetX": 600, "targetY": 522, "color": "#f2c45f" },
+    { "id": "portal_frost", "name": "Frost Gate", "x": -46, "y": -76, "targetX": -600, "targetY": -458, "color": "#9ee7ff" },
+    { "id": "portal_ember", "name": "Ember Gate", "x": 0, "y": -76, "targetX": 580, "targetY": -503, "color": "#ff7a45" },
+    {
+      "id": "portal_stargate",
+      "name": "Stargate",
+      "x": 20,
+      "y": 0,
+      "targetX": 1920,
+      "targetY": 0,
+      "color": "#67f0ff",
+      "style": "stargate"
+    },
+    { "id": "portal_hub_oasis", "name": "Oasis Gate", "x": 600, "y": 522, "targetX": 46, "targetY": -76, "color": "#f2c45f" },
+    { "id": "portal_hub_frost", "name": "Frost Gate", "x": -600, "y": -458, "targetX": -46, "targetY": -76, "color": "#9ee7ff" },
+    { "id": "portal_hub_ember", "name": "Ember Gate", "x": 580, "y": -503, "targetX": 0, "targetY": -76, "color": "#ff7a45" },
+    {
+      "id": "portal_stargate_return",
+      "name": "Stargate",
+      "x": 1920,
+      "y": 0,
+      "targetX": 20,
+      "targetY": 0,
+      "color": "#67f0ff",
+      "style": "stargate"
+    }
+  ]
+}
