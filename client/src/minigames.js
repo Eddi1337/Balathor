@@ -9,7 +9,8 @@
     session: null,
     debuffs: {},
     stats: null,
-    lastPointer: { x: 0, y: 0 }
+    lastPointer: { x: 0, y: 0 },
+    discoveryHintShown: false
   };
 
   let deps = null;
@@ -159,8 +160,55 @@
     ctx.restore();
   }
 
+
+  function nearbySites(maxDistance = 34) {
+    const self = deps.getSelf();
+    if (!self) return [];
+    const worldId = deps.getWorldId();
+    const hits = [];
+    for (const site of state.sites.values()) {
+      if (site.world && site.world !== worldId) continue;
+      const a = siteAnchor(site);
+      const d = Math.hypot(self.x - a.x, self.y - a.y);
+      if (d <= maxDistance) hits.push({ site, anchor: a, dist: d });
+    }
+    hits.sort((a, b) => a.dist - b.dist);
+    return hits;
+  }
+
+  function drawDiscoveryPanel() {
+    if (!deps?.ctx || !deps.getJoined()) return;
+    const { ctx } = deps;
+    const rows = nearbySites(34).slice(0, 3);
+    if (!rows.length) return;
+
+    const title = "Nearby Minigames (click prop to start)";
+    const lines = rows.map(({ site, dist }) => `${site.label || site.gameId} (${Math.round(dist)} tiles)`);
+    ctx.save();
+    ctx.font = "bold 12px ui-sans-serif, system-ui";
+    const w = Math.max(ctx.measureText(title).width, ...lines.map((l) => ctx.measureText(l).width)) + 20;
+    const h = 28 + lines.length * 16 + 8;
+    const x = 12;
+    const y = 62;
+    ctx.fillStyle = "rgba(12, 18, 28, 0.82)";
+    ctx.strokeStyle = "rgba(116, 200, 255, 0.45)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = "#e8f4ff";
+    ctx.fillText(title, x + 10, y + 8);
+    ctx.font = "11px ui-sans-serif, system-ui";
+    lines.forEach((line, i) => ctx.fillText(line, x + 10, y + 26 + i * 16));
+    ctx.restore();
+  }
+
   function drawOverlay() {
-    if (!deps?.ctx || !state.session) return;
+    if (!deps?.ctx) return;
+    drawDiscoveryPanel();
+    if (!state.session) return;
     const { ctx, worldToScreenPoint, canvas } = deps;
     const self = deps.getSelf();
     if (!self) return;
@@ -294,6 +342,14 @@
   function onChunk(chunk) {
     for (const site of chunk.minigameSites || []) {
       state.sites.set(String(site.id), site);
+    }
+    if (!state.discoveryHintShown && chunk.minigameSites?.length && deps?.appendChat) {
+      deps.appendChat({
+        kind: "system",
+        name: "Guide",
+        text: "Minigames found nearby. Click their world props to start (look for dart boards, bounty boards, rings, crates, and glowing markers)."
+      });
+      state.discoveryHintShown = true;
     }
   }
 
