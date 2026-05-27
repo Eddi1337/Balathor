@@ -21,6 +21,7 @@ assert.equal(originChunk.worldId, "fantasy");
 assert.equal(world.worldIdAt(0, 0), "fantasy");
 assert.equal(world.worldIdAt(1920, 0), "scifi");
 assert.equal(world.worldIdAt(210_000, 0), "pirate");
+assert.equal(world.worldIdAt(15_000, 15_000), "dungeon:whispering_crypt");
 assert.ok(world.listMapCatalog().some((m) => m.id === "example_cove"));
 const pirateChunk = world.generateChunk(Math.floor(210_000 / world.CHUNK_SIZE), 0);
 assert.equal(pirateChunk.worldId, "pirate");

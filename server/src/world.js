@@ -95,6 +95,12 @@ const {
   getPlanetSurfaceObjectsInChunk
 } = require("./worlds/planetWorlds.js");
 const {
+  getDungeonByInteriorPoint,
+  getDungeonInteriorTile,
+  getCaveEntranceTileOverride,
+  getCaveEntrancesInChunk
+} = require("./worlds/dungeonWorlds.js");
+const {
   SCI_FI_STATIONS,
   SCI_FI_STATION_FEATURES,
   SCI_FI_DOCK_PORTS,
@@ -249,7 +255,10 @@ function findNearestSciFiDockPort(px, py, maxDist = 12) {
   return best;
 }
 
+const DUNGEON_THEME = "dungeon";
+
 function sciFiThemeForPoint(x, y) {
+  if (getDungeonByInteriorPoint(x, y)) return DUNGEON_THEME;
   if (getPlanetBySurfacePoint(x, y)) return "alien";
   return isSciFiSector(x, y) ? SCI_FI_THEME : "fantasy";
 }
@@ -2232,6 +2241,11 @@ function generateExteriorTileCore(x, y) {
     return getPlanetSurfaceTile(surfacePlanet, x, y);
   }
 
+  const dungeon = getDungeonByInteriorPoint(x, y);
+  if (dungeon) {
+    return getDungeonInteriorTile(dungeon, x, y, TILE, hash2);
+  }
+
   const apronTile = getInteriorExteriorTile(x, y);
   if (apronTile !== null) {
     return apronTile;
@@ -2286,6 +2300,11 @@ function generateExteriorTileCore(x, y) {
     }
 
     return TILE.VOID;
+  }
+
+  const caveTile = getCaveEntranceTileOverride(x, y, TILE);
+  if (caveTile !== null) {
+    return caveTile;
   }
 
   const tiGrid = Math.floor(x);
@@ -2529,6 +2548,7 @@ function generateChunk(cx, cy) {
     buildings: getBuildingsInChunk(cx, cy),
     roadsides: getRoadsideFeaturesInChunk(cx, cy),
     minigameSites: getMinigameSitesInChunk(cx, cy),
+    caveEntrances: getCaveEntrancesInChunk(cx, cy, CHUNK_SIZE),
     spaceObjects
   };
 }
@@ -2802,5 +2822,7 @@ module.exports = {
   HUB_NAV_PATH_KEYS,
   HUB_ROADSIDE_FEATURES,
   HUB_TOWN_GRASS_RADIUS,
-  SCI_FI_THEME
+  SCI_FI_THEME,
+  DUNGEON_THEME,
+  getDungeonByInteriorPoint
 };

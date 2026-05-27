@@ -52,8 +52,20 @@ const {
   worldForPosition,
   listGameModes,
   listWorlds,
-  listMapCatalog
+  listMapCatalog,
+  DUNGEON_THEME,
+  TILE
 } = require("./world");
+const {
+  DUNGEON_DEFINITIONS,
+  DUNGEON_INTERACT_RADIUS,
+  getDungeonById,
+  getDungeonAtEntrance,
+  collectDungeonFloorTiles,
+  getDungeonLandingPosition,
+  getDungeonBossPosition,
+  hash2: dungeonHash2
+} = require("./worlds/dungeonWorlds.js");
 const {
   updateNpcs,
   getNpcSnapshot,
@@ -174,7 +186,12 @@ const BOSS_ATTACK_DAMAGE = 26;
 const ENEMY_DENSITY_MULTIPLIER = readIntEnv("ENEMY_DENSITY_MULTIPLIER", 12, 1, 100);
 const MOB_SPATIAL_CELL_SIZE = 32;
 const MOB_SPATIAL_QUERY_PAD = 96;
-const WORLD_IDS_WITH_MOBS = ["fantasy", "scifi", ...SCI_FI_PLANETS.map((planet) => `planet:${planet.id}`)];
+const WORLD_IDS_WITH_MOBS = [
+  "fantasy",
+  "scifi",
+  ...SCI_FI_PLANETS.map((planet) => `planet:${planet.id}`),
+  ...DUNGEON_DEFINITIONS.map((dungeon) => `dungeon:${dungeon.id}`)
+];
 const GATEKEEPER_IDS = Object.freeze([
   "hub_g_n",
   "hub_g_ne",
@@ -4626,6 +4643,95 @@ function handleHouseCompanionAction(client, message) {
   send(client, { type: "serverMessage", message: "house_companion_bad" });
 }
 
+function enterCaveDungeon(client, dungeon) {
+  const player = client.player;
+  if (!player || !dungeon) return;
+  const landing = getDungeonLandingPosition(dungeon);
+  player.x = landing.x;
+  player.y = landing.y;
+  player.facing = -Math.PI / 2;
+  player.moving = false;
+  player._activeDungeonId = dungeon.id;
+  client.input = normalizeInput();
+  saveClientCharacter(client);
+
+  send(client, {
+    type: "teleport",
+    portalId: `dungeon_${dungeon.id}_enter`,
+    name: dungeon.name,
+    color: dungeon.accent || "#8b7355",
+    style: "arch",
+    theme: DUNGEON_THEME,
+    x: player.x,
+    y: player.y
+  });
+  send(client, { type: "serverMessage", message: "dungeon_entered", dungeonName: dungeon.name });
+  streamChunks(client, nearbyChunks(player.x, player.y, 3));
+  broadcastSnapshot();
+  pushChat({
+    kind: "system",
+    name: "Realm",
+    text: `You descend into ${dungeon.name}. Defeat the guardian to find your way back.`
+  });
+}
+
+function exitDungeonAfterBoss(client, dungeon) {
+  const player = client.player;
+  if (!player || !dungeon) return;
+  player.x = dungeon.entranceX;
+  player.y = dungeon.entranceY + 1.6;
+  player.facing = Math.PI / 2;
+  player.moving = false;
+  player._activeDungeonId = null;
+  client.input = normalizeInput();
+  saveClientCharacter(client);
+
+  send(client, {
+    type: "teleport",
+    portalId: `dungeon_${dungeon.id}_exit`,
+    name: dungeon.name,
+    color: dungeon.accent || "#8b7355",
+    style: "arch",
+    theme: "fantasy",
+    x: player.x,
+    y: player.y,
+    skipChat: true
+  });
+  streamChunks(client, nearbyChunks(player.x, player.y, 3));
+  broadcastSnapshot();
+  pushChat({
+    kind: "system",
+    name: "Realm",
+    text: `The guardian of ${dungeon.name} falls — a warm draft carries you back to the cave mouth.`
+  });
+}
+
+function handleDungeonBossDefeat(client, mob) {
+  if (!mob?.isDungeonBoss || !mob.dungeonId) return;
+  const dungeon = getDungeonById(mob.dungeonId);
+  if (!dungeon) return;
+  exitDungeonAfterBoss(client, dungeon);
+}
+
+function nearestCaveEntrance(player, message = {}) {
+  const px = Number.isFinite(Number(message.x)) ? Number(message.x) : player.x;
+  const py = Number.isFinite(Number(message.y)) ? Number(message.y) : player.y;
+  if (worldForPosition(px, py) !== "fantasy") return null;
+  return getDungeonAtEntrance(px, py, DUNGEON_INTERACT_RADIUS);
+}
+
+function handleCaveEntranceInteract(client, message = {}) {
+  const player = client.player;
+  if (!player) return false;
+  const cave = nearestCaveEntrance(player, message);
+  if (!cave) return false;
+  if (Math.hypot(player.x - cave.entranceX, player.y - cave.entranceY) > DUNGEON_INTERACT_RADIUS + 0.5) {
+    return false;
+  }
+  enterCaveDungeon(client, cave);
+  return true;
+}
+
 function handlePortalTravel(client) {
   const now = Date.now();
   if (now - client.lastPortalAt < PORTAL_COOLDOWN_MS) {
@@ -5495,6 +5601,7 @@ function handleAttack(client, message = {}) {
         event.goldGained = goldReward;
         dropLootForMob(hit);
         recordMobDefeatForQuests(client, hit);
+        handleDungeonBossDefeat(client, hit);
       }
     }
 
@@ -7548,6 +7655,10 @@ function handleInteract(client, message = {}) {
       name: "Realm",
       text: vibe
     });
+    return;
+  }
+
+  if (handleCaveEntranceInteract(client, message)) {
     return;
   }
 
@@ -9698,7 +9809,7 @@ function createMobs() {
     { id: "mob_imp_ember_1", name: "Ember Imp", level: 9, homeX: 134, homeY: -121, primary: "#d85b35", accent: "#ffd06a", maxHp: 86, attackDamage: 19 },
     { id: "mob_imp_ember_2", name: "Ember Imp", level: 9, homeX: 158, homeY: -142, primary: "#d85b35", accent: "#ffd06a", maxHp: 86, attackDamage: 19 },
   ];
-  return [...fixedMobs, ...createWildernessMobs(), ...createRoamingMobs(), ...createCritterMobs(), ...createPlanetSurfaceMobs(), ...createSciFiPirateMobs()].map((mob) => ({
+  return [...fixedMobs, ...createWildernessMobs(), ...createRoamingMobs(), ...createCritterMobs(), ...createPlanetSurfaceMobs(), ...createDungeonMobs(), ...createSciFiPirateMobs()].map((mob) => ({
     ...mob,
     x: mob.homeX,
     y: mob.homeY,
@@ -10247,6 +10358,65 @@ function createPlanetSurfaceMobs() {
       attackDamage: 22 + bossLevel * 2,
       roamRadius: 14,
       speed: 1.18 + hash2(planet.seed, planetIndex, 55301) * 0.12
+    });
+  }
+  return list;
+}
+
+function createDungeonMobs() {
+  const list = [];
+  for (const dungeon of DUNGEON_DEFINITIONS) {
+    const type = MOB_TYPES[dungeon.faction] || MOB_TYPES.forest;
+    const floorTiles = collectDungeonFloorTiles(dungeon, TILE, dungeonHash2);
+    const enemyCount = Math.min(floorTiles.length - 4, 16 + dungeon.tier * 4);
+    const used = new Set();
+
+    for (let i = 0; i < enemyCount; i += 1) {
+      const pick = floorTiles[Math.floor(dungeonHash2(dungeon.seed, i, 61000 + i) * floorTiles.length) % floorTiles.length];
+      const key = `${pick.x},${pick.y}`;
+      if (used.has(key)) continue;
+      used.add(key);
+      const enemy = type.enemies[i % type.enemies.length];
+      const level = enemy.level + dungeon.tier * 2 + Math.floor(i / type.enemies.length);
+      list.push({
+        id: `mob_dungeon_${dungeon.id}_${i + 1}`,
+        name: enemy.name,
+        level,
+        homeX: pick.x,
+        homeY: pick.y,
+        primary: type.primary,
+        accent: type.accent,
+        biome: dungeon.faction,
+        faction: dungeon.faction,
+        dungeonId: dungeon.id,
+        maxHp: enemy.hp + level * 8 + Math.floor(dungeonHash2(dungeon.seed, i, 61100) * 16),
+        attackDamage: enemy.damage + Math.floor(level * 1.2),
+        roamRadius: 4.5 + dungeonHash2(dungeon.seed, i, 61200) * 2.5,
+        speed: enemy.speed + dungeonHash2(dungeon.seed, i, 61300) * 0.15
+      });
+    }
+
+    const bossPos = getDungeonBossPosition(dungeon);
+    const bossLevel = (type.bossLevel || 12) + dungeon.tier * 2;
+    const isDemonBoss = dungeon.faction === "demon";
+    const isUndeadBoss = dungeon.faction === "undead";
+    list.push({
+      id: `mob_dungeon_boss_${dungeon.id}`,
+      name: type.bossName,
+      level: bossLevel,
+      homeX: bossPos.x,
+      homeY: bossPos.y,
+      primary: type.bossPrimary,
+      accent: type.bossAccent,
+      biome: dungeon.faction,
+      faction: dungeon.faction,
+      dungeonId: dungeon.id,
+      isBoss: true,
+      isDungeonBoss: true,
+      maxHp: (isDemonBoss ? 420 : isUndeadBoss ? 340 : 280) + bossLevel * 18,
+      attackDamage: (isDemonBoss ? BOSS_ATTACK_DAMAGE + 8 : BOSS_ATTACK_DAMAGE) + Math.floor(bossLevel * 0.8),
+      roamRadius: 5.5,
+      speed: 1.35 + dungeonHash2(dungeon.seed, 99, 61400) * 0.12
     });
   }
   return list;
@@ -11772,6 +11942,7 @@ function applySpellDamage(client, spellId, now) {
       event.goldGained = goldReward;
       dropLootForMob(mob);
       recordMobDefeatForQuests(client, mob);
+      handleDungeonBossDefeat(client, mob);
     }
 
     broadcastCombat(event);

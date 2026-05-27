@@ -24,6 +24,7 @@ const THEME_FANTASY = "fantasy";
 const THEME_SCIFI = "sci-fi";
 const THEME_ALIEN = "alien";
 const THEME_PIRATE = "pirate";
+const THEME_DUNGEON = "dungeon";
 
 /** Reserved coordinate slab for the upcoming pirate game mode (open sea). */
 const PIRATE_WORLD_BOUNDS = Object.freeze({
@@ -55,6 +56,7 @@ module.exports = {
   THEME_SCIFI,
   THEME_ALIEN,
   THEME_PIRATE,
+  THEME_DUNGEON,
   PIRATE_WORLD_BOUNDS,
   FANTASY_WORLD_BOUNDS,
   INTERIOR_PLANE_ORIGIN,

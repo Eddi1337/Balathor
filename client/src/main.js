@@ -178,6 +178,7 @@ let safeZoneTooltipPinTimer = null;
 const TILE_SIZE = 32;
 const SCI_FI_THEME = "sci-fi";
 const ALIEN_THEME = "alien";
+const DUNGEON_THEME = "dungeon";
 /** Hub landmark tree trunk — same origin as server/src/world.js START_SPAWN. */
 const START_SPAWN = Object.freeze({ x: 0, y: 0 });
 
@@ -763,6 +764,7 @@ const state = {
   worldTheme: "fantasy",
   chunks: new Map(),
   portals: new Map(),
+  caveEntrances: new Map(),
   buildings: new Map(),
   roadsides: new Map(),
   spaceObjects: new Map(),
@@ -1029,8 +1031,23 @@ const alienTilePalette = {
   [TILE.ENERGY]: ["#15224a", "#a78bfa", "#e9d5ff"]
 };
 
+const dungeonTilePalette = {
+  ...tilePalette,
+  [TILE.VOID]: ["#000000", "#000000", "#000000"],
+  [TILE.FLOOR]: ["#2a2420", "#3d342c", "#1a1612"],
+  [TILE.WALL]: ["#1a1410", "#2e2620", "#0d0a08"],
+  [TILE.STONE]: ["#3a3228", "#524838", "#221c16"],
+  [TILE.DARK_GRASS]: ["#252018", "#353028", "#151210"]
+};
+
 function getTileColors(tile, theme = state.worldTheme) {
-  const themePalette = theme === SCI_FI_THEME ? sciFiTilePalette : theme === ALIEN_THEME ? alienTilePalette : tilePalette;
+  const themePalette = theme === SCI_FI_THEME
+    ? sciFiTilePalette
+    : theme === ALIEN_THEME
+      ? alienTilePalette
+      : theme === DUNGEON_THEME
+        ? dungeonTilePalette
+        : tilePalette;
   return themePalette[tile] || themePalette[TILE.GRASS];
 }
 
@@ -1346,6 +1363,7 @@ function handleServerMessage(message) {
     const key = chunkKey(message.cx, message.cy);
     state.chunks.set(key, message);
     indexChunkPortals(message);
+    indexChunkCaveEntrances(message);
     indexChunkBuildings(message);
     indexChunkRoadsides(message);
     indexChunkSpaceObjects(message);
@@ -1885,8 +1903,14 @@ function handleServerMessage(message) {
       facing: message.facing,
       fixedGround: Boolean(message.groundAnchor),
       createdAt: performance.now(),
-      ttl: SPELL_ANIMATION_CONFIG[message.spellId]?.ttl || 900
+      ttl: getSpellAnimationConfig(message.spellId)?.ttl || 900
     });
+    if (message.casterId && isSciFiWorld()) {
+      const caster = state.players.get(message.casterId);
+      if (caster && ["holy_strike", "shield_bash", "divine_wrath"].includes(message.spellId)) {
+        caster.lastMeleeSwingAt = performance.now();
+      }
+    }
     return;
   }
 
@@ -2092,6 +2116,13 @@ function applyCaravanSnapshot(snapshotCaravans) {
 }
 
 function applyCombatEvent(event) {
+  if (event.attackerId) {
+    const attacker = state.players.get(event.attackerId);
+    if (attacker && event.kind !== "projectile") {
+      attacker.lastMeleeSwingAt = performance.now();
+    }
+  }
+
   if (event.hit && event.targetId && Number.isFinite(event.targetHp)) {
     if (event.targetKind === "player") {
       const player = state.players.get(event.targetId);
@@ -2207,6 +2238,7 @@ function updateSmoothPlayers(dt) {
         }
       }
     }
+    updatePlayerIdleAnim(player, dt * 1000);
   }
 
   const npcFollow = Math.min(1, 16 * dt);
@@ -5842,6 +5874,7 @@ function clearWorldState() {
   state.teleportGuardUntil = 0;
   state.chunks.clear();
   state.portals.clear();
+  state.caveEntrances.clear();
   state.buildings.clear();
   state.roadsides.clear();
   state.spaceObjects.clear();
@@ -5914,6 +5947,9 @@ function sendAttack() {
       payload.facing = Number(self.facing.toFixed(6));
     }
   }
+  if (self && isSciFiWorld() && (self.weaponKind === "sword" || self.weaponStyle === "saber")) {
+    self.lastMeleeSwingAt = performance.now();
+  }
   send(payload);
 }
 
@@ -5932,6 +5968,24 @@ function indexChunkPortals(chunk) {
 
   for (const portal of chunk.portals || []) {
     state.portals.set(`${portal.x},${portal.y}`, portal);
+  }
+}
+
+function indexChunkCaveEntrances(chunk) {
+  const minX = chunk.cx * CHUNK_SIZE;
+  const minY = chunk.cy * CHUNK_SIZE;
+  const maxX = minX + CHUNK_SIZE;
+  const maxY = minY + CHUNK_SIZE;
+
+  for (const key of [...state.caveEntrances.keys()]) {
+    const [x, y] = key.split(",").map(Number);
+    if (x >= minX && x < maxX && y >= minY && y < maxY) {
+      state.caveEntrances.delete(key);
+    }
+  }
+
+  for (const cave of chunk.caveEntrances || []) {
+    state.caveEntrances.set(`${cave.x},${cave.y}`, cave);
   }
 }
 
@@ -6499,7 +6553,7 @@ function drawSpellIcon(iconCanvas, spellId, unlocked) {
   const c = iconCanvas.getContext("2d");
   c.clearRect(0, 0, 28, 28);
   const col = unlocked ? SPELL_ICON_COLORS[spellId] || "#c79cff" : "#3a2810";
-  const cfg = SPELL_ANIMATION_CONFIG[spellId] || { kind: "burst", accent: "#ffffff" };
+  const cfg = getSpellAnimationConfig(spellId);
   c.fillStyle = unlocked ? "rgba(0,0,0,0.38)" : "#120d08";
   c.fillRect(2, 2, 24, 24);
   c.strokeStyle = unlocked ? col : "#3a2810";
@@ -6510,33 +6564,39 @@ function drawSpellIcon(iconCanvas, spellId, unlocked) {
   c.strokeStyle = col;
   c.lineWidth = 2;
 
-  if (["bolt"].includes(cfg.kind)) {
+  const laserKinds = ["bolt", "sci_laser", "sci_photon", "sci_cryo_lance"];
+  const railKinds = ["arrow", "pierce", "multi_arrow", "volley", "arrow_rain", "sci_rail_streak", "sci_pierce_beam", "sci_tri_laser", "sci_pulse_volley", "sci_drone_rain"];
+  const barrierKinds = ["barrier", "fortify", "sci_hex_barrier", "sci_flux_shield", "sci_dome", "sci_plate_stack", "sci_cloak_hex"];
+  const healKinds = ["heal", "heal_big", "sci_repair_field", "sci_repair_burst"];
+
+  if (laserKinds.includes(cfg.kind)) {
     c.beginPath();
-    c.moveTo(7, 19); c.lineTo(14, 4); c.lineTo(13, 12); c.lineTo(21, 9); c.lineTo(12, 24); c.lineTo(13, 15);
-    c.closePath(); c.fill();
-  } else if (["arrow", "pierce", "multi_arrow", "volley", "arrow_rain"].includes(cfg.kind)) {
+    c.moveTo(6, 20); c.lineTo(22, 8);
+    c.stroke();
+    c.fillRect(20, 6, 4, 4);
+  } else if (railKinds.includes(cfg.kind)) {
     const arrows = cfg.kind === "multi_arrow" || cfg.kind === "volley" || cfg.kind === "arrow_rain" ? [9, 14, 19] : [14];
     for (const y of arrows) {
       c.beginPath(); c.moveTo(5, y); c.lineTo(21, y); c.stroke();
       c.beginPath(); c.moveTo(23, y); c.lineTo(17, y - 4); c.lineTo(17, y + 4); c.closePath(); c.fill();
     }
-  } else if (["barrier", "fortify"].includes(cfg.kind)) {
+  } else if (barrierKinds.includes(cfg.kind)) {
     c.beginPath(); c.ellipse(14, 14, 9, 11, 0, 0, Math.PI * 2); c.stroke();
     c.beginPath(); c.moveTo(14, 5); c.lineTo(21, 10); c.lineTo(18, 22); c.lineTo(14, 24); c.lineTo(10, 22); c.lineTo(7, 10); c.closePath(); c.stroke();
-  } else if (["heal", "heal_big"].includes(cfg.kind)) {
+  } else if (healKinds.includes(cfg.kind)) {
     c.fillRect(12, 6, 4, 16);
     c.fillRect(6, 12, 16, 4);
     c.beginPath(); c.ellipse(14, 14, 10, 10, 0, 0, Math.PI * 2); c.stroke();
-  } else if (cfg.kind === "cone" || cfg.kind === "melee") {
+  } else if (cfg.kind === "cone" || cfg.kind === "melee" || cfg.kind === "sci_fusion_beam" || cfg.kind === "sci_nova_beam") {
     c.beginPath(); c.arc(10, 18, 15, -1.2, 0.15); c.stroke();
     c.beginPath(); c.moveTo(9, 20); c.lineTo(22, 7); c.stroke();
-  } else if (cfg.kind === "sword") {
+  } else if (cfg.kind === "sword" || cfg.kind === "sci_energy_slash") {
     c.lineWidth = 2.5;
     c.beginPath(); c.moveTo(8, 22); c.lineTo(21, 7); c.stroke(); // blade
     c.lineWidth = 2;
     c.beginPath(); c.moveTo(5, 17); c.lineTo(15, 10); c.stroke(); // crossguard
     c.beginPath(); c.arc(7, 23, 2.5, 0, Math.PI * 2); c.fill(); // pommel
-  } else if (cfg.kind === "shield") {
+  } else if (cfg.kind === "shield" || cfg.kind === "sci_kinetic_wave") {
     c.beginPath();
     c.moveTo(14, 4); c.lineTo(22, 9); c.lineTo(22, 17); c.lineTo(14, 24); c.lineTo(6, 17); c.lineTo(6, 9); c.closePath();
     c.stroke();
@@ -6553,17 +6613,17 @@ function drawSpellIcon(iconCanvas, spellId, unlocked) {
       c.stroke();
     }
     c.beginPath(); c.arc(14, 14, 3, 0, Math.PI * 2); c.fill();
-  } else if (["storm", "time", "smoke"].includes(cfg.kind)) {
+  } else if (["storm", "time", "smoke", "sci_ion_storm", "sci_phase_pulse", "sci_ion_smoke", "sci_plasma_ring"].includes(cfg.kind)) {
     c.beginPath(); c.arc(12, 14, 6, 0, Math.PI * 1.5); c.stroke();
     c.beginPath(); c.arc(17, 14, 6, Math.PI, Math.PI * 2.5); c.stroke();
-  } else if (["trap", "ground"].includes(cfg.kind)) {
+  } else if (["trap", "ground", "sci_mine_ring", "sci_overcharge_grid"].includes(cfg.kind)) {
     for (const [x, y] of [[9, 18], [14, 10], [19, 18]]) {
       c.beginPath(); c.moveTo(x - 4, y + 3); c.lineTo(x, y - 6); c.lineTo(x + 4, y + 3); c.stroke();
     }
-  } else if (["dash", "vanish"].includes(cfg.kind)) {
+  } else if (["dash", "vanish", "sci_afterimage"].includes(cfg.kind)) {
     c.fillRect(8, 8, 5, 5); c.fillRect(13, 13, 5, 5); c.fillRect(18, 18, 4, 4);
     c.beginPath(); c.moveTo(6, 20); c.lineTo(20, 6); c.stroke();
-  } else if (cfg.kind === "cry") {
+  } else if (cfg.kind === "cry" || cfg.kind === "sci_sonic_pulse") {
     c.beginPath(); c.moveTo(7, 16); c.lineTo(12, 11); c.lineTo(12, 21); c.closePath(); c.fill();
     c.beginPath(); c.arc(15, 16, 5, -0.8, 0.8); c.arc(18, 16, 8, -0.8, 0.8); c.stroke();
   } else {
@@ -6629,6 +6689,95 @@ const CLIENT_SPELL_COOLDOWN_MS = {
   caltrops: 6000, evasion: 12000, camouflage: 20000,
   multishot: 3000, smoke_bomb: 8000, volley: 6000
 };
+
+/** Sci-fi sector: talent VFX use energy weapons, shields, and drones instead of fantasy motifs. */
+const SCI_FI_SPELL_ANIMATION_CONFIG = {
+  fireball: { kind: "sci_laser", color: "#ff6b35", accent: "#ffd166", ttl: 760 },
+  fire_nova: { kind: "sci_plasma_ring", color: "#ff8c42", accent: "#ffe8a0", ttl: 900 },
+  inferno: { kind: "sci_fusion_beam", color: "#ff3300", accent: "#ffb347", ttl: 980 },
+  ice_shard: { kind: "sci_cryo_lance", color: "#7dd3fc", accent: "#e0f7ff", ttl: 720 },
+  frost_barrier: { kind: "sci_hex_barrier", color: "#38bdf8", accent: "#bae6fd", ttl: 1000 },
+  blizzard: { kind: "sci_ion_storm", color: "#60a5fa", accent: "#e0f2fe", ttl: 1200 },
+  arcane_bolt: { kind: "sci_photon", color: "#c084fc", accent: "#f5d0fe", ttl: 660 },
+  mana_shield: { kind: "sci_flux_shield", color: "#a78bfa", accent: "#ddd6fe", ttl: 1050 },
+  time_warp: { kind: "sci_phase_pulse", color: "#67e8f9", accent: "#cffafe", ttl: 1100 },
+  shield_bash: { kind: "sci_kinetic_wave", color: "#94a3b8", accent: "#e2e8f0", ttl: 620 },
+  divine_shield: { kind: "sci_dome", color: "#fde047", accent: "#ffffff", ttl: 1100 },
+  fortify: { kind: "sci_plate_stack", color: "#64748b", accent: "#cbd5e1", ttl: 1000 },
+  holy_strike: { kind: "sci_energy_slash", color: "#67f0ff", accent: "#ffffff", ttl: 620 },
+  consecration: { kind: "sci_overcharge_grid", color: "#fbbf24", accent: "#fef08a", ttl: 5000 },
+  divine_wrath: { kind: "sci_nova_beam", color: "#f97316", accent: "#fff7ed", ttl: 980 },
+  healing_aura: { kind: "sci_repair_field", color: "#4ade80", accent: "#bbf7d0", ttl: 1100 },
+  lay_on_hands: { kind: "sci_repair_burst", color: "#22c55e", accent: "#ffffff", ttl: 1200 },
+  battle_cry: { kind: "sci_sonic_pulse", color: "#fb923c", accent: "#fed7aa", ttl: 900 },
+  precise_shot: { kind: "sci_rail_streak", color: "#a3e635", accent: "#ecfccb", ttl: 680 },
+  piercing_arrow: { kind: "sci_pierce_beam", color: "#bef264", accent: "#f7fee7", ttl: 760 },
+  rain_of_arrows: { kind: "sci_drone_rain", color: "#84cc16", accent: "#d9f99d", ttl: 1150 },
+  caltrops: { kind: "sci_mine_ring", color: "#facc15", accent: "#fef9c3", ttl: 900 },
+  evasion: { kind: "sci_afterimage", color: "#38bdf8", accent: "#e0f2fe", ttl: 820 },
+  camouflage: { kind: "sci_cloak_hex", color: "#34d399", accent: "#a7f3d0", ttl: 1000 },
+  multishot: { kind: "sci_tri_laser", color: "#86efac", accent: "#dcfce7", ttl: 760 },
+  smoke_bomb: { kind: "sci_ion_smoke", color: "#94a3b8", accent: "#e2e8f0", ttl: 1100 },
+  volley: { kind: "sci_pulse_volley", color: "#a3e635", accent: "#ecfccb", ttl: 980 }
+};
+
+function getSpellAnimationConfig(spellId) {
+  if (isSciFiWorld() && SCI_FI_SPELL_ANIMATION_CONFIG[spellId]) {
+    return SCI_FI_SPELL_ANIMATION_CONFIG[spellId];
+  }
+  return SPELL_ANIMATION_CONFIG[spellId] || { kind: "burst", color: "#c79cff", accent: "#ffffff", ttl: 900 };
+}
+
+const SABER_BLADE_EXTEND_MS = 380;
+const IDLE_ANIM_START_MS = 7500;
+const IDLE_ANIM_CYCLE_MS = 4800;
+
+const IDLE_ANIM_KINDS = [
+  "weapon_spin", "pushups", "jumping_jacks", "stretch_up", "lean_back",
+  "look_around", "weapon_toss", "meditate", "arm_circles", "neck_roll",
+  "foot_tap", "shadow_box", "one_knee", "weapon_inspect", "salute",
+  "yawn", "flex", "squat_hold", "side_stretch", "hop",
+  "weapon_wipe", "think", "pace", "star_jump", "plank",
+  "knee_stretch", "wave_weapon", "sit_ups", "breath", "weapon_balance"
+];
+
+function pickIdleAnimKind(playerId, cycleIndex) {
+  let hash = 0;
+  const key = `${playerId}:${cycleIndex}`;
+  for (let i = 0; i < key.length; i += 1) {
+    hash = (hash * 31 + key.charCodeAt(i)) | 0;
+  }
+  return IDLE_ANIM_KINDS[Math.abs(hash) % IDLE_ANIM_KINDS.length];
+}
+
+function updatePlayerIdleAnim(player, dtMs) {
+  const blocked =
+    player.emote ||
+    player.renderSwimming ||
+    player.ship?.boarded ||
+    (player.id === state.selfId && (state.benchSeatIndefinite || (state.benchSitUntil || 0) > performance.now()));
+
+  if (player.renderMoving || blocked) {
+    player.idleStillMs = 0;
+    player.idleAnimKind = null;
+    return;
+  }
+
+  player.idleStillMs = (player.idleStillMs || 0) + dtMs;
+  if (player.idleStillMs < IDLE_ANIM_START_MS) {
+    player.idleAnimKind = null;
+    return;
+  }
+
+  const now = performance.now();
+  const cycle = Math.floor((player.idleStillMs - IDLE_ANIM_START_MS) / IDLE_ANIM_CYCLE_MS);
+  if (!player.idleAnimKind || player.idleAnimCycle !== cycle) {
+    player.idleAnimKind = pickIdleAnimKind(player.id, cycle);
+    player.idleAnimCycle = cycle;
+    player.idleAnimStarted = now;
+  }
+  player.idleAnimPhase = (now - (player.idleAnimStarted || now)) / 1000;
+}
 
 function renderBags() {
   renderNearbyLoot();
@@ -7778,7 +7927,13 @@ function draw() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   /** Solid fill so zoomed-out letterboxing matches the game frame (no “inner screen” seam). */
-  ctx.fillStyle = state.worldTheme === SCI_FI_THEME ? "#02050d" : state.worldTheme === ALIEN_THEME ? "#07111a" : "#132118";
+  ctx.fillStyle = state.worldTheme === SCI_FI_THEME
+    ? "#02050d"
+    : state.worldTheme === ALIEN_THEME
+      ? "#07111a"
+      : state.worldTheme === DUNGEON_THEME
+        ? "#000000"
+        : "#132118";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   if (!state.joined) {
@@ -8474,8 +8629,11 @@ function drawWorld() {
     drawSpaceBackdrop(minChunkX, maxChunkX, minChunkY, maxChunkY);
   } else if (state.worldTheme === ALIEN_THEME) {
     drawAlienAtmosphere(minChunkX, maxChunkX, minChunkY, maxChunkY);
+  } else if (state.worldTheme === DUNGEON_THEME) {
+    drawDungeonVoidBackdrop(minChunkX, maxChunkX, minChunkY, maxChunkY);
   }
   drawWorldAssets(minTileX, maxTileX, minTileY, maxTileY);
+  drawCaveEntrances(minTileX, maxTileX, minTileY, maxTileY);
   drawSpaceObjects();
   drawWorldLoot();
   drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY);
@@ -10807,6 +10965,68 @@ function drawPortals() {
   }
 }
 
+function drawCaveEntrances(minTileX, maxTileX, minTileY, maxTileY) {
+  if (state.worldTheme !== "fantasy") return;
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const pulse = 0.5 + Math.sin(performance.now() * 0.003) * 0.25;
+
+  for (const cave of state.caveEntrances.values()) {
+    if (cave.x < minTileX || cave.x > maxTileX || cave.y < minTileY || cave.y > maxTileY) continue;
+    const sx = Math.floor(cave.x * TILE_SIZE + TILE_SIZE / 2 - state.camera.x + halfW);
+    const sy = Math.floor(cave.y * TILE_SIZE + TILE_SIZE / 2 - state.camera.y + halfH);
+
+    ctx.save();
+    ctx.fillStyle = "#4a4035";
+    ctx.beginPath();
+    ctx.ellipse(sx, sy + 4, 22, 14, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#1a1410";
+    ctx.beginPath();
+    ctx.ellipse(sx, sy - 2, 14, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const accent = cave.color || "#8b7355";
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.45 + pulse * 0.35;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy - 2, 16, 11, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.globalAlpha = 0.92;
+    ctx.fillStyle = "#f0e6d0";
+    ctx.font = "11px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(cave.name || "Cave", sx, sy - 28);
+    ctx.font = "10px sans-serif";
+    ctx.fillStyle = "rgba(240,230,208,0.75)";
+    ctx.fillText("Interact to enter", sx, sy - 16);
+    ctx.restore();
+  }
+}
+
+function drawDungeonVoidBackdrop(minChunkX, maxChunkX, minChunkY, maxChunkY) {
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const minTileX = minChunkX * CHUNK_SIZE - 2;
+  const maxTileX = (maxChunkX + 1) * CHUNK_SIZE + 2;
+  const minTileY = minChunkY * CHUNK_SIZE - 2;
+  const maxTileY = (maxChunkY + 1) * CHUNK_SIZE + 2;
+
+  ctx.fillStyle = "#000000";
+  for (let y = minTileY; y <= maxTileY; y += 1) {
+    for (let x = minTileX; x <= maxTileX; x += 1) {
+      const tile = getTile(x, y);
+      if (tile !== TILE.VOID) continue;
+      const wx = x * TILE_SIZE - state.camera.x + halfW;
+      const wy = y * TILE_SIZE - state.camera.y + halfH;
+      ctx.fillRect(wx, wy, TILE_SIZE + 1, TILE_SIZE + 1);
+    }
+  }
+}
+
 function drawTile(tile, sx, sy, tx, ty) {
   if (isInteriorDrawTile(tile)) {
     drawInteriorTile(tile, sx, sy, tx, ty);
@@ -11580,6 +11800,208 @@ function drawAlienHead(hx, hy, scale, shellColor, visorColor, dirX) {
   ctx.fillRect(hx + 2 * scale, hy + 3 * scale, 2 * scale, scale);
 }
 
+/**
+ * Procedural idle poses when standing still (cycles through ~30 activities).
+ * Returns arm anchor overrides or null to use default walk pose.
+ */
+function computeIdleCharacterArms(kind, phase, bx, by, s) {
+  const t = phase;
+  const sinT = Math.sin(t * 2.4);
+  const cosT = Math.cos(t * 2.1);
+  const base = { lAX: bx - 6 * s, lAY: by - 2 * s, rAX: bx + 4 * s, rAY: by - 2 * s, extraBob: 0 };
+
+  switch (kind) {
+    case "weapon_spin": {
+      const spin = t * 5.5;
+      return {
+        lAX: bx - 6 * s, lAY: by - 2 * s,
+        rAX: bx + 4 * s + Math.round(Math.cos(spin) * 4 * s),
+        rAY: by - 6 * s + Math.round(Math.sin(spin) * 4 * s),
+        extraBob: 0
+      };
+    }
+    case "pushups":
+      return {
+        lAX: bx - 8 * s, lAY: by + 2 * s,
+        rAX: bx + 6 * s, rAY: by + 2 * s,
+        extraBob: Math.round(Math.abs(Math.sin(t * 4.2)) * 3 * s)
+      };
+    case "jumping_jacks": {
+      const j = Math.sin(t * 3.8);
+      return {
+        lAX: bx - 9 * s - Math.round(j * 2 * s), lAY: by - 7 * s,
+        rAX: bx + 7 * s + Math.round(j * 2 * s), rAY: by - 7 * s,
+        extraBob: Math.round(Math.abs(j) * 2 * s)
+      };
+    }
+    case "stretch_up":
+      return {
+        lAX: bx - 8 * s, lAY: by - 9 * s,
+        rAX: bx + 6 * s, rAY: by - 9 * s,
+        extraBob: -Math.round(s)
+      };
+    case "lean_back":
+      return {
+        lAX: bx - 5 * s, lAY: by - 1 * s,
+        rAX: bx + 3 * s, rAY: by - 1 * s,
+        extraBob: Math.round(Math.sin(t * 1.2) * s)
+      };
+    case "look_around": {
+      const look = Math.sin(t * 1.6);
+      return {
+        lAX: bx - 6 * s + Math.round(look * s), lAY: by - 3 * s,
+        rAX: bx + 4 * s, rAY: by - 4 * s,
+        extraBob: 0
+      };
+    }
+    case "weapon_toss": {
+      const toss = Math.sin(t * 2.8);
+      return {
+        lAX: bx - 6 * s, lAY: by - 2 * s,
+        rAX: bx + 4 * s, rAY: by - 10 * s + Math.round(toss * 5 * s),
+        extraBob: 0
+      };
+    }
+    case "meditate":
+      return {
+        lAX: bx - 4 * s, lAY: by + 1 * s,
+        rAX: bx + 2 * s, rAY: by + 1 * s,
+        extraBob: Math.round(Math.sin(t * 0.8) * 0.5 * s)
+      };
+    case "arm_circles": {
+      const c = t * 2.2;
+      return {
+        lAX: bx - 7 * s + Math.round(Math.cos(c) * 2 * s),
+        lAY: by - 6 * s + Math.round(Math.sin(c) * 2 * s),
+        rAX: bx + 5 * s + Math.round(Math.cos(c + Math.PI) * 2 * s),
+        rAY: by - 6 * s + Math.round(Math.sin(c + Math.PI) * 2 * s),
+        extraBob: 0
+      };
+    }
+    case "neck_roll":
+      return { ...base, extraBob: Math.round(Math.sin(t * 2) * 0.6 * s) };
+    case "foot_tap":
+      return { ...base, extraBob: Math.round(Math.abs(Math.sin(t * 5)) * s) };
+    case "shadow_box": {
+      const p = Math.sin(t * 6);
+      return {
+        lAX: bx - 7 * s, lAY: by - 4 * s,
+        rAX: bx + 6 * s + Math.round(p * 3 * s), rAY: by - 5 * s,
+        extraBob: 0
+      };
+    }
+    case "one_knee":
+      return {
+        lAX: bx - 6 * s, lAY: by - 2 * s,
+        rAX: bx + 4 * s, rAY: by - 1 * s,
+        extraBob: Math.round(s * 0.5)
+      };
+    case "weapon_inspect":
+      return {
+        lAX: bx - 6 * s, lAY: by - 2 * s,
+        rAX: bx + 2 * s, rAY: by - 7 * s,
+        extraBob: 0
+      };
+    case "salute":
+      return {
+        lAX: bx - 6 * s, lAY: by - 2 * s,
+        rAX: bx + 4 * s, rAY: by - 9 * s,
+        extraBob: 0
+      };
+    case "yawn":
+      return {
+        lAX: bx - 7 * s, lAY: by - 3 * s,
+        rAX: bx + 3 * s + Math.round(Math.sin(t * 1.4) * s),
+        rAY: by - 8 * s,
+        extraBob: Math.round(Math.sin(t * 1.4) * s)
+      };
+    case "flex":
+      return {
+        lAX: bx - 9 * s, lAY: by - 5 * s,
+        rAX: bx + 7 * s, rAY: by - 5 * s,
+        extraBob: 0
+      };
+    case "squat_hold":
+      return {
+        lAX: bx - 6 * s, lAY: by + 1 * s,
+        rAX: bx + 4 * s, rAY: by + 1 * s,
+        extraBob: Math.round(2 * s)
+      };
+    case "side_stretch": {
+      const side = Math.sin(t * 2);
+      return {
+        lAX: bx - 9 * s, lAY: by - 5 * s + Math.round(side * s),
+        rAX: bx + 4 * s, rAY: by - 2 * s,
+        extraBob: 0
+      };
+    }
+    case "hop":
+      return { ...base, extraBob: -Math.round(Math.abs(Math.sin(t * 4.5)) * 3 * s) };
+    case "weapon_wipe":
+      return {
+        lAX: bx - 6 * s, lAY: by - 2 * s,
+        rAX: bx + 4 * s, rAY: by - 5 * s + Math.round(sinT * s),
+        extraBob: 0
+      };
+    case "think":
+      return {
+        lAX: bx - 6 * s, lAY: by - 2 * s,
+        rAX: bx + 2 * s, rAY: by - 8 * s,
+        extraBob: 0
+      };
+    case "pace":
+      return {
+        lAX: bx - 6 * s + Math.round(sinT * s), lAY: by - 2 * s,
+        rAX: bx + 4 * s - Math.round(sinT * s), rAY: by - 2 * s,
+        extraBob: Math.round(Math.abs(sinT) * 0.5 * s)
+      };
+    case "star_jump": {
+      const st = Math.sin(t * 3.2);
+      return {
+        lAX: bx - 9 * s, lAY: by - 6 * s + Math.round(st * s),
+        rAX: bx + 7 * s, rAY: by - 6 * s - Math.round(st * s),
+        extraBob: -Math.round(Math.abs(st) * 2 * s)
+      };
+    }
+    case "plank":
+      return {
+        lAX: bx - 8 * s, lAY: by + 2 * s,
+        rAX: bx + 6 * s, rAY: by + 2 * s,
+        extraBob: Math.round(2 * s)
+      };
+    case "knee_stretch":
+      return {
+        lAX: bx - 6 * s, lAY: by - 2 * s,
+        rAX: bx + 4 * s, rAY: by - 6 * s + Math.round(cosT * s),
+        extraBob: 0
+      };
+    case "wave_weapon":
+      return {
+        lAX: bx - 6 * s, lAY: by - 2 * s,
+        rAX: bx + 5 * s, rAY: by - 7 * s + Math.round(Math.sin(t * 5) * 2 * s),
+        extraBob: 0
+      };
+    case "sit_ups": {
+      const su = Math.sin(t * 3.6);
+      return {
+        lAX: bx - 7 * s, lAY: by + Math.round(su * s),
+        rAX: bx + 5 * s, rAY: by + Math.round(su * s),
+        extraBob: Math.round((1 - Math.abs(su)) * 2 * s)
+      };
+    }
+    case "breath":
+      return { ...base, extraBob: Math.round(Math.sin(t * 1.1) * 0.8 * s) };
+    case "weapon_balance":
+      return {
+        lAX: bx - 6 * s, lAY: by - 2 * s,
+        rAX: bx + 4 * s, rAY: by - 10 * s + Math.round(Math.sin(t * 2.2) * s),
+        extraBob: 0
+      };
+    default:
+      return null;
+  }
+}
+
 function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const isMod = !!entity.isMod;
   // Players appear smaller when walking around inside a ship deck so the interior feels spacious
@@ -11626,7 +12048,20 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   else if (bowing)   rawBob = 0;
   else if (swimming) rawBob = 0;
   else               rawBob = moving ? Math.abs(cos1) * 1.5 - 0.4 : 0;
-  const bob = dancing ? rawBob : Math.round(rawBob);
+
+  const homeCasting =
+    !isNpc &&
+    entity.id === state.selfId &&
+    state.pendingHomeTeleportUntil > performance.now();
+
+  const idleKind =
+    !isNpc && !moving && !emoteKind && !benchSeatPose && !lyingBedPose && !swimming && !homeCasting
+      ? entity.idleAnimKind
+      : null;
+  const idlePhase = idleKind ? (entity.idleAnimPhase || 0) : 0;
+  const idlePose = idleKind ? computeIdleCharacterArms(idleKind, idlePhase, x, y, s) : null;
+
+  const bob = dancing ? rawBob : Math.round(rawBob + (idlePose?.extraBob || 0));
 
   const fx   = Math.round(dirX);
   const fy   = Math.round(dirY * 0.6);
@@ -11650,11 +12085,6 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const swimSink = swimming ? Math.round(2.1 * s) : 0;
   const bx = x;
   const by = y + bob + sitBumpPx + swimSink;
-
-  const homeCasting =
-    !isNpc &&
-    entity.id === state.selfId &&
-    state.pendingHomeTeleportUntil > performance.now();
 
   if (!lyingBedPose) {
     if (isMod) {
@@ -11818,6 +12248,13 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
       rAX = bx + 4 * s - tr;
       rAY = by - 3 * s;
     }
+    ctx.fillRect(lAX, lAY, 2 * s, 4 * s);
+    ctx.fillRect(rAX, rAY, 2 * s, 4 * s);
+  } else if (idlePose) {
+    lAX = idlePose.lAX;
+    lAY = idlePose.lAY;
+    rAX = idlePose.rAX;
+    rAY = idlePose.rAY;
     ctx.fillRect(lAX, lAY, 2 * s, 4 * s);
     ctx.fillRect(rAX, rAY, 2 * s, 4 * s);
   } else {
@@ -12306,7 +12743,7 @@ function roundedRect(x, y, width, height, radius) {
   ctx.quadraticCurveTo(x, y, x + r, y);
 }
 
-function drawHeldLightsaber(rHandX, rHandY, dirX, dirY, sideX, sideY, bladeColor, ks = 1, heavy = false) {
+function drawHeldLightsaber(rHandX, rHandY, dirX, dirY, sideX, sideY, bladeColor, ks = 1, heavy = false, bladeExtended = true) {
   const bladeLength = (heavy ? 58 : 52) * ks;
   const start = 7 * ks;
   const hiltLength = 13 * ks;
@@ -12323,22 +12760,33 @@ function drawHeldLightsaber(rHandX, rHandY, dirX, dirY, sideX, sideY, bladeColor
   ctx.save();
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  ctx.strokeStyle = bladeColor;
-  ctx.shadowColor = bladeColor;
-  ctx.shadowBlur = 22 * Math.min(ks, 1.2);
-  ctx.lineWidth = baseWidth;
-  ctx.beginPath();
-  ctx.moveTo(bladeStartX, bladeStartY);
-  ctx.lineTo(bladeTipX, bladeTipY);
-  ctx.stroke();
 
-  ctx.shadowBlur = 10 * Math.min(ks, 1.2);
-  ctx.strokeStyle = "rgba(245, 255, 255, 0.98)";
-  ctx.lineWidth = coreWidth;
-  ctx.beginPath();
-  ctx.moveTo(bladeStartX, bladeStartY);
-  ctx.lineTo(bladeTipX, bladeTipY);
-  ctx.stroke();
+  if (bladeExtended) {
+    ctx.strokeStyle = bladeColor;
+    ctx.shadowColor = bladeColor;
+    ctx.shadowBlur = 22 * Math.min(ks, 1.2);
+    ctx.lineWidth = baseWidth;
+    ctx.beginPath();
+    ctx.moveTo(bladeStartX, bladeStartY);
+    ctx.lineTo(bladeTipX, bladeTipY);
+    ctx.stroke();
+
+    ctx.shadowBlur = 10 * Math.min(ks, 1.2);
+    ctx.strokeStyle = "rgba(245, 255, 255, 0.98)";
+    ctx.lineWidth = coreWidth;
+    ctx.beginPath();
+    ctx.moveTo(bladeStartX, bladeStartY);
+    ctx.lineTo(bladeTipX, bladeTipY);
+    ctx.stroke();
+  } else {
+    // Idle hilt — faint emitter glow only
+    ctx.shadowColor = bladeColor;
+    ctx.shadowBlur = 6 * Math.min(ks, 1.1);
+    ctx.fillStyle = hexToRgba(bladeColor, 0.35);
+    ctx.beginPath();
+    ctx.arc(rHandX + dirX * (3 * ks), rHandY + dirY * (3 * ks), Math.max(1.4, 2 * ks), 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   ctx.shadowBlur = 0;
   ctx.strokeStyle = "#172532";
@@ -12432,7 +12880,12 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
     }
 
     if (weaponKind === "sword") {
-      drawHeldLightsaber(rHandX, rHandY, dirX, dirY, sideX, sideY, ornateWeapon ? accent : "#67f0ff", ks, style === "heavy");
+      const saberExtended =
+        performance.now() - (entity.lastMeleeSwingAt || 0) < SABER_BLADE_EXTEND_MS;
+      drawHeldLightsaber(
+        rHandX, rHandY, dirX, dirY, sideX, sideY,
+        ornateWeapon ? accent : "#67f0ff", ks, style === "heavy", saberExtended
+      );
       if (isLegendary || isAscendant) {
         ctx.restore();
       }
@@ -13428,13 +13881,181 @@ function drawDamageFx(fx, pct, halfW, halfH) {
   ctx.globalAlpha = 1;
 }
 
+function drawSciFiLaserBolt(x, y, angle, pct, cfg, distance) {
+  const travel = Math.min(1, pct * 1.25);
+  const px = x + Math.cos(angle) * distance * travel;
+  const py = y + Math.sin(angle) * distance * travel - 10;
+  ctx.strokeStyle = hexToRgba(cfg.color, 0.35);
+  ctx.lineWidth = 8;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(x + Math.cos(angle) * 12, y + Math.sin(angle) * 12 - 10);
+  ctx.lineTo(px, py);
+  ctx.stroke();
+  ctx.strokeStyle = cfg.accent;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(x + Math.cos(angle) * 12, y + Math.sin(angle) * 12 - 10);
+  ctx.lineTo(px, py);
+  ctx.stroke();
+  ctx.fillStyle = cfg.color;
+  ctx.beginPath();
+  ctx.arc(px, py, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.lineCap = "butt";
+}
+
+function drawSciFiRailStreak(x, y, angle, pct, cfg, distance) {
+  const travel = Math.min(1, pct * 1.4);
+  const px = x + Math.cos(angle) * distance * travel;
+  const py = y + Math.sin(angle) * distance * travel - 10;
+  const len = 42 + pct * 24;
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate(angle);
+  const grad = ctx.createLinearGradient(-len, 0, 8, 0);
+  grad.addColorStop(0, hexToRgba(cfg.color, 0));
+  grad.addColorStop(0.55, cfg.color);
+  grad.addColorStop(1, cfg.accent);
+  ctx.strokeStyle = grad;
+  ctx.lineWidth = 4;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(-len, 0);
+  ctx.lineTo(8, 0);
+  ctx.stroke();
+  ctx.fillStyle = cfg.accent;
+  ctx.fillRect(4, -2, 6, 4);
+  ctx.restore();
+}
+
+function drawSciFiHexBarrier(x, y, pct, cfg, rings) {
+  for (let i = 0; i < rings; i += 1) {
+    const r = 20 + i * 9 + Math.sin(pct * Math.PI + i) * 5;
+    ctx.strokeStyle = i % 2 === 0 ? cfg.color : cfg.accent;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let v = 0; v < 6; v += 1) {
+      const a = (v / 6) * Math.PI * 2 + pct * 0.4;
+      const px = x + Math.cos(a) * r;
+      const py = y - 8 + Math.sin(a) * r * 0.72;
+      if (v === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.stroke();
+  }
+}
+
+function drawSciFiIonStorm(x, y, pct, cfg) {
+  drawSciFiHexBarrier(x, y, pct, cfg, 1);
+  for (let i = 0; i < 6; i += 1) {
+    const a = (i / 6) * Math.PI * 2 + pct * 3;
+    const px = x + Math.cos(a) * (28 + pct * 16);
+    const py = y - 8 + Math.sin(a) * 18;
+    ctx.strokeStyle = cfg.accent;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(px, py - 22);
+    ctx.lineTo(px + Math.sin(a * 5) * 4, py + 8);
+    ctx.stroke();
+  }
+}
+
+function drawSciFiEnergySlash(x, y, angle, pct, cfg) {
+  ctx.save();
+  ctx.translate(x, y - 8);
+  ctx.rotate(angle);
+  ctx.strokeStyle = hexToRgba(cfg.color, 0.4);
+  ctx.lineWidth = 10;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.arc(20, 0, 30 + pct * 12, -0.75, 0.75);
+  ctx.stroke();
+  ctx.strokeStyle = cfg.accent;
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(20, 0, 28 + pct * 10, -0.65, 0.65);
+  ctx.stroke();
+  ctx.strokeStyle = cfg.color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(8, -28);
+  ctx.lineTo(50, 28);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawSciFiOverchargeGrid(x, y, ageMs, pct, cfg) {
+  drawConsecration(x, y, ageMs, pct, cfg);
+  ctx.save();
+  ctx.strokeStyle = hexToRgba(cfg.accent, 0.45);
+  ctx.lineWidth = 1;
+  const gridR = CONSECRATION_RADIUS_TILES * TILE_SIZE * 0.75;
+  for (let gx = -2; gx <= 2; gx += 1) {
+    ctx.beginPath();
+    ctx.moveTo(x + gx * (gridR / 3), y - gridR * 0.35);
+    ctx.lineTo(x + gx * (gridR / 3), y + gridR * 0.35);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x - gridR * 0.55, y - 8 + gx * (gridR / 4));
+    ctx.lineTo(x + gridR * 0.55, y - 8 + gx * (gridR / 4));
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawSciFiRepairField(x, y, pct, cfg, big) {
+  for (let i = 0; i < (big ? 10 : 6); i += 1) {
+    const a = (i / (big ? 10 : 6)) * Math.PI * 2 + pct * 2;
+    const px = x + Math.cos(a) * (16 + pct * 22);
+    const py = y - 10 + Math.sin(a) * 8 - pct * 20;
+    ctx.fillStyle = i % 2 ? cfg.color : cfg.accent;
+    ctx.fillRect(px - 2, py - 2, 4, 4);
+  }
+  drawSpellRing(x, y, (big ? 36 : 24) + pct * 14, cfg.color);
+}
+
+function drawSciFiDroneRain(x, y, pct, cfg) {
+  for (let i = 0; i < 10; i += 1) {
+    const ox = ((i % 5) - 2) * 16;
+    const fall = ((pct * 90 + i * 11) % 90) - 45;
+    const py = y - 36 + fall;
+    ctx.fillStyle = cfg.color;
+    ctx.fillRect(x + ox - 3, py, 6, 4);
+    ctx.fillStyle = cfg.accent;
+    ctx.fillRect(x + ox - 1, py - 3, 2, 2);
+  }
+  drawSpellRing(x, y, 40, cfg.color);
+}
+
+function drawSciFiMineRing(x, y, pct, cfg) {
+  for (let i = 0; i < 8; i += 1) {
+    const a = (i / 8) * Math.PI * 2;
+    const px = x + Math.cos(a) * (14 + pct * 26);
+    const py = y + Math.sin(a) * (8 + pct * 12);
+    ctx.fillStyle = cfg.color;
+    ctx.beginPath();
+    ctx.arc(px, py, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = cfg.accent;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(px - 4, py);
+    ctx.lineTo(px + 4, py);
+    ctx.moveTo(px, py - 4);
+    ctx.lineTo(px, py + 4);
+    ctx.stroke();
+  }
+}
+
 function drawTalentSpellFx() {
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
   const now = performance.now();
 
   for (const fx of state.spellFx) {
-    const cfg = SPELL_ANIMATION_CONFIG[fx.spellId] || { kind: "burst", color: "#c79cff", accent: "#ffffff", ttl: 900 };
+    const cfg = getSpellAnimationConfig(fx.spellId);
     const age = now - fx.createdAt;
     const pct = Math.max(0, Math.min(1, age / fx.ttl));
     const caster = state.players.get(fx.casterId);
@@ -13523,6 +14144,107 @@ function drawTalentSpellFx() {
         break;
       case "smoke":
         drawSmokeBomb(sx, sy, pct, cfg);
+        break;
+      case "sci_laser":
+      case "sci_photon":
+      case "sci_cryo_lance":
+        drawSciFiLaserBolt(sx, sy, angle, pct, cfg, cfg.kind === "sci_cryo_lance" ? 140 : 122);
+        break;
+      case "sci_plasma_ring":
+        drawSpellBurst(sx, sy, pct, cfg);
+        drawSpellRing(sx, sy, 18 + pct * 32, cfg.accent);
+        break;
+      case "sci_fusion_beam":
+        drawSpellCone(sx, sy, angle, pct, cfg);
+        ctx.strokeStyle = cfg.accent;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - 8);
+        ctx.lineTo(sx + Math.cos(angle) * 90, sy - 8 + Math.sin(angle) * 90);
+        ctx.stroke();
+        break;
+      case "sci_hex_barrier":
+      case "sci_flux_shield":
+        drawSciFiHexBarrier(sx, sy, pct, cfg, fx.spellId === "divine_shield" ? 4 : 3);
+        break;
+      case "sci_dome":
+        drawSciFiHexBarrier(sx, sy, pct, cfg, 4);
+        drawSpellBarrier(sx, sy, pct, cfg, 2);
+        break;
+      case "sci_ion_storm":
+        drawSciFiIonStorm(sx, sy, pct, cfg);
+        break;
+      case "sci_phase_pulse":
+        drawTimeWarp(sx, sy, pct, cfg);
+        drawSpellRing(sx, sy, 30 + pct * 24, cfg.accent);
+        break;
+      case "sci_kinetic_wave":
+        drawShieldBash(sx, sy, angle, pct, cfg);
+        drawSpellRing(sx + Math.cos(angle) * 40, sy + Math.sin(angle) * 40 - 8, 12 + pct * 18, cfg.accent);
+        break;
+      case "sci_plate_stack":
+        drawFortify(sx, sy, pct, cfg);
+        break;
+      case "sci_energy_slash":
+        drawSciFiEnergySlash(sx, sy, angle, pct, cfg);
+        break;
+      case "sci_overcharge_grid":
+        drawSciFiOverchargeGrid(sx, sy, age, pct, cfg);
+        break;
+      case "sci_nova_beam":
+        drawDivineWrath(sx, sy, angle, pct, cfg);
+        drawSciFiLaserBolt(sx, sy, angle, pct, cfg, 80);
+        break;
+      case "sci_repair_field":
+        drawSciFiRepairField(sx, sy, pct, cfg, false);
+        break;
+      case "sci_repair_burst":
+        drawSciFiRepairField(sx, sy, pct, cfg, true);
+        break;
+      case "sci_sonic_pulse":
+        drawBattleCry(sx, sy, angle, pct, cfg);
+        break;
+      case "sci_rail_streak":
+      case "sci_pierce_beam":
+        drawSciFiRailStreak(sx, sy, angle, pct, cfg, cfg.kind === "sci_pierce_beam" ? 170 : 136);
+        if (cfg.kind === "sci_pierce_beam") {
+          drawSpellRing(sx + Math.cos(angle) * 88, sy + Math.sin(angle) * 88, 10 + pct * 16, cfg.accent);
+        }
+        break;
+      case "sci_drone_rain":
+        drawSciFiDroneRain(sx, sy, pct, cfg);
+        break;
+      case "sci_mine_ring":
+        drawSciFiMineRing(sx, sy, pct, cfg);
+        break;
+      case "sci_afterimage":
+        drawEvasion(sx, sy, angle, pct, cfg);
+        break;
+      case "sci_cloak_hex":
+        drawCamouflage(sx, sy, pct, cfg);
+        drawSciFiHexBarrier(sx, sy, pct, cfg, 2);
+        break;
+      case "sci_tri_laser":
+        drawSciFiLaserBolt(sx, sy, angle - 0.22, pct, cfg, 110);
+        drawSciFiLaserBolt(sx, sy, angle, pct, cfg, 126);
+        drawSciFiLaserBolt(sx, sy, angle + 0.22, pct, cfg, 110);
+        break;
+      case "sci_ion_smoke":
+        drawSmokeBomb(sx, sy, pct, cfg);
+        for (let i = 0; i < 4; i += 1) {
+          const a = (i / 4) * Math.PI * 2;
+          ctx.strokeStyle = cfg.accent;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(sx + Math.cos(a) * 16, sy - 8 + Math.sin(a) * 10);
+          ctx.lineTo(sx + Math.cos(a) * 28, sy - 8 + Math.sin(a) * 16);
+          ctx.stroke();
+        }
+        break;
+      case "sci_pulse_volley":
+        drawSciFiRailStreak(sx, sy, angle - 0.12, pct, cfg, 90);
+        drawSciFiRailStreak(sx, sy, angle, pct, cfg, 100);
+        drawSciFiRailStreak(sx, sy, angle + 0.12, pct, cfg, 90);
         break;
       default:
         drawSpellBurst(sx, sy, pct, cfg);
@@ -16452,22 +17174,37 @@ function setStatus(text) {
 }
 
 function setWorldTheme(theme) {
-  const next = theme === SCI_FI_THEME ? SCI_FI_THEME : theme === ALIEN_THEME ? ALIEN_THEME : "fantasy";
+  const next = theme === SCI_FI_THEME
+    ? SCI_FI_THEME
+    : theme === ALIEN_THEME
+      ? ALIEN_THEME
+      : theme === DUNGEON_THEME
+        ? DUNGEON_THEME
+        : "fantasy";
   if (state.worldTheme === next) {
     return;
   }
   state.worldTheme = next;
   document.body.classList.toggle("theme-sci-fi", next === SCI_FI_THEME);
   document.body.classList.toggle("theme-alien", next === ALIEN_THEME);
+  document.body.classList.toggle("theme-dungeon", next === DUNGEON_THEME);
   if (next === SCI_FI_THEME) {
     document.body.classList.remove("theme-fantasy");
     document.body.classList.remove("theme-alien");
+    document.body.classList.remove("theme-dungeon");
   } else if (next === ALIEN_THEME) {
     document.body.classList.remove("theme-fantasy");
     document.body.classList.remove("theme-sci-fi");
+    document.body.classList.remove("theme-dungeon");
+  } else if (next === DUNGEON_THEME) {
+    document.body.classList.remove("theme-fantasy");
+    document.body.classList.remove("theme-sci-fi");
+    document.body.classList.remove("theme-alien");
   } else {
     document.body.classList.add("theme-fantasy");
     document.body.classList.remove("theme-alien");
+    document.body.classList.remove("theme-sci-fi");
+    document.body.classList.remove("theme-dungeon");
   }
   chunkCanvasCache.clear();
 }

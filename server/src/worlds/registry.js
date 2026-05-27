@@ -8,6 +8,7 @@
  */
 
 const { getPlanetBySurfacePoint } = require("./planetWorlds.js");
+const { getDungeonByInteriorPoint } = require("./dungeonWorlds.js");
 const { isInsidePirateBounds, getPirateWorldTheme } = require("./pirateWorld.js");
 const { readJson } = require("./contentLoader.js");
 const {
@@ -20,6 +21,7 @@ const {
   THEME_SCIFI,
   THEME_ALIEN,
   THEME_PIRATE,
+  THEME_DUNGEON,
   FANTASY_WORLD_BOUNDS,
   INTERIOR_PLANE_ORIGIN,
   INTERIOR_PLANE_MARGIN
@@ -35,6 +37,9 @@ function isFantasyBounds(x, y) {
 }
 
 function isInteriorPlane(x, y) {
+  if (getDungeonByInteriorPoint(x, y)) {
+    return false;
+  }
   return (
     x >= INTERIOR_PLANE_ORIGIN.x - INTERIOR_PLANE_MARGIN &&
     y >= INTERIOR_PLANE_ORIGIN.y - INTERIOR_PLANE_MARGIN
@@ -123,6 +128,25 @@ for (const world of RESOLVE_ORDER) {
 }
 
 /**
+ * Dungeon instances use dynamic ids `dungeon:<dungeonId>`.
+ */
+function resolveDungeonWorld(x, y) {
+  const dungeon = getDungeonByInteriorPoint(x, y);
+  if (!dungeon) return null;
+  const id = `dungeon:${dungeon.id}`;
+  return {
+    id,
+    gameMode: GAME_MODE_BALATHOR,
+    label: dungeon.name || id,
+    coordSpace: COORD_SPACE_SHARED,
+    generation: GEN_PROCEDURAL,
+    theme: THEME_DUNGEON,
+    dungeonId: dungeon.id,
+    dungeon
+  };
+}
+
+/**
  * Planet surfaces use dynamic ids `planet:<planetId>`.
  */
 function resolvePlanetWorld(x, y) {
@@ -146,6 +170,11 @@ function resolvePlanetWorld(x, y) {
  * @returns {{ id: string, theme: string, gameMode: string } | null}
  */
 function resolveWorldAt(x, y) {
+  const dungeonWorld = resolveDungeonWorld(x, y);
+  if (dungeonWorld) {
+    return dungeonWorld;
+  }
+
   const planetWorld = resolvePlanetWorld(x, y);
   if (planetWorld) {
     return planetWorld;
@@ -173,6 +202,9 @@ function getWorldDefinition(id) {
   if (typeof id !== "string" || !id) return null;
   if (id.startsWith("planet:")) {
     return { id, gameMode: GAME_MODE_BALATHOR, theme: THEME_ALIEN, generation: GEN_PROCEDURAL };
+  }
+  if (id.startsWith("dungeon:")) {
+    return { id, gameMode: GAME_MODE_BALATHOR, theme: THEME_DUNGEON, generation: GEN_PROCEDURAL };
   }
   return WORLDS_BY_ID.get(id) || null;
 }
