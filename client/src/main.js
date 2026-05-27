@@ -14156,6 +14156,8 @@ function drawWorldAssets(minTileX, maxTileX, minTileY, maxTileY) {
         drawCuratedRock(sx, sy, tx, ty, tile === TILE.SAND);
       } else if (tile === TILE.PATH && hash2(tx, ty, 503) > 0.985) {
         drawCuratedSign(sx, sy);
+      } else if (tile === TILE.PATH && hash2(tx, ty, 505) > 0.96) {
+        drawTownLampPost(sx, sy, tx, ty);
       } else if (tile === TILE.FLOWERS) {
         // Potted plants / decorative shrubs on flower strips alongside roads
         const nearPath = getTile(tx - 1, ty) === TILE.PATH || getTile(tx + 1, ty) === TILE.PATH ||
@@ -14163,9 +14165,70 @@ function drawWorldAssets(minTileX, maxTileX, minTileY, maxTileY) {
         if (nearPath && hash2(tx, ty, 504) > 0.55) {
           drawTownPlanter(sx, sy, tx, ty);
         }
+      } else if ((tile === TILE.GRASS || tile === TILE.FLOWERS) && hash2(tx, ty, 506) > 0.985) {
+        drawCuteCritter(sx, sy, tx, ty);
       }
     }
   }
+}
+
+function drawTownLampPost(sx, sy, tx, ty) {
+  const pulse = 0.5 + Math.sin(performance.now() * 0.003 + hash2(tx, ty, 507) * Math.PI * 2) * 0.5;
+  const px = sx + 15;
+  const py = sy + 4;
+  ctx.save();
+  drawEllipseShadow(px + 1, sy + 28, 10, 4, 0.28);
+  ctx.fillStyle = "#3c2a1a";
+  ctx.fillRect(px, py, 3, 24);
+  ctx.fillStyle = "#5a4026";
+  ctx.fillRect(px, py, 1, 24);
+  ctx.fillStyle = "#c8a060";
+  ctx.fillRect(px - 3, py + 1, 9, 3);
+  ctx.fillStyle = "#ffd890";
+  ctx.fillRect(px - 2, py + 3, 7, 5);
+  ctx.globalAlpha = 0.2 + pulse * 0.2;
+  ctx.fillStyle = "#ffe6a6";
+  ctx.fillRect(px - 9, py - 3, 21, 16);
+  ctx.restore();
+}
+
+function drawCuteCritter(sx, sy, tx, ty) {
+  const pick = hash2(tx, ty, 508);
+  const hop = Math.sin(performance.now() * 0.004 + (tx + ty) * 0.25) * 1.5;
+  const cx = sx + 10 + ((hash2(tx, ty, 509) * 12) | 0);
+  const cy = sy + 19 + ((hash2(tx, ty, 510) * 6) | 0) - hop;
+  ctx.save();
+  drawEllipseShadow(cx + 2, cy + 9, 10, 4, 0.2);
+  if (pick > 0.5) {
+    // Bunny
+    ctx.fillStyle = "#f4e6f6";
+    ctx.fillRect(cx + 2, cy - 6, 2, 6);
+    ctx.fillRect(cx + 6, cy - 6, 2, 6);
+    ctx.fillStyle = "#e6d2ea";
+    ctx.fillRect(cx + 2, cy - 4, 1, 3);
+    ctx.fillRect(cx + 6, cy - 4, 1, 3);
+    ctx.fillStyle = "#fff4ff";
+    ctx.fillRect(cx, cy, 10, 8);
+    ctx.fillStyle = "#2a1a24";
+    ctx.fillRect(cx + 2, cy + 2, 1, 1);
+    ctx.fillRect(cx + 7, cy + 2, 1, 1);
+    ctx.fillStyle = "#f0a0b0";
+    ctx.fillRect(cx + 4, cy + 4, 2, 1);
+  } else {
+    // Chick
+    ctx.fillStyle = "#ffe88c";
+    ctx.fillRect(cx, cy, 10, 8);
+    ctx.fillRect(cx + 2, cy - 2, 6, 3);
+    ctx.fillStyle = "#2a1a0e";
+    ctx.fillRect(cx + 2, cy + 2, 1, 1);
+    ctx.fillRect(cx + 7, cy + 2, 1, 1);
+    ctx.fillStyle = "#f8a040";
+    ctx.fillRect(cx + 4, cy + 4, 2, 1);
+    ctx.fillStyle = "#d07030";
+    ctx.fillRect(cx + 2, cy + 8, 1, 2);
+    ctx.fillRect(cx + 7, cy + 8, 1, 2);
+  }
+  ctx.restore();
 }
 
 function drawSciFiPanelLight(sx, sy, tx, ty) {
@@ -15572,6 +15635,29 @@ function drawBuildingFrontDetail(leftX, rightX, groundY, variant, p) {
     ctx.fillRect(fx, groundY - 5, 2, 6);
     ctx.fillStyle = flowerColors[i % flowerColors.length];
     ctx.fillRect(fx - 1, groundY - 8, 4, 4);
+  }
+
+  // Tiny celebratory bunting to make town structures feel friendlier.
+  if (detailW > 60) {
+    const lineY = groundY - 16;
+    ctx.strokeStyle = "rgba(42,22,14,0.7)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(leftX + 6, lineY);
+    ctx.quadraticCurveTo((leftX + rightX) / 2, lineY + 5, rightX - 6, lineY);
+    ctx.stroke();
+    const buntingColors = ["#ff8fa3", "#ffe08a", "#8ad8ff", "#b6ef8a"];
+    for (let i = 0; i < 8; i += 1) {
+      const px = leftX + 8 + Math.round((detailW - 16) * (i / 7));
+      const py = lineY + Math.sin(i * 0.8) * 2;
+      ctx.fillStyle = buntingColors[i % buntingColors.length];
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(px + 4, py + 7);
+      ctx.lineTo(px - 4, py + 7);
+      ctx.closePath();
+      ctx.fill();
+    }
   }
 }
 
