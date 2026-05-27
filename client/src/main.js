@@ -178,6 +178,7 @@ let safeZoneTooltipPinTimer = null;
 const TILE_SIZE = 32;
 const SCI_FI_THEME = "sci-fi";
 const ALIEN_THEME = "alien";
+const DUNGEON_THEME = "dungeon";
 /** Hub landmark tree trunk — same origin as server/src/world.js START_SPAWN. */
 const START_SPAWN = Object.freeze({ x: 0, y: 0 });
 
@@ -763,6 +764,7 @@ const state = {
   worldTheme: "fantasy",
   chunks: new Map(),
   portals: new Map(),
+  caveEntrances: new Map(),
   buildings: new Map(),
   roadsides: new Map(),
   spaceObjects: new Map(),
@@ -1029,8 +1031,23 @@ const alienTilePalette = {
   [TILE.ENERGY]: ["#15224a", "#a78bfa", "#e9d5ff"]
 };
 
+const dungeonTilePalette = {
+  ...tilePalette,
+  [TILE.VOID]: ["#000000", "#000000", "#000000"],
+  [TILE.FLOOR]: ["#2a2420", "#3d342c", "#1a1612"],
+  [TILE.WALL]: ["#1a1410", "#2e2620", "#0d0a08"],
+  [TILE.STONE]: ["#3a3228", "#524838", "#221c16"],
+  [TILE.DARK_GRASS]: ["#252018", "#353028", "#151210"]
+};
+
 function getTileColors(tile, theme = state.worldTheme) {
-  const themePalette = theme === SCI_FI_THEME ? sciFiTilePalette : theme === ALIEN_THEME ? alienTilePalette : tilePalette;
+  const themePalette = theme === SCI_FI_THEME
+    ? sciFiTilePalette
+    : theme === ALIEN_THEME
+      ? alienTilePalette
+      : theme === DUNGEON_THEME
+        ? dungeonTilePalette
+        : tilePalette;
   return themePalette[tile] || themePalette[TILE.GRASS];
 }
 
@@ -1346,6 +1363,7 @@ function handleServerMessage(message) {
     const key = chunkKey(message.cx, message.cy);
     state.chunks.set(key, message);
     indexChunkPortals(message);
+    indexChunkCaveEntrances(message);
     indexChunkBuildings(message);
     indexChunkRoadsides(message);
     indexChunkSpaceObjects(message);
@@ -5842,6 +5860,7 @@ function clearWorldState() {
   state.teleportGuardUntil = 0;
   state.chunks.clear();
   state.portals.clear();
+  state.caveEntrances.clear();
   state.buildings.clear();
   state.roadsides.clear();
   state.spaceObjects.clear();
@@ -5932,6 +5951,24 @@ function indexChunkPortals(chunk) {
 
   for (const portal of chunk.portals || []) {
     state.portals.set(`${portal.x},${portal.y}`, portal);
+  }
+}
+
+function indexChunkCaveEntrances(chunk) {
+  const minX = chunk.cx * CHUNK_SIZE;
+  const minY = chunk.cy * CHUNK_SIZE;
+  const maxX = minX + CHUNK_SIZE;
+  const maxY = minY + CHUNK_SIZE;
+
+  for (const key of [...state.caveEntrances.keys()]) {
+    const [x, y] = key.split(",").map(Number);
+    if (x >= minX && x < maxX && y >= minY && y < maxY) {
+      state.caveEntrances.delete(key);
+    }
+  }
+
+  for (const cave of chunk.caveEntrances || []) {
+    state.caveEntrances.set(`${cave.x},${cave.y}`, cave);
   }
 }
 
@@ -7778,7 +7815,13 @@ function draw() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   /** Solid fill so zoomed-out letterboxing matches the game frame (no “inner screen” seam). */
-  ctx.fillStyle = state.worldTheme === SCI_FI_THEME ? "#02050d" : state.worldTheme === ALIEN_THEME ? "#07111a" : "#132118";
+  ctx.fillStyle = state.worldTheme === SCI_FI_THEME
+    ? "#02050d"
+    : state.worldTheme === ALIEN_THEME
+      ? "#07111a"
+      : state.worldTheme === DUNGEON_THEME
+        ? "#000000"
+        : "#132118";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   if (!state.joined) {
@@ -8474,8 +8517,11 @@ function drawWorld() {
     drawSpaceBackdrop(minChunkX, maxChunkX, minChunkY, maxChunkY);
   } else if (state.worldTheme === ALIEN_THEME) {
     drawAlienAtmosphere(minChunkX, maxChunkX, minChunkY, maxChunkY);
+  } else if (state.worldTheme === DUNGEON_THEME) {
+    drawDungeonVoidBackdrop(minChunkX, maxChunkX, minChunkY, maxChunkY);
   }
   drawWorldAssets(minTileX, maxTileX, minTileY, maxTileY);
+  drawCaveEntrances(minTileX, maxTileX, minTileY, maxTileY);
   drawSpaceObjects();
   drawWorldLoot();
   drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY);
@@ -10804,6 +10850,68 @@ function drawPortals() {
     const sx = Math.floor(portal.x * TILE_SIZE - state.camera.x + halfW);
     const sy = Math.floor(portal.y * TILE_SIZE - state.camera.y + halfH);
     drawPortal(sx, sy, portal.x, portal.y);
+  }
+}
+
+function drawCaveEntrances(minTileX, maxTileX, minTileY, maxTileY) {
+  if (state.worldTheme !== "fantasy") return;
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const pulse = 0.5 + Math.sin(performance.now() * 0.003) * 0.25;
+
+  for (const cave of state.caveEntrances.values()) {
+    if (cave.x < minTileX || cave.x > maxTileX || cave.y < minTileY || cave.y > maxTileY) continue;
+    const sx = Math.floor(cave.x * TILE_SIZE + TILE_SIZE / 2 - state.camera.x + halfW);
+    const sy = Math.floor(cave.y * TILE_SIZE + TILE_SIZE / 2 - state.camera.y + halfH);
+
+    ctx.save();
+    ctx.fillStyle = "#4a4035";
+    ctx.beginPath();
+    ctx.ellipse(sx, sy + 4, 22, 14, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#1a1410";
+    ctx.beginPath();
+    ctx.ellipse(sx, sy - 2, 14, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const accent = cave.color || "#8b7355";
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.45 + pulse * 0.35;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy - 2, 16, 11, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.globalAlpha = 0.92;
+    ctx.fillStyle = "#f0e6d0";
+    ctx.font = "11px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(cave.name || "Cave", sx, sy - 28);
+    ctx.font = "10px sans-serif";
+    ctx.fillStyle = "rgba(240,230,208,0.75)";
+    ctx.fillText("Interact to enter", sx, sy - 16);
+    ctx.restore();
+  }
+}
+
+function drawDungeonVoidBackdrop(minChunkX, maxChunkX, minChunkY, maxChunkY) {
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const minTileX = minChunkX * CHUNK_SIZE - 2;
+  const maxTileX = (maxChunkX + 1) * CHUNK_SIZE + 2;
+  const minTileY = minChunkY * CHUNK_SIZE - 2;
+  const maxTileY = (maxChunkY + 1) * CHUNK_SIZE + 2;
+
+  ctx.fillStyle = "#000000";
+  for (let y = minTileY; y <= maxTileY; y += 1) {
+    for (let x = minTileX; x <= maxTileX; x += 1) {
+      const tile = getTile(x, y);
+      if (tile !== TILE.VOID) continue;
+      const wx = x * TILE_SIZE - state.camera.x + halfW;
+      const wy = y * TILE_SIZE - state.camera.y + halfH;
+      ctx.fillRect(wx, wy, TILE_SIZE + 1, TILE_SIZE + 1);
+    }
   }
 }
 
@@ -16452,22 +16560,37 @@ function setStatus(text) {
 }
 
 function setWorldTheme(theme) {
-  const next = theme === SCI_FI_THEME ? SCI_FI_THEME : theme === ALIEN_THEME ? ALIEN_THEME : "fantasy";
+  const next = theme === SCI_FI_THEME
+    ? SCI_FI_THEME
+    : theme === ALIEN_THEME
+      ? ALIEN_THEME
+      : theme === DUNGEON_THEME
+        ? DUNGEON_THEME
+        : "fantasy";
   if (state.worldTheme === next) {
     return;
   }
   state.worldTheme = next;
   document.body.classList.toggle("theme-sci-fi", next === SCI_FI_THEME);
   document.body.classList.toggle("theme-alien", next === ALIEN_THEME);
+  document.body.classList.toggle("theme-dungeon", next === DUNGEON_THEME);
   if (next === SCI_FI_THEME) {
     document.body.classList.remove("theme-fantasy");
     document.body.classList.remove("theme-alien");
+    document.body.classList.remove("theme-dungeon");
   } else if (next === ALIEN_THEME) {
     document.body.classList.remove("theme-fantasy");
     document.body.classList.remove("theme-sci-fi");
+    document.body.classList.remove("theme-dungeon");
+  } else if (next === DUNGEON_THEME) {
+    document.body.classList.remove("theme-fantasy");
+    document.body.classList.remove("theme-sci-fi");
+    document.body.classList.remove("theme-alien");
   } else {
     document.body.classList.add("theme-fantasy");
     document.body.classList.remove("theme-alien");
+    document.body.classList.remove("theme-sci-fi");
+    document.body.classList.remove("theme-dungeon");
   }
   chunkCanvasCache.clear();
 }
