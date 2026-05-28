@@ -2948,6 +2948,7 @@ function renderPartyPanel() {
     return;
   }
   partyPanel.classList.remove("hidden");
+  restorePartyPanelPosition();
   if (state.partyPanelMinimized) {
     partyPanel.classList.add("minimized");
   } else {
@@ -17384,6 +17385,36 @@ function scheduleCanvasResize() {
 
 const PANEL_DRAG_HANDLE_SELECTOR =
   ".window-head, .party-panel-head, .chat-head, .progression-head, .menu-head";
+const PARTY_PANEL_POS_KEY = "balathor_party_panel_pos";
+
+function restorePartyPanelPosition() {
+  if (!partyPanel) return;
+  try {
+    const raw = localStorage.getItem(PARTY_PANEL_POS_KEY);
+    if (!raw) return;
+    const pos = JSON.parse(raw);
+    if (!Number.isFinite(pos.left) || !Number.isFinite(pos.top)) return;
+    partyPanel.style.right = "auto";
+    partyPanel.style.bottom = "auto";
+    partyPanel.style.left = `${Math.max(0, pos.left)}px`;
+    partyPanel.style.top = `${Math.max(0, pos.top)}px`;
+  } catch {
+    /* ignore corrupt storage */
+  }
+}
+
+function savePartyPanelPosition() {
+  if (!partyPanel || partyPanel.classList.contains("hidden")) return;
+  const rect = partyPanel.getBoundingClientRect();
+  try {
+    localStorage.setItem(
+      PARTY_PANEL_POS_KEY,
+      JSON.stringify({ left: Math.round(rect.left), top: Math.round(rect.top) })
+    );
+  } catch {
+    /* storage full / private mode */
+  }
+}
 
 function initDraggablePanels() {
   const panels = [
@@ -17408,6 +17439,7 @@ function initDraggablePanels() {
   for (const panel of panels) {
     makeDraggable(panel);
   }
+  restorePartyPanelPosition();
 }
 
 function makeDraggable(panel) {
@@ -17462,6 +17494,9 @@ function makeDraggable(panel) {
       head.releasePointerCapture(e.pointerId);
     } catch {
       /* already released */
+    }
+    if (panel.id === "partyPanel") {
+      savePartyPanelPosition();
     }
   };
 

@@ -1536,6 +1536,27 @@ button:focus-visible {
   display: none;
 }
 
+body.mobile .mobile-controls:not(.hidden) {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: max(8px, env(safe-area-inset-bottom));
+  display: block;
+  pointer-events: none;
+  touch-action: none;
+  z-index: 128;
+}
+
+body.mobile .mobile-joystick {
+  position: absolute;
+  left: max(8px, env(safe-area-inset-left));
+  bottom: 0;
+  width: 112px;
+  height: 112px;
+  pointer-events: auto;
+  touch-action: none;
+}
+
 .menu {
   position: fixed;
   inset: 0;
@@ -1849,6 +1870,7 @@ button:focus-visible {
     display: block;
     pointer-events: none;
     touch-action: none;
+    z-index: 128;
   }
 
   .mobile-joystick {
@@ -3040,6 +3062,53 @@ body.mobile.mobile-landscape .ability-bar-divider {
   background: linear-gradient(90deg, #f26d6d, #ffd166);
 }
 
+body.mobile .party-panel {
+  top: max(52px, calc(env(safe-area-inset-top) + 44px));
+  left: max(8px, env(safe-area-inset-left));
+  right: auto;
+  bottom: auto;
+  min-width: 0;
+  max-width: min(128px, calc(100vw - 160px));
+  width: max-content;
+  padding: 4px 6px;
+  z-index: 90;
+  font-size: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.42);
+}
+
+body.mobile .party-panel-head {
+  margin-bottom: 3px;
+  font-size: 10px;
+  gap: 4px;
+}
+
+body.mobile .party-panel-head strong {
+  font-size: 10px;
+  font-weight: 700;
+}
+
+body.mobile .party-min {
+  min-width: 20px;
+  min-height: 18px;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+}
+
+body.mobile .party-members {
+  gap: 2px;
+  font-size: 9px;
+}
+
+body.mobile .party-member-row {
+  gap: 4px;
+}
+
+body.mobile .party-member-row .hpbar {
+  height: 4px;
+  min-width: 36px;
+}
+
 .player-context-menu {
   position: fixed;
   z-index: 40;
@@ -3324,7 +3393,6 @@ body.mobile.mobile-sheet-open .chat:not(.minimized) {
 body.mobile .game-window:not(.hidden),
 body.mobile .teleport-menu-window:not(.hidden),
 body.mobile .quest-offer-window:not(.hidden),
-body.mobile .party-panel:not(.hidden),
 body.mobile .friends-window:not(.hidden) {
   left: 0 !important;
   right: 0 !important;
@@ -3411,6 +3479,7 @@ body.mobile.mobile-portrait .mobile-joystick {
 @media (hover: none), (pointer: coarse) {
   body.mobile .mobile-controls:not(.hidden) {
     bottom: max(8px, env(safe-area-inset-bottom));
+    z-index: 128;
   }
 
   body.mobile .mobile-joystick {

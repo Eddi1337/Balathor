@@ -364,8 +364,15 @@
 
   const _makeDraggable = makeDraggable;
   makeDraggable = function makeDraggableMobile(panel) {
-    return undefined;
+    if (panel?.id === "partyPanel") {
+      _makeDraggable(panel);
+    }
   };
+
+  if (partyPanel) {
+    _makeDraggable(partyPanel);
+    restorePartyPanelPosition();
+  }
 
   abilityBarToggle.addEventListener("click", (event) => {
     event.stopImmediatePropagation();
