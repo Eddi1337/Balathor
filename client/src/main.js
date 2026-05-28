@@ -177,6 +177,7 @@ let safeZoneTooltipPinTimer = null;
 
 const TILE_SIZE = 32;
 const SCI_FI_THEME = "sci-fi";
+const NAUTICAL_THEME = "nautical";
 const ALIEN_THEME = "alien";
 const DUNGEON_THEME = "dungeon";
 /** Hub landmark tree trunk — same origin as server/src/world.js START_SPAWN. */
@@ -530,6 +531,9 @@ function clientIsBlockedForShip(wx, wy) {
   if (isSciFiWorld()) {
     return false;
   }
+  if (isNauticalWorld()) {
+    return getTile(Math.floor(wx), Math.floor(wy)) !== TILE.WATER;
+  }
   const tx = Math.floor(wx);
   const ty = Math.floor(wy);
   const tile = getTile(tx, ty);
@@ -591,6 +595,18 @@ function rarityIconColor(rarity) {
 
 function isSciFiWorld() {
   return state.worldTheme === SCI_FI_THEME || state.worldTheme === ALIEN_THEME;
+}
+
+function isNauticalWorld() {
+  return state.worldTheme === NAUTICAL_THEME;
+}
+
+function isShipNavWorld() {
+  return isSciFiWorld() || isNauticalWorld();
+}
+
+function isNauticalHull(hullClass) {
+  return hullClass === "sloop" || hullClass === "brig" || hullClass === "galleon" || hullClass === "manowar";
 }
 
 function isPlanetSurfaceWorld() {
@@ -872,9 +888,11 @@ function drawDebugHud() {
   const posLabel = self
     ? `Map: ${Math.round(self.renderX)}, ${Math.round(self.renderY)} (chunk ${Math.floor(self.renderX / CHUNK_SIZE)}, ${Math.floor(self.renderY / CHUNK_SIZE)})`
     : "Map: —";
-  const themeLabel = isSciFiWorld()
-    ? "Realm: sci-fi"
-    : "Realm: fantasy";
+  const themeLabel = isNauticalWorld()
+    ? "Realm: archipelago"
+    : isSciFiWorld()
+      ? "Realm: sci-fi"
+      : "Realm: fantasy";
 
   const simLabel =
     typeof state.debugServerSimHz === "number" && Number.isFinite(state.debugServerSimHz)
@@ -1040,6 +1058,31 @@ const dungeonTilePalette = {
   [TILE.DARK_GRASS]: ["#252018", "#353028", "#151210"]
 };
 
+const nauticalTilePalette = {
+  [TILE.GRASS]: ["#3d6b4a", "#5f9a6a", "#2a4f38"],
+  [TILE.DARK_GRASS]: ["#2f5a42", "#4a7558", "#1f3d2c"],
+  [TILE.TREE]: ["#2f5a42", "#3f7a52", "#5c4028"],
+  [TILE.WATER]: ["#1a5f8a", "#2f8fc4", "#0f3d5c"],
+  [TILE.STONE]: ["#7a7060", "#b0a590", "#5a5048"],
+  [TILE.PATH]: ["#8b6f4a", "#c4a574", "#6b5238"],
+  [TILE.FLOWERS]: ["#4f8b49", "#ffd56a", "#ff9f7a"],
+  [TILE.WALL]: ["#5a4838", "#7a6048", "#3a2818"],
+  [TILE.FLOOR]: ["#9a7c5a", "#b09070", "#7a5c40"],
+  [TILE.DOOR]: ["#5c3520", "#7a4a2a", "#3c2010"],
+  [TILE.SAND]: ["#d4b87a", "#f0d9a0", "#a88858"],
+  [TILE.SNOW]: ["#d7e7ee", "#f7fbff", "#9eb9c8"],
+  [TILE.LAVA]: ["#4a1b20", "#e0582c", "#ffd06a"],
+  [TILE.PORTAL]: ["#0a2840", "#4ec5ff", "#7af0ff"],
+  [TILE.CARPET]: ["#7b2e3a", "#b84f58", "#53212b"],
+  [TILE.BED]: ["#4b6d88", "#8fb8d8", "#2d3e56"],
+  [TILE.TABLE]: ["#6c4528", "#9b6a3e", "#3f291c"],
+  [TILE.SHELF]: ["#5a3824", "#b8844d", "#2b1a10"],
+  [TILE.FIREPLACE]: ["#3a2820", "#e05010", "#ffa040"],
+  [TILE.CHAIR]: ["#5f3d24", "#8b5f3e", "#352010"],
+  [TILE.CHEST]: ["#4a3018", "#7a5230", "#d4af37"],
+  [TILE.HOME_TREE]: ["#315f45", "#2f7a4e", "#6c4b2e"]
+};
+
 function getTileColors(tile, theme = state.worldTheme) {
   const themePalette = theme === SCI_FI_THEME
     ? sciFiTilePalette
@@ -1047,7 +1090,9 @@ function getTileColors(tile, theme = state.worldTheme) {
       ? alienTilePalette
       : theme === DUNGEON_THEME
         ? dungeonTilePalette
-        : tilePalette;
+        : theme === NAUTICAL_THEME
+          ? nauticalTilePalette
+          : tilePalette;
   return themePalette[tile] || themePalette[TILE.GRASS];
 }
 
@@ -1072,11 +1117,14 @@ if (globalThis.BalathorMinigames) {
     getJoined: () => state.joined,
     getWorldId: () => {
       const self = state.players.get(state.selfId);
-      if (!self) return isSciFiWorld() ? "scifi" : "fantasy";
+      if (!self) return isShipNavWorld() ? (isNauticalWorld() ? "archipelago" : "scifi") : "fantasy";
+      if (self.x >= -3400 && self.x <= -1600 && self.y >= 1600 && self.y <= 3400) return "archipelago";
       if (self.x >= 4900 && self.x <= 6800 && Math.abs(self.y) < 80) {
         if (Math.hypot(self.x - 5300, self.y) < 45) return "planet:planet_rust";
       }
-      if (isSciFiWorld() || (self.x > 1500 && self.x < 2500 && Math.abs(self.y) < 200)) return "scifi";
+      if (isShipNavWorld() || (self.x > 1500 && self.x < 2500 && Math.abs(self.y) < 200)) {
+        return isNauticalWorld() ? "archipelago" : "scifi";
+      }
       return "fantasy";
     },
     setTooltip: (text, small) => {
@@ -4371,12 +4419,12 @@ function useHealthPotion() {
 
 function isSelfFlyingShip() {
   const self = state.players.get(state.selfId);
-  return Boolean(self?.ship?.boarded && isSciFiWorld() && (!self.ship.deckMode || isPilotShipRole(self.ship.stationRole)));
+  return Boolean(self?.ship?.boarded && isShipNavWorld() && (!self.ship.deckMode || isPilotShipRole(self.ship.stationRole)));
 }
 
 function isSelfOnShip() {
   const self = state.players.get(state.selfId);
-  return Boolean(self?.ship?.boarded && isSciFiWorld());
+  return Boolean(self?.ship?.boarded && isShipNavWorld());
 }
 
 function selfShipStationRole() {
@@ -5087,7 +5135,7 @@ function refreshWorldHoverTooltip(event) {
 
   const world = screenEventToWorld(event);
   const self = state.players.get(state.selfId);
-  if (isSciFiWorld()) {
+  if (isShipNavWorld()) {
     const pilotSeatView = selfIsInPilotSeat(self);
     if (!pilotSeatView) {
       const crewHover = findShipCrewAt(world.x, world.y);
@@ -5224,6 +5272,7 @@ function isSciFiHoverLabelObject(obj) {
   return Boolean(obj && [
     "ship-port",
     "ship-console",
+    "ship-shop",
     "sci-shop",
     "sci-shop-terminal",
     "station-kiosk",
@@ -5249,7 +5298,8 @@ function stationObjectHoverReach(obj) {
 
 function sciFiHoverLabel(obj) {
   if (!obj) return "";
-  if (obj.kind === "ship-console") return "Ship terminal - summon or board";
+  if (obj.kind === "ship-console") return isNauticalWorld() ? "Harbour terminal - summon or board" : "Ship terminal - summon or board";
+  if (obj.kind === "ship-shop") return `${obj.shopName || obj.name || "Chandlery"} - buy sailing ships`;
   if (obj.kind === "station-plaza") return "Zero-G Concourse - drift keeps your last direction";
   if (obj.kind === "station-core") return "Prismatic Reactor - station power core";
   if (obj.kind === "command") return `${obj.name || "Command Deck"} - station operations`;
@@ -5387,7 +5437,7 @@ function tryRoadsideBenchClickInteract(event) {
 }
 
 function tryDockPortClickInteract(event) {
-  if (!isSciFiWorld()) {
+  if (!isShipNavWorld()) {
     return false;
   }
   const world = screenEventToWorld(event);
@@ -5399,7 +5449,7 @@ function tryDockPortClickInteract(event) {
   let best = null;
   let bestDist = Infinity;
   for (const obj of state.spaceObjects.values()) {
-    if (!obj || (obj.kind !== "ship-console" && obj.kind !== "sci-shop" && obj.kind !== "sci-shop-terminal" && obj.kind !== "station-kiosk")) {
+    if (!obj || (obj.kind !== "ship-console" && obj.kind !== "ship-shop" && obj.kind !== "sci-shop" && obj.kind !== "sci-shop-terminal" && obj.kind !== "station-kiosk")) {
       continue;
     }
     const { x: ax, y: ay } = stationObjectInteractionAnchor(obj);
@@ -7615,7 +7665,7 @@ function drawRadarBlip(cx, cy, x, y, radius, draw) {
 
 function drawShipRadar() {
   const self = state.players.get(state.selfId);
-  if (!self?.ship?.boarded || !isSciFiWorld()) return;
+  if (!self?.ship?.boarded || !isShipNavWorld()) return;
   const center = shipCenter(self.ship, self);
   const cx = Number(center.x);
   const cy = Number(center.y);
@@ -8762,6 +8812,12 @@ function drawSpaceObjects() {
       drawCargoCrateObject(obj, sx, sy);
     } else if (obj.kind === "shop-bay" || obj.kind === "ship-shop") {
       drawShopBayObject(obj, sx, sy);
+    } else if (obj.kind === "harbour") {
+      drawHarbourObject(obj, sx, sy);
+    } else if (obj.kind === "harbour-pier") {
+      drawHarbourPierObject(obj, sx, sy);
+    } else if (obj.kind === "ship-shop") {
+      drawHarbourChandleryObject(obj, sx, sy);
     } else if (obj.kind === "ship-console") {
       drawShipConsoleObject(obj, sx, sy);
     } else if (obj.kind === "ship-port") {
@@ -8783,6 +8839,8 @@ function spaceObjectDrawOrder(obj) {
   if (kind === "cargo-crate" || kind === "shipping-crate" || kind === "container-box") return 5;
   if (kind === "sci-shop" || kind === "station-kiosk") return 6;
   if (kind === "defense-turret" || kind === "orbital-cannon") return 6;
+  if (kind === "harbour" || kind === "harbour-pier") return 2;
+  if (kind === "ship-shop") return 6;
   if (kind === "ship-port") return 7;
   if (kind === "ship-console" || kind === "sci-shop-terminal") return 8;
   return 5;
@@ -9131,6 +9189,10 @@ function drawCargoCrateObject(obj, sx, sy) {
 }
 
 function shipHullDimensions(hullClass) {
+  if (hullClass === "galleon" || hullClass === "crew3" || hullClass === "cruiser") return { w: 108, h: 54 };
+  if (hullClass === "brig" || hullClass === "crew2" || hullClass === "corvette") return { w: 96, h: 48 };
+  if (hullClass === "manowar" || hullClass === "crew4" || hullClass === "frigate") return { w: 122, h: 58 };
+  if (hullClass === "sloop") return { w: 68, h: 38 };
   // Exteriors stay modest so crew ships don't dwarf others in the shared view — the
   // size jump between tiers is felt inside (deckW/deckH), not from outside.
   if (hullClass === "crew4" || hullClass === "frigate") return { w: 116, h: 56 };
@@ -9151,16 +9213,16 @@ const SHIP_DRONE_ORBIT_SPEED = 0.55;
 
 function getShipDroneCount(hullClass) {
   const cls = typeof hullClass === "string" ? hullClass : hullClass?.hullClass;
-  if (cls === "crew4" || cls === "frigate" || cls === "freighter") return 3;
-  if (cls === "crew3" || cls === "cruiser") return 2;
+  if (cls === "crew4" || cls === "frigate" || cls === "freighter" || cls === "manowar") return 3;
+  if (cls === "crew3" || cls === "cruiser" || cls === "galleon") return 2;
   return 1;
 }
 
 function getShipDroneOrbitRadius(hullClass) {
   const cls = typeof hullClass === "string" ? hullClass : hullClass?.hullClass;
-  if (cls === "crew4" || cls === "frigate" || cls === "freighter") return 3.0;
-  if (cls === "crew3" || cls === "cruiser") return 2.7;
-  if (cls === "crew2" || cls === "corvette" || cls === "hauler" || cls === "yacht") return 2.4;
+  if (cls === "crew4" || cls === "frigate" || cls === "freighter" || cls === "manowar") return 3.0;
+  if (cls === "crew3" || cls === "cruiser" || cls === "galleon") return 2.7;
+  if (cls === "crew2" || cls === "corvette" || cls === "hauler" || cls === "yacht" || cls === "brig") return 2.4;
   return 2.0;
 }
 
@@ -9210,7 +9272,11 @@ function drawShipOrbitDrones(hullClass, cx, cy, color) {
 }
 
 function getShipLayout(shipOrClass = "skiff") {
-  const hullClass = typeof shipOrClass === "string" ? shipOrClass : shipOrClass?.hullClass;
+  let hullClass = typeof shipOrClass === "string" ? shipOrClass : shipOrClass?.hullClass;
+  if (hullClass === "sloop") hullClass = "skiff";
+  if (hullClass === "brig") hullClass = "crew2";
+  if (hullClass === "galleon") hullClass = "crew3";
+  if (hullClass === "manowar") hullClass = "crew4";
   if (hullClass === "crew4" || hullClass === "frigate" || hullClass === "freighter") {
     return {
       crewCapacity: 4,
@@ -9523,7 +9589,7 @@ function isEntityInsideAnyShipDeck(entity) {
 }
 
 function findShipDeckInteractionAt(wx, wy) {
-  if (!isSciFiWorld()) return null;
+  if (!isShipNavWorld()) return null;
   const self = state.players.get(state.selfId);
   if (!self) return null;
   let best = null;
@@ -9576,7 +9642,7 @@ function findShipDeckInteractionAt(wx, wy) {
 // Returns the NPC crew member near (wx,wy) on the ship the viewer is standing in,
 // if the viewer is close enough to give them an order.
 function findShipCrewAt(wx, wy) {
-  if (!isSciFiWorld()) return null;
+  if (!isShipNavWorld()) return null;
   const self = state.players.get(state.selfId);
   if (!self) return null;
   const sx = Number.isFinite(self.renderX) ? self.renderX : self.x;
@@ -9779,7 +9845,49 @@ function buildShipHullPath(hullClass, x, y, w, h) {
   ctx.closePath();
 }
 
+function drawSailShipShape(hullClass, x, y, w, h, color) {
+  ctx.fillStyle = "#3b2614";
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.08, y + h * 0.62);
+  ctx.lineTo(x + w * 0.22, y + h * 0.28);
+  ctx.lineTo(x + w * 0.78, y + h * 0.22);
+  ctx.lineTo(x + w * 0.94, y + h * 0.58);
+  ctx.lineTo(x + w * 0.72, y + h * 0.88);
+  ctx.lineTo(x + w * 0.24, y + h * 0.82);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = color;
+  ctx.fillRect(x + w * 0.34, y + h * 0.34, w * 0.22, h * 0.28);
+  ctx.fillStyle = "#f5e6c8";
+  ctx.fillRect(x + w * 0.47, y + h * 0.08, w * 0.04, h * 0.72);
+  const sailW = w * (hullClass === "sloop" ? 0.18 : hullClass === "brig" || hullClass === "crew2" ? 0.22 : 0.26);
+  const sailH = h * (hullClass === "manowar" || hullClass === "crew4" ? 0.72 : 0.62);
+  ctx.fillStyle = "rgba(255,248,235,0.92)";
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.49, y + h * 0.12);
+  ctx.lineTo(x + w * 0.49 + sailW, y + h * 0.18);
+  ctx.lineTo(x + w * 0.49, y + h * 0.12 + sailH);
+  ctx.closePath();
+  ctx.fill();
+  if (hullClass === "galleon" || hullClass === "crew3" || hullClass === "manowar" || hullClass === "crew4") {
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.42, y + h * 0.2);
+    ctx.lineTo(x + w * 0.42 - sailW * 0.7, y + h * 0.28);
+    ctx.lineTo(x + w * 0.42, y + h * 0.2 + sailH * 0.78);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.strokeStyle = "#2a1808";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+}
+
 function drawShipHullShape(hullClass, x, y, w, h, color) {
+  if (isNauticalHull(hullClass)) {
+    drawSailShipShape(hullClass, x, y, w, h, color);
+    return;
+  }
   ctx.fillStyle = "rgba(18, 30, 48, 0.96)";
   buildShipHullPath(hullClass, x, y, w, h);
   ctx.fill();
@@ -9822,27 +9930,35 @@ function drawShipVehicleObject(obj, sx, sy, boarded = false, facing = 0, thrust 
     ctx.shadowBlur = 10;
   }
   if (thrust && boarded) {
-    const flick = 0.55 + Math.sin(performance.now() / 45) * 0.25;
-    ctx.fillStyle = `rgba(255, 160, 80, ${flick})`;
-    ctx.beginPath();
-    ctx.moveTo(x - 4, y + h * 0.55);
-    ctx.lineTo(x - 18 - flick * 10, y + h * 0.5);
-    ctx.lineTo(x - 4, y + h * 0.42);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = `rgba(120, 200, 255, ${flick * 0.5})`;
-    ctx.beginPath();
-    ctx.moveTo(x - 2, y + h * 0.55);
-    ctx.lineTo(x - 12 - flick * 6, y + h * 0.5);
-    ctx.lineTo(x - 2, y + h * 0.44);
-    ctx.closePath();
-    ctx.fill();
+    if (isNauticalHull(hullClass)) {
+      const flick = 0.45 + Math.sin(performance.now() / 70) * 0.2;
+      ctx.fillStyle = `rgba(180, 230, 255, ${flick * 0.55})`;
+      ctx.beginPath();
+      ctx.ellipse(x + w * 0.12, y + h * 0.72, w * 0.18, h * 0.08, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      const flick = 0.55 + Math.sin(performance.now() / 45) * 0.25;
+      ctx.fillStyle = `rgba(255, 160, 80, ${flick})`;
+      ctx.beginPath();
+      ctx.moveTo(x - 4, y + h * 0.55);
+      ctx.lineTo(x - 18 - flick * 10, y + h * 0.5);
+      ctx.lineTo(x - 4, y + h * 0.42);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = `rgba(120, 200, 255, ${flick * 0.5})`;
+      ctx.beginPath();
+      ctx.moveTo(x - 2, y + h * 0.55);
+      ctx.lineTo(x - 12 - flick * 6, y + h * 0.5);
+      ctx.lineTo(x - 2, y + h * 0.44);
+      ctx.closePath();
+      ctx.fill();
+    }
   }
   drawEllipseShadow(x - 6, y + h * 0.84, w + 12, 10, 0.22);
   drawShipHullShape(hullClass, x, y, w, h, color);
   ctx.restore();
-  // Combat drones orbit the hull (independent of ship facing) when underway.
-  if (boarded) {
+  // Combat drones orbit sci-fi hulls when underway; sailing ships use deck cannons instead.
+  if (boarded && !isNauticalHull(hullClass)) {
     drawShipOrbitDrones(hullClass, sx, sy, color);
   }
   ctx.save();
@@ -10556,6 +10672,73 @@ function drawStationRoomObject(obj, sx, sy) {
   ctx.restore();
 }
 
+function drawHarbourPierObject(obj, sx, sy) {
+  const w = Math.max(3, Number(obj.w || 10)) * TILE_SIZE;
+  const h = Math.max(3, Number(obj.h || 8)) * TILE_SIZE;
+  const x = sx - w / 2;
+  const y = sy - h / 2;
+  ctx.save();
+  drawEllipseShadow(x - 4, y + h * 0.92, w + 8, 10, 0.18);
+  ctx.fillStyle = "#6b5238";
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = "#8b6f4a";
+  for (let i = 0; i < 5; i += 1) {
+    ctx.fillRect(x + 4 + i * (w / 5), y + 4, 3, h - 8);
+  }
+  ctx.strokeStyle = "rgba(78,197,255,0.35)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+  ctx.restore();
+}
+
+function drawHarbourObject(obj, sx, sy) {
+  const r = Math.max(24, Number(obj.radius || 40));
+  ctx.save();
+  ctx.globalAlpha = 0.22;
+  ctx.fillStyle = "#d4b87a";
+  ctx.beginPath();
+  ctx.ellipse(sx, sy, r, r * 0.82, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 0.55;
+  ctx.strokeStyle = "rgba(78,197,255,0.28)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.font = "bold 11px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "rgba(255,255,255,0.75)";
+  ctx.strokeStyle = "rgba(8,20,32,0.85)";
+  ctx.lineWidth = 3;
+  ctx.strokeText(obj.name || "Harbour", sx, sy - r - 8);
+  ctx.fillText(obj.name || "Harbour", sx, sy - r - 8);
+  ctx.restore();
+}
+
+function drawHarbourChandleryObject(obj, sx, sy) {
+  const w = Math.max(3, Number(obj.w || 4)) * TILE_SIZE;
+  const h = Math.max(3, Number(obj.h || 4)) * TILE_SIZE;
+  const x = sx - w / 2;
+  const y = sy - h / 2;
+  ctx.save();
+  drawEllipseShadow(x - 4, y + h * 0.9, w + 8, 10, 0.22);
+  ctx.fillStyle = "#4a3018";
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = "#8b6f4a";
+  ctx.fillRect(x + 6, y + 8, w - 12, h - 16);
+  ctx.fillStyle = "#f5deb3";
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.5, y + 10);
+  ctx.lineTo(x + w * 0.72, y + h * 0.42);
+  ctx.lineTo(x + w * 0.28, y + h * 0.42);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#4ec5ff";
+  ctx.font = "bold 9px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.fillText("SHOP", sx, y + h - 8);
+  ctx.restore();
+}
+
 function drawShipConsoleObject(obj, sx, sy) {
   const w = Math.max(4, Number(obj.w || 6)) * TILE_SIZE;
   const h = Math.max(4, Number(obj.h || 4)) * TILE_SIZE;
@@ -10593,16 +10776,16 @@ function drawShipConsoleObject(obj, sx, sy) {
 
   ctx.fillStyle = "#0a101a";
   ctx.fillRect(x + w * 0.26, y + h * 0.42, w * 0.48, 8);
-  ctx.fillStyle = "#67f0ff";
+  ctx.fillStyle = isNauticalWorld() ? "#4ec5ff" : "#67f0ff";
   for (let i = 0; i < 5; i += 1) {
     ctx.fillRect(x + w * 0.32 + i * 9, y + h * 0.44, 4, 3);
   }
 
-  ctx.fillStyle = "rgba(217,251,255,0.88)";
+  ctx.fillStyle = isNauticalWorld() ? "rgba(245,222,179,0.92)" : "rgba(217,251,255,0.88)";
   ctx.font = "bold 9px ui-sans-serif, system-ui";
   ctx.textAlign = "center";
-  ctx.fillText("SHIP", sx, y + h - 9);
-  ctx.strokeStyle = "rgba(103,240,255,0.52)";
+  ctx.fillText(isNauticalWorld() ? "DOCK" : "SHIP", sx, y + h - 9);
+  ctx.strokeStyle = isNauticalWorld() ? "rgba(78,197,255,0.52)" : "rgba(103,240,255,0.52)";
   ctx.lineWidth = 2;
   ctx.strokeRect(x + 1, y + h * 0.42, w - 2, h * 0.5);
   ctx.restore();
@@ -11432,7 +11615,7 @@ function drawPlayers() {
       );
     } else {
       const restingBench = isNpc ? isNpcRestingOnBench(entity) : false;
-      if (entity.ship && isSciFiWorld()) {
+      if (entity.ship && isShipNavWorld()) {
         const dockX = Number.isFinite(entity.ship.dockX) ? entity.ship.dockX : entity.x;
         const dockY = Number.isFinite(entity.ship.dockY) ? entity.ship.dockY : entity.y;
         const dockSx = Math.floor(dockX * TILE_SIZE - state.camera.x + halfW);
@@ -16514,12 +16697,78 @@ function drawLighting() {
   ctx.restore();
 }
 
+function drawNauticalPortal(sx, sy, tx, ty, portal) {
+  const time = performance.now() / 1000;
+  const color = portal.color || "#4ec5ff";
+  const T = TILE_SIZE;
+  const pulse = 0.5 + Math.sin(time * 2.1) * 0.5;
+  const cx = sx + T * 0.5;
+  const baseY = sy + T * 0.88;
+  const openW = T * 0.62;
+  const openH = T * 1.48;
+  const capR = openW;
+  const rectH = openH - capR;
+  const capCY = baseY - rectH - capR;
+
+  drawEllipseShadow(cx, baseY + 4, openW * 2.4, 10, 0.5);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(cx - openW, baseY);
+  ctx.lineTo(cx - openW, capCY);
+  ctx.arc(cx, capCY, capR, Math.PI, 0, false);
+  ctx.lineTo(cx + openW, baseY);
+  ctx.closePath();
+  ctx.clip();
+  drawPortalEventHorizon(cx, baseY - openH * 0.52, capR * 1.1, portal, time);
+  ctx.restore();
+
+  const slabW = openW * 2 + 18;
+  ctx.fillStyle = "#1a3040";
+  ctx.fillRect(cx - slabW / 2, baseY, slabW, 6);
+  ctx.fillStyle = "#2a5068";
+  ctx.fillRect(cx - slabW / 2, baseY, slabW, 3);
+
+  for (const side of [-1, 1]) {
+    const px = side === -1 ? cx - openW - 7 : cx + openW;
+    const pillarH = rectH + 4;
+    const py = baseY - pillarH;
+    ctx.fillStyle = "#1e3848";
+    ctx.fillRect(px, py, 7, pillarH);
+    ctx.fillStyle = "#3a6880";
+    ctx.fillRect(px, py, 2, pillarH);
+    ctx.save();
+    ctx.globalAlpha = 0.35 + pulse * 0.45;
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 4 + pulse * 4;
+    const ry = py + pillarH * 0.42;
+    ctx.fillRect(px + 2, ry, 3, 2);
+    ctx.fillRect(px + 1, ry - 4, 5, 8);
+    ctx.restore();
+  }
+
+  ctx.save();
+  ctx.globalAlpha = 0.55 + pulse * 0.25;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, capCY, capR + 2, Math.PI, 0, false);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawPortal(sx, sy, tx, ty) {
   const portal = getPortalAtTile(tx, ty);
   if (!portal) return;
 
   if (portal.style === "stargate") {
     drawStargatePortal(sx, sy, tx, ty, portal);
+    return;
+  }
+
+  if (portal.style === "nautical") {
+    drawNauticalPortal(sx, sy, tx, ty, portal);
     return;
   }
 
@@ -17227,35 +17476,47 @@ function setStatus(text) {
 function setWorldTheme(theme) {
   const next = theme === SCI_FI_THEME
     ? SCI_FI_THEME
-    : theme === ALIEN_THEME
-      ? ALIEN_THEME
-      : theme === DUNGEON_THEME
-        ? DUNGEON_THEME
-        : "fantasy";
+    : theme === NAUTICAL_THEME
+      ? NAUTICAL_THEME
+      : theme === ALIEN_THEME
+        ? ALIEN_THEME
+        : theme === DUNGEON_THEME
+          ? DUNGEON_THEME
+          : "fantasy";
   if (state.worldTheme === next) {
     return;
   }
   state.worldTheme = next;
   document.body.classList.toggle("theme-sci-fi", next === SCI_FI_THEME);
+  document.body.classList.toggle("theme-nautical", next === NAUTICAL_THEME);
   document.body.classList.toggle("theme-alien", next === ALIEN_THEME);
   document.body.classList.toggle("theme-dungeon", next === DUNGEON_THEME);
   if (next === SCI_FI_THEME) {
     document.body.classList.remove("theme-fantasy");
     document.body.classList.remove("theme-alien");
     document.body.classList.remove("theme-dungeon");
+    document.body.classList.remove("theme-nautical");
+  } else if (next === NAUTICAL_THEME) {
+    document.body.classList.remove("theme-fantasy");
+    document.body.classList.remove("theme-sci-fi");
+    document.body.classList.remove("theme-alien");
+    document.body.classList.remove("theme-dungeon");
   } else if (next === ALIEN_THEME) {
     document.body.classList.remove("theme-fantasy");
     document.body.classList.remove("theme-sci-fi");
     document.body.classList.remove("theme-dungeon");
+    document.body.classList.remove("theme-nautical");
   } else if (next === DUNGEON_THEME) {
     document.body.classList.remove("theme-fantasy");
     document.body.classList.remove("theme-sci-fi");
     document.body.classList.remove("theme-alien");
+    document.body.classList.remove("theme-nautical");
   } else {
     document.body.classList.add("theme-fantasy");
     document.body.classList.remove("theme-alien");
     document.body.classList.remove("theme-sci-fi");
     document.body.classList.remove("theme-dungeon");
+    document.body.classList.remove("theme-nautical");
   }
   chunkCanvasCache.clear();
 }
