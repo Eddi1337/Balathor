@@ -33,6 +33,11 @@ const {
   sciFiDockPortForPlayerId,
   sciFiDockPortById,
   findNearestSciFiDockPort,
+  findNearestDockPort,
+  dockPortForPlayerId,
+  dockPortById,
+  ARCHIPELAGO_LANDING,
+  NAUTICAL_THEME,
   sciFiStationFeatureAt,
   STARGATE_LANDING,
   isInsideSciFiSafeZone,
@@ -98,6 +103,43 @@ const {
 const { createSocialSystem } = require("./social.js");
 const { createMinigameSystem } = require("./minigames.js");
 const { postAuthEventToDiscord, isAllowedDiscordWebhookUrl, resolveDiscordAuthWebhookUrl } = require("./discordWebhook");
+
+const SHIP_NAV_THEMES = new Set(["sci-fi", NAUTICAL_THEME]);
+
+function isShipNavTheme(theme) {
+  return SHIP_NAV_THEMES.has(theme);
+}
+
+function dockStationIdForPort(port) {
+  if (typeof port?.harbourId === "string" && port.harbourId) {
+    return port.harbourId;
+  }
+  if (typeof port?.stationId === "string" && port.stationId) {
+    return port.stationId;
+  }
+  return "station_ringforge";
+}
+
+function resolveDockPortById(id) {
+  if (!id) {
+    return null;
+  }
+  return dockPortById(id) || sciFiDockPortById(id);
+}
+
+function fallbackDockPortForPlayer(player) {
+  const worldId = worldForPosition(player?.x ?? 0, player?.y ?? 0);
+  if (worldId === "archipelago") {
+    return (
+      (player?.id ? dockPortForPlayerId(player.id, "archipelago") : null) ||
+      findNearestDockPort(ARCHIPELAGO_LANDING.x, ARCHIPELAGO_LANDING.y, 120)
+    );
+  }
+  return (
+    (player?.id ? dockPortForPlayerId(player.id, "scifi") : null) ||
+    findNearestSciFiDockPort(STARGATE_LANDING.x, STARGATE_LANDING.y, 120)
+  );
+}
 
 // =============================
 // SECTION 1: Boot, imports, env, and simulation constants
@@ -2065,7 +2107,7 @@ function validatePassengerLink(player) {
   if (!found || !found.ship.boarded) {
     // Owner offline or ship not boarded — passenger drops back to a safe dock terminal.
     player.aboardShipId = null;
-    const fallback = getPlayerDockPort(player) || findNearestSciFiDockPort(STARGATE_LANDING.x, STARGATE_LANDING.y, 120);
+    const fallback = fallbackDockPortForPlayer(player);
     if (fallback) {
       player.x = Number.isFinite(fallback.terminalX) ? fallback.terminalX : fallback.x;
       player.y = Number.isFinite(fallback.terminalY) ? fallback.terminalY : fallback.y;
@@ -2195,17 +2237,17 @@ function sanitizeShipWarp(warp) {
 // matches the number of gunner stations on the hull.
 function getShipDroneCount(shipOrClass) {
   const hullClass = typeof shipOrClass === "string" ? shipOrClass : shipOrClass?.hullClass;
-  if (hullClass === "crew4" || hullClass === "frigate" || hullClass === "freighter") return 3;
-  if (hullClass === "crew3" || hullClass === "cruiser") return 2;
+  if (hullClass === "crew4" || hullClass === "frigate" || hullClass === "freighter" || hullClass === "manowar") return 3;
+  if (hullClass === "crew3" || hullClass === "cruiser" || hullClass === "galleon") return 2;
   return 1;
 }
 
 // Radius (in tiles) of the ring the drones orbit around the exterior hull.
 function getShipDroneOrbitRadius(shipOrClass) {
   const hullClass = typeof shipOrClass === "string" ? shipOrClass : shipOrClass?.hullClass;
-  if (hullClass === "crew4" || hullClass === "frigate" || hullClass === "freighter") return 3.0;
-  if (hullClass === "crew3" || hullClass === "cruiser") return 2.7;
-  if (hullClass === "crew2" || hullClass === "corvette" || hullClass === "hauler" || hullClass === "yacht") return 2.4;
+  if (hullClass === "crew4" || hullClass === "frigate" || hullClass === "freighter" || hullClass === "manowar") return 3.0;
+  if (hullClass === "crew3" || hullClass === "cruiser" || hullClass === "galleon") return 2.7;
+  if (hullClass === "crew2" || hullClass === "corvette" || hullClass === "hauler" || hullClass === "yacht" || hullClass === "brig") return 2.4;
   return 2.0;
 }
 
@@ -2232,7 +2274,11 @@ function getShipTurrets(shipOrClass) {
 }
 
 function getShipLayout(shipOrClass = "skiff") {
-  const hullClass = typeof shipOrClass === "string" ? shipOrClass : shipOrClass?.hullClass;
+  let hullClass = typeof shipOrClass === "string" ? shipOrClass : shipOrClass?.hullClass;
+  if (hullClass === "sloop") hullClass = "skiff";
+  if (hullClass === "brig") hullClass = "crew2";
+  if (hullClass === "galleon") hullClass = "crew3";
+  if (hullClass === "manowar") hullClass = "crew4";
   if (hullClass === "crew4" || hullClass === "frigate" || hullClass === "freighter") {
     return {
       crewCapacity: 4,
@@ -3147,7 +3193,8 @@ function getPlayerDockPort(player) {
   if (!player?.id) {
     return null;
   }
-  const port = sciFiDockPortForPlayerId(player.id);
+  const worldId = worldForPosition(player.x, player.y);
+  const port = dockPortForPlayerId(player.id, worldId === "archipelago" ? "archipelago" : "scifi");
   if (!port) {
     return null;
   }
@@ -3157,7 +3204,9 @@ function getPlayerDockPort(player) {
     y: port.y,
     facing: port.facing,
     terminalX: port.terminalX,
-    terminalY: port.terminalY
+    terminalY: port.terminalY,
+    harbourId: port.harbourId || null,
+    harbourName: port.harbourName || null
   };
 }
 
@@ -3386,6 +3435,77 @@ function getShipCatalog() {
       stats: { speed: 22 },
       laserTier: 4,
       thrustTier: 4
+    }
+  ];
+}
+
+function getNauticalShipCatalog() {
+  return [
+    {
+      templateId: "harbour_sloop",
+      type: "ship",
+      name: "Harbour Sloop",
+      icon: "ship",
+      rarity: "rare",
+      color: "#c9a06a",
+      hullClass: "sloop",
+      value: 720,
+      price: 720,
+      shipTemplateId: "harbour_sloop",
+      shipName: "Harbour Sloop",
+      shipColor: "#c9a06a",
+      stats: { speed: 13.5 }
+    },
+    {
+      templateId: "reef_brig",
+      type: "ship",
+      name: "Reef Brig",
+      icon: "ship",
+      rarity: "epic",
+      color: "#e8c07a",
+      hullClass: "brig",
+      value: 2950,
+      price: 2950,
+      shipTemplateId: "reef_brig",
+      shipName: "Reef Brig",
+      shipColor: "#e8c07a",
+      stats: { speed: 13.8 },
+      laserTier: 2,
+      thrustTier: 2
+    },
+    {
+      templateId: "tidemark_galleon",
+      type: "ship",
+      name: "Tidemark Galleon",
+      icon: "ship",
+      rarity: "legendary",
+      color: "#f5deb3",
+      hullClass: "galleon",
+      value: 3900,
+      price: 3900,
+      shipTemplateId: "tidemark_galleon",
+      shipName: "Tidemark Galleon",
+      shipColor: "#f5deb3",
+      stats: { speed: 12.8 },
+      laserTier: 3,
+      thrustTier: 2
+    },
+    {
+      templateId: "storm_manowar",
+      type: "ship",
+      name: "Storm Man-o-War",
+      icon: "ship",
+      rarity: "mythic",
+      color: "#8b4513",
+      hullClass: "manowar",
+      value: 4800,
+      price: 4800,
+      shipTemplateId: "storm_manowar",
+      shipName: "Storm Man-o-War",
+      shipColor: "#8b4513",
+      stats: { speed: 11.8 },
+      laserTier: 4,
+      thrustTier: 3
     }
   ];
 }
@@ -4130,7 +4250,7 @@ function simulate() {
     const shipPilot =
       Boolean(client.player.ship?.boarded) &&
       isPilotShipRole(client.player.shipStationRole || client.player.ship.stationRole) &&
-      getWorldThemeAt(client.player.x, client.player.y) === "sci-fi";
+      isShipNavTheme(getWorldThemeAt(client.player.x, client.player.y));
     const shipWarping = updateShipWarpForClient(client, dt, aboardShipClients);
 
     if (shipPilot) {
@@ -4794,7 +4914,7 @@ function handlePortalTravel(client) {
   client.player.x = portal.targetX;
   client.player.y = portal.targetY + 3.2;
   client.player.moving = false;
-  if (client.player.ship && getWorldThemeAt(client.player.x, client.player.y) !== "sci-fi") {
+  if (client.player.ship && !isShipNavTheme(getWorldThemeAt(client.player.x, client.player.y))) {
     clearPlayerBoardedShips(client.player);
   }
   // Returning from a planet surface re-boards the player's ship in orbit.
@@ -5563,7 +5683,7 @@ function handleAttack(client, message = {}) {
   }
 
   // When piloting a ship, always fire in the ship's facing direction
-  if (!(client.player.ship?.boarded && getWorldThemeAt(client.player.x, client.player.y) === "sci-fi")) {
+  if (!(client.player.ship?.boarded && isShipNavTheme(getWorldThemeAt(client.player.x, client.player.y)))) {
     if (typeof message.facing === "number" && Number.isFinite(message.facing)) {
       client.player.facing = normalizeAngle(Number(message.facing));
     } else if (typeof message.targetX === "number" && typeof message.targetY === "number") {
@@ -5888,7 +6008,7 @@ function resolveShipBoarding(player) {
     return null;
   }
 
-  const storedPort = sciFiDockPortById(ship.dockPortId) || findNearestSciFiDockPort(dockX, dockY, 18);
+  const storedPort = resolveDockPortById(ship.dockPortId) || findNearestDockPort(dockX, dockY, 18);
   const distToStoredPort = storedPort ? Math.hypot(player.x - storedPort.x, player.y - storedPort.y) : Infinity;
   const distToDock = Math.hypot(player.x - dockX, player.y - dockY);
   return {
@@ -5909,7 +6029,7 @@ function resolveShipLaunchPort(player, message = {}) {
   const ty = Number(message.y);
   const aimX = Number.isFinite(tx) ? tx : player.x;
   const aimY = Number.isFinite(ty) ? ty : player.y;
-  const port = findNearestSciFiDockPort(aimX, aimY, 14);
+  const port = findNearestDockPort(aimX, aimY, 14);
   if (!port) {
     return null;
   }
@@ -5938,12 +6058,12 @@ function facingForDockPort(port) {
 
 function resolveShipExitDockPort(player) {
   const ship = player?.ship;
-  const nearbyPort = findNearestSciFiDockPort(player?.x ?? 0, player?.y ?? 0, 18);
+  const nearbyPort = findNearestDockPort(player?.x ?? 0, player?.y ?? 0, 18);
   if (nearbyPort) {
     return nearbyPort;
   }
 
-  const storedPort = sciFiDockPortById(ship?.dockPortId);
+  const storedPort = resolveDockPortById(ship?.dockPortId);
   if (storedPort) {
     return storedPort;
   }
@@ -5951,13 +6071,13 @@ function resolveShipExitDockPort(player) {
   const dockX = Number(ship?.dockX);
   const dockY = Number(ship?.dockY);
   if (Number.isFinite(dockX) && Number.isFinite(dockY)) {
-    const dockedPort = findNearestSciFiDockPort(dockX, dockY, 18);
+    const dockedPort = findNearestDockPort(dockX, dockY, 18);
     if (dockedPort) {
       return dockedPort;
     }
   }
 
-  return getPlayerDockPort(player) || findNearestSciFiDockPort(STARGATE_LANDING.x, STARGATE_LANDING.y, 120);
+  return getPlayerDockPort(player) || fallbackDockPortForPlayer(player);
 }
 
 function disembarkPassengers(shipId, port) {
@@ -6007,7 +6127,7 @@ function dockPlayerShipAtStation(client, port = resolveShipExitDockPort(client.p
   client.player.aboardShipId = null;
   client.player.ship.dockX = port.x;
   client.player.ship.dockY = port.y;
-  client.player.ship.dockStationId = "station_ringforge";
+  client.player.ship.dockStationId = dockStationIdForPort(port);
   client.player.ship.dockPortId = port.id;
   client.player.ship.worldX = port.x;
   client.player.ship.worldY = port.y;
@@ -6328,7 +6448,7 @@ function sendShipTerminalWindow(client, port) {
   ensurePlayerFleet(client.player);
   send(client, {
     type: "shipTerminal",
-    stationName: "Orbital Square",
+    stationName: port.harbourName || port.stationName || "Orbital Square",
     port: {
       id: port.id,
       x: port.x,
@@ -7058,7 +7178,7 @@ function summonPlayerShipToPort(player, ship, port) {
   ship.boarded = false;
   ship.dockX = port.x;
   ship.dockY = port.y;
-  ship.dockStationId = "station_ringforge";
+  ship.dockStationId = dockStationIdForPort(port);
   ship.dockPortId = port.id;
   ship.worldX = port.x;
   ship.worldY = port.y;
@@ -8433,7 +8553,7 @@ function processConsecrationZones(now) {
 }
 
 function getActiveLoadout(player) {
-  if (player.ship?.boarded && getWorldThemeAt(player.x, player.y) === "sci-fi") {
+  if (player.ship?.boarded && isShipNavTheme(getWorldThemeAt(player.x, player.y))) {
     const lt = Math.min(5, Math.max(1, Math.floor(Number(player.ship.laserTier) || 1)));
     return {
       weapon: "ship_laser",
@@ -9580,6 +9700,9 @@ function nearestShopFixture(player, message = {}) {
 
 function getShopStock(shop) {
   if (shop?.shopType === "ship") {
+    if (getWorldThemeAt(shop.x, shop.y) === NAUTICAL_THEME) {
+      return getNauticalShipCatalog();
+    }
     return getShipCatalog();
   }
   if (shop?.shopType === "arms") {
@@ -9747,7 +9870,9 @@ function handleShopBuy(client, message) {
     }
     client.player.gold = Math.max(0, (client.player.gold || 0) - shipPrice);
     const dockPort =
-      findNearestSciFiDockPort(client.player.x, client.player.y, 80) || getPlayerDockPort(client.player);
+      findNearestDockPort(client.player.x, client.player.y, 80) || getPlayerDockPort(client.player) || fallbackDockPortForPlayer(client.player);
+    const landingFallback =
+      getWorldThemeAt(client.player.x, client.player.y) === NAUTICAL_THEME ? ARCHIPELAGO_LANDING : STARGATE_LANDING;
     const newShip = sanitizeShip({
       id: createShipId(template.shipTemplateId || template.templateId),
       templateId: template.shipTemplateId || template.templateId,
@@ -9755,9 +9880,9 @@ function handleShopBuy(client, message) {
       color: template.shipColor || template.color,
       hullClass: template.hullClass || "skiff",
       boarded: false,
-      dockX: dockPort?.x ?? STARGATE_LANDING.x,
-      dockY: dockPort?.y ?? STARGATE_LANDING.y,
-      dockStationId: "station_ringforge",
+      dockX: dockPort?.x ?? landingFallback.x,
+      dockY: dockPort?.y ?? landingFallback.y,
+      dockStationId: dockPort ? dockStationIdForPort(dockPort) : "station_ringforge",
       dockPortId: dockPort?.id || null,
       facing: dockPort ? facingForDockPort(dockPort) : 0,
       speed: Number(template.stats?.speed) || SHIP_SPEED,

@@ -101,6 +101,12 @@ const {
   getCaveEntrancesInChunk
 } = require("./worlds/dungeonWorlds.js");
 const {
+  NAUTICAL_THEME,
+  getArchipelagoAtPoint,
+  getArchipelagoTile,
+  getArchipelagoObjectsInChunk
+} = require("./worlds/archipelagoWorld.js");
+const {
   SCI_FI_STATIONS,
   SCI_FI_STATION_FEATURES,
   SCI_FI_DOCK_PORTS,
@@ -108,6 +114,13 @@ const {
   sciFiDockPortForPlayerId: layoutDockPortForPlayerId,
   STARGATE_LANDING
 } = require("./sciFiStationLayout.js");
+const {
+  ARCHIPELAGO_LANDING,
+  ARCHIPELAGO_HARBOUR_FEATURES,
+  harbourPortForPlayerId,
+  harbourPortById,
+  findNearestHarbourPort
+} = require("./harbourLayout.js");
 
 /** Hub stargate — east plaza spine, clear of tree; on E–W cross (|y|≤1) for road continuity. */
 const STARGATE_HUB_TILE = Object.freeze({ x: 20, y: 0 });
@@ -255,11 +268,37 @@ function findNearestSciFiDockPort(px, py, maxDist = 12) {
   return best;
 }
 
+function findNearestDockPort(px, py, maxDist = 12) {
+  const world = worldForPosition(px, py);
+  if (world === "archipelago") {
+    return findNearestHarbourPort(px, py, maxDist);
+  }
+  if (world === "scifi") {
+    return findNearestSciFiDockPort(px, py, maxDist);
+  }
+  return null;
+}
+
+function dockPortForPlayerId(playerId, worldId = "scifi") {
+  if (worldId === "archipelago") {
+    return harbourPortForPlayerId(playerId);
+  }
+  return layoutDockPortForPlayerId(playerId);
+}
+
+function dockPortById(id, worldId = null) {
+  const harbour = harbourPortById(id);
+  if (harbour) return harbour;
+  if (worldId === "archipelago") return null;
+  return sciFiDockPortById(id);
+}
+
 const DUNGEON_THEME = "dungeon";
 
 function sciFiThemeForPoint(x, y) {
   if (getDungeonByInteriorPoint(x, y)) return DUNGEON_THEME;
   if (getPlanetBySurfacePoint(x, y)) return "alien";
+  if (getArchipelagoAtPoint(x, y)) return NAUTICAL_THEME;
   return isSciFiSector(x, y) ? SCI_FI_THEME : "fantasy";
 }
 
@@ -962,6 +1001,26 @@ const PORTALS = Array.isArray(_portalDoc?.portals) && _portalDoc.portals.length 
         targetY: STARGATE_HUB_TILE.y,
         color: "#67f0ff",
         style: "stargate"
+      },
+      {
+        id: "portal_archipelago",
+        name: "Tidemark Passage",
+        x: -46,
+        y: 76,
+        targetX: ARCHIPELAGO_LANDING.x,
+        targetY: ARCHIPELAGO_LANDING.y,
+        color: "#4ec5ff",
+        style: "nautical"
+      },
+      {
+        id: "portal_archipelago_return",
+        name: "Hub Passage",
+        x: ARCHIPELAGO_LANDING.x,
+        y: ARCHIPELAGO_LANDING.y,
+        targetX: -46,
+        targetY: 76,
+        color: "#4ec5ff",
+        style: "nautical"
       }
     ];
 
@@ -1980,6 +2039,35 @@ function getDoorTransitionAt(x, y) {
 }
 
 function getShopFixtureAt(x, y) {
+  if (getArchipelagoAtPoint(x, y)) {
+    for (const feature of ARCHIPELAGO_HARBOUR_FEATURES) {
+      if (feature.kind !== "ship-shop" && feature.kind !== "harbour-chandler") {
+        continue;
+      }
+      if (!feature.shopType) {
+        continue;
+      }
+      const halfW = Math.max(1, Math.floor((Number(feature.w) || 3) / 2));
+      const halfH = Math.max(1, Math.floor((Number(feature.h) || 3) / 2));
+      if (
+        x >= feature.x - halfW - 0.9 &&
+        x <= feature.x + halfW + 0.9 &&
+        y >= feature.y - halfH - 0.9 &&
+        y <= feature.y + halfH + 0.9
+      ) {
+        return {
+          id: feature.id,
+          name: feature.shopName || feature.name,
+          buildingName: feature.shopName || feature.name,
+          isPub: false,
+          shopType: feature.shopType,
+          x: feature.x,
+          y: feature.y
+        };
+      }
+    }
+  }
+
   if (isSciFiSector(x, y)) {
     const stationShopFeatures = SCI_FI_STATION_FEATURES
       .filter((feature) => feature?.kind === "sci-shop-terminal")
@@ -2502,6 +2590,10 @@ function generateExteriorTileCore(x, y) {
 function generateExteriorTile(x, y) {
   const worldId = worldIdAt(x, y);
 
+  if (worldId === "archipelago") {
+    return getArchipelagoTile(x, y, TILE, hash2);
+  }
+
   if (worldId === "pirate") {
     return getPirateTile(x, y, TILE);
   }
@@ -2531,6 +2623,7 @@ function generateChunk(cx, cy) {
 
   const spaceObjects = [
     ...(theme === SCI_FI_THEME ? getSciFiObjectsInChunk(cx, cy) : []),
+    ...(theme === NAUTICAL_THEME ? getArchipelagoObjectsInChunk(cx, cy, CHUNK_SIZE) : []),
     ...getPlanetSurfaceObjectsInChunk(cx, cy, CHUNK_SIZE, hash2)
   ];
 
@@ -2562,6 +2655,10 @@ function isSwimmingAt(x, y) {
 function isBlockedForShip(x, y) {
   const tx = Math.floor(x);
   const ty = Math.floor(y);
+  if (worldIdAt(tx, ty) === "archipelago") {
+    const tile = generateTile(tx, ty);
+    return tile !== TILE.WATER;
+  }
   if (!isSciFiSector(tx, ty)) {
     return isBlocked(x, y);
   }
@@ -2620,8 +2717,16 @@ function isBlockedCircle(x, y, radius = 0.28) {
 }
 
 function isBlockedCircleForShip(x, y, radius = 0.34) {
-  // Ships can fly forever in the deterministic sci-fi plane, but cannot fly
-  // directly into fantasy/interior/planet-surface planes.
+  if (getArchipelagoAtPoint(x, y)) {
+    const points = [
+      [x - radius, y - radius],
+      [x + radius, y - radius],
+      [x - radius, y + radius],
+      [x + radius, y + radius]
+    ];
+    return points.some(([px, py]) => isBlockedForShip(px, py));
+  }
+  // Ships can sail in sci-fi space, but not in fantasy/interior/planet-surface planes.
   if (!isSciFiSector(x, y)) {
     return true;
   }
@@ -2766,6 +2871,11 @@ module.exports = {
   sciFiDockPortForPlayerId,
   sciFiDockPortById,
   findNearestSciFiDockPort,
+  findNearestDockPort,
+  dockPortForPlayerId,
+  dockPortById,
+  ARCHIPELAGO_LANDING,
+  NAUTICAL_THEME,
   sciFiStationFeatureAt,
   STARGATE_LANDING,
   getPortalAt,

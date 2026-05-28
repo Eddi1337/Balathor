@@ -42,6 +42,32 @@ body.theme-sci-fi #game {
     linear-gradient(180deg, #02101d 0%, #030814 55%, #01030a 100%);
 }
 
+body.theme-nautical {
+  --bg: #061824;
+  --panel: rgba(8, 22, 34, 0.92);
+  --panel-edge: rgba(78, 197, 255, 0.28);
+  --text: #eef9ff;
+  --muted: #8ecae6;
+  --accent: #4ec5ff;
+  --danger: #ff8f7a;
+  --control: #102636;
+}
+
+body.theme-nautical #game {
+  background:
+    radial-gradient(circle at 50% 18%, rgba(78, 197, 255, 0.1), transparent 40%),
+    linear-gradient(180deg, #041722 0%, #062032 55%, #031018 100%);
+}
+
+body.theme-nautical .panel,
+body.theme-nautical .game-window,
+body.theme-nautical .chat,
+body.theme-nautical .progression,
+body.theme-nautical .ability-bar,
+body.theme-nautical .menu-panel {
+  border-color: rgba(78, 197, 255, 0.22);
+}
+
 body.theme-alien {
   --bg: #07111a;
   --panel: rgba(13, 24, 34, 0.92);

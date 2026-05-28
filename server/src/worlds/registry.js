@@ -10,6 +10,7 @@
 const { getPlanetBySurfacePoint } = require("./planetWorlds.js");
 const { getDungeonByInteriorPoint } = require("./dungeonWorlds.js");
 const { isInsidePirateBounds, getPirateWorldTheme } = require("./pirateWorld.js");
+const { getArchipelagoAtPoint } = require("./archipelagoWorld.js");
 const { readJson } = require("./contentLoader.js");
 const {
   GAME_MODE_BALATHOR,
@@ -21,6 +22,7 @@ const {
   THEME_SCIFI,
   THEME_ALIEN,
   THEME_PIRATE,
+  THEME_NAUTICAL,
   THEME_DUNGEON,
   FANTASY_WORLD_BOUNDS,
   INTERIOR_PLANE_ORIGIN,
@@ -50,10 +52,14 @@ function isSciFiBounds(x, y) {
   if (isFantasyBounds(x, y) || isInteriorPlane(x, y) || getPlanetBySurfacePoint(x, y)) {
     return false;
   }
-  if (isInsidePirateBounds(x, y)) {
+  if (isInsidePirateBounds(x, y) || getArchipelagoAtPoint(x, y)) {
     return false;
   }
   return true;
+}
+
+function isArchipelagoBounds(x, y) {
+  return Boolean(getArchipelagoAtPoint(x, y));
 }
 
 /** Built-in world definitions (content manifest can extend metadata). */
@@ -81,6 +87,16 @@ const BUILTIN_WORLDS = [
     contains(x, y) {
       return isSciFiBounds(x, y);
     }
+  },
+  {
+    id: "archipelago",
+    gameMode: GAME_MODE_BALATHOR,
+    label: "Shimmering Archipelago",
+    coordSpace: COORD_SPACE_SHARED,
+    generation: GEN_PROCEDURAL,
+    theme: THEME_NAUTICAL,
+    priority: 28,
+    contains: isArchipelagoBounds
   },
   {
     id: "pirate",
@@ -205,6 +221,9 @@ function getWorldDefinition(id) {
   }
   if (id.startsWith("dungeon:")) {
     return { id, gameMode: GAME_MODE_BALATHOR, theme: THEME_DUNGEON, generation: GEN_PROCEDURAL };
+  }
+  if (id === "archipelago") {
+    return { id, gameMode: GAME_MODE_BALATHOR, theme: THEME_NAUTICAL, generation: GEN_PROCEDURAL };
   }
   return WORLDS_BY_ID.get(id) || null;
 }
