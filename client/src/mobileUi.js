@@ -231,17 +231,30 @@
   }
 
   function wireMobileContextDock() {
+    const tapChip = (event) => {
+      const chip = event.target.closest("[data-context-action]");
+      if (!chip) return;
+      event.preventDefault();
+      event.stopPropagation();
+      handleMobileContextAction(chip.dataset.contextAction);
+    };
+
+    mobileHotbarExpand?.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      setMobileHotbarExpanded(!state.mobileHotbarExpanded);
+      renderMobileContextDock();
+    }, { passive: false });
     mobileHotbarExpand?.addEventListener("click", (event) => {
+      if (event.pointerType === "touch" || event.pointerType === "pen") return;
       event.preventDefault();
       setMobileHotbarExpanded(!state.mobileHotbarExpanded);
       renderMobileContextDock();
     });
 
+    mobileContextActions.addEventListener("pointerdown", tapChip, { passive: false });
     mobileContextActions.addEventListener("click", (event) => {
-      const chip = event.target.closest("[data-context-action]");
-      if (!chip) return;
-      event.preventDefault();
-      handleMobileContextAction(chip.dataset.contextAction);
+      if (event.pointerType === "touch" || event.pointerType === "pen") return;
+      tapChip(event);
     });
 
     mobileWindowBackdrop?.addEventListener("click", closeAllMobileSheets);
@@ -296,6 +309,7 @@
     setChatMinimized(true);
     setProgressionMinimized(true);
     setMobileHotbarExpanded(false);
+    syncMobileControlsVisibility();
     renderMobileContextDock();
     syncMobileGameWindowLayer();
   }
@@ -385,8 +399,9 @@
     state._mobileUiBooted = false;
     state.mobileHotbarExpanded = false;
     mobileContextDock.classList.add("hidden");
-    document.body.classList.remove("mobile-hotbar-expanded", "mobile-hotbar-collapsed", "mobile-sheet-open");
+    document.body.classList.remove("mobile-hotbar-expanded", "mobile-hotbar-collapsed", "mobile-sheet-open", "in-game");
     _resetToConnection(message, opts);
+    syncMobileControlsVisibility();
     syncMobileGameWindowLayer();
   };
 

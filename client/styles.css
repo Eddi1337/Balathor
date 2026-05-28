@@ -92,11 +92,15 @@ input {
 }
 
 #game {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
   display: block;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   image-rendering: pixelated;
   background: #132118;
+  touch-action: none;
 }
 
 body.theme-sci-fi .panel,
@@ -1536,25 +1540,65 @@ button:focus-visible {
   display: none;
 }
 
-body.mobile .mobile-controls:not(.hidden) {
+body.mobile.in-game .mobile-controls:not(.hidden) {
   position: fixed;
-  left: 0;
-  right: 0;
-  bottom: max(8px, env(safe-area-inset-bottom));
+  left: max(10px, env(safe-area-inset-left));
+  bottom: max(10px, env(safe-area-inset-bottom));
+  width: 128px;
+  height: 128px;
   display: block;
-  pointer-events: none;
-  touch-action: none;
-  z-index: 128;
-}
-
-body.mobile .mobile-joystick {
-  position: absolute;
-  left: max(8px, env(safe-area-inset-left));
-  bottom: 0;
-  width: 112px;
-  height: 112px;
   pointer-events: auto;
   touch-action: none;
+  z-index: 200;
+}
+
+body.mobile.in-game .mobile-joystick {
+  position: relative;
+  left: auto;
+  bottom: auto;
+  display: block;
+  width: 128px;
+  height: 128px;
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body.mobile.in-game .mobile-context-dock {
+  z-index: 190;
+  pointer-events: none;
+}
+
+body.mobile.in-game .progression {
+  z-index: 85;
+}
+
+body.mobile.in-game .chat {
+  z-index: 80;
+}
+
+body.mobile.in-game .party-panel {
+  z-index: 86;
+}
+
+body.mobile.in-game .ability-bar {
+  z-index: 120;
+}
+
+body.mobile.in-game .game-window:not(.hidden),
+body.mobile.in-game .teleport-menu-window:not(.hidden),
+body.mobile.in-game .quest-offer-window:not(.hidden),
+body.mobile.in-game .friends-window:not(.hidden) {
+  z-index: 170;
+}
+
+body.mobile.in-game .mobile-context-primary,
+body.mobile.in-game .mobile-context-chip,
+body.mobile.in-game .progression button,
+body.mobile.in-game .chat-icon-btn,
+body.mobile.in-game .chat-toggle {
+  touch-action: manipulation;
+  pointer-events: auto;
 }
 
 .menu {
@@ -1862,23 +1906,29 @@ body.mobile .mobile-joystick {
 }
 
 @media (hover: none), (pointer: coarse) {
+  body.mobile.in-game .mobile-controls:not(.hidden) {
+    left: max(10px, env(safe-area-inset-left));
+    bottom: max(10px, env(safe-area-inset-bottom));
+  }
+
   .mobile-controls:not(.hidden) {
     position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 10px;
+    left: max(10px, env(safe-area-inset-left));
+    bottom: max(10px, env(safe-area-inset-bottom));
+    width: 128px;
+    height: 128px;
     display: block;
-    pointer-events: none;
+    pointer-events: auto;
     touch-action: none;
-    z-index: 128;
+    z-index: 200;
   }
 
   .mobile-joystick {
-    position: absolute;
-    left: 12px;
-    bottom: 0;
-    width: 140px;
-    height: 140px;
+    position: relative;
+    left: auto;
+    bottom: auto;
+    width: 128px;
+    height: 128px;
     pointer-events: auto;
     touch-action: none;
   }
@@ -3268,7 +3318,7 @@ body.mobile .party-member-row .hpbar {
 
 .mobile-context-dock {
   position: fixed;
-  z-index: 125;
+  z-index: 190;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -3457,33 +3507,31 @@ body.mobile .talent-tree {
 
 body.mobile.mobile-portrait .mobile-context-dock {
   right: max(8px, env(safe-area-inset-right));
-  bottom: max(108px, calc(env(safe-area-inset-bottom) + 96px));
+  bottom: max(12px, calc(env(safe-area-inset-bottom) + 12px));
+  left: auto;
 }
 
 body.mobile.mobile-landscape .mobile-context-dock {
   right: max(12px, env(safe-area-inset-right));
   bottom: max(12px, env(safe-area-inset-bottom));
+  left: auto;
   max-width: calc(100vw - 160px - env(safe-area-inset-right));
 }
 
-body.mobile.mobile-landscape .mobile-joystick {
-  width: 108px;
-  height: 108px;
-}
-
+body.mobile.mobile-landscape .mobile-joystick,
 body.mobile.mobile-portrait .mobile-joystick {
-  width: 112px;
-  height: 112px;
+  width: 128px;
+  height: 128px;
 }
 
 @media (hover: none), (pointer: coarse) {
-  body.mobile .mobile-controls:not(.hidden) {
-    bottom: max(8px, env(safe-area-inset-bottom));
-    z-index: 128;
+  body.mobile.in-game .mobile-controls:not(.hidden) {
+    bottom: max(10px, env(safe-area-inset-bottom));
+    z-index: 200;
   }
 
   body.mobile .mobile-joystick {
-    left: max(8px, env(safe-area-inset-left));
+    left: auto;
   }
 
   body.mobile .mobile-actions {
