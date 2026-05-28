@@ -1540,6 +1540,19 @@ button:focus-visible {
   display: none;
 }
 
+.mobile-joystick-shell {
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.5);
+  background: radial-gradient(circle at 50% 50%, rgba(36, 46, 64, 0.95) 0%, rgba(16, 20, 30, 0.98) 72%);
+  box-shadow:
+    0 0 0 1px rgba(255, 209, 102, 0.25) inset,
+    0 8px 28px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  touch-action: none;
+}
+
 body.mobile.in-game .mobile-controls:not(.hidden) {
   position: fixed;
   left: max(10px, env(safe-area-inset-left));
@@ -1549,7 +1562,7 @@ body.mobile.in-game .mobile-controls:not(.hidden) {
   display: block;
   pointer-events: auto;
   touch-action: none;
-  z-index: 200;
+  z-index: 1200;
 }
 
 body.mobile.in-game .mobile-joystick {
@@ -1565,40 +1578,52 @@ body.mobile.in-game .mobile-joystick {
 }
 
 body.mobile.in-game .mobile-context-dock {
-  z-index: 190;
-  pointer-events: none;
+  z-index: 1190;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
+body.mobile.in-game .mobile-context-actions,
+body.mobile.in-game .mobile-context-primary,
+body.mobile.in-game .mobile-context-chip,
+body.mobile.in-game .mobile-hotbar-toggle {
+  pointer-events: auto;
+  touch-action: manipulation;
 }
 
 body.mobile.in-game .progression {
-  z-index: 85;
+  z-index: 1100;
 }
 
 body.mobile.in-game .chat {
-  z-index: 80;
+  z-index: 1090;
 }
 
 body.mobile.in-game .party-panel {
-  z-index: 86;
+  z-index: 1105;
 }
 
 body.mobile.in-game .ability-bar {
-  z-index: 120;
+  z-index: 1180;
 }
 
 body.mobile.in-game .game-window:not(.hidden),
 body.mobile.in-game .teleport-menu-window:not(.hidden),
 body.mobile.in-game .quest-offer-window:not(.hidden),
 body.mobile.in-game .friends-window:not(.hidden) {
-  z-index: 170;
+  z-index: 1250;
 }
 
-body.mobile.in-game .mobile-context-primary,
-body.mobile.in-game .mobile-context-chip,
 body.mobile.in-game .progression button,
 body.mobile.in-game .chat-icon-btn,
 body.mobile.in-game .chat-toggle {
   touch-action: manipulation;
   pointer-events: auto;
+}
+
+body.mobile.in-game .chat.minimized {
+  left: max(8px, env(safe-area-inset-left));
+  bottom: calc(128px + max(14px, env(safe-area-inset-bottom)));
 }
 
 .menu {
@@ -1909,6 +1934,7 @@ body.mobile.in-game .chat-toggle {
   body.mobile.in-game .mobile-controls:not(.hidden) {
     left: max(10px, env(safe-area-inset-left));
     bottom: max(10px, env(safe-area-inset-bottom));
+    z-index: 1200;
   }
 
   .mobile-controls:not(.hidden) {
@@ -1920,7 +1946,12 @@ body.mobile.in-game .chat-toggle {
     display: block;
     pointer-events: auto;
     touch-action: none;
-    z-index: 200;
+    z-index: 1200;
+  }
+
+  .mobile-joystick-shell {
+    width: 128px;
+    height: 128px;
   }
 
   .mobile-joystick {
@@ -3318,14 +3349,14 @@ body.mobile .party-member-row .hpbar {
 
 .mobile-context-dock {
   position: fixed;
-  z-index: 190;
+  z-index: 1190;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
   max-width: calc(100vw - 150px - env(safe-area-inset-left) - env(safe-area-inset-right));
-  pointer-events: none;
+  pointer-events: auto;
   touch-action: manipulation;
 }
 
@@ -3527,7 +3558,12 @@ body.mobile.mobile-portrait .mobile-joystick {
 @media (hover: none), (pointer: coarse) {
   body.mobile.in-game .mobile-controls:not(.hidden) {
     bottom: max(10px, env(safe-area-inset-bottom));
-    z-index: 200;
+    z-index: 1200;
+  }
+
+  body.mobile .mobile-joystick-shell {
+    width: 128px;
+    height: 128px;
   }
 
   body.mobile .mobile-joystick {

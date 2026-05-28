@@ -2,7 +2,10 @@
 // SECTION 1: Boot-time device/layout checks and DOM wiring
 // =============================
 
-const isMobile = navigator.maxTouchPoints > 0 || window.matchMedia("(pointer: coarse)").matches;
+const isMobile =
+  navigator.maxTouchPoints > 0 ||
+  window.matchMedia("(pointer: coarse)").matches ||
+  window.matchMedia("(hover: none)").matches;
 const mobileOrientationQuery = window.matchMedia("(orientation: portrait)");
 
 function updateMobileLayoutClasses() {
@@ -865,19 +868,51 @@ function wireTapActivate(el, handler) {
   if (!el || typeof handler !== "function") {
     return;
   }
+  let pointerDown = false;
+  let fired = false;
+
   el.addEventListener(
     "pointerdown",
     (event) => {
       if (event.pointerType === "mouse" && event.button !== 0) {
         return;
       }
-      event.preventDefault();
+      pointerDown = true;
+      fired = false;
+    },
+    { passive: true }
+  );
+
+  el.addEventListener(
+    "pointerup",
+    (event) => {
+      if (!pointerDown || fired) {
+        pointerDown = false;
+        return;
+      }
+      if (event.pointerType === "mouse" && event.button !== 0) {
+        pointerDown = false;
+        return;
+      }
+      pointerDown = false;
+      fired = true;
+      event.stopPropagation();
       handler(event);
     },
-    { passive: false }
+    { passive: true }
   );
+
+  el.addEventListener("pointercancel", () => {
+    pointerDown = false;
+    fired = false;
+  });
+
   el.addEventListener("click", (event) => {
     if (event.pointerType === "touch" || event.pointerType === "pen") {
+      return;
+    }
+    if (fired) {
+      fired = false;
       return;
     }
     handler(event);
@@ -3228,19 +3263,10 @@ function wireUi() {
     }
   });
 
-  equipmentButton.addEventListener("click", () => {
-    toggleGameWindow("equipment");
-  });
   wireTapActivate(equipmentButton, () => toggleGameWindow("equipment"));
 
-  bagsButton.addEventListener("click", () => {
-    toggleGameWindow("bags");
-  });
   wireTapActivate(bagsButton, () => toggleGameWindow("bags"));
 
-  questsButton?.addEventListener("click", () => {
-    toggleGameWindow("quests");
-  });
   wireTapActivate(questsButton, () => toggleGameWindow("quests"));
 
   equipmentClose.addEventListener("click", () => setActiveGameWindow(null));
@@ -3709,18 +3735,9 @@ function wireUi() {
     setTimeout(hideCmdPalette, 150);
   });
 
-  chatToggle.addEventListener("click", () => {
-    setChatMinimized(!state.chatMinimized);
-  });
   wireTapActivate(chatToggle, () => setChatMinimized(!state.chatMinimized));
-  chatIconBtn?.addEventListener("click", () => {
-    setChatMinimized(false);
-  });
   wireTapActivate(chatIconBtn, () => setChatMinimized(false));
 
-  progressionToggle.addEventListener("click", () => {
-    setProgressionMinimized(!state.progressionMinimized);
-  });
   wireTapActivate(progressionToggle, () => {
     setProgressionMinimized(!state.progressionMinimized);
   });
@@ -5650,16 +5667,16 @@ function wireMobileControls() {
     jctx.clearRect(0, 0, size, size);
     jctx.beginPath();
     jctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    jctx.fillStyle = "rgba(24, 30, 43, 0.78)";
+    jctx.fillStyle = "rgba(18, 24, 36, 0.92)";
     jctx.fill();
-    jctx.strokeStyle = "rgba(255, 255, 255, 0.28)";
-    jctx.lineWidth = 2;
+    jctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
+    jctx.lineWidth = 3;
     jctx.stroke();
     jctx.beginPath();
     jctx.arc(cx + knobX, cy + knobY, knobRadius, 0, Math.PI * 2);
-    jctx.fillStyle = "rgba(255, 255, 255, 0.42)";
+    jctx.fillStyle = "rgba(255, 255, 255, 0.72)";
     jctx.fill();
-    jctx.strokeStyle = "rgba(255, 255, 255, 0.65)";
+    jctx.strokeStyle = "rgba(255, 209, 102, 0.95)";
     jctx.lineWidth = 2;
     jctx.stroke();
   }
@@ -5731,6 +5748,7 @@ function wireMobileControls() {
     });
 
     drawJoystick();
+    globalThis.__balathorRedrawJoystick = drawJoystick;
   }
 
   window.addEventListener("resize", drawJoystick, { passive: true });
