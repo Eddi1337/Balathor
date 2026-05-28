@@ -119,7 +119,8 @@ const chatInput = document.querySelector("#chatInput");
 const chatToggle = document.querySelector("#chatToggle");
 const chatIconBtn = document.querySelector("#chatIconBtn");
 const mobileControls = document.querySelector("#mobileControls");
-const joystickCanvas = document.querySelector("#joystick");
+const joystickShell = document.querySelector("#joystickShell");
+const joystickKnob = document.querySelector("#joystickKnob");
 const traderPanel = document.querySelector("#traderPanel");
 const traderTitle = document.querySelector("#traderTitle");
 const traderStock = document.querySelector("#traderStock");
@@ -868,8 +869,12 @@ function wireTapActivate(el, handler) {
   if (!el || typeof handler !== "function") {
     return;
   }
-  let pointerDown = false;
-  let fired = false;
+  let suppressClickUntil = 0;
+
+  function run(event) {
+    event.stopPropagation();
+    handler(event);
+  }
 
   el.addEventListener(
     "pointerdown",
@@ -877,45 +882,24 @@ function wireTapActivate(el, handler) {
       if (event.pointerType === "mouse" && event.button !== 0) {
         return;
       }
-      pointerDown = true;
-      fired = false;
-    },
-    { passive: true }
-  );
-
-  el.addEventListener(
-    "pointerup",
-    (event) => {
-      if (!pointerDown || fired) {
-        pointerDown = false;
-        return;
+      if (event.pointerType === "touch" || event.pointerType === "pen") {
+        event.preventDefault();
+        event.stopPropagation();
+        suppressClickUntil = performance.now() + 500;
+        run(event);
       }
-      if (event.pointerType === "mouse" && event.button !== 0) {
-        pointerDown = false;
-        return;
-      }
-      pointerDown = false;
-      fired = true;
-      event.stopPropagation();
-      handler(event);
     },
-    { passive: true }
+    { passive: false }
   );
-
-  el.addEventListener("pointercancel", () => {
-    pointerDown = false;
-    fired = false;
-  });
 
   el.addEventListener("click", (event) => {
     if (event.pointerType === "touch" || event.pointerType === "pen") {
       return;
     }
-    if (fired) {
-      fired = false;
+    if (performance.now() < suppressClickUntil) {
       return;
     }
-    handler(event);
+    run(event);
   });
 }
 
@@ -5642,14 +5626,20 @@ function tryLootClickedWorldChest(event) {
 }
 
 function wireMobileControls() {
-  const jctx = joystickCanvas?.getContext("2d");
+  if (!joystickShell || !joystickKnob) {
+    return;
+  }
+
   const DEAD_ZONE = 0.15;
   let knobX = 0;
   let knobY = 0;
   let activePointerId = null;
 
   function joystickLayout() {
-    const size = Math.max(96, Math.min(joystickCanvas?.clientWidth || 128, joystickCanvas?.clientHeight || 128));
+    const size = Math.max(
+      96,
+      Math.min(joystickShell.clientWidth || 128, joystickShell.clientHeight || 128)
+    );
     const cx = size / 2;
     const cy = size / 2;
     const radius = size * 0.42;
@@ -5657,33 +5647,17 @@ function wireMobileControls() {
     return { size, cx, cy, radius, knobRadius };
   }
 
-  function drawJoystick() {
-    if (!jctx || !joystickCanvas) return;
-    const { size, cx, cy, radius, knobRadius } = joystickLayout();
-    if (joystickCanvas.width !== size || joystickCanvas.height !== size) {
-      joystickCanvas.width = size;
-      joystickCanvas.height = size;
-    }
-    jctx.clearRect(0, 0, size, size);
-    jctx.beginPath();
-    jctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    jctx.fillStyle = "rgba(18, 24, 36, 0.92)";
-    jctx.fill();
-    jctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
-    jctx.lineWidth = 3;
-    jctx.stroke();
-    jctx.beginPath();
-    jctx.arc(cx + knobX, cy + knobY, knobRadius, 0, Math.PI * 2);
-    jctx.fillStyle = "rgba(255, 255, 255, 0.72)";
-    jctx.fill();
-    jctx.strokeStyle = "rgba(255, 209, 102, 0.95)";
-    jctx.lineWidth = 2;
-    jctx.stroke();
+  function paintJoystickKnob() {
+    const { knobRadius } = joystickLayout();
+    const knobSize = knobRadius * 2;
+    joystickKnob.style.width = `${knobSize}px`;
+    joystickKnob.style.height = `${knobSize}px`;
+    joystickKnob.style.transform = `translate(calc(-50% + ${knobX}px), calc(-50% + ${knobY}px))`;
   }
 
   function updateFromPointer(event) {
     const { cx, cy, radius, knobRadius } = joystickLayout();
-    const rect = joystickCanvas.getBoundingClientRect();
+    const rect = joystickShell.getBoundingClientRect();
     const px = event.clientX - rect.left - cx;
     const py = event.clientY - rect.top - cy;
     const dist = Math.hypot(px, py);
@@ -5705,7 +5679,7 @@ function wireMobileControls() {
       cancelBenchSitClient();
     }
     sendInput();
-    drawJoystick();
+    paintJoystickKnob();
   }
 
   function resetJoystick() {
@@ -5713,46 +5687,57 @@ function wireMobileControls() {
     knobY = 0;
     activePointerId = null;
     clearMovementInput();
-    drawJoystick();
+    paintJoystickKnob();
   }
 
-  if (joystickCanvas) {
-    joystickCanvas.addEventListener("pointerdown", (event) => {
-      if (!state.joined || state.menuOpen) return;
-      event.preventDefault();
-      event.stopPropagation();
-      activePointerId = event.pointerId;
-      joystickCanvas.setPointerCapture(event.pointerId);
-      updateFromPointer(event);
-    });
+  joystickShell.addEventListener("pointerdown", (event) => {
+    if (!state.joined || state.menuOpen) return;
+    event.preventDefault();
+    event.stopPropagation();
+    activePointerId = event.pointerId;
+    joystickShell.setPointerCapture(event.pointerId);
+    updateFromPointer(event);
+  });
 
-    joystickCanvas.addEventListener("pointermove", (event) => {
-      if (activePointerId !== event.pointerId) return;
-      event.preventDefault();
-      updateFromPointer(event);
-    });
+  joystickShell.addEventListener("pointermove", (event) => {
+    if (activePointerId !== event.pointerId) return;
+    event.preventDefault();
+    updateFromPointer(event);
+  });
 
-    joystickCanvas.addEventListener("pointerup", (event) => {
-      if (activePointerId !== event.pointerId) return;
-      event.preventDefault();
-      resetJoystick();
-    });
+  joystickShell.addEventListener("pointerup", (event) => {
+    if (activePointerId !== event.pointerId) return;
+    event.preventDefault();
+    try {
+      joystickShell.releasePointerCapture(event.pointerId);
+    } catch {
+      /* already released */
+    }
+    resetJoystick();
+  });
 
-    joystickCanvas.addEventListener("pointercancel", (event) => {
-      if (activePointerId !== event.pointerId) return;
-      resetJoystick();
-    });
+  joystickShell.addEventListener("pointercancel", (event) => {
+    if (activePointerId !== event.pointerId) return;
+    resetJoystick();
+  });
 
-    joystickCanvas.addEventListener("lostpointercapture", () => {
-      resetJoystick();
-    });
+  joystickShell.addEventListener("lostpointercapture", (event) => {
+    if (activePointerId === null || event.pointerId !== activePointerId) {
+      return;
+    }
+    resetJoystick();
+  });
 
-    drawJoystick();
-    globalThis.__balathorRedrawJoystick = drawJoystick;
+  paintJoystickKnob();
+  globalThis.__balathorRedrawJoystick = paintJoystickKnob;
+
+  if (typeof ResizeObserver !== "undefined") {
+    const ro = new ResizeObserver(() => paintJoystickKnob());
+    ro.observe(joystickShell);
   }
 
-  window.addEventListener("resize", drawJoystick, { passive: true });
-  window.addEventListener("orientationchange", drawJoystick, { passive: true });
+  window.addEventListener("resize", paintJoystickKnob, { passive: true });
+  window.addEventListener("orientationchange", paintJoystickKnob, { passive: true });
 }
 
 function send(message) {
