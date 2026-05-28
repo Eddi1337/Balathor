@@ -856,6 +856,9 @@ function syncMobileControlsVisibility() {
   const show = Boolean(isMobile && inGame);
   mobileControls.classList.toggle("hidden", !show);
   mobileControls.setAttribute("aria-hidden", show ? "false" : "true");
+  if (show && typeof globalThis.__balathorRedrawJoystick === "function") {
+    requestAnimationFrame(() => globalThis.__balathorRedrawJoystick());
+  }
 }
 
 function wireTapActivate(el, handler) {
@@ -3709,9 +3712,11 @@ function wireUi() {
   chatToggle.addEventListener("click", () => {
     setChatMinimized(!state.chatMinimized);
   });
+  wireTapActivate(chatToggle, () => setChatMinimized(!state.chatMinimized));
   chatIconBtn?.addEventListener("click", () => {
     setChatMinimized(false);
   });
+  wireTapActivate(chatIconBtn, () => setChatMinimized(false));
 
   progressionToggle.addEventListener("click", () => {
     setProgressionMinimized(!state.progressionMinimized);
