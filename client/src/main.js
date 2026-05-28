@@ -866,41 +866,7 @@ function syncMobileControlsVisibility() {
 }
 
 function wireTapActivate(el, handler) {
-  if (!el || typeof handler !== "function") {
-    return;
-  }
-  let suppressClickUntil = 0;
-
-  function run(event) {
-    event.stopPropagation();
-    handler(event);
-  }
-
-  el.addEventListener(
-    "pointerdown",
-    (event) => {
-      if (event.pointerType === "mouse" && event.button !== 0) {
-        return;
-      }
-      if (event.pointerType === "touch" || event.pointerType === "pen") {
-        event.preventDefault();
-        event.stopPropagation();
-        suppressClickUntil = performance.now() + 500;
-        run(event);
-      }
-    },
-    { passive: false }
-  );
-
-  el.addEventListener("click", (event) => {
-    if (event.pointerType === "touch" || event.pointerType === "pen") {
-      return;
-    }
-    if (performance.now() < suppressClickUntil) {
-      return;
-    }
-    run(event);
-  });
+  globalThis.BalathorMobileTouch?.wireInstantTap(el, handler);
 }
 
 const SPEECH_BUBBLE_MS = 5200;
@@ -3738,6 +3704,9 @@ function wireUi() {
     if (!state.joined || state.menuOpen || isTextEntryTarget(event.target)) {
       return;
     }
+    if (globalThis.BalathorMobileTouch?.isMobileHudTarget(event.target)) {
+      return;
+    }
     event.preventDefault();
     if (globalThis.BalathorMinigames && BalathorMinigames.tryClick(event)) {
       return;
@@ -5630,10 +5599,12 @@ function wireMobileControls() {
     return;
   }
 
-  const DEAD_ZONE = 0.15;
+  const touch = globalThis.BalathorMobileTouch;
+  const DEAD_ZONE = touch?.JOYSTICK_DEAD_ZONE ?? 0.12;
   let knobX = 0;
   let knobY = 0;
   let activePointerId = null;
+  let dragging = false;
 
   function joystickLayout() {
     const size = Math.max(
@@ -5655,34 +5626,39 @@ function wireMobileControls() {
     joystickKnob.style.transform = `translate(calc(-50% + ${knobX}px), calc(-50% + ${knobY}px))`;
   }
 
-  function updateFromPointer(event) {
+  function applyJoystickPoint(clientX, clientY) {
     const { cx, cy, radius, knobRadius } = joystickLayout();
     const rect = joystickShell.getBoundingClientRect();
-    const px = event.clientX - rect.left - cx;
-    const py = event.clientY - rect.top - cy;
-    const dist = Math.hypot(px, py);
+    const px = clientX - rect.left - cx;
+    const py = clientY - rect.top - cy;
     const maxDist = Math.max(8, radius - knobRadius);
-    if (dist > maxDist) {
-      knobX = (px / dist) * maxDist;
-      knobY = (py / dist) * maxDist;
-    } else {
-      knobX = px;
-      knobY = py;
-    }
-    const normX = knobX / maxDist;
-    const normY = knobY / maxDist;
-    state.input.left = normX < -DEAD_ZONE;
-    state.input.right = normX > DEAD_ZONE;
-    state.input.up = normY < -DEAD_ZONE;
-    state.input.down = normY > DEAD_ZONE;
-    if (state.input.left || state.input.right || state.input.up || state.input.down) {
+    const clamped = touch?.clampKnobOffset(px, py, maxDist) ?? { knobX: px, knobY: py };
+    knobX = clamped.knobX;
+    knobY = clamped.knobY;
+    const dirs = touch?.joystickDirectionsFromKnob(knobX, knobY, maxDist, DEAD_ZONE) ?? {
+      left: knobX / maxDist < -DEAD_ZONE,
+      right: knobX / maxDist > DEAD_ZONE,
+      up: knobY / maxDist < -DEAD_ZONE,
+      down: knobY / maxDist > DEAD_ZONE
+    };
+    state.input.left = dirs.left;
+    state.input.right = dirs.right;
+    state.input.up = dirs.up;
+    state.input.down = dirs.down;
+    if (dirs.left || dirs.right || dirs.up || dirs.down) {
       cancelBenchSitClient();
     }
     sendInput();
     paintJoystickKnob();
   }
 
+  function updateFromPointer(event) {
+    const point = touch?.pointerPoint(event) ?? { clientX: event.clientX, clientY: event.clientY };
+    applyJoystickPoint(point.clientX, point.clientY);
+  }
+
   function resetJoystick() {
+    dragging = false;
     knobX = 0;
     knobY = 0;
     activePointerId = null;
@@ -5690,43 +5666,135 @@ function wireMobileControls() {
     paintJoystickKnob();
   }
 
-  joystickShell.addEventListener("pointerdown", (event) => {
-    if (!state.joined || state.menuOpen) return;
-    event.preventDefault();
-    event.stopPropagation();
+  function beginDrag(event) {
+    if (!state.joined || state.menuOpen) {
+      return;
+    }
+    dragging = true;
     activePointerId = event.pointerId;
-    joystickShell.setPointerCapture(event.pointerId);
+    try {
+      joystickShell.setPointerCapture(event.pointerId);
+    } catch {
+    }
     updateFromPointer(event);
-  });
+  }
 
-  joystickShell.addEventListener("pointermove", (event) => {
-    if (activePointerId !== event.pointerId) return;
-    event.preventDefault();
-    updateFromPointer(event);
-  });
-
-  joystickShell.addEventListener("pointerup", (event) => {
-    if (activePointerId !== event.pointerId) return;
-    event.preventDefault();
+  function endDrag(event) {
+    if (activePointerId !== null && event.pointerId !== activePointerId) {
+      return;
+    }
     try {
       joystickShell.releasePointerCapture(event.pointerId);
     } catch {
-      /* already released */
     }
     resetJoystick();
-  });
+  }
 
-  joystickShell.addEventListener("pointercancel", (event) => {
-    if (activePointerId !== event.pointerId) return;
-    resetJoystick();
-  });
-
-  joystickShell.addEventListener("lostpointercapture", (event) => {
-    if (activePointerId === null || event.pointerId !== activePointerId) {
+  function onGlobalMove(event) {
+    if (!dragging || activePointerId !== event.pointerId) {
       return;
     }
-    resetJoystick();
+    event.preventDefault();
+    updateFromPointer(event);
+  }
+
+  function onGlobalEnd(event) {
+    if (!dragging || activePointerId !== event.pointerId) {
+      return;
+    }
+    event.preventDefault();
+    endDrag(event);
+  }
+
+  joystickShell.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (event.pointerType === "mouse" && event.button !== 0) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      beginDrag(event);
+    },
+    { passive: false }
+  );
+
+  joystickShell.addEventListener("pointermove", onGlobalMove, { passive: false });
+
+  joystickShell.addEventListener(
+    "pointerup",
+    (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      endDrag(event);
+    },
+    { passive: false }
+  );
+
+  joystickShell.addEventListener("pointercancel", (event) => {
+    endDrag(event);
   });
+
+  joystickShell.addEventListener(
+    "touchstart",
+    (event) => {
+      if (!state.joined || state.menuOpen) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const t = event.changedTouches[0];
+      if (!t) {
+        return;
+      }
+      dragging = true;
+      activePointerId = t.identifier;
+      applyJoystickPoint(t.clientX, t.clientY);
+    },
+    { passive: false }
+  );
+
+  joystickShell.addEventListener(
+    "touchmove",
+    (event) => {
+      if (!dragging) {
+        return;
+      }
+      event.preventDefault();
+      const t = event.changedTouches[0] || event.touches[0];
+      if (!t) {
+        return;
+      }
+      applyJoystickPoint(t.clientX, t.clientY);
+    },
+    { passive: false }
+  );
+
+  joystickShell.addEventListener(
+    "touchend",
+    (event) => {
+      if (!dragging) {
+        return;
+      }
+      event.preventDefault();
+      resetJoystick();
+    },
+    { passive: false }
+  );
+
+  joystickShell.addEventListener(
+    "touchcancel",
+    () => {
+      if (dragging) {
+        resetJoystick();
+      }
+    },
+    { passive: false }
+  );
+
+  window.addEventListener("pointermove", onGlobalMove, { passive: false });
+  window.addEventListener("pointerup", onGlobalEnd, { passive: false });
+  window.addEventListener("pointercancel", onGlobalEnd, { passive: false });
 
   paintJoystickKnob();
   globalThis.__balathorRedrawJoystick = paintJoystickKnob;
@@ -5739,6 +5807,7 @@ function wireMobileControls() {
   window.addEventListener("resize", paintJoystickKnob, { passive: true });
   window.addEventListener("orientationchange", paintJoystickKnob, { passive: true });
 }
+
 
 function send(message) {
   if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {
@@ -6832,8 +6901,8 @@ function getSpellAnimationConfig(spellId) {
 }
 
 const SABER_BLADE_EXTEND_MS = 380;
-const IDLE_ANIM_START_MS = 7500;
-const IDLE_ANIM_CYCLE_MS = 4800;
+const IDLE_ANIM_START_MS = 18000;
+const IDLE_ANIM_CYCLE_MS = 10000;
 
 const IDLE_ANIM_KINDS = [
   "weapon_spin", "pushups", "jumping_jacks", "stretch_up", "lean_back",

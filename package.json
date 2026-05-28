@@ -8,6 +8,7 @@
     "server": "node server/src/index.js",
     "client": "node client/dev-server.js",
     "smoke": "node tests/smoke.mjs",
+    "test:mobile": "node --test tests/mobile-touch.mjs",
     "stress": "node tools/stress.mjs",
     "generate:sci-fi-station": "node tools/generateSciFiStation.mjs",
     "stress:remote": "node tools/stress.mjs --url wss://balathor.edmundmurphy.com/ws",
