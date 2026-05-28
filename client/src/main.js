@@ -2,7 +2,10 @@
 // SECTION 1: Boot-time device/layout checks and DOM wiring
 // =============================
 
-const isMobile = navigator.maxTouchPoints > 0 || window.matchMedia("(pointer: coarse)").matches;
+const isMobile =
+  navigator.maxTouchPoints > 0 ||
+  window.matchMedia("(pointer: coarse)").matches ||
+  window.matchMedia("(hover: none)").matches;
 const mobileOrientationQuery = window.matchMedia("(orientation: portrait)");
 
 function updateMobileLayoutClasses() {
@@ -847,6 +850,75 @@ const state = {
   fletchingGame: null
 };
 
+function syncMobileControlsVisibility() {
+  const inGame = Boolean(state.joined && !state.menuOpen);
+  document.body.classList.toggle("in-game", inGame);
+  if (!mobileControls) {
+    return;
+  }
+  const show = Boolean(isMobile && inGame);
+  mobileControls.classList.toggle("hidden", !show);
+  mobileControls.setAttribute("aria-hidden", show ? "false" : "true");
+  if (show && typeof globalThis.__balathorRedrawJoystick === "function") {
+    requestAnimationFrame(() => globalThis.__balathorRedrawJoystick());
+  }
+}
+
+function wireTapActivate(el, handler) {
+  if (!el || typeof handler !== "function") {
+    return;
+  }
+  let pointerDown = false;
+  let fired = false;
+
+  el.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (event.pointerType === "mouse" && event.button !== 0) {
+        return;
+      }
+      pointerDown = true;
+      fired = false;
+    },
+    { passive: true }
+  );
+
+  el.addEventListener(
+    "pointerup",
+    (event) => {
+      if (!pointerDown || fired) {
+        pointerDown = false;
+        return;
+      }
+      if (event.pointerType === "mouse" && event.button !== 0) {
+        pointerDown = false;
+        return;
+      }
+      pointerDown = false;
+      fired = true;
+      event.stopPropagation();
+      handler(event);
+    },
+    { passive: true }
+  );
+
+  el.addEventListener("pointercancel", () => {
+    pointerDown = false;
+    fired = false;
+  });
+
+  el.addEventListener("click", (event) => {
+    if (event.pointerType === "touch" || event.pointerType === "pen") {
+      return;
+    }
+    if (fired) {
+      fired = false;
+      return;
+    }
+    handler(event);
+  });
+}
+
 const SPEECH_BUBBLE_MS = 5200;
 const VIEW_SEND_INTERVAL_MS = 350;
 
@@ -1349,7 +1421,7 @@ function handleServerMessage(message) {
     form.classList.add("hidden");
     progression.classList.remove("hidden");
     chat.classList.remove("hidden");
-    mobileControls.classList.remove("hidden");
+    syncMobileControlsVisibility();
     abilityBar.classList.remove("hidden");
     if (isMobile) {
       setChatMinimized(true);
@@ -3191,17 +3263,11 @@ function wireUi() {
     }
   });
 
-  equipmentButton.addEventListener("click", () => {
-    toggleGameWindow("equipment");
-  });
+  wireTapActivate(equipmentButton, () => toggleGameWindow("equipment"));
 
-  bagsButton.addEventListener("click", () => {
-    toggleGameWindow("bags");
-  });
+  wireTapActivate(bagsButton, () => toggleGameWindow("bags"));
 
-  questsButton?.addEventListener("click", () => {
-    toggleGameWindow("quests");
-  });
+  wireTapActivate(questsButton, () => toggleGameWindow("quests"));
 
   equipmentClose.addEventListener("click", () => setActiveGameWindow(null));
   bagsClose.addEventListener("click", () => setActiveGameWindow(null));
@@ -3669,14 +3735,10 @@ function wireUi() {
     setTimeout(hideCmdPalette, 150);
   });
 
-  chatToggle.addEventListener("click", () => {
-    setChatMinimized(!state.chatMinimized);
-  });
-  chatIconBtn?.addEventListener("click", () => {
-    setChatMinimized(false);
-  });
+  wireTapActivate(chatToggle, () => setChatMinimized(!state.chatMinimized));
+  wireTapActivate(chatIconBtn, () => setChatMinimized(false));
 
-  progressionToggle.addEventListener("click", () => {
+  wireTapActivate(progressionToggle, () => {
     setProgressionMinimized(!state.progressionMinimized);
   });
 
@@ -5581,40 +5643,51 @@ function tryLootClickedWorldChest(event) {
 
 function wireMobileControls() {
   const jctx = joystickCanvas?.getContext("2d");
-  const JOYSTICK_RADIUS = 56;
-  const KNOB_RADIUS = 22;
   const DEAD_ZONE = 0.15;
-  const cx = 70;
-  const cy = 70;
   let knobX = 0;
   let knobY = 0;
   let activePointerId = null;
 
+  function joystickLayout() {
+    const size = Math.max(96, Math.min(joystickCanvas?.clientWidth || 128, joystickCanvas?.clientHeight || 128));
+    const cx = size / 2;
+    const cy = size / 2;
+    const radius = size * 0.42;
+    const knobRadius = size * 0.17;
+    return { size, cx, cy, radius, knobRadius };
+  }
+
   function drawJoystick() {
-    if (!jctx) return;
-    jctx.clearRect(0, 0, 140, 140);
+    if (!jctx || !joystickCanvas) return;
+    const { size, cx, cy, radius, knobRadius } = joystickLayout();
+    if (joystickCanvas.width !== size || joystickCanvas.height !== size) {
+      joystickCanvas.width = size;
+      joystickCanvas.height = size;
+    }
+    jctx.clearRect(0, 0, size, size);
     jctx.beginPath();
-    jctx.arc(cx, cy, JOYSTICK_RADIUS, 0, Math.PI * 2);
-    jctx.fillStyle = "rgba(24, 30, 43, 0.55)";
+    jctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    jctx.fillStyle = "rgba(18, 24, 36, 0.92)";
     jctx.fill();
-    jctx.strokeStyle = "rgba(255, 255, 255, 0.18)";
-    jctx.lineWidth = 2;
+    jctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
+    jctx.lineWidth = 3;
     jctx.stroke();
     jctx.beginPath();
-    jctx.arc(cx + knobX, cy + knobY, KNOB_RADIUS, 0, Math.PI * 2);
-    jctx.fillStyle = "rgba(255, 255, 255, 0.35)";
+    jctx.arc(cx + knobX, cy + knobY, knobRadius, 0, Math.PI * 2);
+    jctx.fillStyle = "rgba(255, 255, 255, 0.72)";
     jctx.fill();
-    jctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+    jctx.strokeStyle = "rgba(255, 209, 102, 0.95)";
     jctx.lineWidth = 2;
     jctx.stroke();
   }
 
   function updateFromPointer(event) {
+    const { cx, cy, radius, knobRadius } = joystickLayout();
     const rect = joystickCanvas.getBoundingClientRect();
     const px = event.clientX - rect.left - cx;
     const py = event.clientY - rect.top - cy;
     const dist = Math.hypot(px, py);
-    const maxDist = JOYSTICK_RADIUS - KNOB_RADIUS;
+    const maxDist = Math.max(8, radius - knobRadius);
     if (dist > maxDist) {
       knobX = (px / dist) * maxDist;
       knobY = (py / dist) * maxDist;
@@ -5647,6 +5720,7 @@ function wireMobileControls() {
     joystickCanvas.addEventListener("pointerdown", (event) => {
       if (!state.joined || state.menuOpen) return;
       event.preventDefault();
+      event.stopPropagation();
       activePointerId = event.pointerId;
       joystickCanvas.setPointerCapture(event.pointerId);
       updateFromPointer(event);
@@ -5674,25 +5748,11 @@ function wireMobileControls() {
     });
 
     drawJoystick();
+    globalThis.__balathorRedrawJoystick = drawJoystick;
   }
 
-  document.querySelector("[data-mobile-action='attack']")?.addEventListener("pointerdown", (event) => {
-    if (!state.joined || state.menuOpen) {
-      return;
-    }
-    event.preventDefault();
-    if (!playerAttackBlockedBySafeZone()) {
-      sendAttack();
-    }
-  });
-
-  document.querySelector("[data-mobile-action='home']")?.addEventListener("pointerdown", (event) => {
-    if (!state.joined || state.menuOpen) {
-      return;
-    }
-    event.preventDefault();
-    sendHome();
-  });
+  window.addEventListener("resize", drawJoystick, { passive: true });
+  window.addEventListener("orientationchange", drawJoystick, { passive: true });
 }
 
 function send(message) {
@@ -5860,7 +5920,7 @@ function resetToConnection(message, opts = {}) {
   traderPanel.classList.add("hidden");
   abilityBar.classList.add("hidden");
   chat.classList.add("hidden");
-  mobileControls.classList.add("hidden");
+  syncMobileControlsVisibility();
   safeZoneIndicator?.classList.add("hidden");
   safeZoneIndicator?.classList.remove("safe-zone-tooltip-pinned");
   clearTimeout(safeZoneTooltipPinTimer);
@@ -6197,11 +6257,13 @@ function openMenu() {
   clearMovementInput();
   syncDebugToggleButton();
   syncMenuSessionInfo();
+  syncMobileControlsVisibility();
 }
 
 function closeMenu() {
   state.menuOpen = false;
   menu.classList.add("hidden");
+  syncMobileControlsVisibility();
   menu.setAttribute("aria-hidden", "true");
 }
 

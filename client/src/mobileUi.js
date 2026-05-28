@@ -37,6 +37,78 @@
   state._mobileDockAt = 0;
   state._mobileUiBooted = false;
 
+  let mobileChipSignature = "";
+  let mobilePrimarySignature = "";
+
+  function mobileChipSignatureFor(chips) {
+    return chips.map((chip) => `${chip.id}:${chip.label}:${chip.selected ? "1" : "0"}`).join("|");
+  }
+
+  function wireMobileButton(el, handler, { hold = false } = {}) {
+    if (!el || typeof handler !== "function") {
+      return;
+    }
+    let pointerDown = false;
+    let fired = false;
+
+    el.addEventListener(
+      "pointerdown",
+      (event) => {
+        if (event.pointerType === "mouse" && event.button !== 0) {
+          return;
+        }
+        pointerDown = true;
+        fired = false;
+        if (hold) {
+          handler(true, event);
+        }
+      },
+      { passive: true }
+    );
+
+    el.addEventListener(
+      "pointerup",
+      (event) => {
+        if (!pointerDown || fired) {
+          pointerDown = false;
+          return;
+        }
+        if (event.pointerType === "mouse" && event.button !== 0) {
+          pointerDown = false;
+          return;
+        }
+        pointerDown = false;
+        if (hold) {
+          handler(false, event);
+          return;
+        }
+        fired = true;
+        event.stopPropagation();
+        handler(event);
+      },
+      { passive: true }
+    );
+
+    el.addEventListener("pointercancel", () => {
+      if (hold && pointerDown) {
+        handler(false, null);
+      }
+      pointerDown = false;
+      fired = false;
+    });
+
+    el.addEventListener("click", (event) => {
+      if (event.pointerType === "touch" || event.pointerType === "pen") {
+        return;
+      }
+      if (fired) {
+        fired = false;
+        return;
+      }
+      handler(event);
+    });
+  }
+
   function setMobileHotbarExpanded(expanded) {
     state.mobileHotbarExpanded = Boolean(expanded);
     document.body.classList.toggle("mobile-hotbar-expanded", expanded);
@@ -117,17 +189,42 @@
     return { label: "Attack", action: "attack", hold: false };
   }
 
+  function syncMobileContextChips(chips) {
+    const signature = mobileChipSignatureFor(chips);
+    if (signature === mobileChipSignature) {
+      return;
+    }
+    mobileChipSignature = signature;
+    mobileContextActions.replaceChildren();
+    for (const chip of chips) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "mobile-context-chip";
+      btn.dataset.contextAction = chip.id;
+      btn.textContent = chip.label;
+      btn.title = chip.title || chip.label;
+      if (chip.selected) btn.classList.add("selected");
+      mobileContextActions.append(btn);
+    }
+  }
+
   function renderMobileContextDock() {
     if (!state.joined || state.menuOpen) {
       mobileContextDock.classList.add("hidden");
+      mobileChipSignature = "";
+      mobilePrimarySignature = "";
       return;
     }
     mobileContextDock.classList.remove("hidden");
     const self = state.players.get(state.selfId);
     const primary = getMobilePrimaryActionSpec();
-    mobilePrimaryAction.textContent = primary.label;
-    mobilePrimaryAction.dataset.action = primary.action;
-    mobilePrimaryAction.dataset.hold = primary.hold ? "1" : "0";
+    const primarySignature = `${primary.label}:${primary.action}:${primary.hold ? "1" : "0"}`;
+    if (primarySignature !== mobilePrimarySignature) {
+      mobilePrimarySignature = primarySignature;
+      mobilePrimaryAction.textContent = primary.label;
+      mobilePrimaryAction.dataset.action = primary.action;
+      mobilePrimaryAction.dataset.hold = primary.hold ? "1" : "0";
+    }
 
     const chips = [];
     const potionCount = Number(self?.potionCount) || 0;
@@ -159,17 +256,7 @@
       { id: "quests", label: "Quest", title: "Quest log", selected: state.activeWindow === "quests" }
     );
 
-    mobileContextActions.replaceChildren();
-    for (const chip of chips) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "mobile-context-chip";
-      btn.dataset.contextAction = chip.id;
-      btn.textContent = chip.label;
-      btn.title = chip.title || chip.label;
-      if (chip.selected) btn.classList.add("selected");
-      mobileContextActions.append(btn);
-    }
+    syncMobileContextChips(chips);
   }
 
   function handleMobileContextAction(actionId) {
@@ -231,25 +318,40 @@
   }
 
   function wireMobileContextDock() {
-    mobileHotbarExpand?.addEventListener("click", (event) => {
-      event.preventDefault();
-      setMobileHotbarExpanded(!state.mobileHotbarExpanded);
-      renderMobileContextDock();
+    mobileContextActions.addEventListener("pointerup", (event) => {
+      const chip = event.target.closest("[data-context-action]");
+      if (!chip || !mobileContextActions.contains(chip)) {
+        return;
+      }
+      event.stopPropagation();
+      handleMobileContextAction(chip.dataset.contextAction);
     });
 
     mobileContextActions.addEventListener("click", (event) => {
+      if (event.pointerType === "touch" || event.pointerType === "pen") {
+        return;
+      }
       const chip = event.target.closest("[data-context-action]");
-      if (!chip) return;
-      event.preventDefault();
+      if (!chip || !mobileContextActions.contains(chip)) {
+        return;
+      }
+      event.stopPropagation();
       handleMobileContextAction(chip.dataset.contextAction);
+    });
+
+    wireMobileButton(mobileHotbarExpand, () => {
+      setMobileHotbarExpanded(!state.mobileHotbarExpanded);
+      renderMobileContextDock();
     });
 
     mobileWindowBackdrop?.addEventListener("click", closeAllMobileSheets);
 
     let mobileShipHoldActive = false;
+    let primaryPointerDown = false;
+
     function setMobileShipStationHold(active, event) {
       if (!state.joined || state.menuOpen || !isSelfOnShip()) return;
-      if (event) event.preventDefault();
+      if (event) event.stopPropagation();
       const role = selfShipStationRole();
       if (!role) {
         if (active) sendInteract();
@@ -262,14 +364,9 @@
       mobileShipHoldActive = active;
     }
 
-    mobilePrimaryAction.addEventListener("pointerdown", (event) => {
+    function runMobilePrimaryTap() {
       if (!state.joined || state.menuOpen) return;
-      event.preventDefault();
       const action = mobilePrimaryAction.dataset.action || "attack";
-      if (action === "ship-station" && mobilePrimaryAction.dataset.hold === "1") {
-        setMobileShipStationHold(true, event);
-        return;
-      }
       if (action === "interact") {
         const self = state.players.get(state.selfId);
         if (!self || !tryOpenBuyHouseNearPlayer()) sendInteract();
@@ -278,15 +375,46 @@
       if (action === "attack" && !playerAttackBlockedBySafeZone()) {
         sendAttack();
       }
+    }
+
+    mobilePrimaryAction.addEventListener(
+      "pointerdown",
+      (event) => {
+        if (!state.joined || state.menuOpen) return;
+        if (event.pointerType === "mouse" && event.button !== 0) return;
+        primaryPointerDown = true;
+        if (mobilePrimaryAction.dataset.hold === "1") {
+          setMobileShipStationHold(true, event);
+        }
+      },
+      { passive: true }
+    );
+
+    mobilePrimaryAction.addEventListener(
+      "pointerup",
+      (event) => {
+        if (!primaryPointerDown) return;
+        primaryPointerDown = false;
+        if (event.pointerType === "mouse" && event.button !== 0) return;
+        if (mobilePrimaryAction.dataset.hold === "1") {
+          setMobileShipStationHold(false, event);
+          return;
+        }
+        event.stopPropagation();
+        runMobilePrimaryTap();
+      },
+      { passive: true }
+    );
+
+    mobilePrimaryAction.addEventListener("pointercancel", () => {
+      primaryPointerDown = false;
+      if (mobileShipHoldActive) setMobileShipStationHold(false, null);
     });
 
-    mobilePrimaryAction.addEventListener("pointerup", (event) => {
-      if (mobilePrimaryAction.dataset.action === "ship-station") {
-        setMobileShipStationHold(false, event);
-      }
-    });
-    mobilePrimaryAction.addEventListener("pointercancel", () => {
-      if (mobileShipHoldActive) setMobileShipStationHold(false, null);
+    mobilePrimaryAction.addEventListener("click", (event) => {
+      if (event.pointerType === "touch" || event.pointerType === "pen") return;
+      if (mobilePrimaryAction.dataset.hold === "1") return;
+      runMobilePrimaryTap();
     });
   }
 
@@ -296,6 +424,7 @@
     setChatMinimized(true);
     setProgressionMinimized(true);
     setMobileHotbarExpanded(false);
+    syncMobileControlsVisibility();
     renderMobileContextDock();
     syncMobileGameWindowLayer();
   }
@@ -356,7 +485,7 @@
   const _frame = frame;
   frame = function frameMobile(now) {
     _frame(now);
-    if (state.joined && now - state._mobileDockAt > 300) {
+    if (state.joined && now - state._mobileDockAt > 750) {
       state._mobileDockAt = now;
       renderMobileContextDock();
     }
@@ -384,9 +513,12 @@
   resetToConnection = function resetToConnectionMobile(message, opts) {
     state._mobileUiBooted = false;
     state.mobileHotbarExpanded = false;
+    mobileChipSignature = "";
+    mobilePrimarySignature = "";
     mobileContextDock.classList.add("hidden");
-    document.body.classList.remove("mobile-hotbar-expanded", "mobile-hotbar-collapsed", "mobile-sheet-open");
+    document.body.classList.remove("mobile-hotbar-expanded", "mobile-hotbar-collapsed", "mobile-sheet-open", "in-game");
     _resetToConnection(message, opts);
+    syncMobileControlsVisibility();
     syncMobileGameWindowLayer();
   };
 
