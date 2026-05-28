@@ -1,11 +1,114 @@
 # Balathor
 
-Balathor is starting as a small MMO prototype in the style of a sprite-based fantasy realm. This first slice has two applications:
+Balathor is a sprite-based fantasy MMO with two applications:
 
 - `server`: an authoritative Node.js simulation server with a custom WebSocket transport and Dockerfile.
 - `client`: a Windows-friendly HTML5 canvas client that can be run in a browser now and packaged with the Electron scaffold in `client/desktop`.
 
-The current gameplay loop is intentionally narrow: the client opens on an account login screen, connects, shows character customization for new accounts, then joins a social hub in a large fantasy world. Players move with WASD, movement is simulated by the server, characters are saved to their account, and chat is delivered locally to players who can see the speaker.
+Players create an account, customise their character, and drop into a living shared world. Movement is server-authoritative (WASD or mobile joystick), characters persist across sessions, and chat is visible only to nearby players.
+
+## Worlds
+
+The game map is divided into distinct realms, each with its own visual theme and activities.
+
+**Fantasy Realm** — the starting world. A walled hub town sits at the centre, surrounded by open wilderness split into biomes: Forest, Swamp, Savanna/Desert, Oasis, Frost Tundra, Ember Coast, and Badlands. Each biome has its own enemy roster and a roaming world boss.
+
+**Sci-Fi Orbital Station** — a space station reached through a stargate in the hub town. Home to ship combat in outer lanes, orbital courier runs, asteroid corridor flying, and three tech-dungeon terminals.
+
+**Pirate Archipelago** — a nautical zone with island-to-island sailing and pirate ship encounters.
+
+**Planet Surfaces** — discrete planet maps (e.g. Planet Rust) accessible from the orbital station, each with a mining rig and unique terrain.
+
+## Player Classes
+
+Choose one of three classes at character creation. Your class determines your weapon, attack range, and talent tree.
+
+| Class | Weapon | Attack style | Range | Cooldown |
+|-------|--------|-------------|-------|----------|
+| **Ranger** | Bow | Projectile (arrow) | 15 tiles | 560 ms |
+| **Mage** | Staff | Projectile (fireball) | 29 tiles | 780 ms |
+| **Knight** | Sword & Shield | Melee swing | 2 tiles | 420 ms |
+
+Knights can **block** incoming damage with their shield — block chance scales with equipment rarity (20 % common → 72 % mythic).
+
+### Talent Trees
+
+Each class has three talent trees with three tiers of abilities. Spend talent points (earned on level-up) to unlock them in tier order.
+
+**Ranger:** Precise Shot → Piercing Arrow → Rain of Arrows · Caltrops → Evasion → Camouflage · Multishot → Smoke Bomb → Volley
+
+**Mage:** Fireball → Fire Nova → Inferno · Ice Shard → Frost Barrier → Blizzard · Arcane Bolt → Mana Shield → Time Warp
+
+**Knight:** Shield Bash → Divine Shield → Fortify · Holy Strike → Consecration → Divine Wrath · Healing Aura → Lay on Hands → Battle Cry
+
+## Progression
+
+Characters gain XP from combat and mini-games. On level-up you receive a talent point; you can also spend stat points on **Speed**, **Strength**, **Armour**, or **Health** via the in-game stat panel. Gold dropped by enemies and earned from activities can be traded with other players or spent at market NPCs.
+
+## Enemies & World Bosses
+
+Enemy difficulty scales with biome. Each biome has a named world boss that roams the wilderness.
+
+| Biome | World Boss |
+|-------|-----------|
+| Forest | Old Rootback |
+| Swamp | The Bogfather |
+| Desert/Oasis | Glasshide |
+| Frost Tundra | Whitepine Warden |
+| Ember Coast | Red Crag |
+| Savanna | Plains Reaver |
+| Tundra | Frost Herald |
+| Badlands | Scar Warden |
+
+Starter camps (Bracken Post, Muddy Bank) serve as easy entry points with lower-level enemies and dedicated bounty boards.
+
+## Mini-Games
+
+Interactive sites placed throughout each world reward gold, XP, trophies, and leaderboard scores. Walk up to a site and interact to begin.
+
+**Fantasy hub:**
+- **Dart board** — precision throw challenge
+- **Card table** — Balathor Hold'em (poker variant)
+- **Memory tiles** — match pairs
+- **Training dummy** — strike for score
+- **Consecration ring** — hold the sanctum ground (Knight-focused)
+- **Town perimeter relay** — 4-checkpoint foot race
+- **River swim trial** — 4-buoy swimming course
+- **Wayfarer's board** — biome scavenger hunt (visit Oasis, Frost, and Ember beacons)
+- **Caravan escort** — protect a caravan through hostile territory
+- **Courier crate / Fletcher delivery** — timed delivery runs
+- **Town vault** — deposit heavy coin for safekeeping
+- **Appraiser** — estimate the value of your inventory
+- **Hollow stone** — seasonal night offering
+- **Trophy pedestal** — display earned prizes
+- **Camp bounty boards** — clear starter camps for rewards
+
+**Sci-Fi station:**
+- **Defense turret pad** — hold the line against incoming waves
+- **Asteroid lane** — fly a debris corridor
+- **Tech dungeon terminals I–III** — instanced encounters
+- **Orbital courier drop** — cross-station timed delivery
+
+**Planet Rust:**
+- **Mining rig** — extract ore with a mining beam
+
+## Quests
+
+NPC quest givers are stationed around the hub town and in biome wilderness areas. Quests mix location visits, enemy kills, and NPC conversations. Early quests walk new players through the town; later quests send them into biomes and through the stargate.
+
+Notable quest givers: Guide Rin (onboarding tour), Sage Wynn (home tree), Gatewarden Mara (town gate), Elder Elm, Borin Reed (market), Lira Brook, Tamsin Anvil, and biome NPCs like Iona Marsh (swamp) and Vaela Snowmend (frost).
+
+## NPC Simulation
+
+The hub town is populated by NPCs with daily schedules tied to a 10-minutes-per-day game clock. Villagers leave home at dawn, commute to town, stroll waypoints during the day, gather at the pub in the evening (18:00–22:00 game time), and walk home at night. Guards and wall archers hold their posts; traders stock their stalls; couriers and fletchers run supply routes continuously.
+
+## Social Features
+
+- **Local chat** — visible only to players in range of the speaker
+- **Party system** — group up with nearby players
+- **Player trading** — exchange gold and items directly with another player
+- **Emotes** — use `/wave` and other emotes at world beacons to complete scavenger milestones
+- **Discord notifications** — account creation and login events are posted to a configurable Discord webhook
 
 ## Run Locally
 
