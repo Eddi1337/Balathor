@@ -48,8 +48,12 @@
     if (!el || typeof handler !== "function") {
       return;
     }
-    let pointerDown = false;
-    let fired = false;
+    let suppressClickUntil = 0;
+
+    function runTap(event) {
+      event.stopPropagation();
+      handler(event);
+    }
 
     el.addEventListener(
       "pointerdown",
@@ -57,55 +61,49 @@
         if (event.pointerType === "mouse" && event.button !== 0) {
           return;
         }
-        pointerDown = true;
-        fired = false;
         if (hold) {
+          event.preventDefault();
+          event.stopPropagation();
           handler(true, event);
+          return;
+        }
+        if (event.pointerType === "touch" || event.pointerType === "pen") {
+          event.preventDefault();
+          event.stopPropagation();
+          suppressClickUntil = performance.now() + 500;
+          runTap(event);
         }
       },
-      { passive: true }
+      { passive: false }
     );
 
     el.addEventListener(
       "pointerup",
       (event) => {
-        if (!pointerDown || fired) {
-          pointerDown = false;
-          return;
-        }
         if (event.pointerType === "mouse" && event.button !== 0) {
-          pointerDown = false;
           return;
         }
-        pointerDown = false;
         if (hold) {
           handler(false, event);
-          return;
         }
-        fired = true;
-        event.stopPropagation();
-        handler(event);
       },
       { passive: true }
     );
 
     el.addEventListener("pointercancel", () => {
-      if (hold && pointerDown) {
+      if (hold) {
         handler(false, null);
       }
-      pointerDown = false;
-      fired = false;
     });
 
     el.addEventListener("click", (event) => {
       if (event.pointerType === "touch" || event.pointerType === "pen") {
         return;
       }
-      if (fired) {
-        fired = false;
+      if (performance.now() < suppressClickUntil) {
         return;
       }
-      handler(event);
+      runTap(event);
     });
   }
 
@@ -318,25 +316,34 @@
   }
 
   function wireMobileContextDock() {
-    mobileContextActions.addEventListener("pointerup", (event) => {
+    function activateContextChip(event) {
       const chip = event.target.closest("[data-context-action]");
       if (!chip || !mobileContextActions.contains(chip)) {
         return;
       }
+      event.preventDefault();
       event.stopPropagation();
       handleMobileContextAction(chip.dataset.contextAction);
-    });
+    }
+
+    mobileContextActions.addEventListener(
+      "pointerdown",
+      (event) => {
+        if (event.pointerType === "mouse" && event.button !== 0) {
+          return;
+        }
+        if (event.pointerType === "touch" || event.pointerType === "pen") {
+          activateContextChip(event);
+        }
+      },
+      { passive: false }
+    );
 
     mobileContextActions.addEventListener("click", (event) => {
       if (event.pointerType === "touch" || event.pointerType === "pen") {
         return;
       }
-      const chip = event.target.closest("[data-context-action]");
-      if (!chip || !mobileContextActions.contains(chip)) {
-        return;
-      }
-      event.stopPropagation();
-      handleMobileContextAction(chip.dataset.contextAction);
+      activateContextChip(event);
     });
 
     wireMobileButton(mobileHotbarExpand, () => {
@@ -384,10 +391,19 @@
         if (event.pointerType === "mouse" && event.button !== 0) return;
         primaryPointerDown = true;
         if (mobilePrimaryAction.dataset.hold === "1") {
+          event.preventDefault();
+          event.stopPropagation();
           setMobileShipStationHold(true, event);
+          return;
+        }
+        if (event.pointerType === "touch" || event.pointerType === "pen") {
+          event.preventDefault();
+          event.stopPropagation();
+          runMobilePrimaryTap();
+          primaryPointerDown = false;
         }
       },
-      { passive: true }
+      { passive: false }
     );
 
     mobilePrimaryAction.addEventListener(
@@ -502,6 +518,20 @@
     _makeDraggable(partyPanel);
     restorePartyPanelPosition();
   }
+
+  abilityBarToggle.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (!(event.pointerType === "touch" || event.pointerType === "pen")) {
+        return;
+      }
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setMobileHotbarExpanded(!state.mobileHotbarExpanded);
+      renderMobileContextDock();
+    },
+    true
+  );
 
   abilityBarToggle.addEventListener("click", (event) => {
     event.stopImmediatePropagation();

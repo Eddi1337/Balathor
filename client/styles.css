@@ -1541,6 +1541,7 @@ button:focus-visible {
 }
 
 .mobile-joystick-shell {
+  position: relative;
   width: 128px;
   height: 128px;
   border-radius: 50%;
@@ -1549,8 +1550,25 @@ button:focus-visible {
   box-shadow:
     0 0 0 1px rgba(255, 209, 102, 0.25) inset,
     0 8px 28px rgba(0, 0, 0, 0.55);
-  overflow: hidden;
+  overflow: visible;
   touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.mobile-joystick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.82);
+  border: 2px solid rgba(255, 209, 102, 0.95);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 1;
 }
 
 body.mobile.in-game .mobile-controls:not(.hidden) {
@@ -1565,16 +1583,9 @@ body.mobile.in-game .mobile-controls:not(.hidden) {
   z-index: 1200;
 }
 
-body.mobile.in-game .mobile-joystick {
-  position: relative;
-  left: auto;
-  bottom: auto;
-  display: block;
-  width: 128px;
-  height: 128px;
+body.mobile.in-game .mobile-joystick-shell {
   pointer-events: auto;
   touch-action: none;
-  -webkit-tap-highlight-color: transparent;
 }
 
 body.mobile.in-game .mobile-context-dock {
@@ -1954,12 +1965,7 @@ body.mobile.in-game .chat.minimized {
     height: 128px;
   }
 
-  .mobile-joystick {
-    position: relative;
-    left: auto;
-    bottom: auto;
-    width: 128px;
-    height: 128px;
+  .mobile-joystick-shell {
     pointer-events: auto;
     touch-action: none;
   }
@@ -3549,8 +3555,8 @@ body.mobile.mobile-landscape .mobile-context-dock {
   max-width: calc(100vw - 160px - env(safe-area-inset-right));
 }
 
-body.mobile.mobile-landscape .mobile-joystick,
-body.mobile.mobile-portrait .mobile-joystick {
+body.mobile.mobile-landscape .mobile-joystick-shell,
+body.mobile.mobile-portrait .mobile-joystick-shell {
   width: 128px;
   height: 128px;
 }
@@ -3566,9 +3572,6 @@ body.mobile.mobile-portrait .mobile-joystick {
     height: 128px;
   }
 
-  body.mobile .mobile-joystick {
-    left: auto;
-  }
 
   body.mobile .mobile-actions {
     display: none;
