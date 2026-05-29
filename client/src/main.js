@@ -736,6 +736,11 @@ const state = {
   weaponStyle: "classic",
   torsoColor: "#5cc8ff",
   weaponColor: "#ffd166",
+  skinColor: "#f0c9a2",
+  hairColor: "#202437",
+  sizeScale: 1,
+  walkStyle: "steady",
+  armorColorInGame: "#5cc8ff",
   players: new Map(),
   npcs: new Map(),
   mobs: new Map(),
@@ -2198,7 +2203,8 @@ function updateSmoothPlayers(dt) {
     player.renderMoving = isMoving || Math.hypot(player.targetX - player.renderX, player.targetY - player.renderY) > 0.01;
     if (player.renderMoving || player.renderSwimming) {
       const rate = player.renderSwimming ? (player.renderMoving ? 6.4 : 2.9) : 9;
-      player.walkPhase = (player.walkPhase || 0) + dt * rate;
+      const walkRate = walkStyleRate(player.walkStyle);
+      player.walkPhase = (player.walkPhase || 0) + dt * rate * walkRate;
       if (player.renderMoving && player.id === state.selfId) {
         /** Do not clear bench pose from render catch-up while server still reports idle. */
         if (!state.benchSeatIndefinite || isMoving) {
@@ -2924,6 +2930,12 @@ function syncTradeUi(msg) {
   if (tradeYourLock) tradeYourLock.checked = Boolean(msg.selfReady);
 }
 
+function walkStyleRate(style) {
+  if (style === "swift") return 1.35;
+  if (style === "heavy") return 0.75;
+  return 1;
+}
+
 function wireUi() {
   initTradeSlotGrids();
   document.querySelectorAll("[data-class]").forEach((button) => {
@@ -2953,6 +2965,24 @@ function wireUi() {
     });
   });
 
+  document.querySelectorAll("[data-size-scale]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.sizeScale = Number(button.dataset.sizeScale) || 1;
+      document.querySelectorAll("[data-size-scale]").forEach((item) => {
+        item.classList.toggle("selected", item === button);
+      });
+    });
+  });
+
+  document.querySelectorAll("[data-walk-style]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.walkStyle = button.dataset.walkStyle || "steady";
+      document.querySelectorAll("[data-walk-style]").forEach((item) => {
+        item.classList.toggle("selected", item === button);
+      });
+    });
+  });
+
   document.querySelectorAll(".swatches").forEach((group) => {
     group.addEventListener("click", (event) => {
       const button = event.target.closest(".swatch");
@@ -2961,6 +2991,9 @@ function wireUi() {
       }
       const target = group.dataset.target;
       state[target] = button.dataset.color;
+      if (target === "armorColorInGame" && state.joined) {
+        send({ type: "customizeAppearance", armorColor: state[target] });
+      }
       group.querySelectorAll(".swatch").forEach((item) => {
         item.classList.toggle("selected", item === button);
       });
@@ -2987,7 +3020,11 @@ function wireUi() {
       torsoColor: state.torsoColor,
       weaponColor: state.weaponColor,
       primary: state.torsoColor,
-      accent: state.weaponColor
+      accent: state.weaponColor,
+      skinColor: state.skinColor,
+      hairColor: state.hairColor,
+      sizeScale: state.sizeScale,
+      walkStyle: state.walkStyle
     });
   });
 
@@ -11585,7 +11622,8 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   // Players appear smaller when walking around inside a ship deck so the interior feels spacious
   const onShipDeck = Boolean(entity?.ship?.boarded && entity.ship?.deckMode) || Boolean(poseOpts?.insideShipDeck);
   const deckScale = onShipDeck ? 0.55 : 1;
-  const s = (isMod ? 3 * 1.2 : 3) * deckScale;
+  const sizeScale = Number(entity.sizeScale) || 1;
+  const s = (isMod ? 3 * 1.2 : 3) * deckScale * Math.min(1.3, Math.max(0.75, sizeScale));
   const phase  = entity.walkPhase || 0;
   const moving = Boolean(entity.renderMoving);
   const facing = Number.isFinite(entity.facing) ? entity.facing : Math.PI / 2;
@@ -11636,7 +11674,7 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const torsoColor  = isMod ? "#697987" : (entity.torsoColor || entity.primary || "#5cc8ff");
   const weaponColor = entity.weaponColor || entity.accent || "#ffd166";
   const torsoStyle  = isMod ? "robe" : sciFiNpc ? "sciFi" : (entity.torsoStyle || "tunic");
-  const skinColor   = sciFiNpc ? "#bfd8ea" : "#f0c9a2";
+  const skinColor   = sciFiNpc ? "#bfd8ea" : (entity.skinColor || "#f0c9a2");
   const skinShadow  = sciFiNpc ? "#6f91a7" : "#c88a60";
   const pantColor   = isMod ? "#454e5c" : sciFiNpc ? blend(torsoColor, "#000000", 0.22) : "#2a3044";
   const bootColor   = isMod ? "#2f3641" : sciFiNpc ? blend(torsoColor, "#000000", 0.38) : "#1a1e2c";
@@ -11882,7 +11920,7 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
     ctx.fillStyle = skinShadow;
     ctx.fillRect(hx, hy + 3 * s, 5 * s, s);
     // Hair / hat stripe
-    ctx.fillStyle = weaponColor;
+    ctx.fillStyle = entity.hairColor || weaponColor;
     ctx.fillRect(hx, hy, 5 * s, s + 1);
     if (entity.classId === "mage") {
       ctx.fillRect(hx + s,           hy - 2 * s, 3 * s, 2 * s);

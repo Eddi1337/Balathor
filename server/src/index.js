@@ -597,6 +597,7 @@ const SERVER_TALENT_TREES = {
 };
 const TORSO_STYLE_IDS = ["tunic", "armor", "robe"];
 const WEAPON_STYLE_IDS = ["classic", "heavy", "ornate"];
+const WALK_STYLE_IDS = ["steady", "swift", "heavy"];
 const CLASS_LOADOUTS = Object.freeze({
   ranger: {
     weapon: "bow",
@@ -1981,6 +1982,10 @@ function serializePlayer(player) {
     weaponStyle: player.baseWeaponStyle || player.weaponStyle,
     torsoColor: player.torsoColor,
     weaponColor: player.weaponColor,
+    skinColor: player.skinColor,
+    hairColor: player.hairColor,
+    sizeScale: player.sizeScale,
+    walkStyle: player.walkStyle,
     hp: player.hp,
     maxHp: player.maxHp,
     xp: player.xp,
@@ -4819,6 +4824,19 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "customizeAppearance") {
+    if (client.player && client.player.equipment?.body?.visual) {
+      const armorColor = sanitizeColor(message.armorColor, client.player.torsoColor || "#5cc8ff");
+      client.player.torsoColor = armorColor;
+      client.player.primary = armorColor;
+      client.player.equipment.body.visual.torsoColor = armorColor;
+      if (client.player.equipment.body.color) client.player.equipment.body.color = armorColor;
+      saveClientCharacter(client);
+      broadcastSnapshot();
+    }
+    return;
+  }
+
   if (message.type === "spendStat") {
     handleSpendStat(client, message);
     return;
@@ -5254,6 +5272,10 @@ function joinWorld(client, message, savedCharacter = null) {
   const baseTorsoStyle = sanitizeChoice(message.torsoStyle, TORSO_STYLE_IDS, "tunic");
   const baseWeaponStyle = sanitizeChoice(message.weaponStyle, WEAPON_STYLE_IDS, "classic");
   const classId = sanitizeChoice(message.classId, CLASS_IDS, "ranger");
+  const skinColor = sanitizeColor(message.skinColor, "#f0c9a2");
+  const hairColor = sanitizeColor(message.hairColor, "#202437");
+  const sizeScale = clampNumber(message.sizeScale, 0.75, 1.3, 1);
+  const walkStyle = sanitizeChoice(message.walkStyle, WALK_STYLE_IDS, "steady");
   const isMod = Boolean(client.account?.isMod);
   const forcedName = isMod && client.account?.modCharacterName ? client.account.modCharacterName : null;
   const shipFleet = sanitizeShipFleet(savedCharacter, client.account?.key || client.id);
@@ -5269,6 +5291,10 @@ function joinWorld(client, message, savedCharacter = null) {
     weaponColor,
     primary: torsoColor,
     accent: weaponColor,
+    skinColor,
+    hairColor,
+    sizeScale,
+    walkStyle,
     hp: PLAYER_MAX_HP,
     maxHp: PLAYER_MAX_HP,
     xp: clampInteger(savedCharacter?.xp ?? 0, 0, 100000000),
@@ -8752,6 +8778,10 @@ function broadcastSnapshot() {
       weaponColor: appearance.weaponColor,
       primary: appearance.torsoColor,
       accent: appearance.weaponColor,
+      skinColor: p.skinColor || "#f0c9a2",
+      hairColor: p.hairColor || "#202437",
+      sizeScale: clampNumber(p.sizeScale, 0.75, 1.3, 1),
+      walkStyle: sanitizeChoice(p.walkStyle, WALK_STYLE_IDS, "steady"),
       hp: p.hp,
       maxHp: p.maxHp,
       xp: p.xp,
