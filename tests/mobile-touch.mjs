@@ -102,6 +102,9 @@ test("client HTML exposes DOM joystick and mobileTouch bundle", () => {
   assert.match(html, /id="joystickShell"/);
   assert.match(html, /id="joystickKnob"/);
   assert.match(html, /mobile-joystick-knob/);
+  assert.match(html, /mobile-joystick-track/);
+  assert.match(html, /mobile-joystick-arrow-up/);
+  assert.match(html, /mobile-primary-label/);
   assert.match(html, /src="\.\/src\/mobileTouch\.js"/);
 });
 
@@ -110,6 +113,8 @@ test("main.js wires shell joystick and does not rely on lostpointercapture reset
   assert.match(main, /const joystickShell = document\.querySelector\("#joystickShell"\)/);
   assert.match(main, /function wireMobileControls\(\)/);
   assert.match(main, /paintJoystickKnob/);
+  assert.match(main, /joystickShell\.dataset\.direction/);
+  assert.match(main, /joystickShell\.classList\.add\("active"\)/);
   assert.match(main, /joystickShell\.addEventListener\(\s*"touchstart"/);
   assert.doesNotMatch(main, /lostpointercapture/);
   assert.match(main, /BalathorMobileTouch\?\.wireInstantTap/);

@@ -219,7 +219,9 @@
     const primarySignature = `${primary.label}:${primary.action}:${primary.hold ? "1" : "0"}`;
     if (primarySignature !== mobilePrimarySignature) {
       mobilePrimarySignature = primarySignature;
-      mobilePrimaryAction.textContent = primary.label;
+      const primaryLabel = mobilePrimaryAction.querySelector(".mobile-primary-label");
+      if (primaryLabel) primaryLabel.textContent = primary.label;
+      else mobilePrimaryAction.textContent = primary.label;
       mobilePrimaryAction.dataset.action = primary.action;
       mobilePrimaryAction.dataset.hold = primary.hold ? "1" : "0";
     }
