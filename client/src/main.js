@@ -5599,9 +5599,6 @@ function wireMobileControls() {
   const CENTER = 70;
   let knobX = 0;
   let knobY = 0;
-  let activePointerId = null;
-  let activeTouchIdentifier = null;
-  let activeInputMode = null;
 
   function drawJoystick() {
     jctx.clearRect(0, 0, 140, 140);
@@ -5620,7 +5617,7 @@ function wireMobileControls() {
     jctx.stroke();
   }
 
-  function applyJoystickPoint(clientX, clientY) {
+  function applyJoystickPoint({ clientX, clientY }) {
     const rect = joystickCanvas.getBoundingClientRect();
     const px = (clientX - rect.left) * (joystickCanvas.width / rect.width) - CENTER;
     const py = (clientY - rect.top) * (joystickCanvas.height / rect.height) - CENTER;
@@ -5642,64 +5639,15 @@ function wireMobileControls() {
   function resetJoystick() {
     knobX = 0;
     knobY = 0;
-    activePointerId = null;
-    activeTouchIdentifier = null;
-    activeInputMode = null;
     clearMovementInput();
     drawJoystick();
   }
 
-  joystickCanvas.addEventListener("pointerdown", (event) => {
-    if (!state.joined || state.menuOpen || event.pointerType === "touch") return;
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    event.preventDefault();
-    activeInputMode = "pointer";
-    activePointerId = event.pointerId;
-    applyJoystickPoint(event.clientX, event.clientY);
-  }, { passive: false });
-
-  window.addEventListener("pointermove", (event) => {
-    if (activeInputMode !== "pointer" || activePointerId !== event.pointerId) return;
-    event.preventDefault();
-    applyJoystickPoint(event.clientX, event.clientY);
-  }, { passive: false });
-
-  window.addEventListener("pointerup", (event) => {
-    if (activeInputMode !== "pointer" || activePointerId !== event.pointerId) return;
-    event.preventDefault();
-    resetJoystick();
-  }, { passive: false });
-  window.addEventListener("pointercancel", (event) => {
-    if (activeInputMode === "pointer" && activePointerId === event.pointerId) resetJoystick();
-  }, { passive: false });
-
-  joystickCanvas.addEventListener("touchstart", (event) => {
-    if (!state.joined || state.menuOpen || activeInputMode) return;
-    const firstTouch = event.changedTouches[0];
-    if (!firstTouch) return;
-    event.preventDefault();
-    activeInputMode = "touch";
-    activeTouchIdentifier = firstTouch.identifier;
-    applyJoystickPoint(firstTouch.clientX, firstTouch.clientY);
-  }, { passive: false });
-
-  window.addEventListener("touchmove", (event) => {
-    if (activeInputMode !== "touch") return;
-    const activeTouch = touch?.touchWithIdentifier(event.touches, activeTouchIdentifier);
-    if (!activeTouch) return;
-    event.preventDefault();
-    applyJoystickPoint(activeTouch.clientX, activeTouch.clientY);
-  }, { passive: false });
-
-  window.addEventListener("touchend", (event) => {
-    if (activeInputMode !== "touch") return;
-    if (!touch?.touchWithIdentifier(event.changedTouches, activeTouchIdentifier)) return;
-    event.preventDefault();
-    resetJoystick();
-  }, { passive: false });
-  window.addEventListener("touchcancel", () => {
-    if (activeInputMode === "touch") resetJoystick();
-  }, { passive: false });
+  touch?.wireJoystickDragSurface(joystickCanvas, window, {
+    canStart: () => state.joined && !state.menuOpen,
+    onDrag: applyJoystickPoint,
+    onEnd: resetJoystick
+  });
 
   drawJoystick();
   globalThis.__balathorRedrawJoystick = drawJoystick;
