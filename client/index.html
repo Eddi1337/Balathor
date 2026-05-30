@@ -383,15 +383,26 @@
 
     <div id="mobileWindowBackdrop" class="mobile-window-backdrop hidden" aria-hidden="true"></div>
 
-    <nav id="mobileContextDock" class="mobile-context-dock hidden" aria-label="Quick actions">
-      <button type="button" id="mobilePrimaryAction" class="mobile-context-primary">Attack</button>
-      <div id="mobileContextActions" class="mobile-context-actions"></div>
-      <button type="button" id="mobileHotbarExpand" class="mobile-context-chip mobile-hotbar-toggle" aria-expanded="false" title="Show ability bar">Spells</button>
+    <nav id="mobileContextDock" class="mobile-context-dock hidden" aria-label="Mobile action deck">
+      <div class="mobile-action-utility" aria-label="Quick actions">
+        <div id="mobileContextActions" class="mobile-context-actions"></div>
+        <button type="button" id="mobileHotbarExpand" class="mobile-context-chip mobile-hotbar-toggle" aria-expanded="false" title="Show ability bar">Spells</button>
+      </div>
+      <button type="button" id="mobilePrimaryAction" class="mobile-context-primary">
+        <span class="mobile-primary-kicker" aria-hidden="true">Action</span>
+        <span class="mobile-primary-label">Attack</span>
+      </button>
     </nav>
 
-    <section id="mobileControls" class="mobile-controls hidden" aria-label="Mobile controls">
-      <div id="joystickShell" class="mobile-joystick-shell" aria-label="Movement joystick">
-        <div id="joystickKnob" class="mobile-joystick-knob" aria-hidden="true"></div>
+    <section id="mobileControls" class="mobile-controls hidden" aria-label="Movement controls">
+      <div class="mobile-movement-caption" aria-hidden="true">Move</div>
+      <div id="joystickShell" class="mobile-joystick-shell" aria-label="Movement joystick" role="application">
+        <span class="mobile-joystick-arrow mobile-joystick-arrow-up" aria-hidden="true"></span>
+        <span class="mobile-joystick-arrow mobile-joystick-arrow-right" aria-hidden="true"></span>
+        <span class="mobile-joystick-arrow mobile-joystick-arrow-down" aria-hidden="true"></span>
+        <span class="mobile-joystick-arrow mobile-joystick-arrow-left" aria-hidden="true"></span>
+        <div class="mobile-joystick-track" aria-hidden="true"></div>
+        <div id="joystickKnob" class="mobile-joystick-knob" aria-hidden="true"><span></span></div>
       </div>
     </section>
 

@@ -3590,3 +3590,330 @@ body.mobile.mobile-portrait .mobile-joystick-shell {
     transform: translateX(-50%);
   }
 }
+
+/* —— Rebuilt mobile controller and touch sheets —— */
+body.mobile {
+  --mobile-control-edge: rgba(255, 218, 132, 0.52);
+  --mobile-control-glow: rgba(255, 184, 77, 0.28);
+  --mobile-control-ink: rgba(7, 10, 16, 0.88);
+  --mobile-sheet-bg: linear-gradient(180deg, rgba(31, 26, 19, 0.985), rgba(12, 14, 19, 0.99));
+}
+
+body.mobile.in-game .mobile-controls:not(.hidden) {
+  left: max(14px, env(safe-area-inset-left));
+  bottom: max(16px, calc(env(safe-area-inset-bottom) + 10px));
+  width: 174px;
+  height: 190px;
+  display: grid;
+  align-content: end;
+  justify-items: center;
+  pointer-events: none;
+}
+
+.mobile-movement-caption {
+  margin: 0 0 7px;
+  padding: 4px 11px;
+  border: 1px solid rgba(255, 218, 132, 0.2);
+  border-radius: 999px;
+  background: rgba(6, 9, 14, 0.72);
+  color: rgba(255, 232, 174, 0.84);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.24em;
+  line-height: 1;
+  text-transform: uppercase;
+  text-shadow: 0 1px 2px #000;
+}
+
+body.mobile .mobile-joystick-shell,
+body.mobile.mobile-landscape .mobile-joystick-shell,
+body.mobile.mobile-portrait .mobile-joystick-shell {
+  position: relative;
+  width: 156px;
+  height: 156px;
+  border: 1px solid var(--mobile-control-edge);
+  border-radius: 50%;
+  overflow: visible;
+  background:
+    radial-gradient(circle, rgba(255, 209, 102, 0.12) 0 17%, transparent 18%),
+    radial-gradient(circle, rgba(35, 42, 53, 0.95) 0 54%, rgba(8, 12, 18, 0.95) 55% 100%);
+  box-shadow:
+    0 0 0 7px rgba(5, 8, 13, 0.6),
+    0 0 0 9px rgba(255, 213, 117, 0.14),
+    0 14px 32px rgba(0, 0, 0, 0.58),
+    0 0 25px rgba(255, 184, 77, 0.09) inset;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+body.mobile .mobile-joystick-shell::before,
+body.mobile .mobile-joystick-shell::after,
+body.mobile .mobile-joystick-track::before,
+body.mobile .mobile-joystick-track::after {
+  content: "";
+  position: absolute;
+  background: rgba(255, 226, 155, 0.12);
+  pointer-events: none;
+}
+
+body.mobile .mobile-joystick-shell::before,
+body.mobile .mobile-joystick-track::before {
+  left: 19px;
+  right: 19px;
+  top: 50%;
+  height: 1px;
+}
+
+body.mobile .mobile-joystick-shell::after,
+body.mobile .mobile-joystick-track::after {
+  top: 19px;
+  bottom: 19px;
+  left: 50%;
+  width: 1px;
+}
+
+body.mobile .mobile-joystick-track {
+  position: absolute;
+  inset: 18px;
+  border: 1px solid rgba(255, 228, 160, 0.17);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+body.mobile .mobile-joystick-track::before { left: 14px; right: 14px; }
+body.mobile .mobile-joystick-track::after { top: 14px; bottom: 14px; }
+
+body.mobile .mobile-joystick-knob {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(255, 226, 146, 0.94);
+  background:
+    radial-gradient(circle at 38% 30%, rgba(255, 244, 197, 0.98), rgba(218, 147, 46, 0.95) 52%, rgba(89, 49, 12, 0.98));
+  box-shadow:
+    0 0 0 5px rgba(255, 191, 78, 0.14),
+    0 7px 18px rgba(0, 0, 0, 0.5),
+    0 0 12px rgba(255, 214, 103, 0.4);
+  transition: box-shadow 120ms ease;
+}
+
+body.mobile .mobile-joystick-knob span {
+  width: 17px;
+  height: 17px;
+  border: 2px solid rgba(83, 45, 11, 0.5);
+  border-radius: 50%;
+  box-shadow: 0 1px 0 rgba(255, 245, 200, 0.48) inset;
+}
+
+body.mobile .mobile-joystick-shell.active .mobile-joystick-knob {
+  box-shadow:
+    0 0 0 7px rgba(255, 191, 78, 0.2),
+    0 9px 20px rgba(0, 0, 0, 0.56),
+    0 0 18px rgba(255, 214, 103, 0.72);
+}
+
+.mobile-joystick-arrow {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border: 5px solid transparent;
+  opacity: 0.35;
+  pointer-events: none;
+  transition: opacity 100ms ease, filter 100ms ease;
+}
+
+.mobile-joystick-arrow-up { top: 8px; left: calc(50% - 5px); border-bottom-color: #ffe29c; }
+.mobile-joystick-arrow-right { right: 8px; top: calc(50% - 5px); border-left-color: #ffe29c; }
+.mobile-joystick-arrow-down { bottom: 8px; left: calc(50% - 5px); border-top-color: #ffe29c; }
+.mobile-joystick-arrow-left { left: 8px; top: calc(50% - 5px); border-right-color: #ffe29c; }
+.mobile-joystick-shell[data-direction~="up"] .mobile-joystick-arrow-up,
+.mobile-joystick-shell[data-direction~="right"] .mobile-joystick-arrow-right,
+.mobile-joystick-shell[data-direction~="down"] .mobile-joystick-arrow-down,
+.mobile-joystick-shell[data-direction~="left"] .mobile-joystick-arrow-left {
+  opacity: 1;
+  filter: drop-shadow(0 0 6px #ffca62);
+}
+
+body.mobile.in-game .mobile-context-dock {
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(18px, calc(env(safe-area-inset-bottom) + 12px));
+  left: auto;
+  width: min(228px, calc(100vw - 204px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+  max-width: none;
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+
+.mobile-action-utility {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 7px;
+}
+
+body.mobile .mobile-context-actions {
+  max-width: 228px;
+  gap: 7px;
+}
+
+body.mobile .mobile-context-chip {
+  min-width: 54px;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 224, 159, 0.26);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(33, 40, 51, 0.96), rgba(9, 13, 20, 0.96));
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.36), 0 1px 0 rgba(255,255,255,0.08) inset;
+  color: #f7e8c1;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+body.mobile .mobile-context-chip.selected,
+body.mobile .mobile-hotbar-toggle[aria-expanded="true"] {
+  border-color: #ffd166;
+  background: linear-gradient(180deg, rgba(93, 60, 17, 0.98), rgba(37, 22, 6, 0.98));
+  color: #ffe6a0;
+}
+
+body.mobile .mobile-context-primary {
+  position: relative;
+  width: 104px;
+  height: 104px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 2px;
+  padding: 9px;
+  border: 2px solid rgba(255, 218, 128, 0.92);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 38% 28%, rgba(177, 87, 41, 0.98), rgba(100, 34, 18, 0.98) 56%, rgba(42, 14, 10, 0.98));
+  box-shadow:
+    0 0 0 7px rgba(8, 10, 15, 0.65),
+    0 0 0 9px rgba(255, 209, 102, 0.18),
+    0 10px 24px rgba(0, 0, 0, 0.55),
+    0 0 18px rgba(255, 160, 75, 0.3) inset;
+  color: #fff0be;
+  text-align: center;
+}
+
+body.mobile .mobile-context-primary:active {
+  transform: scale(0.94);
+  filter: brightness(1.16);
+}
+
+.mobile-primary-kicker {
+  color: rgba(255, 227, 164, 0.72);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.17em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.mobile-primary-label {
+  max-width: 86px;
+  overflow: hidden;
+  color: #fff3cc;
+  font-size: 15px;
+  font-weight: 950;
+  letter-spacing: 0.025em;
+  line-height: 1.08;
+  text-overflow: ellipsis;
+  text-shadow: 0 2px 3px rgba(0, 0, 0, 0.7);
+}
+
+body.mobile .game-window:not(.hidden),
+body.mobile .teleport-menu-window:not(.hidden),
+body.mobile .quest-offer-window:not(.hidden),
+body.mobile .friends-window:not(.hidden) {
+  max-height: min(90dvh, calc(100dvh - env(safe-area-inset-top) - 10px));
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  border: 1px solid rgba(255, 211, 112, 0.46);
+  border-bottom: 0;
+  border-radius: 22px 22px 0 0;
+  background: var(--mobile-sheet-bg);
+  box-shadow: 0 -18px 54px rgba(0, 0, 0, 0.68), 0 1px 0 rgba(255, 240, 194, 0.1) inset;
+}
+
+body.mobile .game-window .window-head {
+  min-height: 64px;
+  padding: 19px 14px 10px;
+  border-bottom: 1px solid rgba(255, 211, 112, 0.22);
+  border-radius: 21px 21px 0 0;
+  background: linear-gradient(180deg, rgba(71, 49, 22, 0.92), rgba(30, 24, 17, 0.9));
+}
+
+body.mobile .game-window .window-head::before {
+  content: "";
+  position: absolute;
+  top: 7px;
+  left: calc(50% - 24px);
+  width: 48px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 231, 174, 0.46);
+}
+
+body.mobile .game-window .window-head strong {
+  font-size: 16px;
+  letter-spacing: 0.045em;
+}
+
+body.mobile .game-window .window-close,
+body.mobile .window-actions button,
+body.mobile .interact-button,
+body.mobile .item-actions button,
+body.mobile .shop-list button {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+body.mobile .game-window > *:not(.window-head) {
+  padding-right: 14px;
+  padding-left: 14px;
+}
+
+body.mobile .equipment-slots,
+body.mobile .inventory-slots {
+  gap: 10px;
+}
+
+body.mobile .equipment-slot,
+body.mobile .inventory-slot {
+  min-height: 76px;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(20, 28, 39, 0.82);
+}
+
+body.mobile .chat-form input,
+body.mobile .chat-send {
+  min-height: 48px;
+}
+
+@media (max-width: 430px) {
+  body.mobile.in-game .mobile-context-dock {
+    width: min(190px, calc(100vw - 196px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+  }
+
+  body.mobile .mobile-context-actions { max-width: 190px; }
+  body.mobile .mobile-context-chip { min-width: 50px; min-height: 46px; padding: 0 9px; }
+  body.mobile .mobile-context-primary { width: 96px; height: 96px; }
+}
+
+@media (max-height: 520px) and (orientation: landscape) {
+  body.mobile.in-game .mobile-controls:not(.hidden) { bottom: max(8px, env(safe-area-inset-bottom)); height: 160px; }
+  .mobile-movement-caption { display: none; }
+  body.mobile .mobile-joystick-shell,
+  body.mobile.mobile-landscape .mobile-joystick-shell { width: 142px; height: 142px; }
+  body.mobile.in-game .mobile-context-dock { bottom: max(10px, env(safe-area-inset-bottom)); width: min(330px, calc(100vw - 188px)); }
+  body.mobile .mobile-context-actions { max-width: 330px; }
+  body.mobile .mobile-context-primary { width: 90px; height: 90px; }
+}

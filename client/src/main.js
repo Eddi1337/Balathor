@@ -5611,7 +5611,7 @@ function wireMobileControls() {
   function joystickLayout() {
     const size = Math.max(
       96,
-      Math.min(joystickShell.clientWidth || 128, joystickShell.clientHeight || 128)
+      Math.min(joystickShell.clientWidth || 156, joystickShell.clientHeight || 156)
     );
     const cx = size / 2;
     const cy = size / 2;
@@ -5647,6 +5647,12 @@ function wireMobileControls() {
     state.input.right = dirs.right;
     state.input.up = dirs.up;
     state.input.down = dirs.down;
+    joystickShell.dataset.direction = [
+      dirs.up ? "up" : "",
+      dirs.right ? "right" : "",
+      dirs.down ? "down" : "",
+      dirs.left ? "left" : ""
+    ].filter(Boolean).join(" ") || "idle";
     if (dirs.left || dirs.right || dirs.up || dirs.down) {
       cancelBenchSitClient();
     }
@@ -5666,6 +5672,8 @@ function wireMobileControls() {
     activePointerId = null;
     activeTouchIdentifier = null;
     activeInputMode = null;
+    joystickShell.classList.remove("active");
+    joystickShell.dataset.direction = "idle";
     clearMovementInput();
     paintJoystickKnob();
   }
@@ -5675,6 +5683,7 @@ function wireMobileControls() {
       return;
     }
     dragging = true;
+    joystickShell.classList.add("active");
     activeInputMode = "pointer";
     activePointerId = event.pointerId;
     try {
@@ -5753,6 +5762,7 @@ function wireMobileControls() {
         return;
       }
       dragging = true;
+      joystickShell.classList.add("active");
       activeInputMode = "touch";
       activeTouchIdentifier = t.identifier;
       applyJoystickPoint(t.clientX, t.clientY);
@@ -5806,6 +5816,7 @@ function wireMobileControls() {
   window.addEventListener("pointerup", onGlobalEnd, { passive: false });
   window.addEventListener("pointercancel", onGlobalEnd, { passive: false });
 
+  joystickShell.dataset.direction = "idle";
   paintJoystickKnob();
   globalThis.__balathorRedrawJoystick = paintJoystickKnob;
 
