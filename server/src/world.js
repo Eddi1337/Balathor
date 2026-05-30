@@ -1004,9 +1004,9 @@ const PORTALS = Array.isArray(_portalDoc?.portals) && _portalDoc.portals.length 
       },
       {
         id: "portal_archipelago",
-        name: "Tidemark Passage",
-        x: -46,
-        y: 76,
+        name: "Seafarer Cave",
+        x: -20,
+        y: 0,
         targetX: ARCHIPELAGO_LANDING.x,
         targetY: ARCHIPELAGO_LANDING.y,
         color: "#4ec5ff",
@@ -1017,8 +1017,8 @@ const PORTALS = Array.isArray(_portalDoc?.portals) && _portalDoc.portals.length 
         name: "Hub Passage",
         x: ARCHIPELAGO_LANDING.x,
         y: ARCHIPELAGO_LANDING.y,
-        targetX: -46,
-        targetY: 76,
+        targetX: -20,
+        targetY: 0,
         color: "#4ec5ff",
         style: "nautical"
       }

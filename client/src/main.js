@@ -16716,15 +16716,18 @@ function drawNauticalPortal(sx, sy, tx, ty, portal) {
   const T = TILE_SIZE;
   const pulse = 0.5 + Math.sin(time * 2.1) * 0.5;
   const cx = sx + T * 0.5;
-  const baseY = sy + T * 0.88;
-  const openW = T * 0.62;
-  const openH = T * 1.48;
+  const baseY = sy + T * 0.92;
+  const openW = T * 0.7;
+  const openH = T * 1.62;
   const capR = openW;
   const rectH = openH - capR;
   const capCY = baseY - rectH - capR;
 
-  drawEllipseShadow(cx, baseY + 4, openW * 2.4, 10, 0.5);
+  drawEllipseShadow(cx, baseY + 4, openW * 2.8, 11, 0.62);
 
+  // The cave mouth clips a moving view of the sea beyond the portal. A sailboat
+  // silhouette is deliberately drawn over the horizon so town visitors can
+  // tell at a glance that this passage leads to nautical exploration.
   ctx.save();
   ctx.beginPath();
   ctx.moveTo(cx - openW, baseY);
@@ -16733,40 +16736,77 @@ function drawNauticalPortal(sx, sy, tx, ty, portal) {
   ctx.lineTo(cx + openW, baseY);
   ctx.closePath();
   ctx.clip();
-  drawPortalEventHorizon(cx, baseY - openH * 0.52, capR * 1.1, portal, time);
+  drawPortalEventHorizon(cx, baseY - openH * 0.52, capR * 1.12, portal, time);
+
+  const boatY = baseY - T * 0.28;
+  const boatX = cx + Math.sin(time * 0.7) * 1.5;
+  ctx.save();
+  ctx.globalAlpha = 0.88;
+  ctx.fillStyle = "#112938";
+  ctx.beginPath();
+  ctx.moveTo(boatX - T * 0.38, boatY);
+  ctx.lineTo(boatX + T * 0.38, boatY);
+  ctx.lineTo(boatX + T * 0.2, boatY + T * 0.18);
+  ctx.lineTo(boatX - T * 0.24, boatY + T * 0.18);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(168, 235, 255, 0.7)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(boatX, boatY);
+  ctx.lineTo(boatX, boatY - T * 0.62);
+  ctx.stroke();
+  ctx.fillStyle = "rgba(229, 247, 237, 0.82)";
+  ctx.beginPath();
+  ctx.moveTo(boatX + 1, boatY - T * 0.58);
+  ctx.lineTo(boatX + T * 0.34, boatY - T * 0.18);
+  ctx.lineTo(boatX + 1, boatY - T * 0.18);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(boatX - 1, boatY - T * 0.5);
+  ctx.lineTo(boatX - T * 0.22, boatY - T * 0.2);
+  ctx.lineTo(boatX - 1, boatY - T * 0.2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
   ctx.restore();
 
-  const slabW = openW * 2 + 18;
-  ctx.fillStyle = "#1a3040";
-  ctx.fillRect(cx - slabW / 2, baseY, slabW, 6);
-  ctx.fillStyle = "#2a5068";
-  ctx.fillRect(cx - slabW / 2, baseY, slabW, 3);
-
-  for (const side of [-1, 1]) {
-    const px = side === -1 ? cx - openW - 7 : cx + openW;
-    const pillarH = rectH + 4;
-    const py = baseY - pillarH;
-    ctx.fillStyle = "#1e3848";
-    ctx.fillRect(px, py, 7, pillarH);
-    ctx.fillStyle = "#3a6880";
-    ctx.fillRect(px, py, 2, pillarH);
-    ctx.save();
-    ctx.globalAlpha = 0.35 + pulse * 0.45;
-    ctx.fillStyle = color;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 4 + pulse * 4;
-    const ry = py + pillarH * 0.42;
-    ctx.fillRect(px + 2, ry, 3, 2);
-    ctx.fillRect(px + 1, ry - 4, 5, 8);
-    ctx.restore();
+  // Irregular overlapping boulders make the frame read as a natural cave
+  // rather than another constructed fantasy gate.
+  const rocks = [
+    [-0.92, -0.02, 0.43, 0.38], [-0.86, -0.42, 0.38, 0.46], [-0.68, -0.83, 0.4, 0.4],
+    [-0.34, -1.16, 0.46, 0.36], [0, -1.3, 0.5, 0.34], [0.34, -1.16, 0.46, 0.36],
+    [0.68, -0.83, 0.4, 0.4], [0.86, -0.42, 0.38, 0.46], [0.92, -0.02, 0.43, 0.38]
+  ];
+  for (let i = 0; i < rocks.length; i += 1) {
+    const [rx, ry, rw, rh] = rocks[i];
+    const x = cx + rx * openW;
+    const y = baseY + ry * openH;
+    ctx.fillStyle = i % 3 === 0 ? "#26343a" : i % 3 === 1 ? "#34464a" : "#3f5150";
+    ctx.strokeStyle = "#17262d";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(x, y, rw * T, rh * T, rx * 0.12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "rgba(117, 150, 142, 0.26)";
+    ctx.beginPath();
+    ctx.ellipse(x - rw * T * 0.18, y - rh * T * 0.22, rw * T * 0.46, rh * T * 0.28, rx * 0.12, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   ctx.save();
-  ctx.globalAlpha = 0.55 + pulse * 0.25;
+  ctx.globalAlpha = 0.35 + pulse * 0.35;
   ctx.strokeStyle = color;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 8 + pulse * 8;
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(cx, capCY, capR + 2, Math.PI, 0, false);
+  ctx.arc(cx, capCY, capR - 1, Math.PI, 0, false);
+  ctx.lineTo(cx + openW - 1, baseY);
+  ctx.moveTo(cx - openW + 1, baseY);
+  ctx.lineTo(cx - openW + 1, capCY);
   ctx.stroke();
   ctx.restore();
 }

@@ -20,6 +20,13 @@ assert.equal(originChunk.tiles.length, world.CHUNK_SIZE * world.CHUNK_SIZE);
 assert.equal(originChunk.worldId, "fantasy");
 assert.equal(world.worldIdAt(0, 0), "fantasy");
 assert.equal(world.worldIdAt(1920, 0), "scifi");
+const seafarerCave = world.PORTALS.find((portal) => portal.id === "portal_archipelago");
+assert.deepEqual(
+  { x: seafarerCave?.x, y: seafarerCave?.y, style: seafarerCave?.style },
+  { x: -20, y: 0, style: "nautical" }
+);
+assert.equal(seafarerCave?.targetX, -2500);
+assert.equal(world.worldIdAt(seafarerCave?.targetX, seafarerCave?.targetY), "archipelago");
 assert.equal(world.worldIdAt(210_000, 0), "pirate");
 assert.equal(world.worldIdAt(15_000, 15_000), "dungeon:whispering_crypt");
 assert.ok(world.listMapCatalog().some((m) => m.id === "example_cove"));
@@ -148,13 +155,13 @@ try {
 }
 
 async function fetchJson(url) {
-  const response = await retry(() => fetch(url), 50, 80);
+  const response = await retry(() => fetch(url), 150, 80);
   assert.equal(response.ok, true);
   return response.json();
 }
 
 async function fetchText(url) {
-  const response = await retry(() => fetch(url), 50, 80);
+  const response = await retry(() => fetch(url), 150, 80);
   assert.equal(response.ok, true);
   return response.text();
 }

@@ -29,9 +29,9 @@
     },
     {
       "id": "portal_archipelago",
-      "name": "Tidemark Passage",
-      "x": -46,
-      "y": 76,
+      "name": "Seafarer Cave",
+      "x": -20,
+      "y": 0,
       "targetX": -2500,
       "targetY": 2468,
       "color": "#4ec5ff",
@@ -42,8 +42,8 @@
       "name": "Hub Passage",
       "x": -2500,
       "y": 2468,
-      "targetX": -46,
-      "targetY": 76,
+      "targetX": -20,
+      "targetY": 0,
       "color": "#4ec5ff",
       "style": "nautical"
     }
