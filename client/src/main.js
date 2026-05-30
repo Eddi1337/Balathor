@@ -3219,24 +3219,20 @@ function wireUi() {
 
   wireTapActivate(questsButton, () => toggleGameWindow("quests"));
 
-  equipmentClose.addEventListener("click", () => setActiveGameWindow(null));
-  bagsClose.addEventListener("click", () => setActiveGameWindow(null));
-  questClose?.addEventListener("click", () => setActiveGameWindow(null));
-  talentClose.addEventListener("click", () => setActiveGameWindow(null));
+  wireTapActivate(equipmentClose, () => setActiveGameWindow(null));
+  wireTapActivate(bagsClose, () => setActiveGameWindow(null));
+  wireTapActivate(questClose, () => setActiveGameWindow(null));
+  wireTapActivate(talentClose, () => setActiveGameWindow(null));
 
   document.querySelector("#talentResetBtn")?.addEventListener("click", () => {
     send({ type: "resetTalents" });
   });
 
-  shopClose?.addEventListener("click", () => {
-    closeShop();
-  });
+  wireTapActivate(shopClose, () => closeShop());
 
-  shipTerminalClose?.addEventListener("click", () => {
-    closeShipTerminal();
-  });
+  wireTapActivate(shipTerminalClose, () => closeShipTerminal());
 
-  teleportMenuCloseBtn?.addEventListener("click", () => closeTeleportMenu());
+  wireTapActivate(teleportMenuCloseBtn, () => closeTeleportMenu());
   teleportHotbarBtn?.addEventListener("click", () => {
     if (!state.joined || state.menuOpen) return;
     if (isPlanetSurfaceWorld()) {
@@ -3265,17 +3261,15 @@ function wireUi() {
     closeQuestOffer();
   });
   questOfferDeclineBtn?.addEventListener("click", () => closeQuestOffer());
-  questOfferCloseBtn?.addEventListener("click", () => closeQuestOffer());
+  wireTapActivate(questOfferCloseBtn, () => closeQuestOffer());
 
-  traderClose.addEventListener("click", () => {
-    setActiveGameWindow(null);
-  });
+  wireTapActivate(traderClose, () => setActiveGameWindow(null));
 
-  buyHouseClose?.addEventListener("click", () => closeBuyHousePanel());
+  wireTapActivate(buyHouseClose, () => closeBuyHousePanel());
   buyHouseCancel?.addEventListener("click", () => closeBuyHousePanel());
   buyHouseConfirm?.addEventListener("click", () => confirmBuyHouseFromPanel());
 
-  companionOfferClose?.addEventListener("click", () => closeCompanionInvitePanel());
+  wireTapActivate(companionOfferClose, () => closeCompanionInvitePanel());
   companionOfferDecline?.addEventListener("click", () => closeCompanionInvitePanel());
   companionOfferAccept?.addEventListener("click", () => {
     const inv = state.pendingCompanionInvite;
@@ -4059,12 +4053,12 @@ function wireUi() {
     if (act === "friend") send({ type: "friendAdd", targetPlayerId: tid });
   });
 
-  friendsWindowClose?.addEventListener("click", () => {
+  wireTapActivate(friendsWindowClose, () => {
     state.friendsWindowOpen = false;
     friendsWindow?.classList.add("hidden");
   });
 
-  tradeClose?.addEventListener("click", () => {
+  wireTapActivate(tradeClose, () => {
     send({ type: "tradeCancel", partnerId: state.tradePartnerId });
     closeTradeUi();
   });
@@ -5726,6 +5720,12 @@ function wireMobileControls() {
       if (event.pointerType === "mouse" && event.button !== 0) {
         return;
       }
+      // Let a finger use the Touch Events path below. Starting a Pointer Events
+      // session first prevents touchstart from taking ownership on mobile Safari
+      // and leaves the knob dependent on pointer capture support.
+      if (touch?.isTouchPointer(event.pointerType) && event.pointerType === "touch") {
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       beginDrag(event);
@@ -5770,7 +5770,7 @@ function wireMobileControls() {
     { passive: false }
   );
 
-  joystickShell.addEventListener(
+  window.addEventListener(
     "touchmove",
     (event) => {
       if (!dragging || activeInputMode !== "touch") {
@@ -5786,7 +5786,7 @@ function wireMobileControls() {
     { passive: false }
   );
 
-  joystickShell.addEventListener(
+  window.addEventListener(
     "touchend",
     (event) => {
       if (!dragging || activeInputMode !== "touch") {
@@ -5802,7 +5802,7 @@ function wireMobileControls() {
     { passive: false }
   );
 
-  joystickShell.addEventListener(
+  window.addEventListener(
     "touchcancel",
     () => {
       if (dragging && activeInputMode === "touch") {
