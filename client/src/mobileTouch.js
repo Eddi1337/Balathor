@@ -65,91 +65,6 @@
   }
 
   /**
-   * Wire a joystick surface to one drag session at a time. Pointer events are
-   * the primary path on modern mobile browsers; legacy touch events remain as
-   * a fallback for older WebViews that do not emit pointer events.
-   */
-  function wireJoystickDragSurface(surface, eventTarget, { canStart = () => true, onDrag, onEnd } = {}) {
-    if (!surface || !eventTarget || typeof onDrag !== "function") {
-      return null;
-    }
-
-    let activeInputMode = null;
-    let activePointerId = null;
-    let activeTouchIdentifier = null;
-
-    function preventBrowserGesture(event) {
-      event?.preventDefault?.();
-      event?.stopPropagation?.();
-    }
-
-    function finishDrag(event) {
-      preventBrowserGesture(event);
-      activeInputMode = null;
-      activePointerId = null;
-      activeTouchIdentifier = null;
-      onEnd?.(event);
-    }
-
-    surface.addEventListener("pointerdown", (event) => {
-      if (!canStart(event) || activeInputMode) return;
-      if (event.pointerType === "mouse" && event.button !== 0) return;
-      preventBrowserGesture(event);
-      activeInputMode = "pointer";
-      activePointerId = event.pointerId;
-      onDrag(pointerPoint(event), event);
-    }, { passive: false });
-
-    eventTarget.addEventListener("pointermove", (event) => {
-      if (activeInputMode !== "pointer" || activePointerId !== event.pointerId) return;
-      preventBrowserGesture(event);
-      onDrag(pointerPoint(event), event);
-    }, { passive: false });
-
-    eventTarget.addEventListener("pointerup", (event) => {
-      if (activeInputMode !== "pointer" || activePointerId !== event.pointerId) return;
-      finishDrag(event);
-    }, { passive: false });
-
-    eventTarget.addEventListener("pointercancel", (event) => {
-      if (activeInputMode !== "pointer" || activePointerId !== event.pointerId) return;
-      finishDrag(event);
-    }, { passive: false });
-
-    surface.addEventListener("touchstart", (event) => {
-      if (!canStart(event) || activeInputMode) return;
-      const firstTouch = touchWithIdentifier(event.changedTouches, null);
-      if (!firstTouch) return;
-      preventBrowserGesture(event);
-      activeInputMode = "touch";
-      activeTouchIdentifier = firstTouch.identifier;
-      onDrag(pointerPoint(event, activeTouchIdentifier), event);
-    }, { passive: false });
-
-    eventTarget.addEventListener("touchmove", (event) => {
-      if (activeInputMode !== "touch") return;
-      const activeTouch = touchWithIdentifier(event.touches, activeTouchIdentifier);
-      if (!activeTouch) return;
-      preventBrowserGesture(event);
-      onDrag(pointerPoint(event, activeTouchIdentifier), event);
-    }, { passive: false });
-
-    eventTarget.addEventListener("touchend", (event) => {
-      if (activeInputMode !== "touch") return;
-      if (!touchWithIdentifier(event.changedTouches, activeTouchIdentifier)) return;
-      finishDrag(event);
-    }, { passive: false });
-
-    eventTarget.addEventListener("touchcancel", (event) => {
-      if (activeInputMode !== "touch") return;
-      if (event?.changedTouches?.length && !touchWithIdentifier(event.changedTouches, activeTouchIdentifier)) return;
-      finishDrag(event);
-    }, { passive: false });
-
-    return { finishDrag };
-  }
-
-  /**
    * Fire handler on pointerdown for touch/pen; mouse uses click.
    */
   function wireInstantTap(el, handler, { hold = false, onHoldChange = null } = {}) {
@@ -242,7 +157,6 @@
     touchWithIdentifier,
     pointerPoint,
     isMobileHudTarget,
-    wireJoystickDragSurface,
     wireInstantTap
   };
 })(typeof globalThis !== "undefined" ? globalThis : window);

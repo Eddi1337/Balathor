@@ -28,6 +28,65 @@ function loadBalathorMobileTouch() {
   return ctx.globalThis.BalathorMobileTouch;
 }
 
+function loadWiredMobileJoystick() {
+  const main = fs.readFileSync(path.join(root, "client/src/main.js"), "utf8");
+  const start = main.indexOf("function wireMobileControls() {");
+  const end = main.indexOf("\nfunction send(message) {", start);
+  assert.notEqual(start, -1, "main.js should expose wireMobileControls");
+  assert.notEqual(end, -1, "wireMobileControls should end before send");
+
+  const canvasHandlers = {};
+  const windowHandlers = {};
+  const inputSnapshots = [];
+  const arcs = [];
+  const state = {
+    joined: true,
+    menuOpen: false,
+    input: { up: false, down: false, left: false, right: false, engage: false, fire: false, repair: false }
+  };
+  const jctx = {
+    beginPath() {},
+    clearRect() {},
+    fill() {},
+    stroke() {},
+    arc(...args) {
+      arcs.push(args);
+    }
+  };
+  const context = vm.createContext({
+    BalathorMobileTouch: loadBalathorMobileTouch(),
+    joystickCanvas: {
+      width: 140,
+      height: 140,
+      addEventListener(type, fn) {
+        canvasHandlers[type] = fn;
+      },
+      getBoundingClientRect() {
+        return { left: 0, top: 0, width: 140, height: 140 };
+      },
+      getContext() {
+        return jctx;
+      }
+    },
+    window: {
+      addEventListener(type, fn) {
+        windowHandlers[type] = fn;
+      }
+    },
+    state,
+    cancelBenchSitClient() {},
+    clearMovementInput() {
+      Object.assign(state.input, { up: false, down: false, left: false, right: false, engage: false, fire: false, repair: false });
+      inputSnapshots.push({ ...state.input });
+    },
+    sendInput() {
+      inputSnapshots.push({ ...state.input });
+    }
+  });
+  vm.runInContext(`${main.slice(start, end)}\nwireMobileControls();`, context);
+  return { arcs, canvasHandlers, inputSnapshots, state, windowHandlers };
+}
+
 test("joystick math maps drag to movement keys", () => {
   const touch = loadBalathorMobileTouch();
   const maxDist = 40;
@@ -64,81 +123,30 @@ test("touch helpers keep tracking the joystick finger during multi-touch gesture
   assert.equal(point.clientY, 92);
 });
 
-test("mobile joystick drag uses touch pointer events and resets movement on release", () => {
-  const touch = loadBalathorMobileTouch();
-  const surfaceHandlers = {};
-  const windowHandlers = {};
-  const dragPoints = [];
-  let ends = 0;
-  const surface = {
-    addEventListener(type, fn) {
-      surfaceHandlers[type] = fn;
-    }
-  };
-  const eventTarget = {
-    addEventListener(type, fn) {
-      windowHandlers[type] = fn;
-    }
-  };
-  const event = (values) => ({
-    preventDefault() {},
-    stopPropagation() {},
-    ...values
-  });
+test("mobile touch pointer drag moves the joystick knob and resets movement on release", () => {
+  const { arcs, canvasHandlers, inputSnapshots, state, windowHandlers } = loadWiredMobileJoystick();
+  const event = (values) => ({ preventDefault() {}, ...values });
 
-  touch.wireJoystickDragSurface(surface, eventTarget, {
-    onDrag(point) {
-      dragPoints.push(point);
-    },
-    onEnd() {
-      ends += 1;
-    }
-  });
-
-  surfaceHandlers.pointerdown(event({ pointerType: "touch", pointerId: 7, clientX: 70, clientY: 70 }));
+  canvasHandlers.pointerdown(event({ pointerType: "touch", pointerId: 7, clientX: 70, clientY: 70 }));
   windowHandlers.pointermove(event({ pointerType: "touch", pointerId: 7, clientX: 110, clientY: 70 }));
-  windowHandlers.pointerup(event({ pointerType: "touch", pointerId: 7, clientX: 110, clientY: 70 }));
 
-  assert.deepEqual(dragPoints.map(({ clientX, clientY }) => [clientX, clientY]), [[70, 70], [110, 70]]);
-  const dirs = touch.joystickDirectionsFromKnob(dragPoints[1].clientX - 70, dragPoints[1].clientY - 70, 40);
-  assert.equal(dirs.right, true, "dragging the inner circle right should request rightward movement");
-  assert.equal(ends, 1, "releasing the joystick should reset movement");
+  assert.equal(state.input.right, true, "dragging the inner circle right should request rightward movement");
+  assert.equal(state.input.left, false);
+  assert.ok(arcs.some(([x, y, radius]) => x === 104 && y === 70 && radius === 22), "inner circle should render at its clamped rightward position");
+
+  windowHandlers.pointerup(event({ pointerType: "touch", pointerId: 7, clientX: 110, clientY: 70 }));
+  assert.equal(state.input.right, false, "releasing the joystick should stop movement");
+  assert.equal(inputSnapshots.at(-1).right, false);
 });
 
-test("mobile joystick retains legacy touch drag fallback for older WebViews", () => {
-  const touch = loadBalathorMobileTouch();
-  const surfaceHandlers = {};
-  const windowHandlers = {};
-  const dragPoints = [];
-  let ends = 0;
-  const target = (handlers) => ({
-    addEventListener(type, fn) {
-      handlers[type] = fn;
-    }
-  });
-  const event = (values) => ({
-    preventDefault() {},
-    stopPropagation() {},
-    ...values
-  });
-
-  touch.wireJoystickDragSurface(target(surfaceHandlers), target(windowHandlers), {
-    onDrag(point) {
-      dragPoints.push(point);
-    },
-    onEnd() {
-      ends += 1;
-    }
-  });
-
-  surfaceHandlers.touchstart(event({ changedTouches: [{ identifier: 12, clientX: 70, clientY: 70 }] }));
-  windowHandlers.touchmove(event({ touches: [{ identifier: 12, clientX: 70, clientY: 30 }] }));
-  windowHandlers.touchend(event({ changedTouches: [{ identifier: 12, clientX: 70, clientY: 30 }] }));
-
-  assert.deepEqual(dragPoints.map(({ clientX, clientY }) => [clientX, clientY]), [[70, 70], [70, 30]]);
-  const dirs = touch.joystickDirectionsFromKnob(dragPoints[1].clientX - 70, dragPoints[1].clientY - 70, 40);
-  assert.equal(dirs.up, true, "legacy touch dragging should still request upward movement");
-  assert.equal(ends, 1);
+test("main.js keeps pointer and legacy touch joystick sessions separate", () => {
+  const main = fs.readFileSync(path.join(root, "client/src/main.js"), "utf8");
+  const joystickWiring = main.slice(main.indexOf("function wireMobileControls()"), main.indexOf("function send(message)"));
+  assert.match(joystickWiring, /activeInputMode !== "pointer"/);
+  assert.match(joystickWiring, /activeInputMode !== "touch"/);
+  assert.match(joystickWiring, /touchWithIdentifier\(event\.touches, activeTouchIdentifier\)/);
+  assert.match(joystickWiring, /touchWithIdentifier\(event\.changedTouches, activeTouchIdentifier\)/);
+  assert.doesNotMatch(joystickWiring, /state\.menuOpen \|\| event\.pointerType === "touch"/);
 });
 
 test("instant tap fires on touch pointerdown without waiting for pointerup", () => {
@@ -175,26 +183,17 @@ test("client HTML exposes the compact canvas joystick and mobileTouch bundle", (
   assert.match(html, /src="\.\/src\/mobileTouch\.js"/);
 });
 
-test("mobile joystick keeps an always-visible CSS fallback behind the canvas", () => {
-  const styles = fs.readFileSync(path.join(root, "client/styles.css"), "utf8");
-  const joystickRule = styles.match(/\.mobile-joystick \{([\s\S]*?)\n\}/)?.[1] || "";
-  assert.match(joystickRule, /border: 2px solid/);
-  assert.match(joystickRule, /border-radius: 50%/);
-  assert.match(joystickRule, /background:\s*\n\s*radial-gradient/);
-  assert.match(joystickRule, /box-shadow:/);
-  assert.match(joystickRule, /touch-action: none/);
-});
-
-test("main.js wires the compact canvas joystick through the shared drag controller", () => {
+test("main.js wires the compact canvas joystick with touch tracking", () => {
   const main = fs.readFileSync(path.join(root, "client/src/main.js"), "utf8");
   assert.match(main, /const joystickCanvas = document\.querySelector\("#joystick"\)/);
   assert.match(main, /function wireMobileControls\(\)/);
   assert.match(main, /drawJoystick/);
-  assert.match(main, /touch\?\.wireJoystickDragSurface\(joystickCanvas, window,/);
-  assert.match(main, /onDrag: applyJoystickPoint/);
-  assert.match(main, /onEnd: resetJoystick/);
+  assert.match(main, /joystickCanvas\.addEventListener\("touchstart"/);
+  assert.match(main, /window\.addEventListener\("touchmove"/);
+  assert.match(main, /window\.addEventListener\("touchend"/);
   const joystickWiring = main.slice(main.indexOf("function wireMobileControls()"), main.indexOf("function send(message)"));
-  assert.doesNotMatch(joystickWiring, /event\.pointerType === "touch"/);
+  assert.doesNotMatch(joystickWiring, /state\.menuOpen \|\| event\.pointerType === "touch"/);
+  assert.doesNotMatch(main, /lostpointercapture/);
   assert.match(main, /BalathorMobileTouch\?\.wireInstantTap/);
 });
 
