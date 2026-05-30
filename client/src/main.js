@@ -119,8 +119,7 @@ const chatInput = document.querySelector("#chatInput");
 const chatToggle = document.querySelector("#chatToggle");
 const chatIconBtn = document.querySelector("#chatIconBtn");
 const mobileControls = document.querySelector("#mobileControls");
-const joystickShell = document.querySelector("#joystickShell");
-const joystickKnob = document.querySelector("#joystickKnob");
+const joystickCanvas = document.querySelector("#joystick");
 const traderPanel = document.querySelector("#traderPanel");
 const traderTitle = document.querySelector("#traderTitle");
 const traderStock = document.querySelector("#traderStock");
@@ -4037,7 +4036,7 @@ function wireUi() {
     btn.addEventListener("click", () => setChatSubTab(btn.dataset.chatTab || "messages"));
   });
 
-  partyPanelMin?.addEventListener("click", () => {
+  wireTapActivate(partyPanelMin, () => {
     state.partyPanelMinimized = !state.partyPanelMinimized;
     renderPartyPanel();
   });
@@ -5589,246 +5588,122 @@ function tryLootClickedWorldChest(event) {
 }
 
 function wireMobileControls() {
-  if (!joystickShell || !joystickKnob) {
-    return;
-  }
+  const jctx = joystickCanvas?.getContext("2d");
+  if (!joystickCanvas || !jctx) return;
 
   const touch = globalThis.BalathorMobileTouch;
-  const DEAD_ZONE = touch?.JOYSTICK_DEAD_ZONE ?? 0.12;
+  const JOYSTICK_RADIUS = 56;
+  const KNOB_RADIUS = 22;
+  const MAX_DIST = JOYSTICK_RADIUS - KNOB_RADIUS;
+  const DEAD_ZONE = 0.15;
+  const CENTER = 70;
   let knobX = 0;
   let knobY = 0;
   let activePointerId = null;
   let activeTouchIdentifier = null;
   let activeInputMode = null;
-  let dragging = false;
 
-  function joystickLayout() {
-    const size = Math.max(
-      96,
-      Math.min(joystickShell.clientWidth || 156, joystickShell.clientHeight || 156)
-    );
-    const cx = size / 2;
-    const cy = size / 2;
-    const radius = size * 0.42;
-    const knobRadius = size * 0.17;
-    return { size, cx, cy, radius, knobRadius };
-  }
-
-  function paintJoystickKnob() {
-    const { knobRadius } = joystickLayout();
-    const knobSize = knobRadius * 2;
-    joystickKnob.style.width = `${knobSize}px`;
-    joystickKnob.style.height = `${knobSize}px`;
-    joystickKnob.style.transform = `translate(calc(-50% + ${knobX}px), calc(-50% + ${knobY}px))`;
+  function drawJoystick() {
+    jctx.clearRect(0, 0, 140, 140);
+    jctx.beginPath();
+    jctx.arc(CENTER, CENTER, JOYSTICK_RADIUS, 0, Math.PI * 2);
+    jctx.fillStyle = "rgba(24, 30, 43, 0.55)";
+    jctx.fill();
+    jctx.strokeStyle = "rgba(255, 255, 255, 0.18)";
+    jctx.lineWidth = 2;
+    jctx.stroke();
+    jctx.beginPath();
+    jctx.arc(CENTER + knobX, CENTER + knobY, KNOB_RADIUS, 0, Math.PI * 2);
+    jctx.fillStyle = "rgba(255, 255, 255, 0.35)";
+    jctx.fill();
+    jctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+    jctx.stroke();
   }
 
   function applyJoystickPoint(clientX, clientY) {
-    const { cx, cy, radius, knobRadius } = joystickLayout();
-    const rect = joystickShell.getBoundingClientRect();
-    const px = clientX - rect.left - cx;
-    const py = clientY - rect.top - cy;
-    const maxDist = Math.max(8, radius - knobRadius);
-    const clamped = touch?.clampKnobOffset(px, py, maxDist) ?? { knobX: px, knobY: py };
+    const rect = joystickCanvas.getBoundingClientRect();
+    const px = (clientX - rect.left) * (joystickCanvas.width / rect.width) - CENTER;
+    const py = (clientY - rect.top) * (joystickCanvas.height / rect.height) - CENTER;
+    const clamped = touch?.clampKnobOffset(px, py, MAX_DIST) ?? { knobX: px, knobY: py };
     knobX = clamped.knobX;
     knobY = clamped.knobY;
-    const dirs = touch?.joystickDirectionsFromKnob(knobX, knobY, maxDist, DEAD_ZONE) ?? {
-      left: knobX / maxDist < -DEAD_ZONE,
-      right: knobX / maxDist > DEAD_ZONE,
-      up: knobY / maxDist < -DEAD_ZONE,
-      down: knobY / maxDist > DEAD_ZONE
+    const dirs = touch?.joystickDirectionsFromKnob(knobX, knobY, MAX_DIST, DEAD_ZONE) ?? {
+      left: knobX / MAX_DIST < -DEAD_ZONE,
+      right: knobX / MAX_DIST > DEAD_ZONE,
+      up: knobY / MAX_DIST < -DEAD_ZONE,
+      down: knobY / MAX_DIST > DEAD_ZONE
     };
-    state.input.left = dirs.left;
-    state.input.right = dirs.right;
-    state.input.up = dirs.up;
-    state.input.down = dirs.down;
-    joystickShell.dataset.direction = [
-      dirs.up ? "up" : "",
-      dirs.right ? "right" : "",
-      dirs.down ? "down" : "",
-      dirs.left ? "left" : ""
-    ].filter(Boolean).join(" ") || "idle";
-    if (dirs.left || dirs.right || dirs.up || dirs.down) {
-      cancelBenchSitClient();
-    }
+    Object.assign(state.input, dirs);
+    if (dirs.left || dirs.right || dirs.up || dirs.down) cancelBenchSitClient();
     sendInput();
-    paintJoystickKnob();
-  }
-
-  function updateFromPointer(event) {
-    const point = touch?.pointerPoint(event) ?? { clientX: event.clientX, clientY: event.clientY };
-    applyJoystickPoint(point.clientX, point.clientY);
+    drawJoystick();
   }
 
   function resetJoystick() {
-    dragging = false;
     knobX = 0;
     knobY = 0;
     activePointerId = null;
     activeTouchIdentifier = null;
     activeInputMode = null;
-    joystickShell.classList.remove("active");
-    joystickShell.dataset.direction = "idle";
     clearMovementInput();
-    paintJoystickKnob();
+    drawJoystick();
   }
 
-  function beginDrag(event) {
-    if (!state.joined || state.menuOpen) {
-      return;
-    }
-    dragging = true;
-    joystickShell.classList.add("active");
+  joystickCanvas.addEventListener("pointerdown", (event) => {
+    if (!state.joined || state.menuOpen || event.pointerType === "touch") return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    event.preventDefault();
     activeInputMode = "pointer";
     activePointerId = event.pointerId;
-    try {
-      joystickShell.setPointerCapture(event.pointerId);
-    } catch {
-    }
-    updateFromPointer(event);
-  }
+    applyJoystickPoint(event.clientX, event.clientY);
+  }, { passive: false });
 
-  function endDrag(event) {
-    if (activeInputMode !== "pointer" || (activePointerId !== null && event.pointerId !== activePointerId)) {
-      return;
-    }
-    try {
-      joystickShell.releasePointerCapture(event.pointerId);
-    } catch {
-    }
+  window.addEventListener("pointermove", (event) => {
+    if (activeInputMode !== "pointer" || activePointerId !== event.pointerId) return;
+    event.preventDefault();
+    applyJoystickPoint(event.clientX, event.clientY);
+  }, { passive: false });
+
+  window.addEventListener("pointerup", (event) => {
+    if (activeInputMode !== "pointer" || activePointerId !== event.pointerId) return;
+    event.preventDefault();
     resetJoystick();
-  }
+  }, { passive: false });
+  window.addEventListener("pointercancel", (event) => {
+    if (activeInputMode === "pointer" && activePointerId === event.pointerId) resetJoystick();
+  }, { passive: false });
 
-  function onGlobalMove(event) {
-    if (!dragging || activeInputMode !== "pointer" || activePointerId !== event.pointerId) {
-      return;
-    }
+  joystickCanvas.addEventListener("touchstart", (event) => {
+    if (!state.joined || state.menuOpen || activeInputMode) return;
+    const firstTouch = event.changedTouches[0];
+    if (!firstTouch) return;
     event.preventDefault();
-    updateFromPointer(event);
-  }
+    activeInputMode = "touch";
+    activeTouchIdentifier = firstTouch.identifier;
+    applyJoystickPoint(firstTouch.clientX, firstTouch.clientY);
+  }, { passive: false });
 
-  function onGlobalEnd(event) {
-    if (!dragging || activeInputMode !== "pointer" || activePointerId !== event.pointerId) {
-      return;
-    }
+  window.addEventListener("touchmove", (event) => {
+    if (activeInputMode !== "touch") return;
+    const activeTouch = touch?.touchWithIdentifier(event.touches, activeTouchIdentifier);
+    if (!activeTouch) return;
     event.preventDefault();
-    endDrag(event);
-  }
+    applyJoystickPoint(activeTouch.clientX, activeTouch.clientY);
+  }, { passive: false });
 
-  joystickShell.addEventListener(
-    "pointerdown",
-    (event) => {
-      if (event.pointerType === "mouse" && event.button !== 0) {
-        return;
-      }
-      // Let a finger use the Touch Events path below. Starting a Pointer Events
-      // session first prevents touchstart from taking ownership on mobile Safari
-      // and leaves the knob dependent on pointer capture support.
-      if (touch?.isTouchPointer(event.pointerType) && event.pointerType === "touch") {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      beginDrag(event);
-    },
-    { passive: false }
-  );
+  window.addEventListener("touchend", (event) => {
+    if (activeInputMode !== "touch") return;
+    if (!touch?.touchWithIdentifier(event.changedTouches, activeTouchIdentifier)) return;
+    event.preventDefault();
+    resetJoystick();
+  }, { passive: false });
+  window.addEventListener("touchcancel", () => {
+    if (activeInputMode === "touch") resetJoystick();
+  }, { passive: false });
 
-  joystickShell.addEventListener("pointermove", onGlobalMove, { passive: false });
-
-  joystickShell.addEventListener(
-    "pointerup",
-    (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      endDrag(event);
-    },
-    { passive: false }
-  );
-
-  joystickShell.addEventListener("pointercancel", (event) => {
-    endDrag(event);
-  });
-
-  joystickShell.addEventListener(
-    "touchstart",
-    (event) => {
-      if (!state.joined || state.menuOpen || activeInputMode === "pointer") {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      const t = touch?.touchWithIdentifier(event.changedTouches, null) ?? event.changedTouches[0];
-      if (!t) {
-        return;
-      }
-      dragging = true;
-      joystickShell.classList.add("active");
-      activeInputMode = "touch";
-      activeTouchIdentifier = t.identifier;
-      applyJoystickPoint(t.clientX, t.clientY);
-    },
-    { passive: false }
-  );
-
-  window.addEventListener(
-    "touchmove",
-    (event) => {
-      if (!dragging || activeInputMode !== "touch") {
-        return;
-      }
-      const t = touch?.touchWithIdentifier(event.touches, activeTouchIdentifier);
-      if (!t) {
-        return;
-      }
-      event.preventDefault();
-      applyJoystickPoint(t.clientX, t.clientY);
-    },
-    { passive: false }
-  );
-
-  window.addEventListener(
-    "touchend",
-    (event) => {
-      if (!dragging || activeInputMode !== "touch") {
-        return;
-      }
-      const ended = touch?.touchWithIdentifier(event.changedTouches, activeTouchIdentifier);
-      if (!ended) {
-        return;
-      }
-      event.preventDefault();
-      resetJoystick();
-    },
-    { passive: false }
-  );
-
-  window.addEventListener(
-    "touchcancel",
-    () => {
-      if (dragging && activeInputMode === "touch") {
-        resetJoystick();
-      }
-    },
-    { passive: false }
-  );
-
-  window.addEventListener("pointermove", onGlobalMove, { passive: false });
-  window.addEventListener("pointerup", onGlobalEnd, { passive: false });
-  window.addEventListener("pointercancel", onGlobalEnd, { passive: false });
-
-  joystickShell.dataset.direction = "idle";
-  paintJoystickKnob();
-  globalThis.__balathorRedrawJoystick = paintJoystickKnob;
-
-  if (typeof ResizeObserver !== "undefined") {
-    const ro = new ResizeObserver(() => paintJoystickKnob());
-    ro.observe(joystickShell);
-  }
-
-  window.addEventListener("resize", paintJoystickKnob, { passive: true });
-  window.addEventListener("orientationchange", paintJoystickKnob, { passive: true });
+  drawJoystick();
+  globalThis.__balathorRedrawJoystick = drawJoystick;
 }
-
 
 function send(message) {
   if (!state.socket || state.socket.readyState !== WebSocket.OPEN) {

@@ -395,15 +395,7 @@
     </nav>
 
     <section id="mobileControls" class="mobile-controls hidden" aria-label="Movement controls">
-      <div class="mobile-movement-caption" aria-hidden="true">Move</div>
-      <div id="joystickShell" class="mobile-joystick-shell" aria-label="Movement joystick" role="application">
-        <span class="mobile-joystick-arrow mobile-joystick-arrow-up" aria-hidden="true"></span>
-        <span class="mobile-joystick-arrow mobile-joystick-arrow-right" aria-hidden="true"></span>
-        <span class="mobile-joystick-arrow mobile-joystick-arrow-down" aria-hidden="true"></span>
-        <span class="mobile-joystick-arrow mobile-joystick-arrow-left" aria-hidden="true"></span>
-        <div class="mobile-joystick-track" aria-hidden="true"></div>
-        <div id="joystickKnob" class="mobile-joystick-knob" aria-hidden="true"><span></span></div>
-      </div>
+      <canvas id="joystick" class="mobile-joystick" width="140" height="140" aria-label="Movement joystick"></canvas>
     </section>
 
     <aside id="menu" class="menu hidden" aria-hidden="true">

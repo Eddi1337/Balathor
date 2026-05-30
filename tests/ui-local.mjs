@@ -89,8 +89,8 @@ test("local server serves healthy desktop and mobile UI surfaces", async (t) => 
   assertIncludesAll(mobileHtml, [
     "id=\"mobileContextDock\"",
     "id=\"mobileControls\"",
-    "id=\"joystickShell\"",
-    "id=\"joystickKnob\"",
+    "id=\"joystick\"",
+    "class=\"mobile-joystick\"",
     "src=\"\\./src/mobileTouch\\.js\"",
     "src=\"\\./src/mobileUi\\.js\""
   ], "mobile UI");

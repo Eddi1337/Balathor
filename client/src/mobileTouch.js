@@ -59,7 +59,7 @@
     }
     return Boolean(
       target.closest(
-        "#joystickShell, #mobileControls, #mobileContextDock, .mobile-context-dock, .ability-bar, .progression, .chat, .party-panel"
+        "#joystick, #mobileControls, #mobileContextDock, .mobile-context-dock, .ability-bar, .progression, .chat, .party-panel"
       )
     );
   }
