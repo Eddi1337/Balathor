@@ -28,13 +28,26 @@
     };
   }
 
-  function pointerPoint(event) {
-    if (event.touches?.length) {
-      const touch = event.touches[0];
-      return { clientX: touch.clientX, clientY: touch.clientY };
+  function touchWithIdentifier(touches, identifier) {
+    if (!touches?.length) {
+      return null;
     }
-    if (event.changedTouches?.length) {
-      const touch = event.changedTouches[0];
+    if (identifier === null || identifier === undefined) {
+      return touches[0];
+    }
+    for (const touch of touches) {
+      if (touch.identifier === identifier) {
+        return touch;
+      }
+    }
+    return null;
+  }
+
+  function pointerPoint(event, touchIdentifier = null) {
+    const touch =
+      touchWithIdentifier(event.touches, touchIdentifier) ??
+      touchWithIdentifier(event.changedTouches, touchIdentifier);
+    if (touch) {
       return { clientX: touch.clientX, clientY: touch.clientY };
     }
     return { clientX: event.clientX, clientY: event.clientY };
@@ -141,6 +154,7 @@
     isTouchPointer,
     clampKnobOffset,
     joystickDirectionsFromKnob,
+    touchWithIdentifier,
     pointerPoint,
     isMobileHudTarget,
     wireInstantTap
