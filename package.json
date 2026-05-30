@@ -4,10 +4,13 @@
   "private": true,
   "description": "Authoritative server and sprite-canvas client prototype for Balathor.",
   "scripts": {
+    "test": "npm run check:syntax && npm run smoke && npm run test:ui && npm run test:mobile",
+    "check:syntax": "find client server tools tests -path 'client/desktop' -prune -o -type f \\( -name '*.js' -o -name '*.mjs' \\) -print0 | xargs -0 -n1 node --check",
     "dev": "node tools/dev.js",
     "server": "node server/src/index.js",
     "client": "node client/dev-server.js",
     "smoke": "node tests/smoke.mjs",
+    "test:ui": "node --test tests/ui-local.mjs",
     "test:mobile": "node --test tests/mobile-touch.mjs",
     "stress": "node tools/stress.mjs",
     "generate:sci-fi-station": "node tools/generateSciFiStation.mjs",
