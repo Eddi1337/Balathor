@@ -1544,6 +1544,16 @@ button:focus-visible {
   display: block;
   width: 140px;
   height: 140px;
+  border: 2px solid rgba(255, 218, 132, 0.72);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.18) 0 20%, transparent 21%),
+    radial-gradient(circle at center, rgba(32, 42, 59, 0.9) 0 56%, rgba(9, 13, 21, 0.82) 57% 100%);
+  box-shadow:
+    0 0 0 5px rgba(7, 10, 16, 0.48),
+    0 0 0 7px rgba(255, 209, 102, 0.2),
+    0 8px 24px rgba(0, 0, 0, 0.48);
+  box-sizing: border-box;
   pointer-events: auto;
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
