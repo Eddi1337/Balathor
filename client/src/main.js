@@ -5650,7 +5650,7 @@ function wireMobileControls() {
   }
 
   joystickCanvas.addEventListener("pointerdown", (event) => {
-    if (!state.joined || state.menuOpen || event.pointerType === "touch") return;
+    if (!state.joined || state.menuOpen) return;
     if (event.pointerType === "mouse" && event.button !== 0) return;
     event.preventDefault();
     activeInputMode = "pointer";
