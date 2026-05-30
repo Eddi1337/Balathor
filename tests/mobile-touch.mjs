@@ -50,6 +50,28 @@ test("joystick math maps drag to movement keys", () => {
   assert.equal(center.down, false);
 });
 
+test("touch helpers keep tracking the joystick finger during multi-touch gestures", () => {
+  const touch = loadBalathorMobileTouch();
+  const touches = [
+    { identifier: 11, clientX: 12, clientY: 14 },
+    { identifier: 22, clientX: 90, clientY: 92 }
+  ];
+
+  assert.equal(touch.touchWithIdentifier(touches, 22).clientX, 90);
+  assert.equal(touch.touchWithIdentifier(touches, 99), null);
+  const point = touch.pointerPoint({ touches }, 22);
+  assert.equal(point.clientX, 90);
+  assert.equal(point.clientY, 92);
+});
+
+test("main.js keeps pointer and legacy touch joystick sessions separate", () => {
+  const main = fs.readFileSync(path.join(root, "client/src/main.js"), "utf8");
+  assert.match(main, /activeInputMode === "pointer"/);
+  assert.match(main, /activeInputMode !== "touch"/);
+  assert.match(main, /touchWithIdentifier\(event\.touches, activeTouchIdentifier\)/);
+  assert.match(main, /touchWithIdentifier\(event\.changedTouches, activeTouchIdentifier\)/);
+});
+
 test("instant tap fires on touch pointerdown without waiting for pointerup", () => {
   const touch = loadBalathorMobileTouch();
   let calls = 0;
@@ -122,10 +144,12 @@ test("server accepts joystick-style input and moves the player", async () => {
   });
 
   try {
-    for (let i = 0; i < 40; i += 1) {
+    let serverReady = false;
+    for (let i = 0; i < 100; i += 1) {
       try {
         const health = await fetch(`http://127.0.0.1:${serverPort}/health`);
         if (health.ok) {
+          serverReady = true;
           break;
         }
       } catch {
@@ -133,6 +157,7 @@ test("server accepts joystick-style input and moves the player", async () => {
       }
       await delay(80);
     }
+    assert.equal(serverReady, true, "server should be healthy before the protocol test connects");
 
     const { socket, messages } = await connectAndJoin(serverPort, { username, password });
     const before = await waitForSnapshot(socket, messages, username);

@@ -5604,6 +5604,8 @@ function wireMobileControls() {
   let knobX = 0;
   let knobY = 0;
   let activePointerId = null;
+  let activeTouchIdentifier = null;
+  let activeInputMode = null;
   let dragging = false;
 
   function joystickLayout() {
@@ -5662,6 +5664,8 @@ function wireMobileControls() {
     knobX = 0;
     knobY = 0;
     activePointerId = null;
+    activeTouchIdentifier = null;
+    activeInputMode = null;
     clearMovementInput();
     paintJoystickKnob();
   }
@@ -5671,6 +5675,7 @@ function wireMobileControls() {
       return;
     }
     dragging = true;
+    activeInputMode = "pointer";
     activePointerId = event.pointerId;
     try {
       joystickShell.setPointerCapture(event.pointerId);
@@ -5680,7 +5685,7 @@ function wireMobileControls() {
   }
 
   function endDrag(event) {
-    if (activePointerId !== null && event.pointerId !== activePointerId) {
+    if (activeInputMode !== "pointer" || (activePointerId !== null && event.pointerId !== activePointerId)) {
       return;
     }
     try {
@@ -5691,7 +5696,7 @@ function wireMobileControls() {
   }
 
   function onGlobalMove(event) {
-    if (!dragging || activePointerId !== event.pointerId) {
+    if (!dragging || activeInputMode !== "pointer" || activePointerId !== event.pointerId) {
       return;
     }
     event.preventDefault();
@@ -5699,7 +5704,7 @@ function wireMobileControls() {
   }
 
   function onGlobalEnd(event) {
-    if (!dragging || activePointerId !== event.pointerId) {
+    if (!dragging || activeInputMode !== "pointer" || activePointerId !== event.pointerId) {
       return;
     }
     event.preventDefault();
@@ -5738,17 +5743,18 @@ function wireMobileControls() {
   joystickShell.addEventListener(
     "touchstart",
     (event) => {
-      if (!state.joined || state.menuOpen) {
+      if (!state.joined || state.menuOpen || activeInputMode === "pointer") {
         return;
       }
       event.preventDefault();
       event.stopPropagation();
-      const t = event.changedTouches[0];
+      const t = touch?.touchWithIdentifier(event.changedTouches, null) ?? event.changedTouches[0];
       if (!t) {
         return;
       }
       dragging = true;
-      activePointerId = t.identifier;
+      activeInputMode = "touch";
+      activeTouchIdentifier = t.identifier;
       applyJoystickPoint(t.clientX, t.clientY);
     },
     { passive: false }
@@ -5757,14 +5763,14 @@ function wireMobileControls() {
   joystickShell.addEventListener(
     "touchmove",
     (event) => {
-      if (!dragging) {
+      if (!dragging || activeInputMode !== "touch") {
         return;
       }
-      event.preventDefault();
-      const t = event.changedTouches[0] || event.touches[0];
+      const t = touch?.touchWithIdentifier(event.touches, activeTouchIdentifier);
       if (!t) {
         return;
       }
+      event.preventDefault();
       applyJoystickPoint(t.clientX, t.clientY);
     },
     { passive: false }
@@ -5773,7 +5779,11 @@ function wireMobileControls() {
   joystickShell.addEventListener(
     "touchend",
     (event) => {
-      if (!dragging) {
+      if (!dragging || activeInputMode !== "touch") {
+        return;
+      }
+      const ended = touch?.touchWithIdentifier(event.changedTouches, activeTouchIdentifier);
+      if (!ended) {
         return;
       }
       event.preventDefault();
@@ -5785,7 +5795,7 @@ function wireMobileControls() {
   joystickShell.addEventListener(
     "touchcancel",
     () => {
-      if (dragging) {
+      if (dragging && activeInputMode === "touch") {
         resetJoystick();
       }
     },
