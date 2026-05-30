@@ -66,7 +66,7 @@ test("touch helpers keep tracking the joystick finger during multi-touch gesture
 
 test("main.js keeps pointer and legacy touch joystick sessions separate", () => {
   const main = fs.readFileSync(path.join(root, "client/src/main.js"), "utf8");
-  assert.match(main, /activeInputMode === "pointer"/);
+  assert.match(main, /activeInputMode !== "pointer"/);
   assert.match(main, /activeInputMode !== "touch"/);
   assert.match(main, /touchWithIdentifier\(event\.touches, activeTouchIdentifier\)/);
   assert.match(main, /touchWithIdentifier\(event\.changedTouches, activeTouchIdentifier\)/);
@@ -97,34 +97,32 @@ test("instant tap fires on touch pointerdown without waiting for pointerup", () 
   assert.equal(calls, 1, "synthetic click should be ignored for touch");
 });
 
-test("client HTML exposes DOM joystick and mobileTouch bundle", () => {
+test("client HTML exposes the compact canvas joystick and mobileTouch bundle", () => {
   const html = fs.readFileSync(path.join(root, "client/index.html"), "utf8");
-  assert.match(html, /id="joystickShell"/);
-  assert.match(html, /id="joystickKnob"/);
-  assert.match(html, /mobile-joystick-knob/);
-  assert.match(html, /mobile-joystick-track/);
-  assert.match(html, /mobile-joystick-arrow-up/);
+  assert.match(html, /id="joystick"/);
+  assert.match(html, /class="mobile-joystick"/);
+  assert.match(html, /width="140" height="140"/);
   assert.match(html, /mobile-primary-label/);
   assert.match(html, /src="\.\/src\/mobileTouch\.js"/);
 });
 
-test("main.js wires shell joystick and does not rely on lostpointercapture reset", () => {
+test("main.js wires the compact canvas joystick with touch tracking", () => {
   const main = fs.readFileSync(path.join(root, "client/src/main.js"), "utf8");
-  assert.match(main, /const joystickShell = document\.querySelector\("#joystickShell"\)/);
+  assert.match(main, /const joystickCanvas = document\.querySelector\("#joystick"\)/);
   assert.match(main, /function wireMobileControls\(\)/);
-  assert.match(main, /paintJoystickKnob/);
-  assert.match(main, /joystickShell\.dataset\.direction/);
-  assert.match(main, /joystickShell\.classList\.add\("active"\)/);
-  assert.match(main, /joystickShell\.addEventListener\(\s*"touchstart"/);
-  assert.match(main, /window\.addEventListener\(\s*"touchmove"/);
-  assert.match(main, /window\.addEventListener\(\s*"touchend"/);
+  assert.match(main, /drawJoystick/);
+  assert.match(main, /joystickCanvas\.addEventListener\("touchstart"/);
+  assert.match(main, /window\.addEventListener\("touchmove"/);
+  assert.match(main, /window\.addEventListener\("touchend"/);
   assert.match(main, /event\.pointerType === "touch"/);
   assert.doesNotMatch(main, /lostpointercapture/);
   assert.match(main, /BalathorMobileTouch\?\.wireInstantTap/);
 });
 
-test("window close controls use instant tap activation on mobile", () => {
+test("window close and compact HUD controls use instant tap activation on mobile", () => {
   const main = fs.readFileSync(path.join(root, "client/src/main.js"), "utf8");
+  assert.match(main, /wireTapActivate\(partyPanelMin,/);
+  assert.match(main, /wireTapActivate\(progressionToggle,/);
   for (const closeControl of [
     "equipmentClose",
     "bagsClose",
