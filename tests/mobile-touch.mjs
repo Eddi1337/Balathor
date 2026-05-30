@@ -106,6 +106,16 @@ test("client HTML exposes the compact canvas joystick and mobileTouch bundle", (
   assert.match(html, /src="\.\/src\/mobileTouch\.js"/);
 });
 
+test("mobile joystick keeps an always-visible CSS fallback behind the canvas", () => {
+  const styles = fs.readFileSync(path.join(root, "client/styles.css"), "utf8");
+  const joystickRule = styles.match(/\.mobile-joystick \{([\s\S]*?)\n\}/)?.[1] || "";
+  assert.match(joystickRule, /border: 2px solid/);
+  assert.match(joystickRule, /border-radius: 50%/);
+  assert.match(joystickRule, /background:\s*\n\s*radial-gradient/);
+  assert.match(joystickRule, /box-shadow:/);
+  assert.match(joystickRule, /touch-action: none/);
+});
+
 test("main.js wires the compact canvas joystick with touch tracking", () => {
   const main = fs.readFileSync(path.join(root, "client/src/main.js"), "utf8");
   assert.match(main, /const joystickCanvas = document\.querySelector\("#joystick"\)/);
