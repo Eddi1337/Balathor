@@ -116,8 +116,32 @@ test("main.js wires shell joystick and does not rely on lostpointercapture reset
   assert.match(main, /joystickShell\.dataset\.direction/);
   assert.match(main, /joystickShell\.classList\.add\("active"\)/);
   assert.match(main, /joystickShell\.addEventListener\(\s*"touchstart"/);
+  assert.match(main, /window\.addEventListener\(\s*"touchmove"/);
+  assert.match(main, /window\.addEventListener\(\s*"touchend"/);
+  assert.match(main, /event\.pointerType === "touch"/);
   assert.doesNotMatch(main, /lostpointercapture/);
   assert.match(main, /BalathorMobileTouch\?\.wireInstantTap/);
+});
+
+test("window close controls use instant tap activation on mobile", () => {
+  const main = fs.readFileSync(path.join(root, "client/src/main.js"), "utf8");
+  for (const closeControl of [
+    "equipmentClose",
+    "bagsClose",
+    "questClose",
+    "talentClose",
+    "shopClose",
+    "shipTerminalClose",
+    "teleportMenuCloseBtn",
+    "questOfferCloseBtn",
+    "traderClose",
+    "buyHouseClose",
+    "companionOfferClose",
+    "friendsWindowClose",
+    "tradeClose"
+  ]) {
+    assert.match(main, new RegExp(`wireTapActivate\\(${closeControl},`));
+  }
 });
 
 test("idle animations start after a longer standing-still delay", () => {
