@@ -358,6 +358,13 @@ const SERVER_URL_STORAGE_KEY = "balathor.serverUrl";
 const DEBUG_HUD_STORAGE_KEY  = "balathor.debugHud";
 const SAVED_CREDS_COOKIE     = "balathor_creds";
 const RECONNECT_DELAYS_MS    = [3000, 5000, 10000, 15000, 30000];
+// Declared here (not beside the draggable-panel helpers further down) because
+// initDraggablePanels()/makeDraggable() run during wireUi() at boot, well before
+// the original declaration site would be initialized — referencing these consts
+// from the temporal dead zone threw and aborted the rest of wireUi().
+const PANEL_DRAG_HANDLE_SELECTOR =
+  ".window-head, .party-panel-head, .chat-head, .progression-head, .menu-head";
+const PARTY_PANEL_POS_KEY = "balathor_party_panel_pos";
 
 function setSavedCreds(username, password) {
   const val = encodeURIComponent(username) + ":" + encodeURIComponent(password);
@@ -17434,10 +17441,6 @@ function scheduleCanvasResize() {
   setTimeout(resize, 180);
   setTimeout(resize, 420);
 }
-
-const PANEL_DRAG_HANDLE_SELECTOR =
-  ".window-head, .party-panel-head, .chat-head, .progression-head, .menu-head";
-const PARTY_PANEL_POS_KEY = "balathor_party_panel_pos";
 
 function restorePartyPanelPosition() {
   if (!partyPanel) return;

@@ -3063,7 +3063,9 @@ body.mobile.mobile-landscape .ability-bar-divider {
 .party-panel {
   position: fixed;
   left: 12px;
-  top: 72px;
+  /* Sits below the on-canvas performance/debug overlay (top-left, ~166px tall)
+     so the two no longer overlap. Draggable, so players can reposition it. */
+  top: 180px;
   z-index: 24;
   min-width: 140px;
   max-width: 220px;
