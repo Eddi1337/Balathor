@@ -141,8 +141,8 @@ function build() {
   const total = chosen.length + 1;
   const names = uniqueNames(total);
 
-  // Hub island first.
-  const hubRadius = 70;
+  // Hub island first — a large central island that hosts the return teleporter.
+  const hubRadius = 120;
   islands.push({
     id: "isle_hub",
     name: "Mariner's Rest",

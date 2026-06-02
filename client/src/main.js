@@ -8700,6 +8700,7 @@ function drawWorld() {
   const maxTileX = (maxChunkX + 1) * CHUNK_SIZE + 1;
   const minTileY = minChunkY * CHUNK_SIZE - 1;
   const maxTileY = (maxChunkY + 1) * CHUNK_SIZE + 1;
+  drawWaterShimmer(minTileX, maxTileX, minTileY, maxTileY);
   if (state.worldTheme === SCI_FI_THEME) {
     drawSpaceBackdrop(minChunkX, maxChunkX, minChunkY, maxChunkY);
   } else if (state.worldTheme === ALIEN_THEME) {
@@ -15074,29 +15075,71 @@ function drawPath(sx, sy, tx, ty, colors) {
 }
 
 function drawWater(sx, sy, tx, ty, colors) {
-  ctx.fillStyle = colors[0];
-  ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
-  ctx.fillStyle = "#1d8fb3";
-  ctx.fillRect(sx, sy + 3, TILE_SIZE, TILE_SIZE - 6);
-  ctx.fillStyle = colors[1];
-  for (let i = 0; i < 3; i += 1) {
-    const px = sx + ((hash2(tx, ty, i) * 22) | 0);
-    const py = sy + 7 + i * 8;
-    ctx.fillRect(px, py, 10, 2);
-  }
+  const mid = colors[0];
+  const light = colors[1];
+  const deep = colors[2] || "#0f3d5c";
 
-  ctx.fillStyle = "rgba(186, 233, 214, 0.45)";
-  if (getTile(tx, ty - 1) !== TILE.WATER) {
-    ctx.fillRect(sx, sy, TILE_SIZE, 3);
+  // Base water with a soft top-to-bottom depth gradient.
+  ctx.fillStyle = mid;
+  ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+  ctx.fillStyle = deep;
+  ctx.globalAlpha = 0.35;
+  ctx.fillRect(sx, sy + TILE_SIZE - 12, TILE_SIZE, 12);
+  ctx.globalAlpha = 1;
+
+  // Irregular depth mottling so the surface isn't a flat colour.
+  ctx.fillStyle = deep;
+  ctx.globalAlpha = 0.28;
+  ctx.fillRect(sx + ((hash2(tx, ty, 11) * 18) | 0), sy + ((hash2(tx, ty, 12) * 14) | 0), 11, 8);
+  ctx.globalAlpha = 1;
+
+  // Short, broken, jittered wavelet glints (not full-width straight lines).
+  ctx.fillStyle = light;
+  for (let i = 0; i < 2; i += 1) {
+    const wx = sx + 2 + ((hash2(tx, ty, 21 + i) * 16) | 0);
+    const wy = sy + 5 + i * 12 + ((hash2(tx, ty, 31 + i) * 4) | 0);
+    const wlen = 5 + ((hash2(tx, ty, 41 + i) * 7) | 0);
+    ctx.globalAlpha = 0.16;
+    ctx.fillRect(wx, wy, wlen, 1);
   }
-  if (getTile(tx, ty + 1) !== TILE.WATER) {
-    ctx.fillRect(sx, sy + TILE_SIZE - 3, TILE_SIZE, 3);
+  ctx.globalAlpha = 1;
+
+  // Foam along the shoreline (edges that touch non-water tiles).
+  ctx.fillStyle = "rgba(210, 236, 246, 0.5)";
+  if (getTile(tx, ty - 1) !== TILE.WATER) ctx.fillRect(sx, sy, TILE_SIZE, 3);
+  if (getTile(tx, ty + 1) !== TILE.WATER) ctx.fillRect(sx, sy + TILE_SIZE - 3, TILE_SIZE, 3);
+  if (getTile(tx - 1, ty) !== TILE.WATER) ctx.fillRect(sx, sy, 3, TILE_SIZE);
+  if (getTile(tx + 1, ty) !== TILE.WATER) ctx.fillRect(sx + TILE_SIZE - 3, sy, 3, TILE_SIZE);
+}
+
+/**
+ * Subtle animated wave overlay drawn live over the (cached) water tiles. Gentle
+ * drifting crests fade in and out so only a sparse few show at any moment —
+ * realistic motion without busy animation. Skipped in space/dungeon themes.
+ */
+function drawWaterShimmer(minTileX, maxTileX, minTileY, maxTileY) {
+  if (
+    state.worldTheme === SCI_FI_THEME ||
+    state.worldTheme === ALIEN_THEME ||
+    state.worldTheme === DUNGEON_THEME
+  ) {
+    return;
   }
-  if (getTile(tx - 1, ty) !== TILE.WATER) {
-    ctx.fillRect(sx, sy, 3, TILE_SIZE);
-  }
-  if (getTile(tx + 1, ty) !== TILE.WATER) {
-    ctx.fillRect(sx + TILE_SIZE - 3, sy, 3, TILE_SIZE);
+  const t = performance.now() / 1000;
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  for (let ty = minTileY; ty < maxTileY; ty += 1) {
+    for (let tx = minTileX; tx < maxTileX; tx += 1) {
+      if (getTile(tx, ty) !== TILE.WATER) continue;
+      const phase = Math.sin(t * 0.9 + tx * 0.6 + ty * 0.45);
+      if (phase < 0.55) continue; // only crest moments → sparse and gentle
+      const sx = tx * TILE_SIZE - state.camera.x + halfW;
+      const sy = ty * TILE_SIZE - state.camera.y + halfH;
+      const alpha = ((phase - 0.55) / 0.45) * 0.18;
+      const yoff = 6 + (((Math.sin(t * 0.8 + tx * 0.5) * 0.5) + 0.5) * 16 | 0);
+      ctx.fillStyle = `rgba(224, 242, 250, ${alpha.toFixed(3)})`;
+      ctx.fillRect(sx + 5, sy + yoff, 14, 2);
+    }
   }
 }
 

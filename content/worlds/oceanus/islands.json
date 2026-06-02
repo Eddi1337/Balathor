@@ -12,7 +12,7 @@
   },
   "landing": {
     "x": -43240,
-    "y": -162
+    "y": -112
   },
   "islands": [
     {
@@ -20,7 +20,7 @@
       "name": "Mariner's Rest",
       "x": -43240,
       "y": -240,
-      "landRadius": 70,
+      "landRadius": 120,
       "pierDir": "south",
       "hub": true,
       "content": {
@@ -29,28 +29,28 @@
       "layout": [
         {
           "kind": "palm",
-          "dx": -25,
-          "dy": 10
+          "dx": -43,
+          "dy": 18
         },
         {
           "kind": "tree",
           "dx": 1,
-          "dy": -19
+          "dy": -33
         },
         {
           "kind": "rock",
-          "dx": 3,
-          "dy": 12
+          "dx": 5,
+          "dy": 21
         },
         {
           "kind": "palm",
-          "dx": 28,
-          "dy": 2
+          "dx": 48,
+          "dy": 3
         },
         {
           "kind": "palm",
-          "dx": -11,
-          "dy": 26
+          "dx": -19,
+          "dy": 44
         }
       ]
     },

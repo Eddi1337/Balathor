@@ -51,6 +51,28 @@ const PIER_LEN = 10;
 const PIER_HALF_WIDTH = 1;          // pier is 3 tiles wide
 const MAX_REACH = 64;               // largest landRadius + pier + slack
 
+// Return teleporter sits on the large central hub island, a little inland from
+// its south dock. Roads radiate out from it (a path rosette, like the stargate).
+const HUB_FOR_TELEPORTER = (Array.isArray(DATA.islands) ? DATA.islands : []).find((i) => i.hub) || null;
+const OCEANUS_TELEPORTER = Object.freeze(
+  HUB_FOR_TELEPORTER
+    ? { x: Math.round(HUB_FOR_TELEPORTER.x), y: Math.round(HUB_FOR_TELEPORTER.y + (Number(HUB_FOR_TELEPORTER.landRadius) || 70) - 20) }
+    : { x: OCEANUS_BOUNDS.minX, y: OCEANUS_BOUNDS.minY }
+);
+const TELEPORTER_DISK_R = 4;
+const TELEPORTER_SPOKE_MAX = 18;
+
+/** Path-rosette test: compact disk at the teleporter plus eight straight spokes. */
+function isTeleporterRosette(x, y) {
+  const vx = x - OCEANUS_TELEPORTER.x;
+  const vy = y - OCEANUS_TELEPORTER.y;
+  const r = Math.hypot(vx, vy);
+  if (r <= TELEPORTER_DISK_R + 1e-9) return true;
+  if (r > TELEPORTER_SPOKE_MAX + 1e-9) return false;
+  if (vx === 0 || vy === 0) return true;
+  return vx === vy || vx === -vy;
+}
+
 // ---------------------------------------------------------------------------
 // Spatial index — bucket islands into a coarse grid so tile lookups only test
 // nearby islands instead of all 135.
@@ -197,6 +219,12 @@ function getOceanusTile(x, y, TILE, hash2) {
       const detail = hash2(x, y, 8801);
       return detail > 0.92 ? TILE.STONE : TILE.PATH;
     }
+  }
+
+  // Road rosette radiating from the hub island's return teleporter (drawn ahead
+  // of beach/water so the roads stay connected down to the dock).
+  if (isTeleporterRosette(Math.floor(x), Math.floor(y))) {
+    return TILE.PATH;
   }
 
   const land = islandLandScore(x, y);
@@ -446,6 +474,7 @@ module.exports = {
   NAUTICAL_THEME,
   OCEANUS_BOUNDS,
   OCEANUS_LANDING,
+  OCEANUS_TELEPORTER,
   OCEANUS_ISLANDS,
   OCEANUS_PORTS,
   OCEANUS_FEATURES,

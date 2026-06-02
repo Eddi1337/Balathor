@@ -4948,8 +4948,17 @@ function arriveAtOceanusDock(client) {
     boat.deckMode = false;
   }
   if (port) {
-    player.x = port.terminalX;
-    player.y = port.terminalY;
+    // Stand the player on the island's shore by the pier base (on solid land),
+    // facing the moored boat — not out on the planks over open water.
+    const inland = 10;
+    let lx = port.terminalX;
+    let ly = port.terminalY;
+    if (port.facing === "south") ly -= inland;
+    else if (port.facing === "north") ly += inland;
+    else if (port.facing === "east") lx -= inland;
+    else lx += inland;
+    player.x = lx;
+    player.y = ly;
     player.facing = facingForDockPort(port);
   }
   player.moving = false;

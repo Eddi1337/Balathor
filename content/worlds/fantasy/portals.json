@@ -33,7 +33,7 @@
       "x": -20,
       "y": 0,
       "targetX": -43240,
-      "targetY": -205,
+      "targetY": -140,
       "color": "#4ec5ff",
       "style": "nautical"
     },
@@ -41,7 +41,7 @@
       "id": "portal_oceanus_return",
       "name": "Hub Passage",
       "x": -43240,
-      "y": -205,
+      "y": -140,
       "targetX": -20,
       "targetY": 0,
       "color": "#4ec5ff",

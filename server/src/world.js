@@ -107,6 +107,7 @@ const {
   getOceanusObjectsInChunk,
   getOceanusContentSpawns,
   OCEANUS_LANDING,
+  OCEANUS_TELEPORTER,
   OCEANUS_ISLANDS,
   OCEANUS_FEATURES,
   oceanusDockPortForPlayerId,
@@ -1007,16 +1008,16 @@ const PORTALS = Array.isArray(_portalDoc?.portals) && _portalDoc.portals.length 
         name: "Seafarer Cave",
         x: -20,
         y: 0,
-        targetX: OCEANUS_LANDING.x,
-        targetY: OCEANUS_LANDING.y,
+        targetX: OCEANUS_TELEPORTER.x,
+        targetY: OCEANUS_TELEPORTER.y,
         color: "#4ec5ff",
         style: "nautical"
       },
       {
         id: "portal_oceanus_return",
         name: "Hub Passage",
-        x: OCEANUS_LANDING.x,
-        y: OCEANUS_LANDING.y,
+        x: OCEANUS_TELEPORTER.x,
+        y: OCEANUS_TELEPORTER.y,
         targetX: -20,
         targetY: 0,
         color: "#4ec5ff",
@@ -1028,16 +1029,37 @@ const PORTALS = Array.isArray(_portalDoc?.portals) && _portalDoc.portals.length 
 const PORTAL_CLEAR_STONE_RADIUS = 10;
 const PORTAL_CAMP_CLEAR_RADIUS = 10;
 
+/** Hub gates that get a brown path rosette (roads radiating) rather than a stone
+ *  courtyard: the Stargate (east) and the Seafarer Cave to the ocean (west). */
+const HUB_PATH_PORTAL_TILES = Object.freeze([
+  STARGATE_HUB_TILE,
+  Object.freeze({ x: -20, y: 0 })
+]);
+
+function nearestHubPathPortalTile(ti, tj) {
+  let best = HUB_PATH_PORTAL_TILES[0];
+  let bestSq = Infinity;
+  for (const p of HUB_PATH_PORTAL_TILES) {
+    const dx = ti - p.x;
+    const dy = tj - p.y;
+    const s = dx * dx + dy * dy;
+    if (s < bestSq) {
+      bestSq = s;
+      best = p;
+    }
+  }
+  return { portal: best, distSq: bestSq };
+}
+
 function isNearHubStargatePortalClearance(ti, tj) {
-  const dx = ti - STARGATE_HUB_TILE.x;
-  const dy = tj - STARGATE_HUB_TILE.y;
-  return dx * dx + dy * dy <= PORTAL_CLEAR_STONE_RADIUS * PORTAL_CLEAR_STONE_RADIUS;
+  return nearestHubPathPortalTile(ti, tj).distSq <= PORTAL_CLEAR_STONE_RADIUS * PORTAL_CLEAR_STONE_RADIUS;
 }
 
 /** Path tiles: compact disk at the gate plus straight lines in all eight directions. */
 function isStargateHubPathPlaza(ti, tj) {
-  const vx = ti - STARGATE_HUB_TILE.x;
-  const vy = tj - STARGATE_HUB_TILE.y;
+  const { portal } = nearestHubPathPortalTile(ti, tj);
+  const vx = ti - portal.x;
+  const vy = tj - portal.y;
   const r = Math.hypot(vx, vy);
   if (r <= STARGATE_HUB_PATH_DISK_R + 1e-9) return true;
   if (r > STARGATE_HUB_PATH_SPOKE_MAX + 1e-9) return false;
