@@ -1370,6 +1370,7 @@ function handleServerMessage(message) {
     form.classList.add("hidden");
     progression.classList.remove("hidden");
     chat.classList.remove("hidden");
+    releaseGameplayTextFocus();
     syncMobileControlsVisibility();
     abilityBar.classList.remove("hidden");
     if (isMobile) {
@@ -2286,7 +2287,7 @@ function updateSmoothPlayers(dt) {
         (player.ship?.boarded && (state.input.engage || state.input.fire || state.input.repair))
       );
       const err = Math.hypot(player.targetX - player.renderX, player.targetY - player.renderY);
-      if (err > LOCAL_CORRECTION_SNAP_TILES) {
+      if (err > LOCAL_CORRECTION_SNAP_TILES && !localInputActive) {
         player.renderX = player.targetX;
         player.renderY = player.targetY;
         player.renderMoving = false;
@@ -4137,7 +4138,7 @@ function wireUi() {
 }
 
 function updateInput(event, pressed) {
-  if (state.menuOpen || isTextEntryTarget(event.target)) {
+  if (isMovementInputBlocked()) {
     return;
   }
 
@@ -4190,6 +4191,32 @@ function setMovementInput(direction, pressed) {
 
 function isTextEntryTarget(target) {
   return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+}
+
+/** True when the element is visible enough that keyboard typing should capture movement keys. */
+function isVisibleTextEntry(element) {
+  if (!isTextEntryTarget(element) || !(element instanceof HTMLElement)) {
+    return false;
+  }
+  if (!element.isConnected) {
+    return false;
+  }
+  return element.getClientRects().length > 0;
+}
+
+function isMovementInputBlocked() {
+  if (state.menuOpen) {
+    return true;
+  }
+  return isVisibleTextEntry(document.activeElement);
+}
+
+/** Drop focus from login/menu fields so WASD works after entering the world. */
+function releaseGameplayTextFocus() {
+  const active = document.activeElement;
+  if (isTextEntryTarget(active)) {
+    active.blur();
+  }
 }
 
 function sendInput() {
@@ -5655,6 +5682,11 @@ function wireMobileControls() {
     event.preventDefault();
     activeInputMode = "pointer";
     activePointerId = event.pointerId;
+    try {
+      joystickCanvas.setPointerCapture(event.pointerId);
+    } catch {
+      /* ignore capture failures on older browsers */
+    }
     applyJoystickPoint(event.clientX, event.clientY);
   }, { passive: false });
 
@@ -5664,14 +5696,26 @@ function wireMobileControls() {
     applyJoystickPoint(event.clientX, event.clientY);
   }, { passive: false });
 
-  window.addEventListener("pointerup", (event) => {
+  function endPointerJoystick(event) {
     if (activeInputMode !== "pointer" || activePointerId !== event.pointerId) return;
     event.preventDefault();
+    try {
+      if (joystickCanvas.hasPointerCapture(event.pointerId)) {
+        joystickCanvas.releasePointerCapture(event.pointerId);
+      }
+    } catch {
+      /* ignore */
+    }
     resetJoystick();
-  }, { passive: false });
-  window.addEventListener("pointercancel", (event) => {
-    if (activeInputMode === "pointer" && activePointerId === event.pointerId) resetJoystick();
-  }, { passive: false });
+  }
+
+  window.addEventListener("pointerup", endPointerJoystick, { passive: false });
+  window.addEventListener("pointercancel", endPointerJoystick, { passive: false });
+  joystickCanvas.addEventListener("lostpointercapture", (event) => {
+    if (activeInputMode === "pointer" && activePointerId === event.pointerId) {
+      resetJoystick();
+    }
+  });
 
   joystickCanvas.addEventListener("touchstart", (event) => {
     if (!state.joined || state.menuOpen || activeInputMode) return;
@@ -6215,6 +6259,7 @@ function closeMenu() {
   menu.classList.add("hidden");
   syncMobileControlsVisibility();
   menu.setAttribute("aria-hidden", "true");
+  releaseGameplayTextFocus();
 }
 
 const AUTO_CLOSE_RADIUS = TRADER_CLICK_PLAYER_RADIUS + 4;
