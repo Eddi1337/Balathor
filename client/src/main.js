@@ -917,7 +917,7 @@ function drawDebugHud() {
     ? `Map: ${Math.round(self.renderX)}, ${Math.round(self.renderY)} (chunk ${Math.floor(self.renderX / CHUNK_SIZE)}, ${Math.floor(self.renderY / CHUNK_SIZE)})`
     : "Map: —";
   const themeLabel = isNauticalWorld()
-    ? "Realm: archipelago"
+    ? "Realm: ocean"
     : isSciFiWorld()
       ? "Realm: sci-fi"
       : "Realm: fantasy";
@@ -1145,13 +1145,13 @@ if (globalThis.BalathorMinigames) {
     getJoined: () => state.joined,
     getWorldId: () => {
       const self = state.players.get(state.selfId);
-      if (!self) return isShipNavWorld() ? (isNauticalWorld() ? "archipelago" : "scifi") : "fantasy";
-      if (self.x >= -3400 && self.x <= -1600 && self.y >= 1600 && self.y <= 3400) return "archipelago";
+      if (!self) return isShipNavWorld() ? (isNauticalWorld() ? "oceanus" : "scifi") : "fantasy";
+      if (self.x >= -46000 && self.x <= -40000 && self.y >= -3000 && self.y <= 3000) return "oceanus";
       if (self.x >= 4900 && self.x <= 6800 && Math.abs(self.y) < 80) {
         if (Math.hypot(self.x - 5300, self.y) < 45) return "planet:planet_rust";
       }
       if (isShipNavWorld() || (self.x > 1500 && self.x < 2500 && Math.abs(self.y) < 200)) {
-        return isNauticalWorld() ? "archipelago" : "scifi";
+        return isNauticalWorld() ? "oceanus" : "scifi";
       }
       return "fantasy";
     },

@@ -20,13 +20,31 @@ assert.equal(originChunk.tiles.length, world.CHUNK_SIZE * world.CHUNK_SIZE);
 assert.equal(originChunk.worldId, "fantasy");
 assert.equal(world.worldIdAt(0, 0), "fantasy");
 assert.equal(world.worldIdAt(1920, 0), "scifi");
-const seafarerCave = world.PORTALS.find((portal) => portal.id === "portal_archipelago");
+const seafarerCave = world.PORTALS.find((portal) => portal.id === "portal_oceanus");
 assert.deepEqual(
   { x: seafarerCave?.x, y: seafarerCave?.y, style: seafarerCave?.style },
   { x: -20, y: 0, style: "nautical" }
 );
-assert.equal(seafarerCave?.targetX, -2500);
-assert.equal(world.worldIdAt(seafarerCave?.targetX, seafarerCave?.targetY), "archipelago");
+assert.equal(world.worldIdAt(seafarerCave?.targetX, seafarerCave?.targetY), "oceanus");
+
+// ── Boundless Ocean: 100+ islands, mostly water, sandy beaches + grassy cores ──
+assert.ok(world.OCEANUS_ISLANDS.length >= 100, "ocean should have at least 100 islands");
+const oceanHub = world.OCEANUS_ISLANDS.find((isle) => isle.hub);
+assert.ok(oceanHub, "ocean should have a hub island");
+// Island centre is land (grassy/path core); far from islands is open water.
+assert.notEqual(world.generateTile(oceanHub.x, oceanHub.y), world.TILE.WATER);
+assert.equal(world.generateTile(oceanHub.x + 240, oceanHub.y), world.TILE.WATER);
+// A sandy beach ring exists between the grassy core and the water.
+const beachRing = [];
+for (let r = oceanHub.landRadius - 6; r <= oceanHub.landRadius + 8; r += 1) {
+  beachRing.push(world.generateTile(oceanHub.x + r, oceanHub.y));
+}
+assert.ok(beachRing.includes(world.TILE.SAND), "island should have a sandy beach ring");
+// The arrival dock places the boat in water and the player on a walkable pier.
+const hubDock = world.dockPortForPlayerId("smoke_player", "oceanus");
+assert.equal(world.worldIdAt(hubDock.x, hubDock.y), "oceanus");
+assert.equal(world.generateTile(hubDock.x, hubDock.y), world.TILE.WATER);
+assert.notEqual(world.generateTile(hubDock.terminalX, hubDock.terminalY), world.TILE.WATER);
 assert.equal(world.worldIdAt(210_000, 0), "pirate");
 assert.equal(world.worldIdAt(15_000, 15_000), "dungeon:whispering_crypt");
 assert.ok(world.listMapCatalog().some((m) => m.id === "example_cove"));

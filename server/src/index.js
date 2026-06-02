@@ -36,7 +36,9 @@ const {
   findNearestDockPort,
   dockPortForPlayerId,
   dockPortById,
-  ARCHIPELAGO_LANDING,
+  OCEANUS_LANDING,
+  OCEANUS_ISLANDS,
+  getOceanusContentSpawns,
   NAUTICAL_THEME,
   sciFiStationFeatureAt,
   STARGATE_LANDING,
@@ -129,10 +131,10 @@ function resolveDockPortById(id) {
 
 function fallbackDockPortForPlayer(player) {
   const worldId = worldForPosition(player?.x ?? 0, player?.y ?? 0);
-  if (worldId === "archipelago") {
+  if (worldId === "oceanus") {
     return (
-      (player?.id ? dockPortForPlayerId(player.id, "archipelago") : null) ||
-      findNearestDockPort(ARCHIPELAGO_LANDING.x, ARCHIPELAGO_LANDING.y, 120)
+      (player?.id ? dockPortForPlayerId(player.id, "oceanus") : null) ||
+      findNearestDockPort(OCEANUS_LANDING.x, OCEANUS_LANDING.y, 120)
     );
   }
   return (
@@ -3194,7 +3196,7 @@ function getPlayerDockPort(player) {
     return null;
   }
   const worldId = worldForPosition(player.x, player.y);
-  const port = dockPortForPlayerId(player.id, worldId === "archipelago" ? "archipelago" : "scifi");
+  const port = dockPortForPlayerId(player.id, worldId === "oceanus" ? "oceanus" : "scifi");
   if (!port) {
     return null;
   }
@@ -4899,6 +4901,64 @@ function handleCaveEntranceInteract(client, message = {}) {
   return true;
 }
 
+/** Nautical hull classes that count as a player's "boat" in the ocean. */
+const OCEANUS_HULLS = new Set(["sloop", "brig", "galleon", "manowar"]);
+
+/** Ensure the player owns a boat; grant a starter Harbour Sloop on first visit. */
+function ensurePlayerHasNauticalBoat(client, dockPort) {
+  ensurePlayerFleet(client.player);
+  const ships = client.player.ships || [];
+  const existing = ships.find((s) => OCEANUS_HULLS.has(s.hullClass));
+  if (existing) return existing;
+  const tmpl = getNauticalShipCatalog()[0]; // Harbour Sloop
+  const boat = sanitizeShip({
+    id: createShipId(tmpl.shipTemplateId || tmpl.templateId),
+    templateId: tmpl.shipTemplateId || tmpl.templateId,
+    name: tmpl.shipName || tmpl.name,
+    color: tmpl.shipColor || tmpl.color,
+    hullClass: tmpl.hullClass || "sloop",
+    boarded: false,
+    dockX: dockPort?.x ?? OCEANUS_LANDING.x,
+    dockY: dockPort?.y ?? OCEANUS_LANDING.y,
+    dockStationId: dockPort ? dockStationIdForPort(dockPort) : null,
+    dockPortId: dockPort?.id || null,
+    facing: dockPort ? facingForDockPort(dockPort) : 0,
+    speed: Number(tmpl.stats?.speed) || SHIP_SPEED,
+    laserTier: 1,
+    thrustTier: 1
+  });
+  if (boat) {
+    ensureShipCrew(boat);
+    client.player.ships.push(boat);
+  }
+  return boat;
+}
+
+/** Place an arriving player on their home dock with their boat moored alongside. */
+function arriveAtOceanusDock(client) {
+  const player = client.player;
+  if (!player) return;
+  const port =
+    dockPortForPlayerId(player.id, "oceanus") ||
+    findNearestDockPort(OCEANUS_LANDING.x, OCEANUS_LANDING.y, 200);
+  const boat = ensurePlayerHasNauticalBoat(client, port);
+  if (boat && port) {
+    summonPlayerShipToPort(player, boat, port);
+    boat.boarded = false;
+    boat.deckMode = false;
+  }
+  if (port) {
+    player.x = port.terminalX;
+    player.y = port.terminalY;
+    player.facing = facingForDockPort(port);
+  }
+  player.moving = false;
+  player._stillAccumulator = 0;
+  player.aboardShipId = null;
+  player.boardedShip = null;
+  saveClientCharacter(client);
+}
+
 function handlePortalTravel(client) {
   const now = Date.now();
   if (now - client.lastPortalAt < PORTAL_COOLDOWN_MS) {
@@ -4921,6 +4981,11 @@ function handlePortalTravel(client) {
   if (portal.kind === "planet_return" && client.player.ship) {
     boardPlayerOntoCurrentShip(client.player);
     saveClientCharacter(client);
+  }
+  // Arriving in the Boundless Ocean lands the player on their home dock with
+  // their boat moored alongside.
+  if (worldForPosition(client.player.x, client.player.y) === "oceanus") {
+    arriveAtOceanusDock(client);
   }
   client.input = normalizeInput();
 
@@ -9528,7 +9593,7 @@ function createItemTemplate(type, rarity, index) {
 }
 
 function createChests() {
-  return ENEMY_CAMPS.map((camp, index) => {
+  const landChests = ENEMY_CAMPS.map((camp, index) => {
     const item = createLootItem(camp.x, camp.y, camp.boss ? 0.7 : 0.25);
     return {
       id: `chest_${camp.id}`,
@@ -9538,6 +9603,17 @@ function createChests() {
       item
     };
   });
+  // Loot islands in the Boundless Ocean get a treasure chest at their centre.
+  const oceanChests = getOceanusContentSpawns()
+    .filter((isle) => isle.content?.kind === "loot")
+    .map((isle) => ({
+      id: `chest_oceanus_${isle.islandId}`,
+      x: Number(isle.x.toFixed(2)),
+      y: Number((isle.y + 1).toFixed(2)),
+      opened: false,
+      item: createLootItem(isle.x, isle.y, Number(isle.content.quality) || 0.4)
+    }));
+  return [...landChests, ...oceanChests];
 }
 
 function createLootItem(seedX, seedY, qualityBias = 0) {
@@ -9872,7 +9948,7 @@ function handleShopBuy(client, message) {
     const dockPort =
       findNearestDockPort(client.player.x, client.player.y, 80) || getPlayerDockPort(client.player) || fallbackDockPortForPlayer(client.player);
     const landingFallback =
-      getWorldThemeAt(client.player.x, client.player.y) === NAUTICAL_THEME ? ARCHIPELAGO_LANDING : STARGATE_LANDING;
+      getWorldThemeAt(client.player.x, client.player.y) === NAUTICAL_THEME ? OCEANUS_LANDING : STARGATE_LANDING;
     const newShip = sanitizeShip({
       id: createShipId(template.shipTemplateId || template.templateId),
       templateId: template.shipTemplateId || template.templateId,
@@ -10047,7 +10123,7 @@ function createMobs() {
     { id: "mob_imp_ember_1", name: "Ember Imp", level: 9, homeX: 134, homeY: -121, primary: "#d85b35", accent: "#ffd06a", maxHp: 86, attackDamage: 19 },
     { id: "mob_imp_ember_2", name: "Ember Imp", level: 9, homeX: 158, homeY: -142, primary: "#d85b35", accent: "#ffd06a", maxHp: 86, attackDamage: 19 },
   ];
-  return [...fixedMobs, ...createWildernessMobs(), ...createRoamingMobs(), ...createCritterMobs(), ...createPlanetSurfaceMobs(), ...createDungeonMobs(), ...createSciFiPirateMobs()].map((mob) => ({
+  return [...fixedMobs, ...createWildernessMobs(), ...createRoamingMobs(), ...createCritterMobs(), ...createOceanusMobs(), ...createPlanetSurfaceMobs(), ...createDungeonMobs(), ...createSciFiPirateMobs()].map((mob) => ({
     ...mob,
     x: mob.homeX,
     y: mob.homeY,
@@ -10512,6 +10588,94 @@ function createCritterMobs() {
     }
   }
 
+  return list;
+}
+
+/** Spawn enemies and critters on islands whose content asks for them. */
+function createOceanusMobs() {
+  // Nautical enemy + critter palettes (declared locally: createMobs() runs at
+  // module load, before any module-level const further down would initialise).
+  const OCEANUS_ENEMY_PALETTE = { name: "Castaway Marauder", primary: "#8a5a3c", accent: "#e0b483" };
+  const OCEANUS_BOSS_PALETTE = { name: "Pirate Captain", primary: "#5a2d3c", accent: "#ffd166" };
+  const OCEANUS_CRITTER_POOL = [
+    { name: "Sand Crab", primary: "#d98a5b", accent: "#ffd9a8", maxHp: 22, speed: 0.5 },
+    { name: "Shore Gull", primary: "#e8eef8", accent: "#b9c0bf", maxHp: 18, speed: 0.7 },
+    { name: "Sea Turtle", primary: "#3f7d5a", accent: "#9bd6a8", maxHp: 26, speed: 0.4 }
+  ];
+  const list = [];
+  let seq = 0;
+  for (const isle of getOceanusContentSpawns()) {
+    const content = isle.content || {};
+    const inner = Math.max(4, isle.landRadius * 0.5);
+    if (content.kind === "enemies") {
+      const tier = Math.max(1, Math.min(4, Number(content.tier) || 1));
+      const size = Math.max(1, Math.min(10, Number(content.size) || 3));
+      for (let i = 0; i < size; i += 1) {
+        const ang = hash2(isle.x, isle.y + i, 33100) * Math.PI * 2;
+        const dist = hash2(isle.x + i, isle.y, 33101) * inner;
+        const level = tier * 4 + Math.floor(hash2(isle.x, isle.y + i, 33102) * 4);
+        seq += 1;
+        list.push({
+          id: `mob_oceanus_${isle.islandId}_${i}`,
+          name: OCEANUS_ENEMY_PALETTE.name,
+          level,
+          homeX: Math.round(isle.x + Math.cos(ang) * dist),
+          homeY: Math.round(isle.y + Math.sin(ang) * dist),
+          primary: OCEANUS_ENEMY_PALETTE.primary,
+          accent: OCEANUS_ENEMY_PALETTE.accent,
+          biome: "nautical",
+          faction: "oceanus_marauder",
+          maxHp: 60 + tier * 32 + level * 4,
+          attackDamage: 10 + tier * 5,
+          roamRadius: 4 + hash2(isle.x, isle.y + i, 33103) * 4,
+          speed: 1.6
+        });
+      }
+      if (content.boss) {
+        const bossLevel = tier * 4 + 6;
+        list.push({
+          id: `mob_oceanus_${isle.islandId}_boss`,
+          name: OCEANUS_BOSS_PALETTE.name,
+          level: bossLevel,
+          homeX: Math.round(isle.x),
+          homeY: Math.round(isle.y),
+          primary: OCEANUS_BOSS_PALETTE.primary,
+          accent: OCEANUS_BOSS_PALETTE.accent,
+          biome: "nautical",
+          faction: "oceanus_marauder",
+          boss: true,
+          maxHp: 220 + tier * 90,
+          attackDamage: 18 + tier * 7,
+          roamRadius: 6,
+          speed: 1.5
+        });
+      }
+    } else if (content.kind === "critters") {
+      const count = Math.max(1, Math.min(8, Number(content.count) || 3));
+      for (let i = 0; i < count; i += 1) {
+        const tmpl = OCEANUS_CRITTER_POOL[Math.floor(hash2(isle.x, isle.y + i, 33200) * OCEANUS_CRITTER_POOL.length) % OCEANUS_CRITTER_POOL.length];
+        const ang = hash2(isle.x + i, isle.y, 33201) * Math.PI * 2;
+        const dist = hash2(isle.x, isle.y + i, 33202) * inner;
+        seq += 1;
+        list.push({
+          id: `mob_oceanus_critter_${isle.islandId}_${i}`,
+          name: tmpl.name,
+          level: 1,
+          biome: "nautical",
+          isCritter: true,
+          critterXp: 2 + Math.floor(hash2(isle.x, isle.y + i, 33203) * 3),
+          attackDamage: 0,
+          homeX: Math.round(isle.x + Math.cos(ang) * dist),
+          homeY: Math.round(isle.y + Math.sin(ang) * dist),
+          primary: tmpl.primary,
+          accent: tmpl.accent,
+          maxHp: tmpl.maxHp,
+          roamRadius: 4 + hash2(isle.x, isle.y + i, 33204) * 3,
+          speed: tmpl.speed
+        });
+      }
+    }
+  }
   return list;
 }
 

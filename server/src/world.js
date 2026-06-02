@@ -102,10 +102,17 @@ const {
 } = require("./worlds/dungeonWorlds.js");
 const {
   NAUTICAL_THEME,
-  getArchipelagoAtPoint,
-  getArchipelagoTile,
-  getArchipelagoObjectsInChunk
-} = require("./worlds/archipelagoWorld.js");
+  getOceanusAtPoint,
+  getOceanusTile,
+  getOceanusObjectsInChunk,
+  getOceanusContentSpawns,
+  OCEANUS_LANDING,
+  OCEANUS_ISLANDS,
+  OCEANUS_FEATURES,
+  oceanusDockPortForPlayerId,
+  oceanusPortById,
+  findNearestOceanusPort
+} = require("./worlds/oceanusWorld.js");
 const {
   SCI_FI_STATIONS,
   SCI_FI_STATION_FEATURES,
@@ -114,13 +121,6 @@ const {
   sciFiDockPortForPlayerId: layoutDockPortForPlayerId,
   STARGATE_LANDING
 } = require("./sciFiStationLayout.js");
-const {
-  ARCHIPELAGO_LANDING,
-  ARCHIPELAGO_HARBOUR_FEATURES,
-  harbourPortForPlayerId,
-  harbourPortById,
-  findNearestHarbourPort
-} = require("./harbourLayout.js");
 
 /** Hub stargate — east plaza spine, clear of tree; on E–W cross (|y|≤1) for road continuity. */
 const STARGATE_HUB_TILE = Object.freeze({ x: 20, y: 0 });
@@ -270,8 +270,8 @@ function findNearestSciFiDockPort(px, py, maxDist = 12) {
 
 function findNearestDockPort(px, py, maxDist = 12) {
   const world = worldForPosition(px, py);
-  if (world === "archipelago") {
-    return findNearestHarbourPort(px, py, maxDist);
+  if (world === "oceanus") {
+    return findNearestOceanusPort(px, py, maxDist);
   }
   if (world === "scifi") {
     return findNearestSciFiDockPort(px, py, maxDist);
@@ -280,16 +280,16 @@ function findNearestDockPort(px, py, maxDist = 12) {
 }
 
 function dockPortForPlayerId(playerId, worldId = "scifi") {
-  if (worldId === "archipelago") {
-    return harbourPortForPlayerId(playerId);
+  if (worldId === "oceanus") {
+    return oceanusDockPortForPlayerId(playerId);
   }
   return layoutDockPortForPlayerId(playerId);
 }
 
 function dockPortById(id, worldId = null) {
-  const harbour = harbourPortById(id);
+  const harbour = oceanusPortById(id);
   if (harbour) return harbour;
-  if (worldId === "archipelago") return null;
+  if (worldId === "oceanus") return null;
   return sciFiDockPortById(id);
 }
 
@@ -298,7 +298,7 @@ const DUNGEON_THEME = "dungeon";
 function sciFiThemeForPoint(x, y) {
   if (getDungeonByInteriorPoint(x, y)) return DUNGEON_THEME;
   if (getPlanetBySurfacePoint(x, y)) return "alien";
-  if (getArchipelagoAtPoint(x, y)) return NAUTICAL_THEME;
+  if (getOceanusAtPoint(x, y)) return NAUTICAL_THEME;
   return isSciFiSector(x, y) ? SCI_FI_THEME : "fantasy";
 }
 
@@ -1003,20 +1003,20 @@ const PORTALS = Array.isArray(_portalDoc?.portals) && _portalDoc.portals.length 
         style: "stargate"
       },
       {
-        id: "portal_archipelago",
+        id: "portal_oceanus",
         name: "Seafarer Cave",
         x: -20,
         y: 0,
-        targetX: ARCHIPELAGO_LANDING.x,
-        targetY: ARCHIPELAGO_LANDING.y,
+        targetX: OCEANUS_LANDING.x,
+        targetY: OCEANUS_LANDING.y,
         color: "#4ec5ff",
         style: "nautical"
       },
       {
-        id: "portal_archipelago_return",
+        id: "portal_oceanus_return",
         name: "Hub Passage",
-        x: ARCHIPELAGO_LANDING.x,
-        y: ARCHIPELAGO_LANDING.y,
+        x: OCEANUS_LANDING.x,
+        y: OCEANUS_LANDING.y,
         targetX: -20,
         targetY: 0,
         color: "#4ec5ff",
@@ -2039,8 +2039,8 @@ function getDoorTransitionAt(x, y) {
 }
 
 function getShopFixtureAt(x, y) {
-  if (getArchipelagoAtPoint(x, y)) {
-    for (const feature of ARCHIPELAGO_HARBOUR_FEATURES) {
+  if (getOceanusAtPoint(x, y)) {
+    for (const feature of OCEANUS_FEATURES) {
       if (feature.kind !== "ship-shop" && feature.kind !== "harbour-chandler") {
         continue;
       }
@@ -2590,8 +2590,8 @@ function generateExteriorTileCore(x, y) {
 function generateExteriorTile(x, y) {
   const worldId = worldIdAt(x, y);
 
-  if (worldId === "archipelago") {
-    return getArchipelagoTile(x, y, TILE, hash2);
+  if (worldId === "oceanus") {
+    return getOceanusTile(x, y, TILE, hash2);
   }
 
   if (worldId === "pirate") {
@@ -2623,7 +2623,7 @@ function generateChunk(cx, cy) {
 
   const spaceObjects = [
     ...(theme === SCI_FI_THEME ? getSciFiObjectsInChunk(cx, cy) : []),
-    ...(theme === NAUTICAL_THEME ? getArchipelagoObjectsInChunk(cx, cy, CHUNK_SIZE) : []),
+    ...(theme === NAUTICAL_THEME ? getOceanusObjectsInChunk(cx, cy, CHUNK_SIZE) : []),
     ...getPlanetSurfaceObjectsInChunk(cx, cy, CHUNK_SIZE, hash2)
   ];
 
@@ -2655,7 +2655,7 @@ function isSwimmingAt(x, y) {
 function isBlockedForShip(x, y) {
   const tx = Math.floor(x);
   const ty = Math.floor(y);
-  if (worldIdAt(tx, ty) === "archipelago") {
+  if (worldIdAt(tx, ty) === "oceanus") {
     const tile = generateTile(tx, ty);
     return tile !== TILE.WATER;
   }
@@ -2717,7 +2717,7 @@ function isBlockedCircle(x, y, radius = 0.28) {
 }
 
 function isBlockedCircleForShip(x, y, radius = 0.34) {
-  if (getArchipelagoAtPoint(x, y)) {
+  if (getOceanusAtPoint(x, y)) {
     const points = [
       [x - radius, y - radius],
       [x + radius, y - radius],
@@ -2874,7 +2874,9 @@ module.exports = {
   findNearestDockPort,
   dockPortForPlayerId,
   dockPortById,
-  ARCHIPELAGO_LANDING,
+  OCEANUS_LANDING,
+  OCEANUS_ISLANDS,
+  getOceanusContentSpawns,
   NAUTICAL_THEME,
   sciFiStationFeatureAt,
   STARGATE_LANDING,

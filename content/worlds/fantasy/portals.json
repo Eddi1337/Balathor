@@ -28,20 +28,20 @@
       "style": "stargate"
     },
     {
-      "id": "portal_archipelago",
+      "id": "portal_oceanus",
       "name": "Seafarer Cave",
       "x": -20,
       "y": 0,
-      "targetX": -2500,
-      "targetY": 2468,
+      "targetX": -43240,
+      "targetY": -205,
       "color": "#4ec5ff",
       "style": "nautical"
     },
     {
-      "id": "portal_archipelago_return",
+      "id": "portal_oceanus_return",
       "name": "Hub Passage",
-      "x": -2500,
-      "y": 2468,
+      "x": -43240,
+      "y": -205,
       "targetX": -20,
       "targetY": 0,
       "color": "#4ec5ff",
