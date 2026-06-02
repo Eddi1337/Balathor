@@ -1811,6 +1811,10 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: "Left ship station" });
     } else if (message.message === "ship_fixture_used") {
       appendChat({ kind: "system", name: "Realm", text: "Used ship fixture" });
+    } else if (message.message === "ship_fish_caught") {
+      appendChat({ kind: "system", name: "Realm", text: `Caught fish worth ${message.gold || 0}g` });
+    } else if (message.message === "ship_lookout_report") {
+      appendChat({ kind: "system", name: "Realm", text: `Lookout: ${message.islandName || "open water"} is about ${message.distance || 0} tiles away` });
     } else if (message.message === "quest_started") {
       appendChat({ kind: "system", name: "Quest", text: `Started: ${message.questTitle || "Quest"}` });
       toggleGameWindow("quests");
@@ -2510,7 +2514,10 @@ function predictLocalPlayer(player, dt) {
           player.facing = Math.atan2(dy, dx);
         }
       }
-      player.renderMoving = Boolean((role === "engineer" && state.input.repair) || (role === "gunner" && state.input.fire));
+      player.renderMoving = Boolean(
+        (["engineer", "sail_trim", "fishing", "lookout"].includes(role) && state.input.repair) ||
+        (role === "gunner" && state.input.fire)
+      );
       return true;
     }
 
@@ -3435,7 +3442,7 @@ function wireUi() {
       }
       state.input.engage = Boolean(active && isPilotShipRole(role));
       state.input.fire = Boolean(active && role === "gunner");
-      state.input.repair = Boolean(active && role === "engineer");
+      state.input.repair = Boolean(active && ["engineer", "sail_trim", "fishing", "lookout"].includes(role));
       sendInput();
     }
     shipEngageEl.addEventListener("pointerdown", (e) => setShipStationButton(true, e), { passive: false });
@@ -3895,7 +3902,7 @@ function wireUi() {
         const role = selfShipStationRole();
         state.input.engage = Boolean(isPilotShipRole(role) || (isSelfFlyingShip() && !role));
         state.input.fire = Boolean(role === "gunner");
-        state.input.repair = Boolean(role === "engineer");
+        state.input.repair = Boolean(["engineer", "sail_trim", "fishing", "lookout"].includes(role));
         sendInput();
         return;
       }
@@ -4303,9 +4310,15 @@ function renderAbilityBar() {
     if (button) {
       button.dataset.dockAction = "";
       button.textContent = role === "gunner"
-        ? "Fire"
+        ? (isNauticalHull(self.ship?.hullClass) ? "Fire Cannon" : "Fire")
         : role === "engineer"
           ? "Repair"
+          : role === "sail_trim"
+            ? "Trim Sail"
+            : role === "fishing"
+              ? "Fish"
+              : role === "lookout"
+                ? "Scan Horizon"
           : isPilotShipRole(role) || !self.ship?.deckMode
             ? "Engage"
             : "Station";
@@ -4322,7 +4335,7 @@ function renderAbilityBar() {
       const shieldSections = self.ship?.shieldSections && typeof self.ship.shieldSections === "object" ? self.ship.shieldSections : {};
       const stationId = String(self.ship?.stationId || "engineer_mid");
       const shieldDir = String(shieldSections[stationId] || self.ship?.shieldFacing || "front");
-      stats.classList.toggle("hidden", !shipMode || (role !== "engineer" && role !== "gunner"));
+      stats.classList.toggle("hidden", !shipMode || !["engineer", "gunner", "sail_trim", "fishing", "lookout"].includes(role));
       if (shipMode && role === "engineer") {
         stats.replaceChildren();
         const title = document.createElement("strong");
@@ -4341,6 +4354,12 @@ function renderAbilityBar() {
         mode.textContent = isMissile ? "Missiles  [Tab to switch]" : "Lasers  [Tab to switch]";
         mode.style.color = isMissile ? "#ff7b3a" : "#67f0ff";
         stats.append(title, mode);
+      } else if (shipMode && role === "sail_trim") {
+        stats.textContent = `Sail trim ${Math.round((Number(self.ship?.sailTrim) || 0) * 100)}% - use left/right, hold Space to centre`;
+      } else if (shipMode && role === "fishing") {
+        stats.textContent = "Fishing - hold Space to cast";
+      } else if (shipMode && role === "lookout") {
+        stats.textContent = "Lookout - hold Space to scan the horizon";
       }
     }
   }
@@ -8782,7 +8801,7 @@ function drawAlienAtmosphere(minChunkX, maxChunkX, minChunkY, maxChunkY) {
 }
 
 function drawSpaceObjects() {
-  if (state.worldTheme !== SCI_FI_THEME && state.worldTheme !== ALIEN_THEME) {
+  if (state.worldTheme !== SCI_FI_THEME && state.worldTheme !== ALIEN_THEME && state.worldTheme !== NAUTICAL_THEME) {
     return;
   }
 
@@ -8831,7 +8850,7 @@ function drawSpaceObjects() {
       drawSciFiDefenseObject(obj, sx, sy);
     } else if (obj.kind === "cargo-crate" || obj.kind === "shipping-crate" || obj.kind === "container-box") {
       drawCargoCrateObject(obj, sx, sy);
-    } else if (obj.kind === "shop-bay" || obj.kind === "ship-shop") {
+    } else if (obj.kind === "shop-bay") {
       drawShopBayObject(obj, sx, sy);
     } else if (obj.kind === "harbour") {
       drawHarbourObject(obj, sx, sy);
@@ -8839,6 +8858,10 @@ function drawSpaceObjects() {
       drawHarbourPierObject(obj, sx, sy);
     } else if (obj.kind === "ship-shop") {
       drawHarbourChandleryObject(obj, sx, sy);
+    } else if (obj.kind === "oceanus-decor") {
+      drawOceanusDecorObject(obj, sx, sy);
+    } else if (obj.kind === "ambient-sailing-ship") {
+      drawAmbientSailingShip(obj, sx, sy);
     } else if (obj.kind === "ship-console") {
       drawShipConsoleObject(obj, sx, sy);
     } else if (obj.kind === "ship-port") {
@@ -8861,6 +8884,8 @@ function spaceObjectDrawOrder(obj) {
   if (kind === "sci-shop" || kind === "station-kiosk") return 6;
   if (kind === "defense-turret" || kind === "orbital-cannon") return 6;
   if (kind === "harbour" || kind === "harbour-pier") return 2;
+  if (kind === "oceanus-decor") return 4;
+  if (kind === "ambient-sailing-ship") return 5;
   if (kind === "ship-shop") return 6;
   if (kind === "ship-port") return 7;
   if (kind === "ship-console" || kind === "sci-shop-terminal") return 8;
@@ -9294,6 +9319,29 @@ function drawShipOrbitDrones(hullClass, cx, cy, color) {
 
 function getShipLayout(shipOrClass = "skiff") {
   let hullClass = typeof shipOrClass === "string" ? shipOrClass : shipOrClass?.hullClass;
+  if (isNauticalHull(hullClass)) {
+    const large = hullClass === "galleon" || hullClass === "manowar";
+    const deckW = hullClass === "manowar" ? 30 : hullClass === "galleon" ? 25 : hullClass === "brig" ? 21 : 17;
+    const deckH = hullClass === "manowar" ? 18 : hullClass === "galleon" ? 15 : 12;
+    const halfW = deckW / 2;
+    return {
+      crewCapacity: hullClass === "manowar" ? 7 : hullClass === "galleon" ? 6 : 5,
+      npcCrew: 0,
+      deckW,
+      deckH,
+      entry: { x: -halfW + 1.5, y: 0 },
+      teleporter: null,
+      stations: [
+        { id: "helm", role: "pilot", name: "Helm", x: halfW - 2.5, y: 0 },
+        { id: "cannon", role: "gunner", name: "Cannon", x: -1.5, y: large ? -3.5 : -2.5, droneIndex: 0 },
+        { id: "sail_trim", role: "sail_trim", name: "Sail Trim", x: 1.5, y: large ? 3.5 : 2.5 },
+        { id: "fishing", role: "fishing", name: "Fishing", x: -halfW + 3, y: large ? 3.5 : 2.5 },
+        { id: "lookout", role: "lookout", name: "Lookout", x: -halfW + 3, y: large ? -3.5 : -2.5 }
+      ],
+      crewIdle: [],
+      amenities: []
+    };
+  }
   if (hullClass === "sloop") hullClass = "skiff";
   if (hullClass === "brig") hullClass = "crew2";
   if (hullClass === "galleon") hullClass = "crew3";
@@ -9982,6 +10030,7 @@ function drawShipVehicleObject(obj, sx, sy, boarded = false, facing = 0, thrust 
   if (boarded && !isNauticalHull(hullClass)) {
     drawShipOrbitDrones(hullClass, sx, sy, color);
   }
+  if (obj?.hideName) return;
   ctx.save();
   ctx.translate(sx, sy);
   ctx.font = "bold 10px ui-sans-serif, system-ui";
@@ -10146,6 +10195,11 @@ function drawShipStationObject(ship, station, wx, wy) {
   }
   if (station.role === "engineer") {
     drawEngineerStation(wx, wy, active, "#8fe388", stationShieldFacing(ship, station));
+    return;
+  }
+  if (station.role === "sail_trim" || station.role === "fishing" || station.role === "lookout") {
+    const color = station.role === "sail_trim" ? "#f5deb3" : station.role === "fishing" ? "#4ec5ff" : "#ffd166";
+    drawEngineerStation(wx, wy, active, color, "front");
     return;
   }
   drawPilotStation(wx, wy, active, "#67f0ff", station.role === "captain");
@@ -10733,6 +10787,57 @@ function drawHarbourObject(obj, sx, sy) {
   ctx.strokeText(obj.name || "Harbour", sx, sy - r - 8);
   ctx.fillText(obj.name || "Harbour", sx, sy - r - 8);
   ctx.restore();
+}
+
+function drawOceanusDecorObject(obj, sx, sy) {
+  const kind = String(obj.decorKind || "tree");
+  ctx.save();
+  drawEllipseShadow(sx - 15, sy + 10, 30, 9, 0.2);
+  if (kind === "rock") {
+    ctx.fillStyle = "#657078";
+    ctx.beginPath();
+    ctx.ellipse(sx, sy + 3, 12, 8, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (kind === "flowers" || kind === "fern" || kind === "reeds") {
+    const color = kind === "flowers" ? "#ff9ec8" : kind === "reeds" ? "#b7b56b" : "#5fae67";
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    for (let i = -2; i <= 2; i += 1) {
+      ctx.beginPath();
+      ctx.moveTo(sx + i * 5, sy + 10);
+      ctx.lineTo(sx + i * 4, sy - 4 - Math.abs(i) * 2);
+      ctx.stroke();
+    }
+  } else {
+    const trunk = kind === "mangrove" ? "#684833" : "#80552f";
+    const leaf = kind === "palm" ? "#3c9a55" : kind === "banana" ? "#62a94e" : kind === "mangrove" ? "#39774f" : "#438b4d";
+    ctx.strokeStyle = trunk;
+    ctx.lineWidth = kind === "mangrove" ? 6 : 5;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy + 11);
+    ctx.lineTo(sx, sy - 18);
+    ctx.stroke();
+    ctx.fillStyle = leaf;
+    const spread = kind === "palm" || kind === "banana" ? 20 : 15;
+    for (let i = 0; i < 5; i += 1) {
+      const angle = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+      ctx.beginPath();
+      ctx.ellipse(sx + Math.cos(angle) * spread * 0.5, sy - 20 + Math.sin(angle) * spread * 0.35, spread, 6, angle, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function drawAmbientSailingShip(obj, sx, sy) {
+  const t = performance.now() / 1000;
+  const phase = Number(obj.phase) || 0;
+  const radius = Number(obj.routeRadius) || 5;
+  const speed = Number(obj.speed) || 0.15;
+  const angle = phase + t * speed;
+  const x = sx + Math.cos(angle) * radius * TILE_SIZE;
+  const y = sy + Math.sin(angle * 0.8) * radius * TILE_SIZE * 0.5;
+  drawShipVehicleObject(obj, x, y, false, angle + Math.PI / 2, true);
 }
 
 function drawHarbourChandleryObject(obj, sx, sy) {
@@ -13309,6 +13414,7 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
 
 function drawMob(entity, x, y) {
   const faction = entity.faction;
+  if (entity.isCritter && entity.biome === "nautical") return drawOceanusCritter(entity, x, y);
   if (entity.isShipPirate)     return drawMobShipPirate(entity, x, y);
   if (entity.megaBoss)         return drawMobMegaBoss(entity, x, y);
   if (faction === "dragon" || entity.isDragon) return drawMobDragon(entity, x, y);
@@ -13317,6 +13423,44 @@ function drawMob(entity, x, y) {
   if (faction === "golem")     return drawMobGolem(entity, x, y);
   if (faction === "bandit")    return drawMobBandit(entity, x, y);
   drawMobSludge(entity, x, y);
+}
+
+function drawOceanusCritter(entity, x, y) {
+  const name = String(entity.name || "Critter");
+  const primary = entity.primary || "#7ea66c";
+  const accent = entity.accent || "#d9e7b5";
+  ctx.save();
+  drawEllipseShadow(x - 14, y + 5, 28, 7, 0.2);
+  ctx.fillStyle = primary;
+  if (name.includes("Snake")) {
+    ctx.strokeStyle = primary;
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.moveTo(x - 15, y + 3);
+    ctx.quadraticCurveTo(x - 4, y - 8, x + 5, y + 1);
+    ctx.quadraticCurveTo(x + 12, y + 8, x + 18, y - 4);
+    ctx.stroke();
+    ctx.fillStyle = accent;
+    ctx.fillRect(x + 14, y - 8, 4, 3);
+  } else if (name.includes("Turtle")) {
+    ctx.beginPath();
+    ctx.ellipse(x, y, 15, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.arc(x + 16, y, 5, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.beginPath();
+    ctx.ellipse(x, y, 11, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.arc(x + 8, y - 7, 6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+  _mobLabel(entity, x, y - 18, "#e9f3dd", 10);
 }
 
 function drawMobShipPirate(entity, x, y) {
@@ -13958,6 +14102,15 @@ function drawProjectileFx(fx, sx, sy, pct, halfW, halfH) {
     ctx.closePath();
     ctx.fill();
     ctx.lineCap = "butt";
+  } else if (fx.projectileKind === "cannonball") {
+    ctx.globalAlpha = Math.max(0, 1 - pct * 0.15);
+    ctx.fillStyle = "#211b18";
+    ctx.beginPath();
+    ctx.arc(0, 0, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#75655a";
+    ctx.lineWidth = 2;
+    ctx.stroke();
   } else if (fx.projectileKind === "laser_bolt") {
     const boltColor = typeof fx.weaponColor === "string" ? fx.weaponColor : "#67f0ff";
     const style = fx.weaponStyle || "";

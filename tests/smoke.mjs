@@ -45,6 +45,16 @@ const hubDock = world.dockPortForPlayerId("smoke_player", "oceanus");
 assert.equal(world.worldIdAt(hubDock.x, hubDock.y), "oceanus");
 assert.equal(world.generateTile(hubDock.x, hubDock.y), world.TILE.WATER);
 assert.notEqual(world.generateTile(hubDock.terminalX, hubDock.terminalY), world.TILE.WATER);
+const oceanDecorKinds = new Set(world.OCEANUS_ISLANDS.flatMap((isle) => isle.layout.map((prop) => prop.kind)));
+assert.equal(oceanDecorKinds.has("mangrove"), true);
+assert.equal(oceanDecorKinds.has("banana"), true);
+assert.equal(oceanDecorKinds.has("fern"), true);
+let ambientOceanShip = null;
+for (let cx = Math.floor(-45500 / world.CHUNK_SIZE); cx < Math.floor(-40500 / world.CHUNK_SIZE) && !ambientOceanShip; cx += 1) {
+  const chunk = world.generateChunk(cx, Math.floor(2000 / world.CHUNK_SIZE));
+  ambientOceanShip = chunk.spaceObjects.find((obj) => obj.kind === "ambient-sailing-ship") || null;
+}
+assert.ok(ambientOceanShip, "ocean should stream ambient sailing traffic");
 assert.equal(world.worldIdAt(210_000, 0), "pirate");
 assert.equal(world.worldIdAt(15_000, 15_000), "dungeon:whispering_crypt");
 assert.ok(world.listMapCatalog().some((m) => m.id === "example_cove"));

@@ -7,15 +7,15 @@
 
 const MINIGAME_SITES = Object.freeze([
   // ── Hub & fantasy ─────────────────────────────────────────────────────────
-  { id: "mg_darts", gameId: "darts", world: "fantasy", x: -62, y: -36, footprintW: 2, footprintH: 2, prop: "dart_board", label: "Dart board — aim & throw" },
-  { id: "mg_cards", gameId: "cards", world: "fantasy", x: -52, y: -36, footprintW: 2, footprintH: 1, prop: "card_table", label: "Card table — Balathor Hold'em" },
-  { id: "mg_memory", gameId: "memory", world: "fantasy", x: -60, y: -34, footprintW: 2, footprintH: 1, prop: "card_table", label: "Memory tiles — match pairs" },
+  { id: "mg_darts", gameId: "darts", world: "fantasy", x: -74, y: -42, footprintW: 2, footprintH: 2, prop: "dart_board", label: "Dart board — aim & throw" },
+  { id: "mg_cards", gameId: "cards", world: "fantasy", x: -48, y: -52, footprintW: 2, footprintH: 1, prop: "card_table", label: "Card table — Balathor Hold'em" },
+  { id: "mg_memory", gameId: "memory", world: "fantasy", x: -82, y: -20, footprintW: 2, footprintH: 1, prop: "card_table", label: "Memory tiles — match pairs" },
   { id: "mg_scavenger", gameId: "scavenger", world: "fantasy", x: 6, y: -72, footprintW: 2, footprintH: 2, prop: "bounty_board", label: "Wayfarer's board — biome hunt" },
   { id: "mg_training", gameId: "training", world: "fantasy", x: 42, y: -18, footprintW: 3, footprintH: 2, prop: "training_dummy", label: "Training yard — strike the dummy" },
   { id: "mg_consecration", gameId: "consecration", world: "fantasy", x: 28, y: 4, footprintW: 3, footprintH: 3, prop: "holy_ring", label: "Sanctum ring — hold the ground" },
-  { id: "mg_vault", gameId: "vault", world: "fantasy", x: 18, y: -48, footprintW: 2, footprintH: 2, prop: "vault", label: "Town vault — deposit heavy coin" },
-  { id: "mg_appraisal", gameId: "appraisal", world: "fantasy", x: -38, y: 8, footprintW: 2, footprintH: 2, prop: "market_stand", label: "Appraiser — guess your pack's worth" },
-  { id: "mg_courier_hub", gameId: "courier", world: "fantasy", x: -4, y: -8, footprintW: 2, footprintH: 2, prop: "courier_crate", label: "Courier crate — stargate run" },
+  { id: "mg_vault", gameId: "vault", world: "fantasy", x: 34, y: -58, footprintW: 2, footprintH: 2, prop: "vault", label: "Town vault — deposit heavy coin" },
+  { id: "mg_appraisal", gameId: "appraisal", world: "fantasy", x: -46, y: 18, footprintW: 2, footprintH: 2, prop: "market_stand", label: "Appraiser — guess your pack's worth" },
+  { id: "mg_courier_hub", gameId: "courier", world: "fantasy", x: -8, y: -24, footprintW: 2, footprintH: 2, prop: "courier_crate", label: "Courier crate — stargate run" },
   { id: "mg_caravan_escort", gameId: "caravan_escort", world: "fantasy", x: 0, y: -118, footprintW: 2, footprintH: 2, prop: "bounty_board", label: "Caravan charter — escort contract" },
   { id: "mg_hollow", gameId: "seasonal", world: "fantasy", x: -48, y: -188, footprintW: 2, footprintH: 2, prop: "hollow_stone", label: "Hollow stone — night offering" },
   { id: "mg_trophy", gameId: "trophy", world: "fantasy", x: 14, y: -42, footprintW: 1, footprintH: 1, prop: "pedestal", label: "Trophy pedestal — display a prize" },

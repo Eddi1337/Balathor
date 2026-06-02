@@ -2901,6 +2901,7 @@ module.exports = {
   getOceanusContentSpawns,
   NAUTICAL_THEME,
   sciFiStationFeatureAt,
+  sciFiStationAt,
   STARGATE_LANDING,
   getPortalAt,
   hash2,

@@ -199,6 +199,10 @@ function onPier(isle, x, y) {
 const PROP_TILE = {
   tree: "TREE",
   palm: "TREE",
+  mangrove: "TREE",
+  banana: "TREE",
+  fern: "FLOWERS",
+  reeds: "FLOWERS",
   flowers: "FLOWERS",
   rock: "STONE"
 };
@@ -445,11 +449,44 @@ function getOceanusObjectsInChunk(cx, cy, chunkSize) {
         w: isle.landRadius * 2,
         h: isle.landRadius * 2
       });
+      for (const [index, prop] of isle.layout.entries()) {
+        const propX = isle.x + (prop.dx | 0);
+        const propY = isle.y + (prop.dy | 0);
+        if (propX < startX || propX >= endX || propY < startY || propY >= endY) continue;
+        out.push({
+          id: `${isle.id}_decor_${index}`,
+          kind: "oceanus-decor",
+          decorKind: prop.kind,
+          x: propX,
+          y: propY
+        });
+      }
     }
   }
   for (const feature of OCEANUS_FEATURES) {
     if (featureTouchesChunk(feature, startX, startY, endX, endY)) {
       out.push({ ...feature });
+    }
+  }
+  // Deterministic ambient traffic. These are visual-only vessels with short
+  // local routes, so the ocean feels inhabited without entering player fleets.
+  const trafficHash = Math.abs(Math.imul(cx, 73856093) ^ Math.imul(cy, 19349663));
+  if (trafficHash % 7 === 0) {
+    const trafficX = startX + 3 + (trafficHash % Math.max(1, chunkSize - 6));
+    const trafficY = startY + 3 + ((trafficHash >>> 4) % Math.max(1, chunkSize - 6));
+    if (!islandAtPoint(trafficX, trafficY)) {
+      out.push({
+        id: `ambient_ship_${cx}_${cy}`,
+        kind: "ambient-sailing-ship",
+        hullClass: trafficHash % 3 === 0 ? "brig" : "sloop",
+        x: trafficX,
+        y: trafficY,
+        phase: (trafficHash % 628) / 100,
+        routeRadius: 4 + (trafficHash % 5),
+        speed: 0.12 + (trafficHash % 4) * 0.025,
+        color: trafficHash % 2 === 0 ? "#c9a06a" : "#8b5a2b",
+        hideName: true
+      });
     }
   }
   return out;

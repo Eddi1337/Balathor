@@ -41,6 +41,7 @@ const {
   getOceanusContentSpawns,
   NAUTICAL_THEME,
   sciFiStationFeatureAt,
+  sciFiStationAt,
   STARGATE_LANDING,
   isInsideSciFiSafeZone,
   getSciFiAsteroids,
@@ -141,6 +142,29 @@ function fallbackDockPortForPlayer(player) {
     (player?.id ? dockPortForPlayerId(player.id, "scifi") : null) ||
     findNearestSciFiDockPort(STARGATE_LANDING.x, STARGATE_LANDING.y, 120)
   );
+}
+
+function nearestSciFiStationLanding(x, y) {
+  const ringforge = sciFiStationById("station_ringforge");
+  let best = ringforge ? { station: ringforge, distance: Math.hypot(x - ringforge.x, y - ringforge.y) } : null;
+  for (const station of proceduralSpaceStationsNear(x, y, 1600)) {
+    const distance = Math.hypot(x - station.x, y - station.y);
+    if (!best || distance < best.distance) {
+      best = { station, distance };
+    }
+  }
+  if (!best) return STARGATE_LANDING;
+  return { x: best.station.x, y: best.station.y };
+}
+
+function rescueStrandedSciFiPlayer(player) {
+  if (!player || worldForPosition(player.x, player.y) !== "scifi") return false;
+  if (player.ship?.boarded || sciFiStationAt(player.x, player.y)) return false;
+  const landing = nearestSciFiStationLanding(player.x, player.y);
+  player.x = landing.x;
+  player.y = landing.y;
+  player.moving = false;
+  return true;
 }
 
 // =============================
@@ -2143,6 +2167,7 @@ function serializeShip(ship) {
     worldY: clampNumber(ship.worldY, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, ship.dockY ?? STARGATE_LANDING.y),
     facing: normalizeAngle(clampNumber(ship.facing, -Math.PI * 2, Math.PI * 2, 0)),
     speed: clampNumber(ship.speed, 0, 1000, SHIP_SPEED),
+    sailTrim: clampNumber(ship.sailTrim, -1, 1, 0),
     laserTier: clampInteger(ship.laserTier ?? 1, 1, 5),
     thrustTier: clampInteger(ship.thrustTier ?? 1, 1, 5),
     crewCapacity: layout.crewCapacity,
@@ -2199,6 +2224,7 @@ function serializeShipForViewer(player, ship, viewerId) {
     worldX: clampNumber(ship.worldX, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, ship.dockX ?? STARGATE_LANDING.x),
     worldY: clampNumber(ship.worldY, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, ship.dockY ?? STARGATE_LANDING.y),
     facing: normalizeAngle(clampNumber(ship.facing, -Math.PI * 2, Math.PI * 2, 0)),
+    sailTrim: clampNumber(ship.sailTrim, -1, 1, 0),
     stationRole: typeof player?.shipStationRole === "string" ? player.shipStationRole : null,
     stationId: typeof player?.shipStationId === "string" ? player.shipStationId : null
   };
@@ -2275,8 +2301,37 @@ function getShipTurrets(shipOrClass) {
   return out;
 }
 
+function isNauticalHullClass(hullClass) {
+  return hullClass === "sloop" || hullClass === "brig" || hullClass === "galleon" || hullClass === "manowar";
+}
+
+function getNauticalShipLayout(hullClass) {
+  const large = hullClass === "galleon" || hullClass === "manowar";
+  const deckW = hullClass === "manowar" ? 30 : hullClass === "galleon" ? 25 : hullClass === "brig" ? 21 : 17;
+  const deckH = hullClass === "manowar" ? 18 : hullClass === "galleon" ? 15 : 12;
+  const halfW = deckW / 2;
+  return {
+    crewCapacity: hullClass === "manowar" ? 7 : hullClass === "galleon" ? 6 : 5,
+    npcCrew: 0,
+    deckW,
+    deckH,
+    entry: { x: -halfW + 1.5, y: 0 },
+    teleporter: null,
+    stations: [
+      { id: "helm", role: "pilot", name: "Helm", x: halfW - 2.5, y: 0 },
+      { id: "cannon", role: "gunner", name: "Cannon", x: -1.5, y: large ? -3.5 : -2.5, droneIndex: 0 },
+      { id: "sail_trim", role: "sail_trim", name: "Sail Trim", x: 1.5, y: large ? 3.5 : 2.5 },
+      { id: "fishing", role: "fishing", name: "Fishing", x: -halfW + 3, y: large ? 3.5 : 2.5 },
+      { id: "lookout", role: "lookout", name: "Lookout", x: -halfW + 3, y: large ? -3.5 : -2.5 }
+    ],
+    crewIdle: [],
+    amenities: []
+  };
+}
+
 function getShipLayout(shipOrClass = "skiff") {
   let hullClass = typeof shipOrClass === "string" ? shipOrClass : shipOrClass?.hullClass;
+  if (isNauticalHullClass(hullClass)) return getNauticalShipLayout(hullClass);
   if (hullClass === "sloop") hullClass = "skiff";
   if (hullClass === "brig") hullClass = "crew2";
   if (hullClass === "galleon") hullClass = "crew3";
@@ -2556,7 +2611,8 @@ function gunnerDroneSelection(ship, stationId) {
 // Kills are credited to attributeClient (the gunner, or the owner for NPC fire).
 function fireOneShipDrone(ship, attributeClient, droneIndex, droneCount, tx, ty, now = Date.now()) {
   const center = shipCenter(ship);
-  const off = shipDroneOffset(ship, droneIndex, droneCount, now);
+  const nautical = isNauticalHullClass(ship?.hullClass);
+  const off = nautical ? { x: 0, y: 0 } : shipDroneOffset(ship, droneIndex, droneCount, now);
   const ox = center.x + off.x;
   const oy = center.y + off.y;
   const tier = Math.max(1, Number(ship.laserTier) || 1);
@@ -2594,10 +2650,10 @@ function fireOneShipDrone(ship, attributeClient, droneIndex, droneCount, tx, ty,
   const event = {
     type: "combat",
     kind: "projectile",
-    weapon: "ship_turret",
-    projectileKind: "laser_bolt",
-    weaponStyle: "ship_laser",
-    weaponColor: ship.color || "#67f0ff",
+    weapon: nautical ? "ship_cannon" : "ship_turret",
+    projectileKind: nautical ? "cannonball" : "laser_bolt",
+    weaponStyle: nautical ? "ship_cannon" : "ship_laser",
+    weaponColor: nautical ? "#2a211b" : ship.color || "#67f0ff",
     attackerId: attributeClient?.player?.id || ship.id,
     x: Number(ox.toFixed(3)),
     y: Number(oy.toFixed(3)),
@@ -2827,8 +2883,8 @@ function shieldFacingFromInput(input = {}) {
 
 function shipCenter(ship) {
   return {
-    x: clampNumber(ship?.worldX, -10000, 10000, ship?.dockX ?? STARGATE_LANDING.x),
-    y: clampNumber(ship?.worldY, -10000, 10000, ship?.dockY ?? STARGATE_LANDING.y)
+    x: clampNumber(ship?.worldX, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, ship?.dockX ?? STARGATE_LANDING.x),
+    y: clampNumber(ship?.worldY, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, ship?.dockY ?? STARGATE_LANDING.y)
   };
 }
 
@@ -3058,6 +3114,7 @@ function sanitizeShip(ship, fallbackId = null) {
     worldY: clampNumber(ship.worldY, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, ship.dockY ?? STARGATE_LANDING.y),
     facing: normalizeAngle(clampNumber(ship.facing, -Math.PI * 2, Math.PI * 2, 0)),
     speed: clampNumber(ship.speed, 0, 1000, SHIP_SPEED),
+    sailTrim: clampNumber(ship.sailTrim, -1, 1, 0),
     laserTier: clampInteger(ship.laserTier ?? 1, 1, 5),
     thrustTier: clampInteger(ship.thrustTier ?? 1, 1, 5),
     deckMode: Boolean(ship.deckMode),
@@ -4361,6 +4418,32 @@ function simulate() {
           }
         }
         client.player.moving = Boolean(input.fire);
+      } else if (role === "sail_trim") {
+        const station = getShipLayout(ship).stations.find((candidate) => candidate.id === client.player.shipStationId);
+        if (station) {
+          setPlayerShipLocal(client.player, Number(station.x) || 0, Number(station.y) || 0);
+          syncPlayerToShipLocal(client.player);
+        }
+        ship.sailTrim = clampNumber((Number(ship.sailTrim) || 0) + (Number(input.right) - Number(input.left)) * dt * 0.65, -1, 1, 0);
+        if (input.repair) ship.sailTrim *= Math.max(0, 1 - dt * 1.4);
+        client.player.moving = Boolean(input.left || input.right || input.repair);
+      } else if (role === "fishing") {
+        if (input.repair && Date.now() - (client.lastFishingAt || 0) >= 2400) {
+          client.lastFishingAt = Date.now();
+          const gold = 2 + Math.floor(Math.random() * 5);
+          client.player.gold += gold;
+          send(client, { type: "serverMessage", message: "ship_fish_caught", gold });
+        }
+        client.player.moving = Boolean(input.repair);
+      } else if (role === "lookout") {
+        if (input.repair && Date.now() - (client.lastLookoutAt || 0) >= 2400) {
+          client.lastLookoutAt = Date.now();
+          const nearest = OCEANUS_ISLANDS
+            .map((isle) => ({ isle, distance: Math.hypot(isle.x - ship.worldX, isle.y - ship.worldY) }))
+            .sort((a, b) => a.distance - b.distance)[0];
+          send(client, { type: "serverMessage", message: "ship_lookout_report", islandName: nearest?.isle?.name || "open water", distance: Math.round(nearest?.distance || 0) });
+        }
+        client.player.moving = Boolean(input.repair);
       } else {
         let dx = Number(input.right) - Number(input.left);
         let dy = Number(input.down) - Number(input.up);
@@ -4957,8 +5040,9 @@ function arriveAtOceanusDock(client) {
     else if (port.facing === "north") ly += inland;
     else if (port.facing === "east") lx -= inland;
     else lx += inland;
-    player.x = lx;
-    player.y = ly;
+    const landing = findWalkableOceanusLanding(lx, ly);
+    player.x = landing.x;
+    player.y = landing.y;
     player.facing = facingForDockPort(port);
   }
   player.moving = false;
@@ -4966,6 +5050,22 @@ function arriveAtOceanusDock(client) {
   player.aboardShipId = null;
   player.boardedShip = null;
   saveClientCharacter(client);
+}
+
+function findWalkableOceanusLanding(originX, originY) {
+  for (let radius = 0; radius <= 14; radius += 1) {
+    for (let oy = -radius; oy <= radius; oy += 1) {
+      for (let ox = -radius; ox <= radius; ox += 1) {
+        if (Math.max(Math.abs(ox), Math.abs(oy)) !== radius) continue;
+        const x = originX + ox;
+        const y = originY + oy;
+        if (!isSwimmingAt(x, y) && !isBlockedCircle(x, y)) {
+          return { x, y };
+        }
+      }
+    }
+  }
+  return { x: originX, y: originY };
 }
 
 function handlePortalTravel(client) {
@@ -5598,8 +5698,8 @@ function joinWorld(client, message, savedCharacter = null) {
   const fallbackSpawn = spawnPoint(nextSpawnIndex++);
   const spawn = savedCharacter
     ? {
-        x: clampNumber(savedCharacter.x, -10000, 10000, fallbackSpawn.x),
-        y: clampNumber(savedCharacter.y, -10000, 10000, fallbackSpawn.y)
+        x: clampNumber(savedCharacter.x, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, fallbackSpawn.x),
+        y: clampNumber(savedCharacter.y, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, fallbackSpawn.y)
       }
     : fallbackSpawn;
   const torsoColor = sanitizeColor(message.torsoColor || message.primary, "#5cc8ff");
@@ -5676,6 +5776,10 @@ function joinWorld(client, message, savedCharacter = null) {
     ? savedCharacter.aboardShipId
     : null;
   validatePassengerLink(client.player);
+  const rescuedFromSpace = rescueStrandedSciFiPlayer(client.player);
+  if (rescuedFromSpace) {
+    saveClientCharacter(client);
+  }
 
   applyDerivedPlayerStats(client.player);
   client.player.hp = savedCharacter
@@ -5698,9 +5802,9 @@ function joinWorld(client, message, savedCharacter = null) {
     snapshotRate: SNAPSHOT_RATE,
     tileSize: 32,
     chunkSize: CHUNK_SIZE,
-    theme: getWorldThemeAt(spawn.x, spawn.y),
+    theme: getWorldThemeAt(client.player.x, client.player.y),
     worldTime: getWorldTimeSnapshot(),
-    spawn
+    spawn: { x: client.player.x, y: client.player.y }
   });
 
   if (ownedBuildings.size > 0) {
@@ -5716,7 +5820,7 @@ function joinWorld(client, message, savedCharacter = null) {
     messages: chatHistory.filter((message) => isMessageVisibleToClient(message, client))
   });
 
-  streamChunks(client, nearbyChunks(spawn.x, spawn.y, 3));
+  streamChunks(client, nearbyChunks(client.player.x, client.player.y, 3));
   const accForSocial = client.account ? accountStore.accounts[client.account.key] : null;
   if (accForSocial && social) {
     social.ensureFriendsArray(accForSocial);
@@ -6488,7 +6592,11 @@ function publicTerminalShip(ship, activeShipId, port) {
   };
 }
 
-function getPartyShipOffers(client) {
+function shipMatchesPortWorld(ship, port) {
+  return Boolean(port?.harbourId) === OCEANUS_HULLS.has(ship?.hullClass);
+}
+
+function getPartyShipOffers(client, port) {
   if (!social) return [];
   const view = social.getPartyView(client);
   if (!view || !Array.isArray(view.members)) return [];
@@ -6498,7 +6606,7 @@ function getPartyShipOffers(client) {
     if (member.id === client.player.id) continue;
     const other = getPlayerById(member.id);
     const ship = other?.ship;
-    if (!ship || !ship.boarded) continue;
+    if (!ship || !ship.boarded || !shipMatchesPortWorld(ship, port)) continue;
     const layout = getShipLayout(ship);
     if (!layout || layout.crewCapacity < 2) continue;
     offers.push({
@@ -6532,8 +6640,10 @@ function sendShipTerminalWindow(client, port) {
       facing: port.facing
     },
     activeShipId: client.player.activeShipId || client.player.ship?.id || null,
-    ships: client.player.ships.map((ship) => publicTerminalShip(ship, client.player.activeShipId, port)),
-    partyShips: getPartyShipOffers(client)
+    ships: client.player.ships
+      .filter((ship) => shipMatchesPortWorld(ship, port))
+      .map((ship) => publicTerminalShip(ship, client.player.activeShipId, port)),
+    partyShips: getPartyShipOffers(client, port)
   });
   return true;
 }
@@ -7368,12 +7478,13 @@ function handleShipTerminalAction(client, message = {}) {
 
   ensurePlayerFleet(client.player);
   const shipId = typeof message.shipId === "string" ? message.shipId : client.player.activeShipId;
-  const ship = selectPlayerShip(client.player, shipId);
-  if (!ship) {
+  const candidate = client.player.ships.find((owned) => owned.id === shipId);
+  if (!candidate || !shipMatchesPortWorld(candidate, port)) {
     send(client, { type: "serverMessage", message: "ship_not_owned" });
     sendShipTerminalWindow(client, port);
     return;
   }
+  const ship = selectPlayerShip(client.player, shipId);
 
   const action = String(message.action || "");
   if (action === "summon") {
@@ -8462,7 +8573,10 @@ function getPlayerSpeed(player) {
   if (player.ship?.boarded) {
     const base = Number(player.ship.speed) || SHIP_SPEED;
     const tt = Math.min(5, Math.max(1, Math.floor(Number(player.ship.thrustTier) || 1)));
-    return base + (tt - 1) * 0.55;
+    const sailBonus = isNauticalHullClass(player.ship.hullClass)
+      ? Math.max(0, 1 - Math.abs(Number(player.ship.sailTrim) || 0)) * 1.8
+      : 0;
+    return base + (tt - 1) * 0.55 + sailBonus;
   }
   return PLAYER_SPEED + player.stats.speed * STAT_POINT_SPEED + getEquipmentStats(player).speed;
 }
@@ -10609,7 +10723,9 @@ function createOceanusMobs() {
   const OCEANUS_CRITTER_POOL = [
     { name: "Sand Crab", primary: "#d98a5b", accent: "#ffd9a8", maxHp: 22, speed: 0.5 },
     { name: "Shore Gull", primary: "#e8eef8", accent: "#b9c0bf", maxHp: 18, speed: 0.7 },
-    { name: "Sea Turtle", primary: "#3f7d5a", accent: "#9bd6a8", maxHp: 26, speed: 0.4 }
+    { name: "Sea Turtle", primary: "#3f7d5a", accent: "#9bd6a8", maxHp: 26, speed: 0.4 },
+    { name: "Island Chicken", primary: "#d8a45f", accent: "#f3e5ba", maxHp: 16, speed: 0.72 },
+    { name: "Palm Snake", primary: "#568a43", accent: "#d5c85a", maxHp: 18, speed: 0.58 }
   ];
   const list = [];
   let seq = 0;

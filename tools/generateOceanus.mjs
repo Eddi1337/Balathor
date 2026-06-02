@@ -82,12 +82,15 @@ function uniqueNames(count) {
   return out;
 }
 
-const PROP_KINDS = ["tree", "tree", "tree", "flowers", "flowers", "rock", "palm", "palm"];
+const PROP_KINDS = [
+  "tree", "tree", "palm", "palm", "mangrove", "banana",
+  "fern", "fern", "reeds", "flowers", "flowers", "rock"
+];
 
 /** Decorative props scattered on the grassy centre — the per-island "layout". */
 function makeLayout(landRadius) {
   const props = [];
-  const count = randInt(3, 8);
+  const count = randInt(7, 16);
   const inner = Math.max(2, landRadius * 0.5);
   for (let i = 0; i < count; i += 1) {
     const ang = rng() * Math.PI * 2;
