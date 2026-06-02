@@ -203,9 +203,7 @@ test("main.js wires the compact canvas joystick with touch tracking", () => {
   assert.match(main, /window\.addEventListener\("touchend"/);
   const joystickWiring = main.slice(main.indexOf("function wireMobileControls()"), main.indexOf("function send(message)"));
   assert.doesNotMatch(joystickWiring, /state\.menuOpen \|\| event\.pointerType === "touch"/);
-  assert.match(joystickWiring, /setPointerCapture/);
-  assert.match(joystickWiring, /lostpointercapture/);
-  assert.match(main, /releaseGameplayTextFocus/);
+  assert.doesNotMatch(main, /lostpointercapture/);
   assert.match(main, /BalathorMobileTouch\?\.wireInstantTap/);
 });
 
