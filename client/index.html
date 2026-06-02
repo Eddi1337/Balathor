@@ -70,6 +70,44 @@
         </fieldset>
 
         <fieldset>
+          <legend>Body Size</legend>
+          <div class="segments" role="radiogroup" aria-label="Body size">
+            <button type="button" class="segment selected" data-size-scale="1">Medium</button>
+            <button type="button" class="segment" data-size-scale="0.85">Small</button>
+            <button type="button" class="segment" data-size-scale="1.15">Large</button>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Walk Style</legend>
+          <div class="segments" role="radiogroup" aria-label="Walk style">
+            <button type="button" class="segment selected" data-walk-style="steady">Steady</button>
+            <button type="button" class="segment" data-walk-style="swift">Swift</button>
+            <button type="button" class="segment" data-walk-style="heavy">Heavy</button>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Skin Colour</legend>
+          <div class="swatches" data-target="skinColor">
+            <button type="button" class="swatch selected" style="--swatch: #f0c9a2" data-color="#f0c9a2" aria-label="fair"></button>
+            <button type="button" class="swatch" style="--swatch: #d9a57f" data-color="#d9a57f" aria-label="tan"></button>
+            <button type="button" class="swatch" style="--swatch: #a8724e" data-color="#a8724e" aria-label="brown"></button>
+            <button type="button" class="swatch" style="--swatch: #7b4b31" data-color="#7b4b31" aria-label="deep brown"></button>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Hair Colour</legend>
+          <div class="swatches" data-target="hairColor">
+            <button type="button" class="swatch selected" style="--swatch: #202437" data-color="#202437" aria-label="black"></button>
+            <button type="button" class="swatch" style="--swatch: #6a3f22" data-color="#6a3f22" aria-label="brown"></button>
+            <button type="button" class="swatch" style="--swatch: #c08a4e" data-color="#c08a4e" aria-label="blonde"></button>
+            <button type="button" class="swatch" style="--swatch: #d2d2d2" data-color="#d2d2d2" aria-label="silver"></button>
+          </div>
+        </fieldset>
+
+        <fieldset>
           <legend>Weapon</legend>
           <div class="segments" role="radiogroup" aria-label="Weapon style">
             <button type="button" class="segment selected" data-weapon-style="classic">Classic</button>
@@ -132,6 +170,16 @@
           <div class="equip-slots-right" id="equipSlotsRight"></div>
         </div>
         <div id="charStats" class="char-stats-bar"></div>
+        <section class="char-talents-mini-section" aria-label="Armour tint">
+          <div class="char-talents-mini-head"><strong>Armour Colour</strong></div>
+          <div class="swatches" data-target="armorColorInGame">
+            <button type="button" class="swatch selected" style="--swatch: #5cc8ff" data-color="#5cc8ff" aria-label="sky"></button>
+            <button type="button" class="swatch" style="--swatch: #8bd346" data-color="#8bd346" aria-label="leaf"></button>
+            <button type="button" class="swatch" style="--swatch: #f26d6d" data-color="#f26d6d" aria-label="ember"></button>
+            <button type="button" class="swatch" style="--swatch: #c79cff" data-color="#c79cff" aria-label="arcane"></button>
+            <button type="button" class="swatch" style="--swatch: #d4b483" data-color="#d4b483" aria-label="sand"></button>
+          </div>
+        </section>
         <section class="char-talents-mini-section" aria-label="Talents summary">
           <div class="char-talents-mini-head">
             <strong>Unlocked talents</strong>

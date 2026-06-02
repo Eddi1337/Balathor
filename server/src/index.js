@@ -685,6 +685,7 @@ const SERVER_TALENT_TREES = {
 };
 const TORSO_STYLE_IDS = ["tunic", "armor", "robe"];
 const WEAPON_STYLE_IDS = ["classic", "heavy", "ornate"];
+const WALK_STYLE_IDS = ["steady", "swift", "heavy"];
 const CLASS_LOADOUTS = Object.freeze({
   ranger: {
     weapon: "bow",
@@ -2076,6 +2077,10 @@ function serializePlayer(player) {
     weaponStyle: player.baseWeaponStyle || player.weaponStyle,
     torsoColor: player.torsoColor,
     weaponColor: player.weaponColor,
+    skinColor: player.skinColor,
+    hairColor: player.hairColor,
+    sizeScale: player.sizeScale,
+    walkStyle: player.walkStyle,
     hp: player.hp,
     maxHp: player.maxHp,
     xp: player.xp,
@@ -5272,6 +5277,20 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "customizeAppearance") {
+    const body = client.player?.equipment?.body;
+    if (body?.visual) {
+      const armorColor = sanitizeColor(message.armorColor, client.player.torsoColor || "#5cc8ff");
+      client.player.torsoColor = armorColor;
+      client.player.primary = armorColor;
+      body.visual.torsoColor = armorColor;
+      if (body.color) body.color = armorColor;
+      saveClientCharacter(client);
+      broadcastSnapshot();
+    }
+    return;
+  }
+
   if (message.type === "spendStat") {
     handleSpendStat(client, message);
     return;
@@ -5707,6 +5726,10 @@ function joinWorld(client, message, savedCharacter = null) {
   const baseTorsoStyle = sanitizeChoice(message.torsoStyle, TORSO_STYLE_IDS, "tunic");
   const baseWeaponStyle = sanitizeChoice(message.weaponStyle, WEAPON_STYLE_IDS, "classic");
   const classId = sanitizeChoice(message.classId, CLASS_IDS, "ranger");
+  const skinColor = sanitizeColor(message.skinColor, "#f0c9a2");
+  const hairColor = sanitizeColor(message.hairColor, "#202437");
+  const sizeScale = clampNumber(message.sizeScale, 0.75, 1.3, 1);
+  const walkStyle = sanitizeChoice(message.walkStyle, WALK_STYLE_IDS, "steady");
   const isMod = Boolean(client.account?.isMod);
   const forcedName = isMod && client.account?.modCharacterName ? client.account.modCharacterName : null;
   const shipFleet = sanitizeShipFleet(savedCharacter, client.account?.key || client.id);
@@ -5722,6 +5745,10 @@ function joinWorld(client, message, savedCharacter = null) {
     weaponColor,
     primary: torsoColor,
     accent: weaponColor,
+    skinColor,
+    hairColor,
+    sizeScale,
+    walkStyle,
     hp: PLAYER_MAX_HP,
     maxHp: PLAYER_MAX_HP,
     xp: clampInteger(savedCharacter?.xp ?? 0, 0, 100000000),
@@ -9286,6 +9313,10 @@ function emitSnapshot() {
       weaponColor: appearance.weaponColor,
       primary: appearance.torsoColor,
       accent: appearance.weaponColor,
+      skinColor: p.skinColor || "#f0c9a2",
+      hairColor: p.hairColor || "#202437",
+      sizeScale: clampNumber(p.sizeScale, 0.75, 1.3, 1),
+      walkStyle: sanitizeChoice(p.walkStyle, WALK_STYLE_IDS, "steady"),
       hp: p.hp,
       maxHp: p.maxHp,
       ship: p.ship
@@ -10927,9 +10958,16 @@ function createDungeonMobs() {
     const bossLevel = (type.bossLevel || 12) + dungeon.tier * 2;
     const isDemonBoss = dungeon.faction === "demon";
     const isUndeadBoss = dungeon.faction === "undead";
+    const isDragonBoss = dungeon.faction === "dragon";
+    const isGolemBoss = dungeon.faction === "golem";
+    let bossHp = 280 + bossLevel * 18;
+    if (isDemonBoss) bossHp = 420 + bossLevel * 18;
+    else if (isUndeadBoss) bossHp = 340 + bossLevel * 18;
+    else if (isDragonBoss) bossHp = 520 + bossLevel * 22;
+    else if (isGolemBoss) bossHp = 480 + bossLevel * 20;
     list.push({
       id: `mob_dungeon_boss_${dungeon.id}`,
-      name: type.bossName,
+      name: dungeon.bossName || type.bossName,
       level: bossLevel,
       homeX: bossPos.x,
       homeY: bossPos.y,
@@ -10940,7 +10978,7 @@ function createDungeonMobs() {
       dungeonId: dungeon.id,
       isBoss: true,
       isDungeonBoss: true,
-      maxHp: (isDemonBoss ? 420 : isUndeadBoss ? 340 : 280) + bossLevel * 18,
+      maxHp: bossHp,
       attackDamage: (isDemonBoss ? BOSS_ATTACK_DAMAGE + 8 : BOSS_ATTACK_DAMAGE) + Math.floor(bossLevel * 0.8),
       roamRadius: 5.5,
       speed: 1.35 + dungeonHash2(dungeon.seed, 99, 61400) * 0.12
