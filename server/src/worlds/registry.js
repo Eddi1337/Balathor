@@ -10,7 +10,7 @@
 const { getPlanetBySurfacePoint } = require("./planetWorlds.js");
 const { getDungeonByInteriorPoint } = require("./dungeonWorlds.js");
 const { isInsidePirateBounds, getPirateWorldTheme } = require("./pirateWorld.js");
-const { getArchipelagoAtPoint } = require("./archipelagoWorld.js");
+const { getOceanusAtPoint } = require("./oceanusWorld.js");
 const { readJson } = require("./contentLoader.js");
 const {
   GAME_MODE_BALATHOR,
@@ -52,14 +52,14 @@ function isSciFiBounds(x, y) {
   if (isFantasyBounds(x, y) || isInteriorPlane(x, y) || getPlanetBySurfacePoint(x, y)) {
     return false;
   }
-  if (isInsidePirateBounds(x, y) || getArchipelagoAtPoint(x, y)) {
+  if (isInsidePirateBounds(x, y) || getOceanusAtPoint(x, y)) {
     return false;
   }
   return true;
 }
 
-function isArchipelagoBounds(x, y) {
-  return Boolean(getArchipelagoAtPoint(x, y));
+function isOceanusBounds(x, y) {
+  return Boolean(getOceanusAtPoint(x, y));
 }
 
 /** Built-in world definitions (content manifest can extend metadata). */
@@ -89,14 +89,14 @@ const BUILTIN_WORLDS = [
     }
   },
   {
-    id: "archipelago",
+    id: "oceanus",
     gameMode: GAME_MODE_BALATHOR,
-    label: "Shimmering Archipelago",
+    label: "The Boundless Ocean",
     coordSpace: COORD_SPACE_SHARED,
     generation: GEN_PROCEDURAL,
     theme: THEME_NAUTICAL,
     priority: 28,
-    contains: isArchipelagoBounds
+    contains: isOceanusBounds
   },
   {
     id: "pirate",
@@ -222,7 +222,7 @@ function getWorldDefinition(id) {
   if (id.startsWith("dungeon:")) {
     return { id, gameMode: GAME_MODE_BALATHOR, theme: THEME_DUNGEON, generation: GEN_PROCEDURAL };
   }
-  if (id === "archipelago") {
+  if (id === "oceanus") {
     return { id, gameMode: GAME_MODE_BALATHOR, theme: THEME_NAUTICAL, generation: GEN_PROCEDURAL };
   }
   return WORLDS_BY_ID.get(id) || null;

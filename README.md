@@ -15,7 +15,7 @@ The game map is divided into distinct realms, each with its own visual theme and
 
 **Sci-Fi Orbital Station** — a space station reached through a stargate in the hub town. Home to ship combat in outer lanes, orbital courier runs, asteroid corridor flying, and three tech-dungeon terminals.
 
-**Pirate Archipelago** — a nautical zone with island-to-island sailing and pirate ship encounters.
+**The Boundless Ocean** — a massive open-water world dotted with 100+ small islands, each with sandy beaches, a grassy centre, a port pier, and its own content (enemies, traders, loot, critters, or scenery). Reached through the Seafarer Cave; arriving lands you on a dock with your own boat moored alongside. Island layouts are data-driven in `content/worlds/oceanus/islands.json` (regenerate with `node tools/generateOceanus.mjs`).
 
 **Planet Surfaces** — discrete planet maps (e.g. Planet Rust) accessible from the orbital station, each with a mining rig and unique terrain.
 
