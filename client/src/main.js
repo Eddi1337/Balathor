@@ -17588,7 +17588,7 @@ function getTile(tileX, tileY) {
   const cy = Math.floor(tileY / CHUNK_SIZE);
   const chunk = state.chunks.get(chunkKey(cx, cy));
   if (!chunk) {
-    return TILE.DARK_GRASS;
+    return isNauticalWorld() ? TILE.WATER : TILE.DARK_GRASS;
   }
 
   const localX = modulo(tileX, CHUNK_SIZE);

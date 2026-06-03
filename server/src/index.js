@@ -37,6 +37,7 @@ const {
   dockPortForPlayerId,
   dockPortById,
   OCEANUS_LANDING,
+  OCEANUS_SAFE_LANDING,
   OCEANUS_ISLANDS,
   getOceanusContentSpawns,
   NAUTICAL_THEME,
@@ -5036,16 +5037,9 @@ function arriveAtOceanusDock(client) {
     boat.deckMode = false;
   }
   if (port) {
-    // Stand the player on the island's shore by the pier base (on solid land),
-    // facing the moored boat — not out on the planks over open water.
-    const inland = 10;
-    let lx = port.terminalX;
-    let ly = port.terminalY;
-    if (port.facing === "south") ly -= inland;
-    else if (port.facing === "north") ly += inland;
-    else if (port.facing === "east") lx -= inland;
-    else lx += inland;
-    const landing = findWalkableOceanusLanding(lx, ly);
+    // Stand arrivals on the hub plaza, not on the shoreline terminal edge. The
+    // boat is still moored at the dock, but the player starts on clear land.
+    const landing = findWalkableOceanusLanding(OCEANUS_SAFE_LANDING.x, OCEANUS_SAFE_LANDING.y);
     player.x = landing.x;
     player.y = landing.y;
     player.facing = facingForDockPort(port);
@@ -5071,6 +5065,25 @@ function findWalkableOceanusLanding(originX, originY) {
     }
   }
   return { x: originX, y: originY };
+}
+
+function repairOceanusFootLanding(client) {
+  const player = client.player;
+  if (!player || worldForPosition(player.x, player.y) !== "oceanus" || player.ship?.boarded) {
+    return false;
+  }
+  const nearStarterIsland = Math.hypot(player.x - OCEANUS_SAFE_LANDING.x, player.y - OCEANUS_SAFE_LANDING.y) < 260;
+  if (!nearStarterIsland && !isSwimmingAt(player.x, player.y) && !isBlockedCircle(player.x, player.y)) {
+    return false;
+  }
+  const landing = findWalkableOceanusLanding(OCEANUS_SAFE_LANDING.x, OCEANUS_SAFE_LANDING.y);
+  player.x = landing.x;
+  player.y = landing.y;
+  player.moving = false;
+  player._stillAccumulator = 0;
+  player.aboardShipId = null;
+  player.boardedShip = null;
+  return true;
 }
 
 function handlePortalTravel(client) {
@@ -5804,7 +5817,8 @@ function joinWorld(client, message, savedCharacter = null) {
     : null;
   validatePassengerLink(client.player);
   const rescuedFromSpace = rescueStrandedSciFiPlayer(client.player);
-  if (rescuedFromSpace) {
+  const repairedOceanusLanding = repairOceanusFootLanding(client);
+  if (rescuedFromSpace || repairedOceanusLanding) {
     saveClientCharacter(client);
   }
 

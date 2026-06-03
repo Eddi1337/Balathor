@@ -278,12 +278,11 @@ function hubStarterGroundTile(isle, x, y, TILE, hash2) {
 
   if (dist < 58) {
     if (detail > 0.86) return TILE.FLOWERS;
-    if (detail > 0.24) return TILE.GRASS;
-    return TILE.DARK_GRASS;
+    return TILE.GRASS;
   }
 
   if (detail > 0.9) return TILE.FLOWERS;
-  return detail > 0.18 ? TILE.GRASS : TILE.DARK_GRASS;
+  return detail > 0.06 ? TILE.GRASS : TILE.DARK_GRASS;
 }
 
 function getOceanusTile(x, y, TILE, hash2) {
@@ -471,6 +470,11 @@ const OCEANUS_LANDING = Object.freeze({
 
 const HUB_ISLAND = OCEANUS_ISLANDS.find((isle) => isle.hub) || OCEANUS_ISLANDS[0] || null;
 const HUB_PORT = HUB_ISLAND ? PORTS_BY_ISLAND.get(HUB_ISLAND.id) : OCEANUS_PORTS[0];
+const OCEANUS_SAFE_LANDING = Object.freeze(
+  HUB_ISLAND
+    ? { x: Math.round(HUB_ISLAND.x), y: Math.round(HUB_ISLAND.y + 22) }
+    : { x: OCEANUS_LANDING.x, y: OCEANUS_LANDING.y }
+);
 
 function oceanusDockPortForPlayerId(/* playerId */) {
   // Everyone spawns at the safe hub dock with their boat moored.
@@ -590,6 +594,7 @@ module.exports = {
   OCEANUS_BOUNDS,
   OCEANUS_LANDING,
   OCEANUS_TELEPORTER,
+  OCEANUS_SAFE_LANDING,
   OCEANUS_ISLANDS,
   OCEANUS_PORTS,
   OCEANUS_FEATURES,
