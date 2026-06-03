@@ -5034,7 +5034,7 @@ function ensurePlayerHasNauticalBoat(client, dockPort) {
   return boat;
 }
 
-/** Place an arriving player directly aboard their personal Oceanus boat. */
+/** Place an arriving player on the simple Oceanus starter island. */
 function arriveAtOceanusDock(client) {
   const player = client.player;
   if (!player) return;
@@ -5043,50 +5043,32 @@ function arriveAtOceanusDock(client) {
     findNearestDockPort(OCEANUS_LANDING.x, OCEANUS_LANDING.y, 200);
   const boat = ensurePlayerHasNauticalBoat(client, port);
   if (boat && port) {
-    const arrival = oceanusOffshoreArrivalForPort(port);
-    boardPlayerShipAtPort(client, boat, port, {
-      notify: false,
-      save: false,
-      broadcast: false,
-      spawnX: arrival.x,
-      spawnY: arrival.y,
-      spawnFacing: arrival.facing
-    });
-  } else if (port) {
-    const landing = findWalkableOceanusLanding(OCEANUS_SAFE_LANDING.x, OCEANUS_SAFE_LANDING.y);
-    player.x = landing.x;
-    player.y = landing.y;
-    player.facing = facingForDockPort(port);
-    player.aboardShipId = null;
-    player.boardedShip = null;
+    summonPlayerShipToPort(player, boat, port);
+    boat.boarded = false;
+    boat.deckMode = false;
+  }
+  const landing = findWalkableOceanusLanding(OCEANUS_SAFE_LANDING.x, OCEANUS_SAFE_LANDING.y);
+  player.x = landing.x;
+  player.y = landing.y;
+  player.facing = -Math.PI / 2;
+  player.aboardShipId = null;
+  player.boardedShip = null;
+  player.shipStationRole = null;
+  player.shipStationId = null;
+  player.shipLocalX = 0;
+  player.shipLocalY = 0;
+  if (player.ship) {
+    player.ship.boarded = false;
+    player.ship.deckMode = false;
+    player.ship.stationRole = null;
+    player.ship.stationId = null;
+    player.ship.docking = null;
+    player.ship.warp = null;
+    player.ship.speed = 0;
   }
   player.moving = false;
   player._stillAccumulator = 0;
   saveClientCharacter(client);
-}
-
-function oceanusOffshoreArrivalForPort(port) {
-  const baseX = Number(port?.x) || OCEANUS_LANDING.x;
-  const baseY = Number(port?.y) || OCEANUS_LANDING.y;
-  const berthOffset = 34;
-  let arrivalX = baseX;
-  let arrivalY = baseY;
-  let facing = facingForDockPort(port);
-  if (port?.facing === "south") {
-    arrivalY += berthOffset;
-    facing = -Math.PI / 2;
-  } else if (port?.facing === "north") {
-    arrivalY -= berthOffset;
-    facing = Math.PI / 2;
-  } else if (port?.facing === "east") {
-    arrivalX += berthOffset;
-    facing = Math.PI;
-  } else if (port?.facing === "west") {
-    arrivalX -= berthOffset;
-    facing = 0;
-  }
-  const clear = resolveClearShipArrivalPoint(arrivalX, arrivalY, baseX, baseY);
-  return { x: clear.x, y: clear.y, facing };
 }
 
 function findWalkableOceanusLanding(originX, originY) {
@@ -5141,7 +5123,7 @@ function handlePortalTravel(client) {
     boardPlayerOntoCurrentShip(client.player);
     saveClientCharacter(client);
   }
-  // Arriving in the Boundless Ocean boards the player's personal multi-crew boat.
+  // Arriving in the Boundless Ocean lands on the simple starter island.
   if (worldForPosition(client.player.x, client.player.y) === "oceanus") {
     arriveAtOceanusDock(client);
   }

@@ -31,6 +31,14 @@ const OCEANUS_BOUNDS = Object.freeze({
   maxY: Number(DATA.bounds.maxY)
 });
 
+const STARTER_ISLAND = Object.freeze({
+  id: "starter_isle",
+  name: "Castaway Cay",
+  x: (Number(DATA.landing?.x) || -43240) - 580,
+  y: (Number(DATA.landing?.y) || -162) + 42,
+  landRadius: 44
+});
+
 const OCEANUS_ISLANDS = Object.freeze(
   (Array.isArray(DATA.islands) ? DATA.islands : []).map((isle) =>
     Object.freeze({
@@ -52,14 +60,10 @@ const PIER_HALF_WIDTH = 1;          // pier is 3 tiles wide
 const HUB_PLAZA_RADIUS = 8;
 const HUB_PATH_HALF_WIDTH = 2;
 
-// Return teleporter sits on the large central hub island, a little inland from
-// its south dock. Roads radiate out from it (a path rosette, like the stargate).
-const HUB_FOR_TELEPORTER = (Array.isArray(DATA.islands) ? DATA.islands : []).find((i) => i.hub) || null;
-const OCEANUS_TELEPORTER = Object.freeze(
-  HUB_FOR_TELEPORTER
-    ? { x: Math.round(HUB_FOR_TELEPORTER.x), y: Math.round(HUB_FOR_TELEPORTER.y + (Number(HUB_FOR_TELEPORTER.landRadius) || 70) - 20) }
-    : { x: OCEANUS_BOUNDS.minX, y: OCEANUS_BOUNDS.minY }
-);
+const OCEANUS_TELEPORTER = Object.freeze({
+  x: Math.round(STARTER_ISLAND.x),
+  y: Math.round(STARTER_ISLAND.y)
+});
 const TELEPORTER_DISK_R = 4;
 const TELEPORTER_SPOKE_MAX = 18;
 
@@ -151,6 +155,11 @@ function smoothNoise(x, y, scale, seed) {
 function islandAtPoint(x, y) {
   let best = null;
   let bestScore = 0;
+  const starterScore = starterIslandScore(x, y);
+  if (starterScore > bestScore) {
+    bestScore = starterScore;
+    best = STARTER_ISLAND;
+  }
   for (const isle of nearbyIslands(x, y)) {
     const score = islandShapeScore(isle, x, y);
     if (score > bestScore) {
@@ -167,7 +176,7 @@ function islandAtPoint(x, y) {
  * negative range is what keeps the ocean as WATER rather than an endless beach.
  */
 function islandLandScore(x, y) {
-  let best = -Infinity;
+  let best = starterIslandScore(x, y);
   for (const isle of nearbyIslands(x, y)) {
     const t = islandShapeScore(isle, x, y);
     if (t > best) best = t;
@@ -178,40 +187,15 @@ function islandLandScore(x, y) {
 function islandShapeScore(isle, x, y) {
   const dx = x - isle.x;
   const dy = y - isle.y;
-  const radii = islandRadii(isle);
-  const ry = dy >= 0 ? radii.rySouth : radii.ryNorth;
-  return 1 - Math.hypot(dx / radii.rx, dy / ry);
-}
-
-function islandSeed(isle) {
-  let seed = 2166136261;
-  const id = String(isle?.id || "");
-  for (let i = 0; i < id.length; i += 1) {
-    seed ^= id.charCodeAt(i);
-    seed = Math.imul(seed, 16777619) >>> 0;
-  }
-  return seed >>> 0;
+  return 1 - Math.hypot(dx, dy) / Math.max(8, Number(isle?.landRadius) || 32);
 }
 
 function islandRadii(isle) {
   const r = Math.max(8, Number(isle?.landRadius) || 32);
-  if (isle?.hub) {
-    // The starter island needs to be visually complete from every arrival angle.
-    // Keep it broad and deterministic so the dock, plaza, village green, and
-    // northern groves all stay on solid land.
-    return {
-      rx: r * 1.22,
-      ryNorth: r * 1.12,
-      rySouth: r * 1.52
-    };
-  }
-  const seed = islandSeed(isle);
-  const wide = 0.92 + ((seed & 15) / 15) * 0.28;
-  const tall = 0.9 + (((seed >>> 4) & 15) / 15) * 0.3;
   return {
-    rx: r * wide,
-    ryNorth: r * tall,
-    rySouth: r * (tall + (((seed >>> 8) & 7) / 7) * 0.1)
+    rx: r,
+    ryNorth: r,
+    rySouth: r
   };
 }
 
@@ -222,10 +206,13 @@ function islandMaxReach(isle) {
 
 /** Pier geometry for an island: a band that sticks out into the water. */
 function pierReachForIsland(isle) {
-  const radii = islandRadii(isle);
-  if (isle.pierDir === "south") return Math.round(radii.rySouth);
-  if (isle.pierDir === "north") return Math.round(radii.ryNorth);
-  return Math.round(radii.rx);
+  return Math.max(8, Number(isle?.landRadius) || 32);
+}
+
+function starterIslandScore(x, y) {
+  const dx = x - STARTER_ISLAND.x;
+  const dy = y - STARTER_ISLAND.y;
+  return 1 - Math.hypot(dx, dy) / STARTER_ISLAND.landRadius;
 }
 
 function pierRect(isle) {
@@ -267,54 +254,6 @@ function propTileAt(isle, x, y, TILE) {
   return null;
 }
 
-function isHubStarterPath(isle, x, y) {
-  if (!isle?.hub) return false;
-  const tx = Math.floor(x);
-  const ty = Math.floor(y);
-  const dx = tx - isle.x;
-  const dy = ty - isle.y;
-  const vx = tx - OCEANUS_TELEPORTER.x;
-  const vy = ty - OCEANUS_TELEPORTER.y;
-  const distToTeleporter = Math.hypot(vx, vy);
-
-  if (distToTeleporter <= HUB_PLAZA_RADIUS) return true;
-  if (Math.abs(vx) <= HUB_PATH_HALF_WIDTH && ty >= OCEANUS_TELEPORTER.y && ty <= isle.y + pierReachForIsland(isle) - 4) return true;
-  if (Math.abs(vy) <= HUB_PATH_HALF_WIDTH && Math.abs(vx) <= 34) return true;
-  if (Math.abs(dx) <= 2 && dy >= -16 && dy <= 58) return true;
-  if (Math.abs(dy - 22) <= 2 && Math.abs(dx) <= 42) return true;
-  return false;
-}
-
-function hubStarterGroundTile(isle, x, y, TILE, hash2) {
-  const dx = x - isle.x;
-  const dy = y - isle.y;
-  const dist = Math.hypot(dx, dy);
-  const detail = hash2(x, y, 8811);
-  const groveNoise = smoothNoise(x, y, 18, 44103);
-
-  if (isHubStarterPath(isle, x, y)) {
-    return detail > 0.9 ? TILE.STONE : TILE.PATH;
-  }
-
-  // Keep the starter island open and readable. Dense dark grass made the first
-  // screen look like half the island had failed to render, so the hub uses bright
-  // grass with explicit tree/flower detail instead of large dark-ground fills.
-  if (dy < -36 || Math.abs(dx) > 56) {
-    if (groveNoise > 0.68 || detail > 0.95) return TILE.TREE;
-    if (detail > 0.82) return TILE.FLOWERS;
-    return TILE.GRASS;
-  }
-
-  if (dist < 58) {
-    if (detail > 0.86) return TILE.FLOWERS;
-    return TILE.GRASS;
-  }
-
-  if (detail > 0.9) return TILE.FLOWERS;
-  if (detail < 0.045 && dist > 72) return TILE.TREE;
-  return TILE.GRASS;
-}
-
 function getOceanusTile(x, y, TILE, hash2) {
   // Walkable pier planks over the water.
   for (const isle of nearbyIslands(x, y)) {
@@ -337,12 +276,15 @@ function getOceanusTile(x, y, TILE, hash2) {
     return TILE.WATER; // open ocean
   }
 
-  if (isle?.hub && isHubStarterPath(isle, x, y)) {
-    return hash2(x, y, 8811) > 0.9 ? TILE.STONE : TILE.PATH;
+  if (land < 0.16) {
+    return TILE.SAND; // sandy beach ring
   }
 
-  if (land < 0.14) {
-    return TILE.SAND; // sandy beach ring
+  if (isle?.id === STARTER_ISLAND.id) {
+    const dist = Math.hypot(x - STARTER_ISLAND.x, y - STARTER_ISLAND.y);
+    if (dist <= HUB_PLAZA_RADIUS + 1) return hash2(x, y, 8811) > 0.88 ? TILE.STONE : TILE.PATH;
+    if (hash2(x, y, 8812) > 0.9) return TILE.FLOWERS;
+    return TILE.GRASS;
   }
 
   if (isle) {
@@ -362,19 +304,13 @@ function getOceanusTile(x, y, TILE, hash2) {
       (isle.pierDir === "west" && dx < -pierReach * 0.36 && Math.abs(dy) <= PIER_HALF_WIDTH + 1);
     if (pierBand) return TILE.PATH;
 
-    const hubDist = Math.hypot(dx, dy);
-    if (hubDist < 4) return TILE.PATH; // small central plaza
-
-    if (isle.hub) {
-      return hubStarterGroundTile(isle, x, y, TILE, hash2);
-    }
+    if (Math.hypot(dx, dy) < 3) return TILE.PATH;
   }
 
   const detail = hash2(x, y, 8803);
   if (detail > 0.9) return TILE.TREE;
   if (detail > 0.82) return TILE.FLOWERS;
-  if (detail > 0.45) return TILE.GRASS;
-  return TILE.DARK_GRASS;
+  return TILE.GRASS;
 }
 
 // ---------------------------------------------------------------------------
@@ -494,16 +430,14 @@ function buildFeatures() {
 const OCEANUS_FEATURES = buildFeatures();
 
 const OCEANUS_LANDING = Object.freeze({
-  x: Number(DATA.landing?.x) || OCEANUS_ISLANDS[0]?.x || 0,
-  y: Number(DATA.landing?.y) || OCEANUS_ISLANDS[0]?.y || 0
+  x: STARTER_ISLAND.x,
+  y: STARTER_ISLAND.y
 });
 
 const HUB_ISLAND = OCEANUS_ISLANDS.find((isle) => isle.hub) || OCEANUS_ISLANDS[0] || null;
 const HUB_PORT = HUB_ISLAND ? PORTS_BY_ISLAND.get(HUB_ISLAND.id) : OCEANUS_PORTS[0];
 const OCEANUS_SAFE_LANDING = Object.freeze(
-  HUB_ISLAND
-    ? { x: Math.round(HUB_ISLAND.x), y: Math.round(HUB_ISLAND.y + 22) }
-    : { x: OCEANUS_LANDING.x, y: OCEANUS_LANDING.y }
+  { x: Math.round(STARTER_ISLAND.x), y: Math.round(STARTER_ISLAND.y + 6) }
 );
 
 function oceanusDockPortForPlayerId(/* playerId */) {
