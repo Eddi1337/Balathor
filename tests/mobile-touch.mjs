@@ -253,7 +253,8 @@ test("server accepts joystick-style input and moves the player", async () => {
       HOST: "127.0.0.1",
       PORT: String(serverPort),
       ACCOUNT_STORE_PATH: accountPath,
-      WORLD_DB_PATH: `/tmp/balathor-mobile-touch-world-${process.pid}.sqlite`
+      WORLD_DB_PATH: `/tmp/balathor-mobile-touch-world-${process.pid}.sqlite`,
+      DISCORD_AUTH_WEBHOOK_URL: ""
     },
     stdio: "ignore"
   });
