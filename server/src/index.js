@@ -5043,7 +5043,15 @@ function arriveAtOceanusDock(client) {
     findNearestDockPort(OCEANUS_LANDING.x, OCEANUS_LANDING.y, 200);
   const boat = ensurePlayerHasNauticalBoat(client, port);
   if (boat && port) {
-    boardPlayerShipAtPort(client, boat, port, { notify: false, save: false, broadcast: false });
+    const arrival = oceanusOffshoreArrivalForPort(port);
+    boardPlayerShipAtPort(client, boat, port, {
+      notify: false,
+      save: false,
+      broadcast: false,
+      spawnX: arrival.x,
+      spawnY: arrival.y,
+      spawnFacing: arrival.facing
+    });
   } else if (port) {
     const landing = findWalkableOceanusLanding(OCEANUS_SAFE_LANDING.x, OCEANUS_SAFE_LANDING.y);
     player.x = landing.x;
@@ -5055,6 +5063,30 @@ function arriveAtOceanusDock(client) {
   player.moving = false;
   player._stillAccumulator = 0;
   saveClientCharacter(client);
+}
+
+function oceanusOffshoreArrivalForPort(port) {
+  const baseX = Number(port?.x) || OCEANUS_LANDING.x;
+  const baseY = Number(port?.y) || OCEANUS_LANDING.y;
+  const berthOffset = 34;
+  let arrivalX = baseX;
+  let arrivalY = baseY;
+  let facing = facingForDockPort(port);
+  if (port?.facing === "south") {
+    arrivalY += berthOffset;
+    facing = -Math.PI / 2;
+  } else if (port?.facing === "north") {
+    arrivalY -= berthOffset;
+    facing = Math.PI / 2;
+  } else if (port?.facing === "east") {
+    arrivalX += berthOffset;
+    facing = Math.PI;
+  } else if (port?.facing === "west") {
+    arrivalX -= berthOffset;
+    facing = 0;
+  }
+  const clear = resolveClearShipArrivalPoint(arrivalX, arrivalY, baseX, baseY);
+  return { x: clear.x, y: clear.y, facing };
 }
 
 function findWalkableOceanusLanding(originX, originY) {
@@ -7417,6 +7449,9 @@ function boardPlayerShipAtPort(client, ship, port, options = {}) {
   const shouldNotify = options.notify !== false;
   const shouldSave = options.save !== false;
   const shouldBroadcast = options.broadcast !== false;
+  const spawnX = Number(options.spawnX);
+  const spawnY = Number(options.spawnY);
+  const spawnFacing = Number(options.spawnFacing);
   ensureShipCrew(ship);
   const layout = getShipLayout(ship);
   const deckMode = layout.crewCapacity > 1;
@@ -7430,17 +7465,17 @@ function boardPlayerShipAtPort(client, ship, port, options = {}) {
   client.player.boardedShip = null;
   client.player.shipStationRole = deckMode ? null : "pilot";
   client.player.shipStationId = deckMode ? null : "pilot";
-  ship.worldX = port.x;
-  ship.worldY = port.y;
-  ship.facing = facingForDockPort(port);
+  ship.worldX = Number.isFinite(spawnX) ? spawnX : port.x;
+  ship.worldY = Number.isFinite(spawnY) ? spawnY : port.y;
+  ship.facing = Number.isFinite(spawnFacing) ? spawnFacing : facingForDockPort(port);
   setPlayerShipLocal(client.player, deckMode ? layout.entry.x : 0, deckMode ? layout.entry.y : 0);
   if (deckMode) {
     clampPlayerToShipDeck(client.player);
   } else {
-    client.player.x = port.x;
-    client.player.y = port.y;
+    client.player.x = ship.worldX;
+    client.player.y = ship.worldY;
   }
-  client.player.facing = facingForDockPort(port);
+  client.player.facing = ship.facing;
   client.player.moving = false;
   client.player._stillAccumulator = 0;
   client.player.aboardShipId = null;
