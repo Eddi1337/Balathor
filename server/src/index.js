@@ -2318,7 +2318,7 @@ function getNauticalShipLayout(hullClass) {
   const halfW = deckW / 2;
   return {
     crewCapacity: hullClass === "manowar" ? 7 : hullClass === "galleon" ? 6 : 5,
-    npcCrew: 0,
+    npcCrew: 4,
     deckW,
     deckH,
     entry: { x: -halfW + 1.5, y: 0 },
@@ -2330,8 +2330,16 @@ function getNauticalShipLayout(hullClass) {
       { id: "fishing", role: "fishing", name: "Fishing", x: -halfW + 3, y: large ? 3.5 : 2.5 },
       { id: "lookout", role: "lookout", name: "Lookout", x: -halfW + 3, y: large ? -3.5 : -2.5 }
     ],
-    crewIdle: [],
-    amenities: []
+    crewIdle: [
+      { x: -halfW + 5.5, y: 0 },
+      { x: -0.5, y: 0 },
+      { x: halfW - 5.5, y: large ? -1.8 : -1.3 },
+      { x: halfW - 5.5, y: large ? 1.8 : 1.3 }
+    ],
+    amenities: [
+      { kind: "table", x: -halfW + 6.5, y: 0 },
+      { kind: "kitchen", x: -halfW + 7.5, y: large ? 3.6 : 2.8 }
+    ]
   };
 }
 
@@ -2468,10 +2476,13 @@ function makeShipCrewMember(ship, index) {
 }
 
 function assignDefaultCrewStations(ship, layout = getShipLayout(ship)) {
-  // Crew fill the guns first (so the ship auto-defends), then engineering.
+  // Crew fill active utility stations first so every multi-crew ship feels staffed.
   const order = [
     ...layout.stations.filter((s) => s.role === "gunner"),
-    ...layout.stations.filter((s) => s.role === "engineer")
+    ...layout.stations.filter((s) => s.role === "engineer"),
+    ...layout.stations.filter((s) => s.role === "sail_trim"),
+    ...layout.stations.filter((s) => s.role === "lookout"),
+    ...layout.stations.filter((s) => s.role === "fishing")
   ];
   let i = 0;
   for (const crew of ship.crew) {
@@ -2799,7 +2810,7 @@ function handleShipCrewCommand(client, message = {}) {
   } else if (idleKind === "chill" || requested === "chill" || requested === "chilling" || requested === "idle") {
     crew.stationId = null;
     crew.idleKind = "chill";
-  } else if (requestedRole === "gunner" || requestedRole === "engineer") {
+  } else if (["gunner", "engineer", "sail_trim", "lookout", "fishing"].includes(requestedRole)) {
     const station = layout.stations.find((s) =>
       s.role === requestedRole &&
       !shipStationPlayerOccupant(ship, s.id) &&
@@ -5023,7 +5034,7 @@ function ensurePlayerHasNauticalBoat(client, dockPort) {
   return boat;
 }
 
-/** Place an arriving player on their home dock with their boat moored alongside. */
+/** Place an arriving player directly aboard their personal Oceanus boat. */
 function arriveAtOceanusDock(client) {
   const player = client.player;
   if (!player) return;
@@ -5032,22 +5043,17 @@ function arriveAtOceanusDock(client) {
     findNearestDockPort(OCEANUS_LANDING.x, OCEANUS_LANDING.y, 200);
   const boat = ensurePlayerHasNauticalBoat(client, port);
   if (boat && port) {
-    summonPlayerShipToPort(player, boat, port);
-    boat.boarded = false;
-    boat.deckMode = false;
-  }
-  if (port) {
-    // Stand arrivals on the hub plaza, not on the shoreline terminal edge. The
-    // boat is still moored at the dock, but the player starts on clear land.
+    boardPlayerShipAtPort(client, boat, port, { notify: false, save: false, broadcast: false });
+  } else if (port) {
     const landing = findWalkableOceanusLanding(OCEANUS_SAFE_LANDING.x, OCEANUS_SAFE_LANDING.y);
     player.x = landing.x;
     player.y = landing.y;
     player.facing = facingForDockPort(port);
+    player.aboardShipId = null;
+    player.boardedShip = null;
   }
   player.moving = false;
   player._stillAccumulator = 0;
-  player.aboardShipId = null;
-  player.boardedShip = null;
   saveClientCharacter(client);
 }
 
@@ -5076,13 +5082,7 @@ function repairOceanusFootLanding(client) {
   if (!nearStarterIsland && !isSwimmingAt(player.x, player.y) && !isBlockedCircle(player.x, player.y)) {
     return false;
   }
-  const landing = findWalkableOceanusLanding(OCEANUS_SAFE_LANDING.x, OCEANUS_SAFE_LANDING.y);
-  player.x = landing.x;
-  player.y = landing.y;
-  player.moving = false;
-  player._stillAccumulator = 0;
-  player.aboardShipId = null;
-  player.boardedShip = null;
+  arriveAtOceanusDock(client);
   return true;
 }
 
@@ -5109,8 +5109,7 @@ function handlePortalTravel(client) {
     boardPlayerOntoCurrentShip(client.player);
     saveClientCharacter(client);
   }
-  // Arriving in the Boundless Ocean lands the player on their home dock with
-  // their boat moored alongside.
+  // Arriving in the Boundless Ocean boards the player's personal multi-crew boat.
   if (worldForPosition(client.player.x, client.player.y) === "oceanus") {
     arriveAtOceanusDock(client);
   }
@@ -7411,16 +7410,23 @@ function summonPlayerShipToPort(player, ship, port) {
   return true;
 }
 
-function boardPlayerShipAtPort(client, ship, port) {
+function boardPlayerShipAtPort(client, ship, port, options = {}) {
   if (!client.player || !summonPlayerShipToPort(client.player, ship, port)) {
     return false;
   }
+  const shouldNotify = options.notify !== false;
+  const shouldSave = options.save !== false;
+  const shouldBroadcast = options.broadcast !== false;
+  ensureShipCrew(ship);
   const layout = getShipLayout(ship);
   const deckMode = layout.crewCapacity > 1;
   ship.boarded = true;
   ship.deckMode = deckMode;
   ship.stationRole = null;
   ship.stationId = null;
+  ship.docking = null;
+  ship.warp = null;
+  ship.speed = 0;
   client.player.boardedShip = null;
   client.player.shipStationRole = deckMode ? null : "pilot";
   client.player.shipStationId = deckMode ? null : "pilot";
@@ -7434,13 +7440,19 @@ function boardPlayerShipAtPort(client, ship, port) {
   client.player.moving = false;
   client.player._stillAccumulator = 0;
   client.player.aboardShipId = null;
-  saveClientCharacter(client);
-  send(client, {
-    type: "serverMessage",
-    message: "ship_boarded",
-    shipName: client.player.ship.name
-  });
-  broadcastSnapshot();
+  if (shouldSave) {
+    saveClientCharacter(client);
+  }
+  if (shouldNotify) {
+    send(client, {
+      type: "serverMessage",
+      message: "ship_boarded",
+      shipName: client.player.ship.name
+    });
+  }
+  if (shouldBroadcast) {
+    broadcastSnapshot();
+  }
   return true;
 }
 

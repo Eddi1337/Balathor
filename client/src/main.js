@@ -2454,7 +2454,7 @@ function getInteriorShipView(player = state.players.get(state.selfId)) {
 function getEffectiveWorldZoom(player = state.players.get(state.selfId)) {
   const baseZoom = Math.min(state.zoom || 1, getMobileWorldZoomCap());
   const role = player?.ship?.stationRole;
-  if (selfIsInPilotSeat(player)) return baseZoom * 0.7;
+  if (selfIsInPilotSeat(player)) return isNauticalHull(player?.ship?.hullClass) ? baseZoom * 0.45 : baseZoom * 0.7;
   if (role === "gunner" || role === "engineer") return baseZoom * 0.5;
   return baseZoom;
 }
@@ -3844,6 +3844,12 @@ function wireUi() {
         send({ type: "shipCrewCommand", crewId, role: "gunner" });
       } else if (act === "crew_role:engineer") {
         send({ type: "shipCrewCommand", crewId, role: "engineer" });
+      } else if (act === "crew_role:sail_trim") {
+        send({ type: "shipCrewCommand", crewId, role: "sail_trim" });
+      } else if (act === "crew_role:fishing") {
+        send({ type: "shipCrewCommand", crewId, role: "fishing" });
+      } else if (act === "crew_role:lookout") {
+        send({ type: "shipCrewCommand", crewId, role: "lookout" });
       } else if (act.startsWith("crew_station:")) {
         send({ type: "shipCrewCommand", crewId, stationId: act.slice("crew_station:".length) });
       }
@@ -9362,7 +9368,7 @@ function getShipLayout(shipOrClass = "skiff") {
     const halfW = deckW / 2;
     return {
       crewCapacity: hullClass === "manowar" ? 7 : hullClass === "galleon" ? 6 : 5,
-      npcCrew: 0,
+      npcCrew: 4,
       deckW,
       deckH,
       entry: { x: -halfW + 1.5, y: 0 },
@@ -9374,8 +9380,16 @@ function getShipLayout(shipOrClass = "skiff") {
         { id: "fishing", role: "fishing", name: "Fishing", x: -halfW + 3, y: large ? 3.5 : 2.5 },
         { id: "lookout", role: "lookout", name: "Lookout", x: -halfW + 3, y: large ? -3.5 : -2.5 }
       ],
-      crewIdle: [],
-      amenities: []
+      crewIdle: [
+        { x: -halfW + 5.5, y: 0 },
+        { x: -0.5, y: 0 },
+        { x: halfW - 5.5, y: large ? -1.8 : -1.3 },
+        { x: halfW - 5.5, y: large ? 1.8 : 1.3 }
+      ],
+      amenities: [
+        { kind: "table", x: -halfW + 6.5, y: 0 },
+        { kind: "kitchen", x: -halfW + 7.5, y: large ? 3.6 : 2.8 }
+      ]
     };
   }
   if (hullClass === "sloop") hullClass = "skiff";
@@ -9788,13 +9802,22 @@ function showShipCrewMenu(ship, crew) {
     ? "Gunner"
     : crew.role === "engineer"
       ? "Engineering"
+      : crew.role === "sail_trim"
+        ? "Sail Trim"
+        : crew.role === "fishing"
+          ? "Fishing"
+          : crew.role === "lookout"
+            ? "Lookout"
       : crew.idleKind === "bed" ? "Bed" : crew.idleKind === "galley" ? "Galley" : "Chilling";
   if (npcContextMenuName) npcContextMenuName.textContent = `${crew.name || "Crew"} - ${labelRole}`;
   if (npcContextMenuButtons) {
     npcContextMenuButtons.replaceChildren();
     const roles = [
       { id: "gunner", label: "Gunner" },
-      { id: "engineer", label: "Engineering" }
+      { id: "engineer", label: "Engineering" },
+      { id: "sail_trim", label: "Sail Trim" },
+      { id: "fishing", label: "Fishing" },
+      { id: "lookout", label: "Lookout" }
     ];
     for (const role of roles) {
       const stations = layout.stations.filter((st) => st.role === role.id);
@@ -10427,6 +10450,12 @@ function drawShipCrew(ship, shipSx, shipSy) {
       ? "gunner"
       : crew.role === "engineer"
         ? "engineering"
+        : crew.role === "sail_trim"
+          ? "sail trim"
+          : crew.role === "fishing"
+            ? "fishing"
+            : crew.role === "lookout"
+              ? "lookout"
         : crew.idleKind === "bed" ? "bed" : crew.idleKind === "galley" ? "galley" : "chilling";
     const label = `${crew.name || "Crew"} - ${status}`;
     ctx.font = "9px ui-sans-serif, system-ui";

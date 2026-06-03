@@ -49,6 +49,25 @@ assert.equal(world.worldIdAt(world.OCEANUS_SAFE_LANDING.x, world.OCEANUS_SAFE_LA
 assert.equal(world.isSwimmingAt(world.OCEANUS_SAFE_LANDING.x, world.OCEANUS_SAFE_LANDING.y), false);
 assert.equal(world.isBlockedCircle(world.OCEANUS_SAFE_LANDING.x, world.OCEANUS_SAFE_LANDING.y), false);
 assert.equal(world.isBlockedCircle(world.OCEANUS_SAFE_LANDING.x + 0.8, world.OCEANUS_SAFE_LANDING.y), false);
+const starterViewCounts = new Map();
+for (let y = world.OCEANUS_SAFE_LANDING.y - 10; y <= world.OCEANUS_SAFE_LANDING.y + 10; y += 1) {
+  for (let x = world.OCEANUS_SAFE_LANDING.x - 14; x <= world.OCEANUS_SAFE_LANDING.x + 14; x += 1) {
+    const tile = world.generateTile(x, y);
+    starterViewCounts.set(tile, (starterViewCounts.get(tile) || 0) + 1);
+  }
+}
+assert.equal(starterViewCounts.get(world.TILE.WATER) || 0, 0, "starter island first screen should be solid land");
+assert.ok((starterViewCounts.get(world.TILE.GRASS) || 0) + (starterViewCounts.get(world.TILE.PATH) || 0) > 260, "starter island should render as readable grass and paths");
+for (const isle of world.OCEANUS_ISLANDS.slice(0, 20)) {
+  assert.notEqual(world.generateTile(isle.x, isle.y), world.TILE.WATER, `island ${isle.id} centre should be land`);
+  const shoreProbe = [];
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    for (let r = Math.max(8, isle.landRadius - 8); r <= Math.round(isle.landRadius * 1.35) + 12; r += 1) {
+      shoreProbe.push(world.generateTile(isle.x + dx * r, isle.y + dy * r));
+    }
+  }
+  assert.ok(shoreProbe.includes(world.TILE.SAND), `island ${isle.id} should have a visible beach`);
+}
 const oceanDecorKinds = new Set(world.OCEANUS_ISLANDS.flatMap((isle) => isle.layout.map((prop) => prop.kind)));
 assert.equal(oceanDecorKinds.has("mangrove"), true);
 assert.equal(oceanDecorKinds.has("banana"), true);

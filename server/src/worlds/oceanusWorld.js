@@ -49,7 +49,6 @@ const OCEANUS_ISLANDS = Object.freeze(
 
 const PIER_LEN = 10;
 const PIER_HALF_WIDTH = 1;          // pier is 3 tiles wide
-const MAX_REACH = 64;               // largest landRadius + pier + slack
 const HUB_PLAZA_RADIUS = 8;
 const HUB_PATH_HALF_WIDTH = 2;
 
@@ -179,24 +178,54 @@ function islandLandScore(x, y) {
 function islandShapeScore(isle, x, y) {
   const dx = x - isle.x;
   const dy = y - isle.y;
-  if (!isle.hub) {
-    return 1 - Math.hypot(dx, dy) / isle.landRadius;
-  }
+  const radii = islandRadii(isle);
+  const ry = dy >= 0 ? radii.rySouth : radii.ryNorth;
+  return 1 - Math.hypot(dx / radii.rx, dy / ry);
+}
 
-  // The starter island should read as a complete place from the arrival dock.
-  // Use a broad, stable oval with a longer south side instead of noisy erosion
-  // so the dock, teleporter plaza, and village green are all on solid land.
-  const rx = isle.landRadius * 1.08;
-  const ry = isle.landRadius * (dy > 0 ? 1.32 : 0.96);
-  return 1 - Math.hypot(dx / rx, dy / ry);
+function islandSeed(isle) {
+  let seed = 2166136261;
+  const id = String(isle?.id || "");
+  for (let i = 0; i < id.length; i += 1) {
+    seed ^= id.charCodeAt(i);
+    seed = Math.imul(seed, 16777619) >>> 0;
+  }
+  return seed >>> 0;
+}
+
+function islandRadii(isle) {
+  const r = Math.max(8, Number(isle?.landRadius) || 32);
+  if (isle?.hub) {
+    // The starter island needs to be visually complete from every arrival angle.
+    // Keep it broad and deterministic so the dock, plaza, village green, and
+    // northern groves all stay on solid land.
+    return {
+      rx: r * 1.22,
+      ryNorth: r * 1.12,
+      rySouth: r * 1.52
+    };
+  }
+  const seed = islandSeed(isle);
+  const wide = 0.92 + ((seed & 15) / 15) * 0.28;
+  const tall = 0.9 + (((seed >>> 4) & 15) / 15) * 0.3;
+  return {
+    rx: r * wide,
+    ryNorth: r * tall,
+    rySouth: r * (tall + (((seed >>> 8) & 7) / 7) * 0.1)
+  };
+}
+
+function islandMaxReach(isle) {
+  const radii = islandRadii(isle);
+  return Math.max(radii.rx, radii.ryNorth, radii.rySouth);
 }
 
 /** Pier geometry for an island: a band that sticks out into the water. */
 function pierReachForIsland(isle) {
-  if (isle?.hub && isle.pierDir === "south") {
-    return Math.round(isle.landRadius * 1.32);
-  }
-  return isle.landRadius;
+  const radii = islandRadii(isle);
+  if (isle.pierDir === "south") return Math.round(radii.rySouth);
+  if (isle.pierDir === "north") return Math.round(radii.ryNorth);
+  return Math.round(radii.rx);
 }
 
 function pierRect(isle) {
@@ -302,9 +331,8 @@ function getOceanusTile(x, y, TILE, hash2) {
 
   const land = islandLandScore(x, y);
   const isle = islandAtPoint(x, y);
-  const ripple = isle?.hub ? 0 : smoothNoise(x, y, 11, 44017) * 0.08;
 
-  if (land + ripple <= 0) {
+  if (land <= 0) {
     return TILE.WATER; // open ocean
   }
 
@@ -312,7 +340,7 @@ function getOceanusTile(x, y, TILE, hash2) {
     return hash2(x, y, 8811) > 0.9 ? TILE.STONE : TILE.PATH;
   }
 
-  if (land + ripple < 0.14) {
+  if (land < 0.14) {
     return TILE.SAND; // sandy beach ring
   }
 
@@ -324,12 +352,13 @@ function getOceanusTile(x, y, TILE, hash2) {
 
     const dx = x - isle.x;
     const dy = y - isle.y;
+    const pierReach = pierReachForIsland(isle);
     // Port path leading inland from the pier.
     const pierBand =
-      (isle.pierDir === "south" && dy > isle.landRadius * 0.4 && Math.abs(dx) <= PIER_HALF_WIDTH + 1) ||
-      (isle.pierDir === "north" && dy < -isle.landRadius * 0.4 && Math.abs(dx) <= PIER_HALF_WIDTH + 1) ||
-      (isle.pierDir === "east" && dx > isle.landRadius * 0.4 && Math.abs(dy) <= PIER_HALF_WIDTH + 1) ||
-      (isle.pierDir === "west" && dx < -isle.landRadius * 0.4 && Math.abs(dy) <= PIER_HALF_WIDTH + 1);
+      (isle.pierDir === "south" && dy > pierReach * 0.36 && Math.abs(dx) <= PIER_HALF_WIDTH + 1) ||
+      (isle.pierDir === "north" && dy < -pierReach * 0.36 && Math.abs(dx) <= PIER_HALF_WIDTH + 1) ||
+      (isle.pierDir === "east" && dx > pierReach * 0.36 && Math.abs(dy) <= PIER_HALF_WIDTH + 1) ||
+      (isle.pierDir === "west" && dx < -pierReach * 0.36 && Math.abs(dy) <= PIER_HALF_WIDTH + 1);
     if (pierBand) return TILE.PATH;
 
     const hubDist = Math.hypot(dx, dy);
@@ -517,9 +546,10 @@ function getOceanusObjectsInChunk(cx, cy, chunkSize) {
   const endY = startY + chunkSize;
   const out = [];
   for (const isle of OCEANUS_ISLANDS) {
+    const reach = islandMaxReach(isle) + PIER_LEN + 16;
     if (
-      isle.x >= startX - isle.landRadius && isle.x < endX + isle.landRadius &&
-      isle.y >= startY - isle.landRadius && isle.y < endY + isle.landRadius
+      isle.x >= startX - reach && isle.x < endX + reach &&
+      isle.y >= startY - reach && isle.y < endY + reach
     ) {
       out.push({
         id: `harbour_${isle.id}`,
@@ -527,9 +557,9 @@ function getOceanusObjectsInChunk(cx, cy, chunkSize) {
         name: isle.name,
         x: isle.x,
         y: isle.y,
-        radius: isle.landRadius,
-        w: isle.landRadius * 2,
-        h: isle.landRadius * 2
+        radius: islandMaxReach(isle),
+        w: islandRadii(isle).rx * 2,
+        h: (islandRadii(isle).ryNorth + islandRadii(isle).rySouth)
       });
       for (const [index, prop] of isle.layout.entries()) {
         const propX = isle.x + (prop.dx | 0);
