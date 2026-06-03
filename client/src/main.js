@@ -627,6 +627,20 @@ function displayItemName(item) {
   if (!item) {
     return "Item";
   }
+  if (isNauticalWorld()) {
+    if (item.type === "weapon") {
+      const style = item.visual?.weaponStyle || "";
+      if (item.weaponKind === "sword") return style === "mace" || style === "heavy" ? "Deck Club" : "Corsair Rapier";
+      if (item.weaponKind === "bow") return style === "heavy" || style === "rail" ? "Deck Rifle" : "Flintlock";
+      if (item.weaponKind === "staff") return style === "dark" || style === "spectral" ? "Tide Charm" : "Storm Lantern";
+    }
+    if (item.type === "armor") return "Buccaneer Coat";
+    if (item.type === "ring") return "Sailor's Charm";
+    if (item.type === "potion") return "Grog Flask";
+    if (item.type === "ship") return item.name || "Harbour Sloop";
+    if (item.type === "ship_upgrade") return item.name || "Ship Fitting";
+    return item.name || "Item";
+  }
   if (!isSciFiWorld()) {
     return item.name || "Item";
   }
@@ -659,6 +673,16 @@ function displayItemIconClass(item) {
   if (!item) {
     return "generic";
   }
+  if (isNauticalWorld()) {
+    if (item.type === "weapon") {
+      if (item.weaponKind === "sword") return "rapier";
+      if (item.weaponKind === "bow") return "flintlock";
+      if (item.weaponKind === "staff") return "lantern";
+    }
+    if (item.type === "armor") return "pirate-coat";
+    if (item.type === "ship" || item.type === "ship_upgrade") return "ship";
+    return item.icon || item.type || "generic";
+  }
   if (!isSciFiWorld()) {
     return item.icon || item.type || "generic";
   }
@@ -682,6 +706,44 @@ function displayItemIconClass(item) {
 function displayTalentInfo(spell, classId) {
   if (!spell) {
     return { name: "Talent", desc: "" };
+  }
+  if (isNauticalWorld()) {
+    const pirateTrees = {
+      mage: {
+        fireball: { name: "Powder Keg", desc: "Lob an explosive charge at enemies" },
+        fire_nova: { name: "Broadside Burst", desc: "Blast powder fire around you" },
+        inferno: { name: "Dragon Volley", desc: "Unleash a roaring cone of flame" },
+        ice_shard: { name: "Ice Bottle", desc: "Shatter freezing glass that slows targets" },
+        frost_barrier: { name: "Tide Ward", desc: "Wrap yourself in a briny barrier" },
+        blizzard: { name: "Squall", desc: "Whip up a freezing sea storm" },
+        arcane_bolt: { name: "Deepwater Hex", desc: "Fast cursed bolt from the deep" },
+        mana_shield: { name: "Captain's Ward", desc: "Turn incoming harm into ward loss" },
+        time_warp: { name: "Doldrums", desc: "Drag nearby enemies into sluggish waters" }
+      },
+      knight: {
+        shield_bash: { name: "Boarding Slam", desc: "Stagger a foe with a hard boarding hit" },
+        divine_shield: { name: "Captain's Guard", desc: "Brief invincibility behind a sea ward" },
+        fortify: { name: "Iron Hull", desc: "Massively toughen your armour for a short time" },
+        holy_strike: { name: "Cutlass Lunge", desc: "Drive forward with a powerful thrust" },
+        consecration: { name: "Salt Circle", desc: "Mark the deck with a warding circle that harms foes and helps allies" },
+        divine_wrath: { name: "Broadside Wrath", desc: "Smash enemies in a wide sweeping arc" },
+        healing_aura: { name: "Sea Shanty", desc: "Restore health over time" },
+        lay_on_hands: { name: "Rum Rations", desc: "A large instant recovery" },
+        battle_cry: { name: "Boarding Cry", desc: "Boost speed and strength briefly" }
+      },
+      ranger: {
+        precise_shot: { name: "Deadeye Shot", desc: "High-damage aimed firearm shot" },
+        piercing_arrow: { name: "Hull-Piercer", desc: "A shot that tears through enemies" },
+        rain_of_arrows: { name: "Pistol Barrage", desc: "Rake an area with pirate gunfire" },
+        caltrops: { name: "Deck Tacks", desc: "Scatter sharp tacks that slow enemies" },
+        evasion: { name: "Sea Legs", desc: "Briefly become hard to hit" },
+        camouflage: { name: "Fog Veil", desc: "Disappear into a bank of sea fog" },
+        multishot: { name: "Triple Flint", desc: "Fire three quick shots at once" },
+        smoke_bomb: { name: "Powder Smoke", desc: "Blind and disorient nearby enemies" },
+        volley: { name: "Grapeshot", desc: "Rapid burst of pirate gunfire" }
+      }
+    };
+    return pirateTrees[classId]?.[spell.id] || spell;
   }
   if (!isSciFiWorld()) {
     return spell;
@@ -727,6 +789,14 @@ function displayTalentInfo(spell, classId) {
 }
 
 function displayTalentTreeName(classId, treeName) {
+  if (isNauticalWorld()) {
+    const map = {
+      mage: { Fire: "Powder", Frost: "Tide", Arcane: "Deep" },
+      knight: { Protection: "Bulwark", Retribution: "Boarding", Recovery: "Crew" },
+      ranger: { Marksmanship: "Gunnery", Survival: "Sealegs", Trickery: "Privateer" }
+    };
+    return map[classId]?.[treeName] || treeName;
+  }
   if (!isSciFiWorld()) {
     return treeName;
   }
@@ -11934,6 +12004,78 @@ function drawItemIcon(item, x, y) {
     return;
   }
 
+  if (isNauticalWorld() && item?.type === "weapon") {
+    if (item.weaponKind === "sword") {
+      const style = item.visual?.weaponStyle || "";
+      if (style === "mace" || style === "heavy") {
+        ctx.strokeStyle = "#6b4528";
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(x - 1, y + 8);
+        ctx.lineTo(x - 1, y - 7);
+        ctx.stroke();
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(x + 2, y - 10, 5, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.strokeStyle = "#e7edf5";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(x - 2, y + 8);
+        ctx.lineTo(x + 5, y - 14);
+        ctx.stroke();
+        ctx.strokeStyle = "#8b5a34";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x - 6, y + 1);
+        ctx.lineTo(x + 2, y + 3);
+        ctx.stroke();
+        ctx.fillStyle = color;
+        ctx.fillRect(x - 3, y + 1, 3, 7);
+      }
+      ctx.restore();
+      return;
+    }
+    if (item.weaponKind === "bow") {
+      ctx.fillStyle = "#6b4528";
+      ctx.fillRect(x - 8, y - 4, 16, 5);
+      ctx.fillStyle = "#d7dde6";
+      ctx.fillRect(x + 6, y - 5, 6, 7);
+      ctx.fillStyle = color;
+      ctx.fillRect(x - 10, y - 2, 5, 2);
+      ctx.restore();
+      return;
+    }
+    if (item.weaponKind === "staff") {
+      ctx.strokeStyle = "#7a5737";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x, y + 8);
+      ctx.lineTo(x, y - 6);
+      ctx.stroke();
+      ctx.fillStyle = "#d9a441";
+      ctx.beginPath();
+      ctx.arc(x, y - 9, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#fff1b8";
+      ctx.fillRect(x - 2, y - 12, 4, 6);
+      ctx.restore();
+      return;
+    }
+  }
+
+  if (isNauticalWorld() && item?.type === "armor") {
+    ctx.fillStyle = "#7a2f1f";
+    ctx.fillRect(x - 7, y - 8, 14, 16);
+    ctx.fillStyle = "#d8c39a";
+    ctx.fillRect(x - 4, y - 8, 8, 5);
+    ctx.fillStyle = "#d4b06a";
+    ctx.fillRect(x - 1, y - 3, 2, 11);
+    ctx.restore();
+    return;
+  }
+
   if (isSciFiWorld() && item?.type === "weapon") {
     if (item.weaponKind === "sword") {
       const bladeColor = item.visual?.weaponColor || color || "#67f0ff";
@@ -13237,6 +13379,75 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
   }
 
   const ks = eqS / 3;
+
+  if (isNauticalWorld()) {
+    if (weaponKind === "staff") {
+      const lanternX = rHandX + dirX * (12 * ks);
+      const lanternY = rHandY + dirY * (12 * ks) - 10 * ks;
+      ctx.strokeStyle = "#7a5737";
+      ctx.lineWidth = 4 * Math.min(ks, 1.2);
+      ctx.beginPath();
+      ctx.moveTo(rHandX, rHandY);
+      ctx.lineTo(lanternX, lanternY + 10 * ks);
+      ctx.stroke();
+      ctx.fillStyle = ornateWeapon ? accent : "#d3a24f";
+      ctx.fillRect(lanternX - 5 * ks, lanternY - 2 * ks, 10 * ks, 12 * ks);
+      ctx.fillStyle = "#fff3b8";
+      ctx.fillRect(lanternX - 3 * ks, lanternY, 6 * ks, 8 * ks);
+      ctx.strokeStyle = "#3b2414";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(lanternX - 5 * ks, lanternY - 2 * ks, 10 * ks, 12 * ks);
+      ctx.restore();
+      return;
+    }
+
+    if (weaponKind === "sword") {
+      if (style === "mace" || style === "heavy") {
+        ctx.strokeStyle = "#6d4528";
+        ctx.lineWidth = 5 * Math.min(ks, 1.2);
+        ctx.beginPath();
+        ctx.moveTo(rHandX, rHandY);
+        ctx.lineTo(rHandX + dirX * (18 * ks), rHandY + dirY * (18 * ks));
+        ctx.stroke();
+        ctx.fillStyle = ornateWeapon ? accent : "#8f7458";
+        ctx.beginPath();
+        ctx.arc(rHandX + dirX * (24 * ks), rHandY + dirY * (24 * ks), 6 * Math.min(ks, 1.2), 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        const tipX = rHandX + dirX * (30 * ks) + sideX * (2 * ks);
+        const tipY = rHandY + dirY * (30 * ks) + sideY * (2 * ks);
+        ctx.strokeStyle = ornateWeapon ? accent : "#edf3f7";
+        ctx.lineWidth = 3 * Math.min(ks, 1.15);
+        ctx.beginPath();
+        ctx.moveTo(rHandX, rHandY);
+        ctx.lineTo(tipX, tipY);
+        ctx.stroke();
+        ctx.strokeStyle = "#8b5a34";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(rHandX - sideX * (5 * ks), rHandY - sideY * (5 * ks));
+        ctx.lineTo(rHandX + sideX * (5 * ks), rHandY + sideY * (5 * ks));
+        ctx.stroke();
+        ctx.fillStyle = accent;
+        ctx.fillRect(rHandX - 1.5 * ks, rHandY - 1.5 * ks, 3 * ks, 8 * ks);
+      }
+      ctx.restore();
+      return;
+    }
+
+    if (weaponKind === "bow") {
+      const gunX = rHandX + dirX * (14 * ks);
+      const gunY = rHandY + dirY * (14 * ks) - 5 * ks;
+      ctx.fillStyle = "#6b4528";
+      ctx.fillRect(gunX - 10 * ks, gunY - 2 * ks, 20 * ks, 5 * ks);
+      ctx.fillStyle = "#d7dde6";
+      ctx.fillRect(gunX + 6 * ks, gunY - 3 * ks, 6 * ks, 7 * ks);
+      ctx.fillStyle = ornateWeapon ? accent : "#c9a36d";
+      ctx.fillRect(gunX - 9 * ks, gunY + 3 * ks, 6 * ks, 5 * ks);
+      ctx.restore();
+      return;
+    }
+  }
 
   if (isSciFiWorld()) {
     if (weaponKind === "staff") {

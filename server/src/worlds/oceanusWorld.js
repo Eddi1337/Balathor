@@ -38,6 +38,7 @@ const STARTER_ISLAND = Object.freeze({
   y: (Number(DATA.landing?.y) || -162) + 42,
   landRadius: 44
 });
+const STARTER_PIER_DIR = "south";
 
 const OCEANUS_ISLANDS = Object.freeze(
   (Array.isArray(DATA.islands) ? DATA.islands : []).map((isle) =>
@@ -215,6 +216,21 @@ function starterIslandScore(x, y) {
   return 1 - Math.hypot(dx, dy) / STARTER_ISLAND.landRadius;
 }
 
+function starterPierRect() {
+  const r = STARTER_ISLAND.landRadius;
+  return {
+    minX: STARTER_ISLAND.x - PIER_HALF_WIDTH,
+    maxX: STARTER_ISLAND.x + PIER_HALF_WIDTH,
+    minY: STARTER_ISLAND.y + r - 2,
+    maxY: STARTER_ISLAND.y + r + PIER_LEN
+  };
+}
+
+function onStarterPier(x, y) {
+  const p = starterPierRect();
+  return x >= p.minX && x <= p.maxX && y >= p.minY && y <= p.maxY;
+}
+
 function pierRect(isle) {
   const r = pierReachForIsland(isle);
   if (isle.pierDir === "south") {
@@ -255,6 +271,10 @@ function propTileAt(isle, x, y, TILE) {
 }
 
 function getOceanusTile(x, y, TILE, hash2) {
+  if (onStarterPier(x, y)) {
+    const detail = hash2(x, y, 8797);
+    return detail > 0.92 ? TILE.STONE : TILE.PATH;
+  }
   // Walkable pier planks over the water.
   for (const isle of nearbyIslands(x, y)) {
     if (onPier(isle, x, y)) {
@@ -283,6 +303,7 @@ function getOceanusTile(x, y, TILE, hash2) {
   if (isle?.id === STARTER_ISLAND.id) {
     const dist = Math.hypot(x - STARTER_ISLAND.x, y - STARTER_ISLAND.y);
     if (dist <= HUB_PLAZA_RADIUS + 1) return hash2(x, y, 8811) > 0.88 ? TILE.STONE : TILE.PATH;
+    if (Math.abs(x - STARTER_ISLAND.x) <= PIER_HALF_WIDTH + 1 && y > STARTER_ISLAND.y + STARTER_ISLAND.landRadius * 0.3) return TILE.PATH;
     if (hash2(x, y, 8812) > 0.9) return TILE.FLOWERS;
     return TILE.GRASS;
   }
@@ -354,6 +375,19 @@ function dockPortForIsland(isle) {
 
 const OCEANUS_PORTS = Object.freeze(OCEANUS_ISLANDS.map(dockPortForIsland));
 const PORTS_BY_ISLAND = new Map(OCEANUS_PORTS.map((p) => [p.harbourId, p]));
+
+const STARTER_PORT = Object.freeze({
+  id: `${STARTER_ISLAND.id}_dock`,
+  harbourId: STARTER_ISLAND.id,
+  harbourName: STARTER_ISLAND.name,
+  x: STARTER_ISLAND.x,
+  y: STARTER_ISLAND.y + STARTER_ISLAND.landRadius + PIER_LEN + 2,
+  facing: STARTER_PIER_DIR,
+  terminalX: STARTER_ISLAND.x,
+  terminalY: STARTER_ISLAND.y + STARTER_ISLAND.landRadius + 1,
+  islandX: STARTER_ISLAND.x,
+  islandY: STARTER_ISLAND.y
+});
 
 function buildFeatures() {
   const out = [];
@@ -428,6 +462,50 @@ function buildFeatures() {
 }
 
 const OCEANUS_FEATURES = buildFeatures();
+const STARTER_FEATURES = Object.freeze([
+  Object.freeze({
+    id: `${STARTER_ISLAND.id}_harbour`,
+    kind: "harbour",
+    name: STARTER_ISLAND.name,
+    x: STARTER_ISLAND.x,
+    y: STARTER_ISLAND.y,
+    radius: STARTER_ISLAND.landRadius,
+    w: STARTER_ISLAND.landRadius * 2,
+    h: STARTER_ISLAND.landRadius * 2
+  }),
+  Object.freeze({
+    id: `${STARTER_ISLAND.id}_pier`,
+    kind: "harbour-pier",
+    name: `${STARTER_ISLAND.name} Pier`,
+    harbourId: STARTER_ISLAND.id,
+    x: STARTER_ISLAND.x,
+    y: STARTER_ISLAND.y + STARTER_ISLAND.landRadius + Math.floor(PIER_LEN / 2),
+    w: PIER_HALF_WIDTH * 2 + 1,
+    h: PIER_LEN + 3
+  }),
+  Object.freeze({
+    id: `${STARTER_ISLAND.id}_shipwright`,
+    kind: "ship-console",
+    name: `${STARTER_ISLAND.name} Shipwright`,
+    harbourId: STARTER_ISLAND.id,
+    x: STARTER_PORT.terminalX,
+    y: STARTER_PORT.terminalY,
+    w: 4,
+    h: 4
+  }),
+  Object.freeze({
+    id: `${STARTER_ISLAND.id}_chandler`,
+    kind: "ship-shop",
+    name: `${STARTER_ISLAND.name} Chandlery`,
+    shopName: `${STARTER_ISLAND.name} Chandlery`,
+    shopType: "ship",
+    harbourId: STARTER_ISLAND.id,
+    x: STARTER_PORT.terminalX + 4,
+    y: STARTER_PORT.terminalY - 2,
+    w: 4,
+    h: 4
+  })
+]);
 
 const OCEANUS_LANDING = Object.freeze({
   x: STARTER_ISLAND.x,
@@ -447,6 +525,7 @@ function oceanusDockPortForPlayerId(/* playerId */) {
 
 function oceanusPortById(id) {
   if (typeof id !== "string" || !id) return null;
+  if (id === STARTER_PORT.id) return STARTER_PORT;
   return OCEANUS_PORTS.find((p) => p.id === id) || null;
 }
 
@@ -454,6 +533,15 @@ function findNearestOceanusPort(px, py, maxDist = 14) {
   const md = maxDist * maxDist;
   let best = null;
   let bestD = md;
+  {
+    const dx = px - STARTER_PORT.x;
+    const dy = py - STARTER_PORT.y;
+    const d = dx * dx + dy * dy;
+    if (d < bestD) {
+      bestD = d;
+      best = STARTER_PORT;
+    }
+  }
   for (const p of OCEANUS_PORTS) {
     const dx = px - p.x;
     const dy = py - p.y;
@@ -480,6 +568,17 @@ function getOceanusObjectsInChunk(cx, cy, chunkSize) {
   const endX = startX + chunkSize;
   const endY = startY + chunkSize;
   const out = [];
+  const starterReach = STARTER_ISLAND.landRadius + PIER_LEN + 16;
+  if (
+    STARTER_ISLAND.x >= startX - starterReach && STARTER_ISLAND.x < endX + starterReach &&
+    STARTER_ISLAND.y >= startY - starterReach && STARTER_ISLAND.y < endY + starterReach
+  ) {
+    for (const feature of STARTER_FEATURES) {
+      if (featureTouchesChunk(feature, startX, startY, endX, endY)) {
+        out.push({ ...feature });
+      }
+    }
+  }
   for (const isle of OCEANUS_ISLANDS) {
     const reach = islandMaxReach(isle) + PIER_LEN + 16;
     if (
