@@ -58,6 +58,13 @@ for (let y = world.OCEANUS_SAFE_LANDING.y - 10; y <= world.OCEANUS_SAFE_LANDING.
 }
 assert.equal(starterViewCounts.get(world.TILE.WATER) || 0, 0, "starter island first screen should be solid land");
 assert.ok((starterViewCounts.get(world.TILE.GRASS) || 0) + (starterViewCounts.get(world.TILE.PATH) || 0) > 260, "starter island should render as readable grass and paths");
+let starterDarkGrass = 0;
+for (let y = world.OCEANUS_SAFE_LANDING.y - 24; y <= world.OCEANUS_SAFE_LANDING.y + 24; y += 1) {
+  for (let x = world.OCEANUS_SAFE_LANDING.x - 42; x <= world.OCEANUS_SAFE_LANDING.x + 42; x += 1) {
+    if (world.generateTile(x, y) === world.TILE.DARK_GRASS) starterDarkGrass += 1;
+  }
+}
+assert.equal(starterDarkGrass, 0, "starter island viewport should not render as a dark grass slab");
 for (const isle of world.OCEANUS_ISLANDS.slice(0, 20)) {
   assert.notEqual(world.generateTile(isle.x, isle.y), world.TILE.WATER, `island ${isle.id} centre should be land`);
   const shoreProbe = [];

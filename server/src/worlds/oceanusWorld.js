@@ -296,13 +296,13 @@ function hubStarterGroundTile(isle, x, y, TILE, hash2) {
     return detail > 0.9 ? TILE.STONE : TILE.PATH;
   }
 
-  // Keep the first screen open and readable: grass/flowers near the dock and
-  // teleporter, denser palms toward the northern and side groves.
+  // Keep the starter island open and readable. Dense dark grass made the first
+  // screen look like half the island had failed to render, so the hub uses bright
+  // grass with explicit tree/flower detail instead of large dark-ground fills.
   if (dy < -36 || Math.abs(dx) > 56) {
     if (groveNoise > 0.68 || detail > 0.95) return TILE.TREE;
     if (detail > 0.82) return TILE.FLOWERS;
-    if (detail > 0.42) return TILE.GRASS;
-    return TILE.DARK_GRASS;
+    return TILE.GRASS;
   }
 
   if (dist < 58) {
@@ -311,7 +311,8 @@ function hubStarterGroundTile(isle, x, y, TILE, hash2) {
   }
 
   if (detail > 0.9) return TILE.FLOWERS;
-  return detail > 0.06 ? TILE.GRASS : TILE.DARK_GRASS;
+  if (detail < 0.045 && dist > 72) return TILE.TREE;
+  return TILE.GRASS;
 }
 
 function getOceanusTile(x, y, TILE, hash2) {

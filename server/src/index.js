@@ -2321,7 +2321,7 @@ function getNauticalShipLayout(hullClass) {
     npcCrew: 4,
     deckW,
     deckH,
-    entry: { x: -halfW + 1.5, y: 0 },
+    entry: { x: -halfW + 3.5, y: 0 },
     teleporter: null,
     stations: [
       { id: "helm", role: "pilot", name: "Helm", x: halfW - 2.5, y: 0 },
@@ -7434,8 +7434,12 @@ function boardPlayerShipAtPort(client, ship, port, options = {}) {
   ship.worldY = port.y;
   ship.facing = facingForDockPort(port);
   setPlayerShipLocal(client.player, deckMode ? layout.entry.x : 0, deckMode ? layout.entry.y : 0);
-  client.player.x = port.x + (deckMode ? layout.entry.x : 0);
-  client.player.y = port.y + (deckMode ? layout.entry.y : 0);
+  if (deckMode) {
+    clampPlayerToShipDeck(client.player);
+  } else {
+    client.player.x = port.x;
+    client.player.y = port.y;
+  }
   client.player.facing = facingForDockPort(port);
   client.player.moving = false;
   client.player._stillAccumulator = 0;

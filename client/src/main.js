@@ -9371,7 +9371,7 @@ function getShipLayout(shipOrClass = "skiff") {
       npcCrew: 4,
       deckW,
       deckH,
-      entry: { x: -halfW + 1.5, y: 0 },
+      entry: { x: -halfW + 3.5, y: 0 },
       teleporter: null,
       stations: [
         { id: "helm", role: "pilot", name: "Helm", x: halfW - 2.5, y: 0 },
