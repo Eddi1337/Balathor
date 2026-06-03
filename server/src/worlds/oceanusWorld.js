@@ -50,6 +50,8 @@ const OCEANUS_ISLANDS = Object.freeze(
 const PIER_LEN = 10;
 const PIER_HALF_WIDTH = 1;          // pier is 3 tiles wide
 const MAX_REACH = 64;               // largest landRadius + pier + slack
+const HUB_PLAZA_RADIUS = 8;
+const HUB_PATH_HALF_WIDTH = 2;
 
 // Return teleporter sits on the large central hub island, a little inland from
 // its south dock. Roads radiate out from it (a path rosette, like the stargate).
@@ -151,8 +153,7 @@ function islandAtPoint(x, y) {
   let best = null;
   let bestScore = 0;
   for (const isle of nearbyIslands(x, y)) {
-    const dist = Math.hypot(x - isle.x, y - isle.y);
-    const score = 1 - dist / isle.landRadius;
+    const score = islandShapeScore(isle, x, y);
     if (score > bestScore) {
       bestScore = score;
       best = isle;
@@ -169,16 +170,37 @@ function islandAtPoint(x, y) {
 function islandLandScore(x, y) {
   let best = -Infinity;
   for (const isle of nearbyIslands(x, y)) {
-    const dist = Math.hypot(x - isle.x, y - isle.y);
-    const t = 1 - dist / isle.landRadius;
+    const t = islandShapeScore(isle, x, y);
     if (t > best) best = t;
   }
   return best;
 }
 
+function islandShapeScore(isle, x, y) {
+  const dx = x - isle.x;
+  const dy = y - isle.y;
+  if (!isle.hub) {
+    return 1 - Math.hypot(dx, dy) / isle.landRadius;
+  }
+
+  // The starter island should read as a complete place from the arrival dock.
+  // Use a broad, stable oval with a longer south side instead of noisy erosion
+  // so the dock, teleporter plaza, and village green are all on solid land.
+  const rx = isle.landRadius * 1.08;
+  const ry = isle.landRadius * (dy > 0 ? 1.32 : 0.96);
+  return 1 - Math.hypot(dx / rx, dy / ry);
+}
+
 /** Pier geometry for an island: a band that sticks out into the water. */
+function pierReachForIsland(isle) {
+  if (isle?.hub && isle.pierDir === "south") {
+    return Math.round(isle.landRadius * 1.32);
+  }
+  return isle.landRadius;
+}
+
 function pierRect(isle) {
-  const r = isle.landRadius;
+  const r = pierReachForIsland(isle);
   if (isle.pierDir === "south") {
     return { minX: isle.x - PIER_HALF_WIDTH, maxX: isle.x + PIER_HALF_WIDTH, minY: isle.y + r - 2, maxY: isle.y + r + PIER_LEN };
   }
@@ -216,6 +238,54 @@ function propTileAt(isle, x, y, TILE) {
   return null;
 }
 
+function isHubStarterPath(isle, x, y) {
+  if (!isle?.hub) return false;
+  const tx = Math.floor(x);
+  const ty = Math.floor(y);
+  const dx = tx - isle.x;
+  const dy = ty - isle.y;
+  const vx = tx - OCEANUS_TELEPORTER.x;
+  const vy = ty - OCEANUS_TELEPORTER.y;
+  const distToTeleporter = Math.hypot(vx, vy);
+
+  if (distToTeleporter <= HUB_PLAZA_RADIUS) return true;
+  if (Math.abs(vx) <= HUB_PATH_HALF_WIDTH && ty >= OCEANUS_TELEPORTER.y && ty <= isle.y + pierReachForIsland(isle) - 4) return true;
+  if (Math.abs(vy) <= HUB_PATH_HALF_WIDTH && Math.abs(vx) <= 34) return true;
+  if (Math.abs(dx) <= 2 && dy >= -16 && dy <= 58) return true;
+  if (Math.abs(dy - 22) <= 2 && Math.abs(dx) <= 42) return true;
+  return false;
+}
+
+function hubStarterGroundTile(isle, x, y, TILE, hash2) {
+  const dx = x - isle.x;
+  const dy = y - isle.y;
+  const dist = Math.hypot(dx, dy);
+  const detail = hash2(x, y, 8811);
+  const groveNoise = smoothNoise(x, y, 18, 44103);
+
+  if (isHubStarterPath(isle, x, y)) {
+    return detail > 0.9 ? TILE.STONE : TILE.PATH;
+  }
+
+  // Keep the first screen open and readable: grass/flowers near the dock and
+  // teleporter, denser palms toward the northern and side groves.
+  if (dy < -36 || Math.abs(dx) > 56) {
+    if (groveNoise > 0.68 || detail > 0.95) return TILE.TREE;
+    if (detail > 0.82) return TILE.FLOWERS;
+    if (detail > 0.42) return TILE.GRASS;
+    return TILE.DARK_GRASS;
+  }
+
+  if (dist < 58) {
+    if (detail > 0.86) return TILE.FLOWERS;
+    if (detail > 0.24) return TILE.GRASS;
+    return TILE.DARK_GRASS;
+  }
+
+  if (detail > 0.9) return TILE.FLOWERS;
+  return detail > 0.18 ? TILE.GRASS : TILE.DARK_GRASS;
+}
+
 function getOceanusTile(x, y, TILE, hash2) {
   // Walkable pier planks over the water.
   for (const isle of nearbyIslands(x, y)) {
@@ -232,17 +302,21 @@ function getOceanusTile(x, y, TILE, hash2) {
   }
 
   const land = islandLandScore(x, y);
-  const ripple = smoothNoise(x, y, 11, 44017) * 0.08;
+  const isle = islandAtPoint(x, y);
+  const ripple = isle?.hub ? 0 : smoothNoise(x, y, 11, 44017) * 0.08;
 
   if (land + ripple <= 0) {
     return TILE.WATER; // open ocean
+  }
+
+  if (isle?.hub && isHubStarterPath(isle, x, y)) {
+    return hash2(x, y, 8811) > 0.9 ? TILE.STONE : TILE.PATH;
   }
 
   if (land + ripple < 0.14) {
     return TILE.SAND; // sandy beach ring
   }
 
-  const isle = islandAtPoint(x, y);
   if (isle) {
     const tx = Math.floor(x);
     const ty = Math.floor(y);
@@ -261,6 +335,10 @@ function getOceanusTile(x, y, TILE, hash2) {
 
     const hubDist = Math.hypot(dx, dy);
     if (hubDist < 4) return TILE.PATH; // small central plaza
+
+    if (isle.hub) {
+      return hubStarterGroundTile(isle, x, y, TILE, hash2);
+    }
   }
 
   const detail = hash2(x, y, 8803);
@@ -278,7 +356,7 @@ function facingForPier(dir) {
 }
 
 function dockPortForIsland(isle) {
-  const r = isle.landRadius;
+  const r = pierReachForIsland(isle);
   let x = isle.x;
   let y = isle.y;
   if (isle.pierDir === "south") y = isle.y + r + PIER_LEN + 2;
@@ -287,7 +365,7 @@ function dockPortForIsland(isle) {
   else x = isle.x - r - PIER_LEN - 2;
 
   // Terminal: a few tiles back toward the island (where you stand on the dock).
-  const inward = 5;
+  const inward = isle.hub ? 25 : 5;
   let tx = x;
   let ty = y;
   if (isle.pierDir === "south") ty = y - inward;
