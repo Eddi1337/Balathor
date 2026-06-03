@@ -11008,6 +11008,68 @@ function drawShipConsoleObject(obj, sx, sy) {
   const t = performance.now() / 1000;
   const pulse = 0.46 + Math.sin(t * 4.6 + sx * 0.01) * 0.16;
   ctx.save();
+  if (isNauticalWorld()) {
+    drawEllipseShadow(x - 6, y + h * 0.88, w + 12, 12, 0.24);
+
+    const stoolX = sx - 8;
+    const stoolY = y + h * 0.58;
+    ctx.fillStyle = "#6f4a2a";
+    ctx.fillRect(stoolX - 7, stoolY, 14, 4);
+    ctx.strokeStyle = "#4b3118";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(stoolX - 5, stoolY + 4);
+    ctx.lineTo(stoolX - 4, stoolY + 12);
+    ctx.moveTo(stoolX + 5, stoolY + 4);
+    ctx.lineTo(stoolX + 4, stoolY + 12);
+    ctx.stroke();
+
+    ctx.fillStyle = "#d8b08b";
+    ctx.beginPath();
+    ctx.arc(stoolX, stoolY - 12, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#1f2d3a";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(stoolX, stoolY - 7);
+    ctx.lineTo(stoolX, stoolY + 2);
+    ctx.stroke();
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(stoolX, stoolY - 3);
+    ctx.lineTo(stoolX - 6, stoolY + 2);
+    ctx.moveTo(stoolX, stoolY - 3);
+    ctx.lineTo(stoolX + 6, stoolY + 1);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(stoolX, stoolY + 2);
+    ctx.lineTo(stoolX - 5, stoolY + 10);
+    ctx.moveTo(stoolX, stoolY + 2);
+    ctx.lineTo(stoolX + 5, stoolY + 10);
+    ctx.stroke();
+    ctx.fillStyle = "#7b2f1e";
+    ctx.fillRect(stoolX - 5, stoolY - 7, 10, 8);
+
+    const signX = sx + 10;
+    const signY = y + h * 0.18;
+    ctx.strokeStyle = "#6f4a2a";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(signX, signY + 2);
+    ctx.lineTo(signX, signY + 26);
+    ctx.stroke();
+    ctx.fillStyle = "#efd8a6";
+    ctx.fillRect(signX - 13, signY - 2, 26, 16);
+    ctx.strokeStyle = "#7b5b34";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(signX - 13, signY - 2, 26, 16);
+    ctx.fillStyle = "#2f2012";
+    ctx.font = "bold 8px ui-sans-serif, system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText("BOAT", signX, signY + 9);
+    ctx.restore();
+    return;
+  }
   drawEllipseShadow(x - 6, y + h * 0.88, w + 12, 12, 0.28);
 
   ctx.fillStyle = "rgba(7, 14, 24, 0.98)";
