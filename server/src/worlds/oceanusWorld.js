@@ -36,7 +36,7 @@ const STARTER_ISLAND = Object.freeze({
   name: "Castaway Cay",
   x: (Number(DATA.landing?.x) || -43240) - 580,
   y: (Number(DATA.landing?.y) || -162) + 42,
-  landRadius: 44
+  landRadius: 22
 });
 const STARTER_PIER_DIR = "south";
 

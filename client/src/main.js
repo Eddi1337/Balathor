@@ -2580,6 +2580,9 @@ function predictLocalPlayer(player, dt) {
         player.renderY += vy;
         player.ship.worldX = (Number(player.ship.worldX) || player.x) + vx;
         player.ship.worldY = (Number(player.ship.worldY) || player.y) + vy;
+        const travelAngle = Math.atan2(vy, vx);
+        player.facing = travelAngle;
+        player.ship.facing = travelAngle;
       }
       player.renderMoving = Boolean(state.input.engage);
       return true;
@@ -2628,6 +2631,8 @@ function predictLocalPlayer(player, dt) {
     if (state.input.engage) {
       let vx = Math.cos(player.facing) * speed * dt;
       let vy = Math.sin(player.facing) * speed * dt;
+      const beforeX = player.renderX;
+      const beforeY = player.renderY;
       const nextX = player.renderX + vx;
       const nextY = player.renderY + vy;
       if (!clientIsBlockedCircleForShip(nextX, player.renderY)) {
@@ -2635,6 +2640,11 @@ function predictLocalPlayer(player, dt) {
       }
       if (!clientIsBlockedCircleForShip(player.renderX, nextY)) {
         player.renderY = nextY;
+      }
+      const travelX = player.renderX - beforeX;
+      const travelY = player.renderY - beforeY;
+      if (travelX !== 0 || travelY !== 0) {
+        player.facing = Math.atan2(travelY, travelX);
       }
     }
     player.renderMoving = Boolean(state.input.engage);
@@ -7656,10 +7666,11 @@ function requestVisibleChunks() {
   const heightTiles = Math.ceil(canvas.height / (TILE_SIZE * zoom));
   const centerTileX = Math.floor(state.camera.x / TILE_SIZE);
   const centerTileY = Math.floor(state.camera.y / TILE_SIZE);
-  const minCx = Math.floor((centerTileX - widthTiles / 2) / CHUNK_SIZE) - 1;
-  const maxCx = Math.floor((centerTileX + widthTiles / 2) / CHUNK_SIZE) + 1;
-  const minCy = Math.floor((centerTileY - heightTiles / 2) / CHUNK_SIZE) - 1;
-  const maxCy = Math.floor((centerTileY + heightTiles / 2) / CHUNK_SIZE) + 1;
+  const padChunks = isNauticalWorld() ? 3 : 1;
+  const minCx = Math.floor((centerTileX - widthTiles / 2) / CHUNK_SIZE) - padChunks;
+  const maxCx = Math.floor((centerTileX + widthTiles / 2) / CHUNK_SIZE) + padChunks;
+  const minCy = Math.floor((centerTileY - heightTiles / 2) / CHUNK_SIZE) - padChunks;
+  const maxCy = Math.floor((centerTileY + heightTiles / 2) / CHUNK_SIZE) + padChunks;
   const chunks = [];
 
   for (let cy = minCy; cy <= maxCy; cy += 1) {
@@ -9435,8 +9446,8 @@ function getShipLayout(shipOrClass = "skiff") {
   let hullClass = typeof shipOrClass === "string" ? shipOrClass : shipOrClass?.hullClass;
   if (isNauticalHull(hullClass)) {
     const large = hullClass === "galleon" || hullClass === "manowar";
-    const deckW = hullClass === "manowar" ? 20 : hullClass === "galleon" ? 17 : hullClass === "brig" ? 13 : 10;
-    const deckH = hullClass === "manowar" ? 7 : hullClass === "galleon" ? 6.5 : hullClass === "brig" ? 5 : 4;
+    const deckW = hullClass === "manowar" ? 24 : hullClass === "galleon" ? 20 : hullClass === "brig" ? 16 : 12;
+    const deckH = hullClass === "manowar" ? 9 : hullClass === "galleon" ? 8 : hullClass === "brig" ? 7 : 6;
     const halfW = deckW / 2;
     const sideY = Math.max(1.35, deckH / 2 - 1.0);
     const crewCapacity = hullClass === "manowar" ? 6 : hullClass === "galleon" ? 4 : hullClass === "brig" ? 3 : 2;
@@ -10579,25 +10590,51 @@ function drawShipDeckObject(ship, sx, sy) {
   ctx.lineWidth = hullClass === "needle" ? 3 : 4;
   ctx.stroke();
 
-  // Ship name above hull
-  ctx.fillStyle = color;
-  ctx.font = "bold 12px ui-sans-serif, system-ui";
-  ctx.textAlign = "center";
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = "rgba(4,8,16,0.9)";
-  ctx.strokeText(ship?.name || "Ship", sx, y - 8);
-  ctx.fillText(ship?.name || "Ship", sx, y - 8);
+  if (!ship?.hideName) {
+    // Ship name above hull
+    ctx.fillStyle = color;
+    ctx.font = "bold 12px ui-sans-serif, system-ui";
+    ctx.textAlign = "center";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(4,8,16,0.9)";
+    ctx.strokeText(ship?.name || "Ship", sx, y - 8);
+    ctx.fillText(ship?.name || "Ship", sx, y - 8);
 
-  // Health/shield bars
-  const hp = Math.max(0, Math.min(1, (Number(ship?.health) || 0) / Math.max(1, Number(ship?.maxHealth) || 1)));
-  const shp = Math.max(0, Math.min(1, (Number(ship?.shields) || 0) / Math.max(1, Number(ship?.maxShields) || 1)));
-  ctx.fillStyle = "rgba(2, 8, 14, 0.82)";
-  ctx.fillRect(x + 10, y + h + 6, 80, 12);
-  ctx.fillStyle = "#ef6461";
-  ctx.fillRect(x + 12, y + h + 8, 36 * hp, 3);
-  ctx.fillStyle = "#67f0ff";
-  ctx.fillRect(x + 12, y + h + 13, 36 * shp, 3);
+    // Health/shield bars
+    const hp = Math.max(0, Math.min(1, (Number(ship?.health) || 0) / Math.max(1, Number(ship?.maxHealth) || 1)));
+    const shp = Math.max(0, Math.min(1, (Number(ship?.shields) || 0) / Math.max(1, Number(ship?.maxShields) || 1)));
+    ctx.fillStyle = "rgba(2, 8, 14, 0.82)";
+    ctx.fillRect(x + 10, y + h + 6, 80, 12);
+    ctx.fillStyle = "#ef6461";
+    ctx.fillRect(x + 12, y + h + 8, 36 * hp, 3);
+    ctx.fillStyle = "#67f0ff";
+    ctx.fillRect(x + 12, y + h + 13, 36 * shp, 3);
+  }
   ctx.restore();
+}
+
+function withRotatedNauticalDeck(ship, shipSx, shipSy, callback) {
+  const facing = Number.isFinite(Number(ship?.facing)) ? Number(ship.facing) : 0;
+  ctx.save();
+  ctx.translate(shipSx, shipSy);
+  ctx.rotate(facing);
+  callback();
+  ctx.restore();
+}
+
+function drawRotatedNauticalDeck(ship, shipSx, shipSy) {
+  withRotatedNauticalDeck(ship, shipSx, shipSy, () => {
+    drawShipDeckObject(ship, 0, 0);
+    drawShipCrew(ship, 0, 0);
+  });
+}
+
+function drawCharacterOnRotatedNauticalDeck(entity, ship, center, shipSx, shipSy, isNpc, poseOpts = {}) {
+  const localX = ((Number.isFinite(entity.renderX) ? entity.renderX : entity.x) - center.x) * TILE_SIZE;
+  const localY = ((Number.isFinite(entity.renderY) ? entity.renderY : entity.y) - center.y) * TILE_SIZE;
+  withRotatedNauticalDeck(ship, shipSx, shipSy, () => {
+    drawCharacter(entity, localX, localY, isNpc, poseOpts);
+  });
 }
 
 // Draws the bundled NPC crew standing at their posts (or idling) inside the
@@ -11078,7 +11115,7 @@ function drawAmbientSailingShip(obj, sx, sy) {
   const angle = phase + t * speed;
   const x = sx + Math.cos(angle) * radius * TILE_SIZE;
   const y = sy + Math.sin(angle * 0.8) * radius * TILE_SIZE * 0.5;
-  drawShipVehicleObject(obj, x, y, false, angle + Math.PI / 2, true);
+  drawRotatedNauticalDeck({ ...obj, facing: angle + Math.PI / 2, hideName: true }, x, y);
 }
 
 function drawHarbourChandleryObject(obj, sx, sy) {
@@ -12005,8 +12042,12 @@ function drawPlayers() {
           const shipSx = Math.floor(center.x * TILE_SIZE - state.camera.x + halfW);
           const shipSy = Math.floor(center.y * TILE_SIZE - state.camera.y + halfH);
           const drawDeck = () => {
-            drawShipDeckObject(entity.ship, shipSx, shipSy);
-            drawShipCrew(entity.ship, shipSx, shipSy);
+            if (nauticalDeck) {
+              drawRotatedNauticalDeck(entity.ship, shipSx, shipSy);
+            } else {
+              drawShipDeckObject(entity.ship, shipSx, shipSy);
+              drawShipCrew(entity.ship, shipSx, shipSy);
+            }
           };
           if (sameAsViewer && !nauticalDeck) {
             withCameraUnrotated(drawDeck);
@@ -12016,8 +12057,15 @@ function drawPlayers() {
         }
         const seated = Boolean(entity.ship.stationRole);
         const drawDeckPlayer = () => {
-          drawCharacter(entity, sx, sy, isNpc, shipAmenityPoseOpts(entity, { restingBench: seated }));
-          drawShieldBuff(entity, sx, sy);
+          if (nauticalDeck) {
+            const center = shipCenter(entity.ship, entity);
+            const shipSx = Math.floor(center.x * TILE_SIZE - state.camera.x + halfW);
+            const shipSy = Math.floor(center.y * TILE_SIZE - state.camera.y + halfH);
+            drawCharacterOnRotatedNauticalDeck(entity, entity.ship, center, shipSx, shipSy, isNpc, shipAmenityPoseOpts(entity, { restingBench: seated }));
+          } else {
+            drawCharacter(entity, sx, sy, isNpc, shipAmenityPoseOpts(entity, { restingBench: seated }));
+            drawShieldBuff(entity, sx, sy);
+          }
         };
         if (sameAsViewer && !nauticalDeck) {
           withCameraUnrotated(drawDeckPlayer);
@@ -12061,7 +12109,11 @@ function drawPlayers() {
         const dockSx = Math.floor(dockX * TILE_SIZE - state.camera.x + halfW);
         const dockSy = Math.floor(dockY * TILE_SIZE - state.camera.y + halfH);
         if (Math.abs(dockSx - sx) < canvas.width && Math.abs(dockSy - sy) < canvas.height) {
-          drawShipVehicleObject(entity.ship, dockSx, dockSy, false);
+          if (isNauticalHull(entity.ship.hullClass)) {
+            drawRotatedNauticalDeck(entity.ship, dockSx, dockSy);
+          } else {
+            drawShipVehicleObject(entity.ship, dockSx, dockSy, false);
+          }
         }
       }
       // Detect if this entity is standing inside a party member's ship deck so we shrink them too

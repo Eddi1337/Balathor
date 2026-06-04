@@ -2658,7 +2658,7 @@ function generateChunk(cx, cy) {
     theme,
     tiles,
     portals: getPortalsInChunk(cx, cy),
-    buildings: getBuildingsInChunk(cx, cy),
+    buildings: worldId === "oceanus" ? [] : getBuildingsInChunk(cx, cy),
     roadsides: getRoadsideFeaturesInChunk(cx, cy),
     minigameSites: getMinigameSitesInChunk(cx, cy),
     caveEntrances: getCaveEntrancesInChunk(cx, cy, CHUNK_SIZE),

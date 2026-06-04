@@ -209,7 +209,7 @@ const MSG_RATE_LIMIT = 240; // max messages per second per client before droppin
 const PLAYER_SPEED = 5.2;
 /** On-foot speed multiplier while standing on a water tile (keep in sync with client). */
 const SWIM_SPEED_MULT = 0.38;
-const MAX_CHUNKS_PER_REQUEST = 64;
+const MAX_CHUNKS_PER_REQUEST = 144;
 const MAX_NAME_LENGTH = 18;
 const MIN_USERNAME_LENGTH = 1;
 /** Hard cap to keep account storage and hashing bounded; large enough to count as “unlimited” in practice. */
@@ -2313,8 +2313,8 @@ function isNauticalHullClass(hullClass) {
 
 function getNauticalShipLayout(hullClass) {
   const large = hullClass === "galleon" || hullClass === "manowar";
-  const deckW = hullClass === "manowar" ? 20 : hullClass === "galleon" ? 17 : hullClass === "brig" ? 13 : 10;
-  const deckH = hullClass === "manowar" ? 7 : hullClass === "galleon" ? 6.5 : hullClass === "brig" ? 5 : 4;
+  const deckW = hullClass === "manowar" ? 24 : hullClass === "galleon" ? 20 : hullClass === "brig" ? 16 : 12;
+  const deckH = hullClass === "manowar" ? 9 : hullClass === "galleon" ? 8 : hullClass === "brig" ? 7 : 6;
   const halfW = deckW / 2;
   const sideY = Math.max(1.35, deckH / 2 - 1.0);
   const crewCapacity = hullClass === "manowar" ? 6 : hullClass === "galleon" ? 4 : hullClass === "brig" ? 3 : 2;
@@ -4380,6 +4380,9 @@ function simulate() {
         const shipDx = (ship.worldX ?? prevShipX) - prevShipX;
         const shipDy = (ship.worldY ?? prevShipY) - prevShipY;
         if (shipDx !== 0 || shipDy !== 0) {
+          const travelAngle = Math.atan2(shipDy, shipDx);
+          ship.facing = travelAngle;
+          client.player.facing = travelAngle;
           const passengers = aboardShipClients.get(ship.id) || [];
           for (const passengerClient of passengers) {
             const passenger = passengerClient.player;

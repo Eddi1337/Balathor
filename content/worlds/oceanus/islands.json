@@ -12,7 +12,7 @@
   },
   "landing": {
     "x": -43240,
-    "y": -112
+    "y": -172
   },
   "islands": [
     {
@@ -20,7 +20,7 @@
       "name": "Mariner's Rest",
       "x": -43240,
       "y": -240,
-      "landRadius": 120,
+      "landRadius": 60,
       "pierDir": "south",
       "hub": true,
       "content": {
@@ -29,58 +29,58 @@
       "layout": [
         {
           "kind": "flowers",
-          "dx": -43,
-          "dy": 18
-        },
-        {
-          "kind": "palm",
-          "dx": 1,
-          "dy": -33
-        },
-        {
-          "kind": "fern",
-          "dx": 5,
-          "dy": 21
-        },
-        {
-          "kind": "rock",
-          "dx": 48,
-          "dy": 3
-        },
-        {
-          "kind": "flowers",
-          "dx": -19,
-          "dy": 44
+          "dx": -22,
+          "dy": 9
         },
         {
           "kind": "palm",
           "dx": 0,
-          "dy": -10
-        },
-        {
-          "kind": "reeds",
-          "dx": -43,
-          "dy": 37
+          "dy": -17
         },
         {
           "kind": "fern",
-          "dx": -5,
-          "dy": 52
-        },
-        {
-          "kind": "tree",
-          "dx": 4,
-          "dy": 40
+          "dx": 3,
+          "dy": 11
         },
         {
           "kind": "rock",
-          "dx": 6,
-          "dy": -42
+          "dx": 24,
+          "dy": 1
+        },
+        {
+          "kind": "flowers",
+          "dx": -10,
+          "dy": 22
+        },
+        {
+          "kind": "palm",
+          "dx": 0,
+          "dy": -5
+        },
+        {
+          "kind": "reeds",
+          "dx": -22,
+          "dy": 18
+        },
+        {
+          "kind": "fern",
+          "dx": -3,
+          "dy": 26
         },
         {
           "kind": "tree",
-          "dx": 5,
-          "dy": 7
+          "dx": 2,
+          "dy": 20
+        },
+        {
+          "kind": "rock",
+          "dx": 3,
+          "dy": -21
+        },
+        {
+          "kind": "tree",
+          "dx": 2,
+          "dy": 3
         }
       ]
     },
