@@ -2313,32 +2313,38 @@ function isNauticalHullClass(hullClass) {
 
 function getNauticalShipLayout(hullClass) {
   const large = hullClass === "galleon" || hullClass === "manowar";
-  const deckW = hullClass === "manowar" ? 30 : hullClass === "galleon" ? 25 : hullClass === "brig" ? 21 : 17;
-  const deckH = hullClass === "manowar" ? 18 : hullClass === "galleon" ? 15 : 12;
+  const deckW = hullClass === "manowar" ? 20 : hullClass === "galleon" ? 17 : hullClass === "brig" ? 13 : 10;
+  const deckH = hullClass === "manowar" ? 7 : hullClass === "galleon" ? 6.5 : hullClass === "brig" ? 5 : 4;
   const halfW = deckW / 2;
+  const sideY = Math.max(1.35, deckH / 2 - 1.0);
+  const crewCapacity = hullClass === "manowar" ? 6 : hullClass === "galleon" ? 4 : hullClass === "brig" ? 3 : 2;
   return {
-    crewCapacity: hullClass === "manowar" ? 7 : hullClass === "galleon" ? 6 : 5,
-    npcCrew: 4,
+    crewCapacity,
+    npcCrew: Math.max(1, crewCapacity - 1),
     deckW,
     deckH,
-    entry: { x: -halfW + 3.5, y: 0 },
+    entry: { x: -halfW + 1.25, y: 0 },
+    plank: { x: -halfW - 0.55, y: 0, w: 2.2, h: 1.8 },
     teleporter: null,
     stations: [
-      { id: "helm", role: "pilot", name: "Helm", x: halfW - 2.5, y: 0 },
-      { id: "cannon", role: "gunner", name: "Cannon", x: -1.5, y: large ? -3.5 : -2.5, droneIndex: 0 },
-      { id: "sail_trim", role: "sail_trim", name: "Sail Trim", x: 1.5, y: large ? 3.5 : 2.5 },
-      { id: "fishing", role: "fishing", name: "Fishing", x: -halfW + 3, y: large ? 3.5 : 2.5 },
-      { id: "lookout", role: "lookout", name: "Lookout", x: -halfW + 3, y: large ? -3.5 : -2.5 }
+      { id: "helm", role: "pilot", name: "Helm", x: halfW - 1.6, y: 0 },
+      { id: "anchor", role: "engineer", name: "Anchor", x: -halfW + 2.4, y: 0, defaultShieldFacing: "back" },
+      { id: "cannon_port", role: "gunner", name: "Port Cannons", x: -0.8, y: -sideY, droneIndex: 0 },
+      ...(large ? [{ id: "cannon_starboard", role: "gunner", name: "Starboard Cannons", x: -0.8, y: sideY, droneIndex: 1 }] : []),
+      { id: "sail_trim", role: "sail_trim", name: "Sail Trim", x: 0.6, y: sideY },
+      { id: "lookout", role: "lookout", name: "Lookout", x: -halfW + 2.4, y: -sideY }
     ],
     crewIdle: [
-      { x: -halfW + 5.5, y: 0 },
+      { x: -halfW + 3.4, y: 0 },
       { x: -0.5, y: 0 },
-      { x: halfW - 5.5, y: large ? -1.8 : -1.3 },
-      { x: halfW - 5.5, y: large ? 1.8 : 1.3 }
+      { x: halfW - 4.0, y: -1.1 },
+      { x: halfW - 4.0, y: 1.1 }
     ],
     amenities: [
-      { kind: "table", x: -halfW + 6.5, y: 0 },
-      { kind: "kitchen", x: -halfW + 7.5, y: large ? 3.6 : 2.8 }
+      { kind: "mast", x: 0, y: 0 },
+      { kind: "anchor", x: -halfW + 2.4, y: 0 },
+      { kind: "table", x: -halfW + 4.2, y: 0 },
+      { kind: "kitchen", x: -halfW + 4.8, y: sideY }
     ]
   };
 }
@@ -2928,6 +2934,9 @@ function shipStationWorld(ship, station) {
 // Polygon points in normalised [-1..1] space relative to the deck centre,
 // mirroring the visual hull silhouette drawn by buildShipHullPath on the client.
 function getShipHullPolygon(hullClass) {
+  if (isNauticalHullClass(hullClass)) {
+    return [[0.96, 0], [0.64, -0.70], [-0.62, -0.58], [-0.92, -0.24], [-0.92, 0.24], [-0.62, 0.58], [0.64, 0.70]];
+  }
   if (hullClass === "crew2" || hullClass === "crew3" || hullClass === "crew4" ||
       hullClass === "corvette" || hullClass === "cruiser" || hullClass === "frigate") {
     // Roomy, symmetric crew deck: pointed bow, wide body, flat stern.
@@ -6404,6 +6413,38 @@ function disembarkFromSharedShip(client) {
   return true;
 }
 
+function handleDirectShipBoarding(client, message = {}) {
+  const player = client.player;
+  if (!player || player.ship?.boarded || player.aboardShipId) {
+    return false;
+  }
+  ensurePlayerFleet(player);
+  const ship = getOwnedActiveShip(player);
+  if (!ship || ship.boarded) {
+    return false;
+  }
+
+  const tx = Number(message.x);
+  const ty = Number(message.y);
+  const hasTarget = Number.isFinite(tx) && Number.isFinite(ty);
+  const port = resolveShipLaunchPort(player, message) || resolveShipBoarding(player)?.dockPort;
+  if (!port || !shipMatchesPortWorld(ship, port)) {
+    return false;
+  }
+
+  if (hasTarget) {
+    const clickDist = Math.hypot(tx - port.x, ty - port.y);
+    const terminalDist = Number.isFinite(port.terminalX) && Number.isFinite(port.terminalY)
+      ? Math.hypot(tx - port.terminalX, ty - port.terminalY)
+      : Infinity;
+    if (Math.min(clickDist, terminalDist) > 8.5) {
+      return false;
+    }
+  }
+
+  return boardPlayerShipAtPort(client, ship, port);
+}
+
 function findBoardableSharedShip(client, message = {}) {
   if (!client.player) {
     return null;
@@ -6422,12 +6463,13 @@ function findBoardableSharedShip(client, message = {}) {
     if (client.player.ship === ship) continue;
     const layout = getShipLayout(ship);
     const center = shipCenter(ship);
-    const insideDeck =
-      tx >= center.x - layout.deckW / 2 - 0.5 &&
-      tx <= center.x + layout.deckW / 2 + 0.5 &&
-      ty >= center.y - layout.deckH / 2 - 0.5 &&
-      ty <= center.y + layout.deckH / 2 + 0.5;
-    if (!insideDeck) continue;
+    const plank = layout.plank || { x: layout.entry?.x || -layout.deckW / 2, y: layout.entry?.y || 0, w: 2.4, h: 2.0 };
+    const localX = tx - center.x;
+    const localY = ty - center.y;
+    const nearPlank =
+      Math.abs(localX - plank.x) <= (Number(plank.w) || 2.4) / 2 &&
+      Math.abs(localY - plank.y) <= (Number(plank.h) || 2.0) / 2;
+    if (!nearPlank) continue;
     const travelDist = Math.hypot(client.player.x - tx, client.player.y - ty);
     if (travelDist > 42) continue;
     const d = Math.hypot(tx - center.x, ty - center.y);
@@ -7533,7 +7575,7 @@ function handleShipTerminalAction(client, message = {}) {
 
   const port = resolveShipLaunchPort(client.player, message);
   if (!port) {
-    send(client, { type: "serverMessage", message: "shop_not_nearby" });
+    send(client, { type: "serverMessage", message: "ship_not_nearby" });
     return;
   }
 
@@ -7967,6 +8009,10 @@ function handleProfessionBuildingInteract(client, message) {
 
 function handleInteract(client, message = {}) {
   if (!client.player) {
+    return;
+  }
+
+  if (handleDirectShipBoarding(client, message)) {
     return;
   }
 

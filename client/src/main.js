@@ -1826,6 +1826,8 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: "Not enough gold" });
     } else if (message.message === "shop_not_nearby") {
       appendChat({ kind: "system", name: "Realm", text: "Move closer to the shelf" });
+    } else if (message.message === "ship_not_nearby") {
+      appendChat({ kind: "system", name: "Realm", text: "Move closer to the dock plank" });
     } else if (message.message === "shop_item_missing") {
       appendChat({ kind: "system", name: "Realm", text: "That shelf item is no longer available" });
     } else if (message.message === "shop_bought") {
@@ -2517,6 +2519,7 @@ function getInteriorShipView(player = state.players.get(state.selfId)) {
   return {
     ship: hostShip,
     center,
+    rotateDeck: !isNauticalHull(hostShip.hullClass),
     rotation: normalizeAngle(-facing)
   };
 }
@@ -6444,9 +6447,8 @@ function updateCamera(dt) {
   if (interiorView) {
     state.camera.x = interiorView.center.x * TILE_SIZE;
     state.camera.y = interiorView.center.y * TILE_SIZE;
-    state.camera.rotation = normalizeAngle(
-      state.camera.rotation + normalizeAngle(interiorView.rotation - state.camera.rotation) * follow
-    );
+    const targetRotation = interiorView.rotateDeck ? interiorView.rotation : 0;
+    state.camera.rotation = normalizeAngle(state.camera.rotation + normalizeAngle(targetRotation - state.camera.rotation) * follow);
   } else if (exteriorShipCenter) {
     // Pilots and gunners on a multi-crew deck: keep the hull centered (their seat
     // is offset from the ship's center) and don't lock-rotate the world.
@@ -9433,32 +9435,38 @@ function getShipLayout(shipOrClass = "skiff") {
   let hullClass = typeof shipOrClass === "string" ? shipOrClass : shipOrClass?.hullClass;
   if (isNauticalHull(hullClass)) {
     const large = hullClass === "galleon" || hullClass === "manowar";
-    const deckW = hullClass === "manowar" ? 30 : hullClass === "galleon" ? 25 : hullClass === "brig" ? 21 : 17;
-    const deckH = hullClass === "manowar" ? 18 : hullClass === "galleon" ? 15 : 12;
+    const deckW = hullClass === "manowar" ? 20 : hullClass === "galleon" ? 17 : hullClass === "brig" ? 13 : 10;
+    const deckH = hullClass === "manowar" ? 7 : hullClass === "galleon" ? 6.5 : hullClass === "brig" ? 5 : 4;
     const halfW = deckW / 2;
+    const sideY = Math.max(1.35, deckH / 2 - 1.0);
+    const crewCapacity = hullClass === "manowar" ? 6 : hullClass === "galleon" ? 4 : hullClass === "brig" ? 3 : 2;
     return {
-      crewCapacity: hullClass === "manowar" ? 7 : hullClass === "galleon" ? 6 : 5,
-      npcCrew: 4,
+      crewCapacity,
+      npcCrew: Math.max(1, crewCapacity - 1),
       deckW,
       deckH,
-      entry: { x: -halfW + 3.5, y: 0 },
+      entry: { x: -halfW + 1.25, y: 0 },
+      plank: { x: -halfW - 0.55, y: 0, w: 2.2, h: 1.8 },
       teleporter: null,
       stations: [
-        { id: "helm", role: "pilot", name: "Helm", x: halfW - 2.5, y: 0 },
-        { id: "cannon", role: "gunner", name: "Cannon", x: -1.5, y: large ? -3.5 : -2.5, droneIndex: 0 },
-        { id: "sail_trim", role: "sail_trim", name: "Sail Trim", x: 1.5, y: large ? 3.5 : 2.5 },
-        { id: "fishing", role: "fishing", name: "Fishing", x: -halfW + 3, y: large ? 3.5 : 2.5 },
-        { id: "lookout", role: "lookout", name: "Lookout", x: -halfW + 3, y: large ? -3.5 : -2.5 }
+        { id: "helm", role: "pilot", name: "Helm", x: halfW - 1.6, y: 0 },
+        { id: "anchor", role: "engineer", name: "Anchor", x: -halfW + 2.4, y: 0, defaultShieldFacing: "back" },
+        { id: "cannon_port", role: "gunner", name: "Port Cannons", x: -0.8, y: -sideY, droneIndex: 0 },
+        ...(large ? [{ id: "cannon_starboard", role: "gunner", name: "Starboard Cannons", x: -0.8, y: sideY, droneIndex: 1 }] : []),
+        { id: "sail_trim", role: "sail_trim", name: "Sail Trim", x: 0.6, y: sideY },
+        { id: "lookout", role: "lookout", name: "Lookout", x: -halfW + 2.4, y: -sideY }
       ],
       crewIdle: [
-        { x: -halfW + 5.5, y: 0 },
+        { x: -halfW + 3.4, y: 0 },
         { x: -0.5, y: 0 },
-        { x: halfW - 5.5, y: large ? -1.8 : -1.3 },
-        { x: halfW - 5.5, y: large ? 1.8 : 1.3 }
+        { x: halfW - 4.0, y: -1.1 },
+        { x: halfW - 4.0, y: 1.1 }
       ],
       amenities: [
-        { kind: "table", x: -halfW + 6.5, y: 0 },
-        { kind: "kitchen", x: -halfW + 7.5, y: large ? 3.6 : 2.8 }
+        { kind: "mast", x: 0, y: 0 },
+        { kind: "anchor", x: -halfW + 2.4, y: 0 },
+        { kind: "table", x: -halfW + 4.2, y: 0 },
+        { kind: "kitchen", x: -halfW + 4.8, y: sideY }
       ]
     };
   }
@@ -9788,15 +9796,21 @@ function findShipDeckInteractionAt(wx, wy) {
     if (!ship?.boarded || !ship.deckMode) continue;
     const layout = getShipLayout(ship);
     const center = shipCenter(ship, player);
+    const isNautical = isNauticalHull(ship.hullClass);
+    const plank = layout.plank || { x: layout.entry?.x || -layout.deckW / 2, y: layout.entry?.y || 0, w: 2.4, h: 2.0 };
+    const plankInside =
+      Math.abs(wx - (center.x + plank.x)) <= (Number(plank.w) || 2.4) / 2 &&
+      Math.abs(wy - (center.y + plank.y)) <= (Number(plank.h) || 2.0) / 2;
     const inside =
       wx >= center.x - layout.deckW / 2 - 0.5 &&
       wx <= center.x + layout.deckW / 2 + 0.5 &&
       wy >= center.y - layout.deckH / 2 - 0.5 &&
       wy <= center.y + layout.deckH / 2 + 0.5;
-    if (!inside) continue;
+    if (!inside && !plankInside) continue;
     const selfOnThisShip = self.ship?.boarded && self.ship?.id === ship.id;
     const reachFromSelf = Math.hypot((self.renderX ?? self.x) - wx, (self.renderY ?? self.y) - wy);
     if (!selfOnThisShip && reachFromSelf > 42) continue;
+    if (!selfOnThisShip && isNautical && !plankInside) continue;
 
     for (const station of layout.stations) {
       const sx = center.x + station.x;
@@ -9820,7 +9834,7 @@ function findShipDeckInteractionAt(wx, wy) {
     }
 
     if (!best && !selfOnThisShip) {
-      best = { x: wx, y: wy, label: `${ship.name || "Ship"} - board`, kind: "ship" };
+      best = { x: center.x + layout.entry.x, y: center.y + layout.entry.y, label: `${ship.name || "Ship"} - board at plank`, kind: "ship" };
     } else if (!best && selfOnThisShip) {
       best = { x: wx, y: wy, label: "Ship deck", kind: "deck" };
     }
@@ -9916,6 +9930,9 @@ function showShipCrewMenu(ship, crew) {
 }
 
 function getShipHullPolygonClient(hullClass) {
+  if (isNauticalHull(hullClass)) {
+    return [[0.96,0],[0.64,-0.70],[-0.62,-0.58],[-0.92,-0.24],[-0.92,0.24],[-0.62,0.58],[0.64,0.70]];
+  }
   if (hullClass === "crew2" || hullClass === "crew3" || hullClass === "crew4" ||
       hullClass === "corvette" || hullClass === "cruiser" || hullClass === "frigate") {
     return [[0.96,0],[0.55,-0.55],[-0.55,-0.62],[-0.90,-0.30],[-0.90,0.30],[-0.55,0.62],[0.55,0.55]];
@@ -10003,6 +10020,17 @@ function clampPointToShipDeck(ship, x, y) {
 
 function buildShipHullPath(hullClass, x, y, w, h) {
   ctx.beginPath();
+  if (isNauticalHull(hullClass)) {
+    ctx.moveTo(x + w * 0.98, y + h * 0.50);
+    ctx.lineTo(x + w * 0.82, y + h * 0.15);
+    ctx.lineTo(x + w * 0.19, y + h * 0.21);
+    ctx.lineTo(x + w * 0.04, y + h * 0.38);
+    ctx.lineTo(x + w * 0.04, y + h * 0.62);
+    ctx.lineTo(x + w * 0.19, y + h * 0.79);
+    ctx.lineTo(x + w * 0.82, y + h * 0.85);
+    ctx.closePath();
+    return;
+  }
   if (hullClass === "crew2" || hullClass === "crew3" || hullClass === "crew4" ||
       hullClass === "corvette" || hullClass === "cruiser" || hullClass === "frigate") {
     // Symmetric crew capsule: pointed bow (right), wide hull, flat stern (left).
@@ -10045,40 +10073,46 @@ function buildShipHullPath(hullClass, x, y, w, h) {
 
 function drawSailShipShape(hullClass, x, y, w, h, color) {
   ctx.fillStyle = "#3b2614";
+  buildShipHullPath(hullClass, x, y, w, h);
+  ctx.fill();
+
+  ctx.fillStyle = "#7b522e";
   ctx.beginPath();
-  ctx.moveTo(x + w * 0.08, y + h * 0.62);
-  ctx.lineTo(x + w * 0.22, y + h * 0.28);
-  ctx.lineTo(x + w * 0.78, y + h * 0.22);
-  ctx.lineTo(x + w * 0.94, y + h * 0.58);
-  ctx.lineTo(x + w * 0.72, y + h * 0.88);
-  ctx.lineTo(x + w * 0.24, y + h * 0.82);
+  ctx.moveTo(x + w * 0.89, y + h * 0.50);
+  ctx.lineTo(x + w * 0.72, y + h * 0.28);
+  ctx.lineTo(x + w * 0.18, y + h * 0.33);
+  ctx.lineTo(x + w * 0.11, y + h * 0.50);
+  ctx.lineTo(x + w * 0.18, y + h * 0.67);
+  ctx.lineTo(x + w * 0.72, y + h * 0.72);
   ctx.closePath();
   ctx.fill();
 
-  ctx.fillStyle = color;
-  ctx.fillRect(x + w * 0.34, y + h * 0.34, w * 0.22, h * 0.28);
-  ctx.fillStyle = "#f5e6c8";
-  ctx.fillRect(x + w * 0.47, y + h * 0.08, w * 0.04, h * 0.72);
-  const sailW = w * (hullClass === "sloop" ? 0.18 : hullClass === "brig" || hullClass === "crew2" ? 0.22 : 0.26);
-  const sailH = h * (hullClass === "manowar" || hullClass === "crew4" ? 0.72 : 0.62);
-  ctx.fillStyle = "rgba(255,248,235,0.92)";
-  ctx.beginPath();
-  ctx.moveTo(x + w * 0.49, y + h * 0.12);
-  ctx.lineTo(x + w * 0.49 + sailW, y + h * 0.18);
-  ctx.lineTo(x + w * 0.49, y + h * 0.12 + sailH);
-  ctx.closePath();
-  ctx.fill();
-  if (hullClass === "galleon" || hullClass === "crew3" || hullClass === "manowar" || hullClass === "crew4") {
+  ctx.strokeStyle = "rgba(45, 26, 10, 0.55)";
+  ctx.lineWidth = 1;
+  for (let i = 0.24; i <= 0.72; i += 0.09) {
     ctx.beginPath();
-    ctx.moveTo(x + w * 0.42, y + h * 0.2);
-    ctx.lineTo(x + w * 0.42 - sailW * 0.7, y + h * 0.28);
-    ctx.lineTo(x + w * 0.42, y + h * 0.2 + sailH * 0.78);
-    ctx.closePath();
-    ctx.fill();
+    ctx.moveTo(x + w * i, y + h * 0.31);
+    ctx.lineTo(x + w * i, y + h * 0.69);
+    ctx.stroke();
   }
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  buildShipHullPath(hullClass, x, y, w, h);
+  ctx.stroke();
+
+  ctx.fillStyle = "#2a1808";
+  ctx.fillRect(x + w * 0.47, y + h * 0.10, Math.max(3, w * 0.035), h * 0.80);
+  ctx.strokeStyle = "rgba(245, 230, 200, 0.86)";
+  ctx.lineWidth = Math.max(2, h * 0.045);
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.32, y + h * 0.32);
+  ctx.lineTo(x + w * 0.65, y + h * 0.30);
+  ctx.moveTo(x + w * 0.32, y + h * 0.68);
+  ctx.lineTo(x + w * 0.65, y + h * 0.70);
+  ctx.stroke();
   ctx.strokeStyle = "#2a1808";
   ctx.lineWidth = 2;
-  ctx.stroke();
+  ctx.strokeRect(x + w * 0.76, y + h * 0.39, w * 0.07, h * 0.22);
 }
 
 function drawShipHullShape(hullClass, x, y, w, h, color) {
@@ -10123,7 +10157,7 @@ function drawShipVehicleObject(obj, sx, sy, boarded = false, facing = 0, thrust 
   ctx.rotate(Number.isFinite(facing) ? facing : 0);
   const x = -w / 2;
   const y = -h / 2;
-  if (boarded) {
+  if (boarded && !isNauticalHull(hullClass)) {
     ctx.shadowColor = color;
     ctx.shadowBlur = 10;
   }
@@ -10152,7 +10186,9 @@ function drawShipVehicleObject(obj, sx, sy, boarded = false, facing = 0, thrust 
       ctx.fill();
     }
   }
-  drawEllipseShadow(x - 6, y + h * 0.84, w + 12, 10, 0.22);
+  if (!isNauticalHull(hullClass)) {
+    drawEllipseShadow(x - 6, y + h * 0.84, w + 12, 10, 0.22);
+  }
   drawShipHullShape(hullClass, x, y, w, h, color);
   ctx.restore();
   // Combat drones orbit sci-fi hulls when underway; sailing ships use deck cannons instead.
@@ -10318,6 +10354,32 @@ function drawEngineerStation(wx, wy, active, color, shieldFacing) {
 
 function drawShipStationObject(ship, station, wx, wy) {
   const active = ship?.stationId === station.id;
+  if (isNauticalHull(ship?.hullClass)) {
+    if (station.id === "helm" || station.role === "pilot") {
+      drawPilotStation(wx, wy, active, "#f5deb3", true);
+      return;
+    }
+    if (station.role === "gunner") {
+      drawGunnerStation(wx, wy, active, "#2a1808");
+      return;
+    }
+    if (station.id === "anchor") {
+      ctx.save();
+      ctx.translate(wx, wy);
+      ctx.strokeStyle = active ? "#f5deb3" : "#2a1808";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(0, 2, 10, 0.15 * Math.PI, 0.85 * Math.PI);
+      ctx.moveTo(0, -13);
+      ctx.lineTo(0, 10);
+      ctx.moveTo(-8, -7);
+      ctx.lineTo(8, -7);
+      ctx.stroke();
+      ctx.restore();
+      drawStationActiveRing(wx, wy, active, "#f5deb3", 18);
+      return;
+    }
+  }
   if (station.role === "gunner") {
     drawGunnerStation(wx, wy, active, "#ff8f6b");
     return;
@@ -10338,6 +10400,7 @@ function drawShipDeckObject(ship, sx, sy) {
   const layout = getShipLayout(ship);
   const color = ship?.color || "#67f0ff";
   const hullClass = ship?.hullClass || "skiff";
+  const nautical = isNauticalHull(hullClass);
   // Interior size matches the player walkable area (deck tiles), so players have room to walk
   const w = layout.deckW * TILE_SIZE;
   const h = layout.deckH * TILE_SIZE;
@@ -10345,10 +10408,12 @@ function drawShipDeckObject(ship, sx, sy) {
   const y = sy - h / 2;
 
   ctx.save();
-  drawEllipseShadow(x - 10, y + h * 0.82, w + 20, 14, 0.22);
+  if (!nautical) {
+    drawEllipseShadow(x - 10, y + h * 0.82, w + 20, 14, 0.22);
+  }
 
   // Draw dark hull-shaped fill (silhouette matches the exterior)
-  ctx.fillStyle = "rgba(8, 15, 28, 0.96)";
+  ctx.fillStyle = nautical ? "#3b2614" : "rgba(8, 15, 28, 0.96)";
   buildShipHullPath(hullClass, x, y, w, h);
   ctx.fill();
 
@@ -10357,15 +10422,35 @@ function drawShipDeckObject(ship, sx, sy) {
   ctx.clip();
 
   // Interior floor
-  ctx.fillStyle = "rgba(28, 44, 64, 0.96)";
+  ctx.fillStyle = nautical ? "#7b522e" : "rgba(28, 44, 64, 0.96)";
   ctx.fillRect(x + w * 0.04, y + h * 0.06, w * 0.92, h * 0.88);
 
-  // Bridge/cockpit highlight at the bow (right side)
-  ctx.fillStyle = "rgba(103,240,255,0.10)";
-  ctx.fillRect(x + w * 0.55, y + h * 0.12, w * 0.38, h * 0.76);
+  if (nautical) {
+    ctx.strokeStyle = "rgba(45, 26, 10, 0.55)";
+    ctx.lineWidth = 1;
+    for (let i = 0.16; i <= 0.84; i += 0.055) {
+      ctx.beginPath();
+      ctx.moveTo(x + w * i, y + h * 0.13);
+      ctx.lineTo(x + w * i, y + h * 0.87);
+      ctx.stroke();
+    }
+    if (layout.plank) {
+      const px = sx + layout.plank.x * TILE_SIZE;
+      const py = sy + layout.plank.y * TILE_SIZE;
+      ctx.fillStyle = "#8b6239";
+      ctx.fillRect(px - 36, py - 9, 72, 18);
+      ctx.strokeStyle = "#2a1808";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(px - 36, py - 9, 72, 18);
+    }
+  } else {
+    // Bridge/cockpit highlight at the bow (right side)
+    ctx.fillStyle = "rgba(103,240,255,0.10)";
+    ctx.fillRect(x + w * 0.55, y + h * 0.12, w * 0.38, h * 0.76);
+  }
 
   // Center walkway stripe
-  ctx.fillStyle = "rgba(103,240,255,0.16)";
+  ctx.fillStyle = nautical ? "rgba(245,222,179,0.16)" : "rgba(103,240,255,0.16)";
   ctx.fillRect(x + w * 0.12, y + h * 0.46, w * 0.76, h * 0.08);
 
   // Amenities (in tile-space, scaled by TILE_SIZE)
@@ -10387,6 +10472,27 @@ function drawShipDeckObject(ship, sx, sy) {
       ctx.fillRect(ax - 16, ay - 6, 32, 8);
       ctx.fillStyle = "rgba(103,240,255,0.55)";
       ctx.fillRect(ax - 12, ay + 4, 24, 4);
+    } else if (amenity.kind === "mast") {
+      ctx.fillStyle = "#2a1808";
+      ctx.fillRect(ax - 5, ay - h * 0.38, 10, h * 0.76);
+      ctx.strokeStyle = "rgba(245, 230, 200, 0.9)";
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(ax - w * 0.16, ay - h * 0.23);
+      ctx.lineTo(ax + w * 0.20, ay - h * 0.25);
+      ctx.moveTo(ax - w * 0.16, ay + h * 0.23);
+      ctx.lineTo(ax + w * 0.20, ay + h * 0.25);
+      ctx.stroke();
+    } else if (amenity.kind === "anchor") {
+      ctx.strokeStyle = "#2a1808";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(ax, ay + 2, 10, 0.15 * Math.PI, 0.85 * Math.PI);
+      ctx.moveTo(ax, ay - 13);
+      ctx.lineTo(ax, ay + 10);
+      ctx.moveTo(ax - 8, ay - 7);
+      ctx.lineTo(ax + 8, ay - 7);
+      ctx.stroke();
     } else {
       ctx.fillStyle = "rgba(12, 22, 35, 0.95)";
       ctx.fillRect(ax - 26, ay - 14, 52, 28);
@@ -10453,10 +10559,10 @@ function drawShipDeckObject(ship, sx, sy) {
     "rgba(255, 211, 109, 0.62)",
     "rgba(255, 143, 107, 0.62)"
   ];
-  if (!shieldEntries.length) {
+  if (!nautical && !shieldEntries.length) {
     shieldEntries.push(["ship", ship?.shieldFacing || "front"]);
   }
-  shieldEntries.forEach(([, facing], index) => {
+  if (!nautical) shieldEntries.forEach(([, facing], index) => {
     const shieldAngle = shieldFacingToAngle(facing);
     ctx.strokeStyle = shieldColors[index % shieldColors.length];
     ctx.lineWidth = 4;
@@ -11887,8 +11993,9 @@ function drawPlayers() {
       drawMob(entity, sx, sy);
     } else if (entity.ship?.boarded && entity.ship.deckMode) {
       const shipId = entity.ship.id;
+      const nauticalDeck = isNauticalHull(entity.ship.hullClass);
       const sameAsViewer = shipId && shipId === viewerInteriorShipId;
-      if (sameAsViewer) {
+      if (sameAsViewer || nauticalDeck) {
         // Viewer is inside this ship and not in a pilot seat — render the interior view once and the crew inside it.
         // The interior view stays "locked" to ship orientation — counter-rotate so the deck and crew don't spin
         // when the ship turns; only the world background rotates around them.
@@ -11897,16 +12004,26 @@ function drawPlayers() {
           const center = shipCenter(entity.ship, entity);
           const shipSx = Math.floor(center.x * TILE_SIZE - state.camera.x + halfW);
           const shipSy = Math.floor(center.y * TILE_SIZE - state.camera.y + halfH);
-          withCameraUnrotated(() => {
+          const drawDeck = () => {
             drawShipDeckObject(entity.ship, shipSx, shipSy);
             drawShipCrew(entity.ship, shipSx, shipSy);
-          });
+          };
+          if (sameAsViewer && !nauticalDeck) {
+            withCameraUnrotated(drawDeck);
+          } else {
+            drawDeck();
+          }
         }
         const seated = Boolean(entity.ship.stationRole);
-        withCameraUnrotated(() => {
+        const drawDeckPlayer = () => {
           drawCharacter(entity, sx, sy, isNpc, shipAmenityPoseOpts(entity, { restingBench: seated }));
           drawShieldBuff(entity, sx, sy);
-        });
+        };
+        if (sameAsViewer && !nauticalDeck) {
+          withCameraUnrotated(drawDeckPlayer);
+        } else {
+          drawDeckPlayer();
+        }
       } else {
         // Viewer is outside this ship (or is piloting) — show only the small exterior hull.
         if (!renderedShips.has(shipId)) {
