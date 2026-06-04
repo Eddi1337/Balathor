@@ -564,6 +564,12 @@ function clientIsBlockedCircleForShip(wx, wy, radius = 0.34) {
   return points.some(([px, py]) => clientIsBlockedForShip(px, py));
 }
 
+function clientShipCollisionRadius(ship) {
+  if (!isNauticalHull(ship?.hullClass)) return 0.34;
+  const layout = getShipLayout(ship);
+  return Math.max(2.2, Math.min(6.4, Math.max(layout.deckW, layout.deckH) * 0.26));
+}
+
 /** Mirrors server/src/index.js on-foot movement: X axis first, then Y with updated X. */
 function clientTryFootMove(rx, ry, stepX, stepY) {
   const nextX = rx + stepX;
@@ -1840,6 +1846,8 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: `Boarded ${message.shipName || "your ship"}` });
     } else if (message.message === "ship_docked") {
       appendChat({ kind: "system", name: "Realm", text: `Docked ${message.shipName || "your ship"}` });
+    } else if (message.message === "ship_hull_damaged") {
+      appendChat({ kind: "system", name: "Realm", text: `Hull damaged: ${message.health || 0}/${message.maxHealth || 0}` });
     } else if (message.message === "ship_called") {
       appendChat({ kind: "system", name: "Realm", text: `Called ${message.shipName || "your ship"} to the dock` });
     } else if (message.message === "party_teleported_to_ship") {
@@ -2489,6 +2497,7 @@ function selfIsInPilotSeat(player = state.players.get(state.selfId)) {
 function getExteriorShipControlCenter(player = state.players.get(state.selfId)) {
   const ship = player?.ship;
   if (!ship?.boarded || !ship.deckMode) return null;
+  if (isNauticalHull(ship.hullClass)) return null;
   const role = ship.stationRole;
   if (!isPilotShipRole(role) && role !== "gunner") return null;
   return shipCenter(ship, player);
@@ -2496,7 +2505,7 @@ function getExteriorShipControlCenter(player = state.players.get(state.selfId)) 
 
 function getInteriorShipView(player = state.players.get(state.selfId)) {
   if (!player) return null;
-  if (selfIsInPilotSeat(player) || player.ship?.stationRole === "gunner") {
+  if ((selfIsInPilotSeat(player) || player.ship?.stationRole === "gunner") && !isNauticalHull(player.ship?.hullClass)) {
     // Pilots and gunners ride the exterior view, not the locked interior camera.
     return null;
   }
@@ -2519,7 +2528,7 @@ function getInteriorShipView(player = state.players.get(state.selfId)) {
   return {
     ship: hostShip,
     center,
-    rotateDeck: !isNauticalHull(hostShip.hullClass),
+    rotateDeck: true,
     rotation: normalizeAngle(-facing)
   };
 }
@@ -2576,13 +2585,25 @@ function predictLocalPlayer(player, dt) {
       if (state.input.engage) {
         const vx = Math.cos(player.facing) * speed * dt;
         const vy = Math.sin(player.facing) * speed * dt;
-        player.renderX += vx;
-        player.renderY += vy;
-        player.ship.worldX = (Number(player.ship.worldX) || player.x) + vx;
-        player.ship.worldY = (Number(player.ship.worldY) || player.y) + vy;
-        const travelAngle = Math.atan2(vy, vx);
-        player.facing = travelAngle;
-        player.ship.facing = travelAngle;
+        const center = shipCenter(player.ship, player);
+        const radius = clientShipCollisionRadius(player.ship);
+        const beforeX = center.x;
+        const beforeY = center.y;
+        let shipX = center.x;
+        let shipY = center.y;
+        if (!clientIsBlockedCircleForShip(center.x + vx, center.y, radius)) shipX = center.x + vx;
+        if (!clientIsBlockedCircleForShip(shipX, center.y + vy, radius)) shipY = center.y + vy;
+        const travelX = shipX - beforeX;
+        const travelY = shipY - beforeY;
+        player.renderX += travelX;
+        player.renderY += travelY;
+        player.ship.worldX = shipX;
+        player.ship.worldY = shipY;
+        if (travelX !== 0 || travelY !== 0) {
+          const travelAngle = Math.atan2(travelY, travelX);
+          player.facing = travelAngle;
+          player.ship.facing = travelAngle;
+        }
       }
       player.renderMoving = Boolean(state.input.engage);
       return true;
@@ -2631,14 +2652,15 @@ function predictLocalPlayer(player, dt) {
     if (state.input.engage) {
       let vx = Math.cos(player.facing) * speed * dt;
       let vy = Math.sin(player.facing) * speed * dt;
+      const radius = clientShipCollisionRadius(player.ship);
       const beforeX = player.renderX;
       const beforeY = player.renderY;
       const nextX = player.renderX + vx;
       const nextY = player.renderY + vy;
-      if (!clientIsBlockedCircleForShip(nextX, player.renderY)) {
+      if (!clientIsBlockedCircleForShip(nextX, player.renderY, radius)) {
         player.renderX = nextX;
       }
-      if (!clientIsBlockedCircleForShip(player.renderX, nextY)) {
+      if (!clientIsBlockedCircleForShip(player.renderX, nextY, radius)) {
         player.renderY = nextY;
       }
       const travelX = player.renderX - beforeX;
@@ -9449,35 +9471,35 @@ function getShipLayout(shipOrClass = "skiff") {
     const deckW = hullClass === "manowar" ? 24 : hullClass === "galleon" ? 20 : hullClass === "brig" ? 16 : 12;
     const deckH = hullClass === "manowar" ? 9 : hullClass === "galleon" ? 8 : hullClass === "brig" ? 7 : 6;
     const halfW = deckW / 2;
-    const sideY = Math.max(1.35, deckH / 2 - 1.0);
+    const sideY = Math.max(1.2, deckH / 2 - 2.0);
     const crewCapacity = hullClass === "manowar" ? 6 : hullClass === "galleon" ? 4 : hullClass === "brig" ? 3 : 2;
     return {
       crewCapacity,
       npcCrew: Math.max(1, crewCapacity - 1),
       deckW,
       deckH,
-      entry: { x: -halfW + 1.25, y: 0 },
+      entry: { x: -halfW + 2.0, y: 0 },
       plank: { x: -halfW - 0.55, y: 0, w: 2.2, h: 1.8 },
       teleporter: null,
       stations: [
-        { id: "helm", role: "pilot", name: "Helm", x: halfW - 1.6, y: 0 },
-        { id: "anchor", role: "engineer", name: "Anchor", x: -halfW + 2.4, y: 0, defaultShieldFacing: "back" },
+        { id: "helm", role: "pilot", name: "Helm", x: halfW - 3.2, y: 0 },
+        { id: "anchor", role: "engineer", name: "Anchor", x: -halfW + 3.4, y: 0, defaultShieldFacing: "back" },
         { id: "cannon_port", role: "gunner", name: "Port Cannons", x: -0.8, y: -sideY, droneIndex: 0 },
         ...(large ? [{ id: "cannon_starboard", role: "gunner", name: "Starboard Cannons", x: -0.8, y: sideY, droneIndex: 1 }] : []),
-        { id: "sail_trim", role: "sail_trim", name: "Sail Trim", x: 0.6, y: sideY },
-        { id: "lookout", role: "lookout", name: "Lookout", x: -halfW + 2.4, y: -sideY }
+        { id: "sail_trim", role: "sail_trim", name: "Sail Trim", x: 1.2, y: sideY },
+        { id: "lookout", role: "lookout", name: "Lookout", x: -halfW + 3.4, y: -sideY }
       ],
       crewIdle: [
-        { x: -halfW + 3.4, y: 0 },
+        { x: -halfW + 4.4, y: 0 },
         { x: -0.5, y: 0 },
         { x: halfW - 4.0, y: -1.1 },
         { x: halfW - 4.0, y: 1.1 }
       ],
       amenities: [
         { kind: "mast", x: 0, y: 0 },
-        { kind: "anchor", x: -halfW + 2.4, y: 0 },
-        { kind: "table", x: -halfW + 4.2, y: 0 },
-        { kind: "kitchen", x: -halfW + 4.8, y: sideY }
+        { kind: "anchor", x: -halfW + 3.4, y: 0 },
+        { kind: "table", x: -halfW + 5.2, y: 0 },
+        { kind: "kitchen", x: -halfW + 5.6, y: sideY }
       ]
     };
   }
@@ -10629,6 +10651,38 @@ function drawRotatedNauticalDeck(ship, shipSx, shipSy) {
   });
 }
 
+function ambientShipVisualCrew(ship) {
+  const layout = getShipLayout(ship);
+  const stations = layout.stations || [];
+  const helm = stations.find((s) => s.role === "pilot") || { x: 0, y: 0 };
+  const guns = stations.filter((s) => s.role === "gunner");
+  const idle = layout.crewIdle || [];
+  const crew = [
+    { id: "helm", name: "Helm", color: "#f5deb3", localX: helm.x, localY: helm.y, facing: 0, role: "pilot", stationId: "helm" },
+    ...guns.slice(0, 2).map((gun, i) => ({ id: `gun_${i}`, name: "Gunner", color: "#d8a35d", localX: gun.x, localY: gun.y, facing: i ? Math.PI / 2 : -Math.PI / 2, role: "gunner", stationId: gun.id })),
+    ...idle.slice(0, 2).map((spot, i) => ({ id: `deck_${i}`, name: "Deckhand", color: i ? "#8fd1a8" : "#9cc7ff", localX: spot.x, localY: spot.y, facing: Math.PI, role: null, idleKind: "chill" }))
+  ];
+  return crew;
+}
+
+function drawAmbientShipCrew(ship, shipSx, shipSy) {
+  const crew = ambientShipVisualCrew(ship);
+  withRotatedNauticalDeck(ship, shipSx, shipSy, () => {
+    for (const member of crew) {
+      const cx = (Number(member.localX) || 0) * TILE_SIZE;
+      const cy = (Number(member.localY) || 0) * TILE_SIZE;
+      drawCharacter({
+        id: `ambient_${ship.id}_${member.id}`,
+        name: member.name,
+        facing: member.facing,
+        renderMoving: false,
+        torsoColor: member.color,
+        ship: { boarded: true, deckMode: true }
+      }, cx, cy, true, { insideShipDeck: true, restingBench: Boolean(member.stationId) });
+    }
+  });
+}
+
 function drawCharacterOnRotatedNauticalDeck(entity, ship, center, shipSx, shipSy, isNpc, poseOpts = {}) {
   const localX = ((Number.isFinite(entity.renderX) ? entity.renderX : entity.x) - center.x) * TILE_SIZE;
   const localY = ((Number.isFinite(entity.renderY) ? entity.renderY : entity.y) - center.y) * TILE_SIZE;
@@ -11110,12 +11164,20 @@ function drawOceanusDecorObject(obj, sx, sy) {
 function drawAmbientSailingShip(obj, sx, sy) {
   const t = performance.now() / 1000;
   const phase = Number(obj.phase) || 0;
-  const radius = Number(obj.routeRadius) || 5;
-  const speed = Number(obj.speed) || 0.15;
-  const angle = phase + t * speed;
-  const x = sx + Math.cos(angle) * radius * TILE_SIZE;
-  const y = sy + Math.sin(angle * 0.8) * radius * TILE_SIZE * 0.5;
-  drawRotatedNauticalDeck({ ...obj, facing: angle + Math.PI / 2, hideName: true }, x, y);
+  const heading = Number.isFinite(Number(obj.heading)) ? Number(obj.heading) : phase;
+  const leg = Number(obj.routeRadius) || 42;
+  const speed = Number(obj.speed) || 0.05;
+  const cycle = ((t * speed + phase) % 1 + 1) % 1;
+  const along = (cycle - 0.5) * leg * TILE_SIZE;
+  const slowTurn = Math.sin(cycle * Math.PI * 2) * 0.16;
+  const wobble = Math.sin(t * 0.35 + phase) * TILE_SIZE * 0.45;
+  const travelAngle = heading + slowTurn;
+  const sideAngle = travelAngle + Math.PI / 2;
+  const x = sx + Math.cos(heading) * along + Math.cos(sideAngle) * wobble;
+  const y = sy + Math.sin(heading) * along + Math.sin(sideAngle) * wobble;
+  const ship = { ...obj, facing: travelAngle, hideName: true };
+  drawRotatedNauticalDeck(ship, x, y);
+  drawAmbientShipCrew(ship, x, y);
 }
 
 function drawHarbourChandleryObject(obj, sx, sy) {
@@ -12003,7 +12065,7 @@ function drawPlayers() {
   // out into space, so they need to see the hull and the battlefield around it.
   const selfControllingExterior = selfPiloting || selfStationRole === "gunner";
   let viewerInteriorShipId = null;
-  if (selfControllingExterior) {
+  if (selfControllingExterior && !(selfShip?.deckMode && isNauticalHull(selfShip.hullClass))) {
     // Sitting in a pilot or gunner seat — get the exterior view of the host ship.
     viewerInteriorShipId = null;
   } else if (selfAboardShipId) {
@@ -12042,14 +12104,14 @@ function drawPlayers() {
           const shipSx = Math.floor(center.x * TILE_SIZE - state.camera.x + halfW);
           const shipSy = Math.floor(center.y * TILE_SIZE - state.camera.y + halfH);
           const drawDeck = () => {
-            if (nauticalDeck) {
+            if (nauticalDeck && !sameAsViewer) {
               drawRotatedNauticalDeck(entity.ship, shipSx, shipSy);
             } else {
               drawShipDeckObject(entity.ship, shipSx, shipSy);
               drawShipCrew(entity.ship, shipSx, shipSy);
             }
           };
-          if (sameAsViewer && !nauticalDeck) {
+          if (sameAsViewer) {
             withCameraUnrotated(drawDeck);
           } else {
             drawDeck();
@@ -12057,7 +12119,7 @@ function drawPlayers() {
         }
         const seated = Boolean(entity.ship.stationRole);
         const drawDeckPlayer = () => {
-          if (nauticalDeck) {
+          if (nauticalDeck && !sameAsViewer) {
             const center = shipCenter(entity.ship, entity);
             const shipSx = Math.floor(center.x * TILE_SIZE - state.camera.x + halfW);
             const shipSy = Math.floor(center.y * TILE_SIZE - state.camera.y + halfH);
@@ -12067,7 +12129,7 @@ function drawPlayers() {
             drawShieldBuff(entity, sx, sy);
           }
         };
-        if (sameAsViewer && !nauticalDeck) {
+        if (sameAsViewer) {
           withCameraUnrotated(drawDeckPlayer);
         } else {
           drawDeckPlayer();

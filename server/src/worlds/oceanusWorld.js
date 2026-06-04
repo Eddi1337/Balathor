@@ -343,12 +343,13 @@ function facingForPier(dir) {
 
 function dockPortForIsland(isle) {
   const r = pierReachForIsland(isle);
+  const mooringClearance = 8;
   let x = isle.x;
   let y = isle.y;
-  if (isle.pierDir === "south") y = isle.y + r + PIER_LEN + 2;
-  else if (isle.pierDir === "north") y = isle.y - r - PIER_LEN - 2;
-  else if (isle.pierDir === "east") x = isle.x + r + PIER_LEN + 2;
-  else x = isle.x - r - PIER_LEN - 2;
+  if (isle.pierDir === "south") y = isle.y + r + PIER_LEN + mooringClearance;
+  else if (isle.pierDir === "north") y = isle.y - r - PIER_LEN - mooringClearance;
+  else if (isle.pierDir === "east") x = isle.x + r + PIER_LEN + mooringClearance;
+  else x = isle.x - r - PIER_LEN - mooringClearance;
 
   // Terminal: a few tiles back toward the island (where you stand on the dock).
   const inward = isle.hub ? 25 : 5;
@@ -381,7 +382,7 @@ const STARTER_PORT = Object.freeze({
   harbourId: STARTER_ISLAND.id,
   harbourName: STARTER_ISLAND.name,
   x: STARTER_ISLAND.x,
-  y: STARTER_ISLAND.y + STARTER_ISLAND.landRadius + PIER_LEN + 2,
+  y: STARTER_ISLAND.y + STARTER_ISLAND.landRadius + PIER_LEN + 8,
   facing: STARTER_PIER_DIR,
   terminalX: STARTER_ISLAND.x,
   terminalY: STARTER_ISLAND.y + STARTER_ISLAND.landRadius + 1,
@@ -617,19 +618,20 @@ function getOceanusObjectsInChunk(cx, cy, chunkSize) {
   // Deterministic ambient traffic. These are visual-only vessels with short
   // local routes, so the ocean feels inhabited without entering player fleets.
   const trafficHash = Math.abs(Math.imul(cx, 73856093) ^ Math.imul(cy, 19349663));
-  if (trafficHash % 7 === 0) {
+  if (trafficHash % 70 === 0) {
     const trafficX = startX + 3 + (trafficHash % Math.max(1, chunkSize - 6));
     const trafficY = startY + 3 + ((trafficHash >>> 4) % Math.max(1, chunkSize - 6));
     if (!islandAtPoint(trafficX, trafficY)) {
       out.push({
         id: `ambient_ship_${cx}_${cy}`,
         kind: "ambient-sailing-ship",
-        hullClass: trafficHash % 3 === 0 ? "brig" : "sloop",
+        hullClass: trafficHash % 6 === 0 ? "galleon" : trafficHash % 3 === 0 ? "brig" : "sloop",
         x: trafficX,
         y: trafficY,
         phase: (trafficHash % 628) / 100,
-        routeRadius: 4 + (trafficHash % 5),
-        speed: 0.12 + (trafficHash % 4) * 0.025,
+        heading: ((trafficHash >>> 6) % 628) / 100,
+        routeRadius: 28 + (trafficHash % 34),
+        speed: 0.035 + (trafficHash % 4) * 0.008,
         color: trafficHash % 2 === 0 ? "#c9a06a" : "#8b5a2b",
         hideName: true
       });

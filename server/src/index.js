@@ -2316,35 +2316,35 @@ function getNauticalShipLayout(hullClass) {
   const deckW = hullClass === "manowar" ? 24 : hullClass === "galleon" ? 20 : hullClass === "brig" ? 16 : 12;
   const deckH = hullClass === "manowar" ? 9 : hullClass === "galleon" ? 8 : hullClass === "brig" ? 7 : 6;
   const halfW = deckW / 2;
-  const sideY = Math.max(1.35, deckH / 2 - 1.0);
+  const sideY = Math.max(1.2, deckH / 2 - 2.0);
   const crewCapacity = hullClass === "manowar" ? 6 : hullClass === "galleon" ? 4 : hullClass === "brig" ? 3 : 2;
   return {
     crewCapacity,
     npcCrew: Math.max(1, crewCapacity - 1),
     deckW,
     deckH,
-    entry: { x: -halfW + 1.25, y: 0 },
+    entry: { x: -halfW + 2.0, y: 0 },
     plank: { x: -halfW - 0.55, y: 0, w: 2.2, h: 1.8 },
     teleporter: null,
     stations: [
-      { id: "helm", role: "pilot", name: "Helm", x: halfW - 1.6, y: 0 },
-      { id: "anchor", role: "engineer", name: "Anchor", x: -halfW + 2.4, y: 0, defaultShieldFacing: "back" },
+      { id: "helm", role: "pilot", name: "Helm", x: halfW - 3.2, y: 0 },
+      { id: "anchor", role: "engineer", name: "Anchor", x: -halfW + 3.4, y: 0, defaultShieldFacing: "back" },
       { id: "cannon_port", role: "gunner", name: "Port Cannons", x: -0.8, y: -sideY, droneIndex: 0 },
       ...(large ? [{ id: "cannon_starboard", role: "gunner", name: "Starboard Cannons", x: -0.8, y: sideY, droneIndex: 1 }] : []),
-      { id: "sail_trim", role: "sail_trim", name: "Sail Trim", x: 0.6, y: sideY },
-      { id: "lookout", role: "lookout", name: "Lookout", x: -halfW + 2.4, y: -sideY }
+      { id: "sail_trim", role: "sail_trim", name: "Sail Trim", x: 1.2, y: sideY },
+      { id: "lookout", role: "lookout", name: "Lookout", x: -halfW + 3.4, y: -sideY }
     ],
     crewIdle: [
-      { x: -halfW + 3.4, y: 0 },
+      { x: -halfW + 4.4, y: 0 },
       { x: -0.5, y: 0 },
       { x: halfW - 4.0, y: -1.1 },
       { x: halfW - 4.0, y: 1.1 }
     ],
     amenities: [
       { kind: "mast", x: 0, y: 0 },
-      { kind: "anchor", x: -halfW + 2.4, y: 0 },
-      { kind: "table", x: -halfW + 4.2, y: 0 },
-      { kind: "kitchen", x: -halfW + 4.8, y: sideY }
+      { kind: "anchor", x: -halfW + 3.4, y: 0 },
+      { kind: "table", x: -halfW + 5.2, y: 0 },
+      { kind: "kitchen", x: -halfW + 5.6, y: sideY }
     ]
   };
 }
@@ -4363,22 +4363,29 @@ function simulate() {
         const prevShipY = Number.isFinite(ship.worldY) ? ship.worldY : center.y;
         const nextX = center.x + vx;
         const nextY = center.y + vy;
-        if (
-          !isBlockedCircleForShip(nextX, center.y) &&
-          !isDoorLockedForPlayer(nextX, center.y, doorAccountKey)
-        ) {
+        const radius = shipCollisionRadius(ship);
+        let crashed = false;
+        if (!isBlockedCircleForShip(nextX, center.y, radius) && !isDoorLockedForPlayer(nextX, center.y, doorAccountKey)) {
           ship.worldX = nextX;
+        } else {
+          crashed = true;
         }
-        if (
-          !isBlockedCircleForShip(ship.worldX ?? center.x, nextY) &&
-          !isDoorLockedForPlayer(ship.worldX ?? center.x, nextY, doorAccountKey)
-        ) {
+        if (!isBlockedCircleForShip(ship.worldX ?? center.x, nextY, radius) && !isDoorLockedForPlayer(ship.worldX ?? center.x, nextY, doorAccountKey)) {
           ship.worldY = nextY;
+        } else {
+          crashed = true;
         }
         // Drag passengers (aboardShipId === ship.id) along with the ship so they stay
         // in their relative position inside the interior as it flies.
         const shipDx = (ship.worldX ?? prevShipX) - prevShipX;
         const shipDy = (ship.worldY ?? prevShipY) - prevShipY;
+        if (crashed && (shipDx !== vx || shipDy !== vy) && Date.now() - (ship.lastCrashDamageAt || 0) >= SHIP_CRASH_DAMAGE_COOLDOWN_MS) {
+          ship.lastCrashDamageAt = Date.now();
+          const dealt = damagePlayerShip(ship, SHIP_CRASH_DAMAGE, Date.now());
+          if (dealt > 0) {
+            send(client, { type: "serverMessage", message: "ship_hull_damaged", damage: dealt, health: Math.round(ship.health), maxHealth: Math.round(getShipMaxHealth(ship)) });
+          }
+        }
         if (shipDx !== 0 || shipDy !== 0) {
           const travelAngle = Math.atan2(shipDy, shipDx);
           ship.facing = travelAngle;
@@ -6750,6 +6757,24 @@ function sendShipTerminalWindow(client, port) {
 const SHIP_DOCK_PROMPT_RANGE = 8;
 const SHIP_GUNNER_COOLDOWN_MS = 350;
 const SHIP_MISSILE_COOLDOWN_MS = 1500;
+const SHIP_CRASH_DAMAGE_COOLDOWN_MS = 850;
+const SHIP_CRASH_DAMAGE = 7;
+
+function damagePlayerShip(ship, amount, now = Date.now()) {
+  if (!ship) return 0;
+  const maxHealth = getShipMaxHealth(ship);
+  ship.maxHealth = maxHealth;
+  const before = clampNumber(ship.health, 0, maxHealth, maxHealth);
+  const damage = Math.max(0, Math.round(Number(amount) || 0));
+  ship.health = Math.max(0, before - damage);
+  return before - ship.health;
+}
+
+function shipCollisionRadius(ship) {
+  if (!isNauticalHullClass(ship?.hullClass)) return 0.34;
+  const layout = getShipLayout(ship);
+  return Math.max(2.2, Math.min(6.4, Math.max(layout.deckW, layout.deckH) * 0.26));
+}
 
 function applyShipMobDamage(mob, rawDamage, now = Date.now(), sourceX = mob.x, sourceY = mob.y) {
   const incoming = Math.max(1, Math.round(Number(rawDamage) || 1));
@@ -11913,11 +11938,17 @@ function fireShipPirateLaser(mob, player, now) {
   const endX = mob.x + Math.cos(facing) * Math.min(range, dist);
   const endY = mob.y + Math.sin(facing) * Math.min(range, dist);
 
-  // Damage application — direct hit on the targeted player.
+  // Damage application — ship fire hits the hull first when the target is aboard.
   let damage = mob.attackDamage || 8;
-  damage = applyArmourReduction(player, damage);
   let shieldHit = false;
-  if (player.shieldBuff && player.shieldBuff.expiresAt > now) {
+  let hullHit = false;
+  if (player.ship?.boarded && isShipNavTheme(getWorldThemeAt(player.x, player.y))) {
+    hullHit = true;
+    damage = damagePlayerShip(player.ship, damage, now);
+  } else {
+    damage = applyArmourReduction(player, damage);
+  }
+  if (!hullHit && player.shieldBuff && player.shieldBuff.expiresAt > now) {
     shieldHit = true;
     damage = Math.max(1, Math.round(damage * (1 - SHIELD_DAMAGE_REDUCTION)));
     const len = dist || 1;
@@ -11925,7 +11956,9 @@ function fireShipPirateLaser(mob, player, now) {
     player.shieldBuff.lastHitDx = -dxh / len;
     player.shieldBuff.lastHitDy = -dyh / len;
   }
-  player.hp = Math.max(0, player.hp - damage);
+  if (!hullHit) {
+    player.hp = Math.max(0, player.hp - damage);
+  }
   const event = {
     type: "combat",
     kind: "projectile",
@@ -11942,6 +11975,8 @@ function fireShipPirateLaser(mob, player, now) {
     targetId: player.id,
     targetKind: "player",
     damage,
+    hullHit,
+    shipHealth: hullHit ? Math.round(player.ship.health) : undefined,
     shieldHit,
     targetHp: player.hp,
     endX: Number(endX.toFixed(3)),
