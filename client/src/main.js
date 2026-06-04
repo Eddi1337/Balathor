@@ -2537,6 +2537,7 @@ function getEffectiveWorldZoom(player = state.players.get(state.selfId)) {
   const baseZoom = Math.min(state.zoom || 1, getMobileWorldZoomCap());
   const role = player?.ship?.stationRole;
   if (selfIsInPilotSeat(player)) return isNauticalHull(player?.ship?.hullClass) ? baseZoom * 0.45 : baseZoom * 0.7;
+  if (role === "lookout") return baseZoom * 0.34;
   if (role === "gunner" || role === "engineer") return baseZoom * 0.5;
   return baseZoom;
 }
@@ -2575,14 +2576,23 @@ function predictLocalPlayer(player, dt) {
   if (player.ship?.boarded && player.ship.deckMode) {
     const role = player.ship.stationRole;
     if (isPilotShipRole(role)) {
+      const nauticalPilot = isNauticalHull(player.ship.hullClass);
       const dx = Number(state.input.right) - Number(state.input.left);
-      const dy = Number(state.input.down) - Number(state.input.up);
-      const aimLength = Math.hypot(dx, dy);
-      if (aimLength > 0) {
-        player.facing = Math.atan2(dy, dx);
-        player.ship.facing = player.facing;
+      if (nauticalPilot) {
+        if (dx !== 0) {
+          player.ship.facing = normalizeAngle((Number(player.ship.facing) || Number(player.facing) || 0) + dx * dt * 1.85);
+        }
+        player.facing = Number(player.ship.facing) || 0;
+      } else {
+        const dy = Number(state.input.down) - Number(state.input.up);
+        const aimLength = Math.hypot(dx, dy);
+        if (aimLength > 0) {
+          player.facing = Math.atan2(dy, dx);
+          player.ship.facing = player.facing;
+        }
       }
-      if (state.input.engage) {
+      const thrusting = nauticalPilot ? Boolean(state.input.up || state.input.engage) : Boolean(state.input.engage);
+      if (thrusting) {
         const vx = Math.cos(player.facing) * speed * dt;
         const vy = Math.sin(player.facing) * speed * dt;
         const center = shipCenter(player.ship, player);
@@ -2601,11 +2611,13 @@ function predictLocalPlayer(player, dt) {
         player.ship.worldY = shipY;
         if (travelX !== 0 || travelY !== 0) {
           const travelAngle = Math.atan2(travelY, travelX);
-          player.facing = travelAngle;
-          player.ship.facing = travelAngle;
+          if (!nauticalPilot) {
+            player.facing = travelAngle;
+            player.ship.facing = travelAngle;
+          }
         }
       }
-      player.renderMoving = Boolean(state.input.engage);
+      player.renderMoving = Boolean(thrusting || (nauticalPilot && dx !== 0));
       return true;
     }
     if (role) {
@@ -4047,7 +4059,9 @@ function wireUi() {
       }
       if (isSelfOnShip()) {
         const role = selfShipStationRole();
-        state.input.engage = Boolean(isPilotShipRole(role) || (isSelfFlyingShip() && !role));
+        const self = state.players.get(state.selfId);
+        const nauticalPilot = isPilotShipRole(role) && isNauticalHull(self?.ship?.hullClass);
+        state.input.engage = Boolean(!nauticalPilot && (isPilotShipRole(role) || (isSelfFlyingShip() && !role)));
         state.input.fire = Boolean(role === "gunner");
         state.input.repair = Boolean(["engineer", "sail_trim", "fishing", "lookout"].includes(role));
         sendInput();
@@ -4459,7 +4473,7 @@ function renderAbilityBar() {
       button.textContent = role === "gunner"
         ? (isNauticalHull(self.ship?.hullClass) ? "Fire Cannon" : "Fire")
         : role === "engineer"
-          ? "Repair"
+          ? (self.ship?.stationId === "anchor" ? "Anchor" : "Repair")
           : role === "sail_trim"
             ? "Trim Sail"
             : role === "fishing"
@@ -4467,11 +4481,11 @@ function renderAbilityBar() {
               : role === "lookout"
                 ? "Scan Horizon"
           : isPilotShipRole(role) || !self.ship?.deckMode
-            ? "Engage"
+            ? (isNauticalHull(self.ship?.hullClass) ? "Sail" : "Engage")
             : "Station";
     }
     if (key) {
-      key.textContent = role ? "Space" : "E";
+      key.textContent = isPilotShipRole(role) && isNauticalHull(self.ship?.hullClass) ? "W/A/D" : role ? "Space" : "E";
     }
     const stats = document.getElementById("shipStationStats");
     if (stats) {
@@ -4486,12 +4500,13 @@ function renderAbilityBar() {
       if (shipMode && role === "engineer") {
         stats.replaceChildren();
         const title = document.createElement("strong");
-        title.textContent = "Engineering";
+        title.textContent = stationId === "anchor" ? "Anchor" : "Engineering";
         const hull = document.createElement("span");
-        hull.textContent = `Hull ${hp}/${maxHp}`;
+        hull.textContent = stationId === "anchor" ? "WASD snaps heading, anchor holds speed" : `Hull ${hp}/${maxHp}`;
         const shield = document.createElement("span");
         shield.textContent = `Shield ${shields}/${maxShields} ${shieldDir}`;
-        stats.append(title, hull, shield);
+        if (stationId === "anchor") stats.append(title, hull);
+        else stats.append(title, hull, shield);
       } else if (shipMode && role === "gunner") {
         stats.replaceChildren();
         const title = document.createElement("strong");
@@ -4502,11 +4517,11 @@ function renderAbilityBar() {
         mode.style.color = isMissile ? "#ff7b3a" : "#67f0ff";
         stats.append(title, mode);
       } else if (shipMode && role === "sail_trim") {
-        stats.textContent = `Sail trim ${Math.round((Number(self.ship?.sailTrim) || 0) * 100)}% - use left/right, hold Space to centre`;
+        stats.textContent = `Sail trim ${Math.round((Number(self.ship?.sailTrim) || 0) * 100)}% - press W/Space to trim faster`;
       } else if (shipMode && role === "fishing") {
         stats.textContent = "Fishing - hold Space to cast";
       } else if (shipMode && role === "lookout") {
-        stats.textContent = "Lookout - hold Space to scan the horizon";
+        stats.textContent = "Lookout - zoomed horizon view, hold Space to scan";
       }
     }
   }
@@ -9498,6 +9513,7 @@ function getShipLayout(shipOrClass = "skiff") {
       amenities: [
         { kind: "mast", x: 0, y: 0 },
         { kind: "anchor", x: -halfW + 3.4, y: 0 },
+        { kind: "parrot", x: halfW - 4.6, y: sideY },
         { kind: "table", x: -halfW + 5.2, y: 0 },
         { kind: "kitchen", x: -halfW + 5.6, y: sideY }
       ]
@@ -10526,6 +10542,38 @@ function drawShipDeckObject(ship, sx, sy) {
       ctx.moveTo(ax - 8, ay - 7);
       ctx.lineTo(ax + 8, ay - 7);
       ctx.stroke();
+    } else if (amenity.kind === "parrot") {
+      ctx.save();
+      ctx.translate(ax, ay);
+      ctx.fillStyle = "#2a1808";
+      ctx.fillRect(-12, 10, 24, 4);
+      ctx.fillStyle = "#24a05a";
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 8, 11, -0.25, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#d9273e";
+      ctx.beginPath();
+      ctx.arc(-2, -8, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#ffd166";
+      ctx.beginPath();
+      ctx.moveTo(3, -9);
+      ctx.lineTo(11, -6);
+      ctx.lineTo(3, -4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#0b1012";
+      ctx.beginPath();
+      ctx.arc(0, -10, 1.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#1f7fce";
+      ctx.beginPath();
+      ctx.moveTo(-6, 2);
+      ctx.lineTo(-15, 7);
+      ctx.lineTo(-8, -2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
     } else {
       ctx.fillStyle = "rgba(12, 22, 35, 0.95)";
       ctx.fillRect(ax - 26, ay - 14, 52, 28);

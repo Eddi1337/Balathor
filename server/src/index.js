@@ -2343,6 +2343,7 @@ function getNauticalShipLayout(hullClass) {
     amenities: [
       { kind: "mast", x: 0, y: 0 },
       { kind: "anchor", x: -halfW + 3.4, y: 0 },
+      { kind: "parrot", x: halfW - 4.6, y: sideY },
       { kind: "table", x: -halfW + 5.2, y: 0 },
       { kind: "kitchen", x: -halfW + 5.6, y: sideY }
     ]
@@ -4343,18 +4344,28 @@ function simulate() {
       client.player._stillAccumulator = 0;
       ship.docking = null;
 
-      // WASD sets the ship's facing direction
+      const nauticalPilot = isNauticalHullClass(ship.hullClass);
       const dx = Number(input.right) - Number(input.left);
       const dy = Number(input.down) - Number(input.up);
-      const aimLength = Math.hypot(dx, dy);
-      if (aimLength > 0) {
-        client.player.facing = Math.atan2(dy, dx);
-        if (!shipWarping) {
-          ship.facing = client.player.facing;
+      if (nauticalPilot) {
+        const turn = dx;
+        if (turn !== 0 && !shipWarping) {
+          ship.facing = normalizeAngle((Number(ship.facing) || 0) + turn * dt * 1.85);
+        }
+        client.player.facing = Number(ship.facing) || 0;
+      } else {
+        // WASD sets the ship's facing direction for free-flight ships.
+        const aimLength = Math.hypot(dx, dy);
+        if (aimLength > 0) {
+          client.player.facing = Math.atan2(dy, dx);
+          if (!shipWarping) {
+            ship.facing = client.player.facing;
+          }
         }
       }
-      // Engage thrusts forward in the facing direction
-      if (input.engage && !shipWarping) {
+      // Nautical ships sail forward with W from current heading; other ships use Engage.
+      const thrusting = nauticalPilot ? Boolean(input.up || input.engage) : Boolean(input.engage);
+      if (thrusting && !shipWarping) {
         const sp = getPlayerSpeed(client.player);
         const vx = Math.cos(client.player.facing) * sp * dt;
         const vy = Math.sin(client.player.facing) * sp * dt;
@@ -4388,8 +4399,10 @@ function simulate() {
         }
         if (shipDx !== 0 || shipDy !== 0) {
           const travelAngle = Math.atan2(shipDy, shipDx);
-          ship.facing = travelAngle;
-          client.player.facing = travelAngle;
+          if (!nauticalPilot) {
+            ship.facing = travelAngle;
+            client.player.facing = travelAngle;
+          }
           const passengers = aboardShipClients.get(ship.id) || [];
           for (const passengerClient of passengers) {
             const passenger = passengerClient.player;
@@ -4404,7 +4417,7 @@ function simulate() {
       setPlayerShipLocal(client.player, Number(station.x) || 0, Number(station.y) || 0);
       client.player.x = seat.x;
       client.player.y = seat.y;
-      client.player.moving = Boolean(input.engage || shipWarping);
+      client.player.moving = Boolean(thrusting || shipWarping || (nauticalPilot && dx !== 0));
     } else if (client.player.ship?.boarded && client.player.ship.deckMode) {
       const ship = client.player.ship;
       const role = client.player.shipStationRole || ship.stationRole;
@@ -4415,15 +4428,24 @@ function simulate() {
           setPlayerShipLocal(client.player, Number(station.x) || 0, Number(station.y) || 0);
           syncPlayerToShipLocal(client.player);
         }
+        if (station?.id === "anchor" && isNauticalHullClass(ship.hullClass)) {
+          const adx = Number(input.right) - Number(input.left);
+          const ady = Number(input.down) - Number(input.up);
+          if (Math.hypot(adx, ady) > 0) {
+            ship.facing = Math.atan2(ady, adx);
+            client.player.facing = ship.facing;
+          }
+          ship.sailTrim = 0;
+        }
         const shieldFacing = shieldFacingFromInput(input);
-        if (shieldFacing) {
+        if (shieldFacing && station?.id !== "anchor") {
           ship.shieldSections = sanitizeShipShieldSections(ship);
           if (station) {
             ship.shieldSections[station.id] = shieldFacing;
           }
           ship.shieldFacing = shieldFacing;
         }
-        if (input.repair) {
+        if (input.repair && station?.id !== "anchor") {
           ship.health = Math.min(getShipMaxHealth(ship), (Number(ship.health) || 0) + SHIP_REPAIR_PER_SECOND * dt);
         }
         client.player.moving = false;
@@ -4460,9 +4482,10 @@ function simulate() {
           setPlayerShipLocal(client.player, Number(station.x) || 0, Number(station.y) || 0);
           syncPlayerToShipLocal(client.player);
         }
-        ship.sailTrim = clampNumber((Number(ship.sailTrim) || 0) + (Number(input.right) - Number(input.left)) * dt * 0.65, -1, 1, 0);
-        if (input.repair) ship.sailTrim *= Math.max(0, 1 - dt * 1.4);
-        client.player.moving = Boolean(input.left || input.right || input.repair);
+        const trimDelta = (Number(input.up || input.right) - Number(input.down || input.left)) * dt * 0.5;
+        ship.sailTrim = clampNumber((Number(ship.sailTrim) || 0) + trimDelta, 0, 1, 0);
+        if (input.repair) ship.sailTrim = Math.min(1, (Number(ship.sailTrim) || 0) + dt * 0.7);
+        client.player.moving = Boolean(input.left || input.right || input.up || input.down || input.repair);
       } else if (role === "fishing") {
         if (input.repair && Date.now() - (client.lastFishingAt || 0) >= 2400) {
           client.lastFishingAt = Date.now();
@@ -8722,7 +8745,7 @@ function getPlayerSpeed(player) {
     const base = Number(player.ship.speed) || SHIP_SPEED;
     const tt = Math.min(5, Math.max(1, Math.floor(Number(player.ship.thrustTier) || 1)));
     const sailBonus = isNauticalHullClass(player.ship.hullClass)
-      ? Math.max(0, 1 - Math.abs(Number(player.ship.sailTrim) || 0)) * 1.8
+      ? Math.max(0, Number(player.ship.sailTrim) || 0) * 3.2
       : 0;
     return base + (tt - 1) * 0.55 + sailBonus;
   }
