@@ -2362,6 +2362,7 @@ function getNauticalShipLayout(hullClass) {
   const deckH = hullClass === "manowar" ? 9 : hullClass === "galleon" ? 8 : hullClass === "brig" ? 7 : 6;
   const halfW = deckW / 2;
   const sideY = Math.max(1.2, deckH / 2 - 2.0);
+  const mastX = halfW - 4.7;
   const crewCapacity = hullClass === "manowar" ? 6 : hullClass === "galleon" ? 4 : hullClass === "brig" ? 3 : 2;
   return {
     crewCapacity,
@@ -2376,7 +2377,7 @@ function getNauticalShipLayout(hullClass) {
       { id: "anchor", role: "engineer", name: "Anchor", x: -halfW + 3.4, y: 0, defaultShieldFacing: "back" },
       { id: "cannon_port", role: "gunner", name: "Port Cannons", x: -0.8, y: -sideY, droneIndex: 0 },
       ...(large ? [{ id: "cannon_starboard", role: "gunner", name: "Starboard Cannons", x: -0.8, y: sideY, droneIndex: 1 }] : []),
-      { id: "sail_trim", role: "sail_trim", name: "Sail Trim", x: 0, y: 0 },
+      { id: "sail_trim", role: "sail_trim", name: "Sail Trim", x: mastX, y: 0 },
       { id: "lookout", role: "lookout", name: "Lookout", x: -halfW + 3.4, y: -sideY }
     ],
     crewIdle: [
@@ -2386,7 +2387,7 @@ function getNauticalShipLayout(hullClass) {
       { x: halfW - 4.0, y: 1.1 }
     ],
     amenities: [
-      { kind: "mast", x: 0, y: 0 },
+      { kind: "mast", x: mastX, y: 0 },
       { kind: "anchor", x: -halfW + 3.4, y: 0 },
       { kind: "parrot", x: halfW - 4.6, y: sideY },
       { kind: "table", x: -halfW + 5.2, y: 0 },
@@ -4395,9 +4396,9 @@ function simulate() {
       const dx = Number(input.right) - Number(input.left);
       const dy = Number(input.down) - Number(input.up);
       if (nauticalPilot) {
-        const aimLength = Math.hypot(dx, dy);
-        if (aimLength > 0 && !shipWarping) {
-          ship.facing = Math.atan2(dy, dx);
+        const turn = dx;
+        if (turn !== 0 && !shipWarping) {
+          ship.facing = normalizeAngle((Number(ship.facing) || 0) + turn * dt * 1.85);
         }
         client.player.facing = Number(ship.facing) || 0;
       } else {
@@ -4410,8 +4411,7 @@ function simulate() {
           }
         }
       }
-      // Ship controls match spaceflight: steering keys set heading/turning, Space engages forward thrust.
-      const thrusting = Boolean(input.engage);
+      const thrusting = nauticalPilot ? Boolean(input.up || input.engage) : Boolean(input.engage);
       if (thrusting && !shipWarping) {
         const sp = getPlayerSpeed(client.player);
         const vx = Math.cos(client.player.facing) * sp * dt;
@@ -4464,7 +4464,7 @@ function simulate() {
       setPlayerShipLocal(client.player, Number(station.x) || 0, Number(station.y) || 0);
       client.player.x = seat.x;
       client.player.y = seat.y;
-      client.player.moving = Boolean(thrusting || shipWarping || (nauticalPilot && (input.left || input.right || input.up || input.down)));
+      client.player.moving = Boolean(thrusting || shipWarping || (nauticalPilot && dx !== 0));
     } else if (client.player.ship?.boarded && client.player.ship.deckMode) {
       const ship = client.player.ship;
       const role = client.player.shipStationRole || ship.stationRole;
@@ -6450,6 +6450,19 @@ function disembarkPassengers(shipId, port) {
   }
 }
 
+function dockPlankDisembarkPoint(ship, port) {
+  const layout = getShipLayout(ship);
+  const facing = facingForDockPort(port);
+  const plank = layout.plank || { x: layout.entry?.x || -layout.deckW / 2, y: layout.entry?.y || 0, w: 2.4, h: 2.0 };
+  const localX = (Number(plank.x) || 0) - (Number(plank.w) || 2.4) / 2 - 0.65;
+  const localY = Number(plank.y) || 0;
+  return {
+    x: port.x + Math.cos(facing) * localX - Math.sin(facing) * localY,
+    y: port.y + Math.sin(facing) * localX + Math.cos(facing) * localY,
+    facing
+  };
+}
+
 function dockPlayerShipAtStation(client, port = resolveShipExitDockPort(client.player)) {
   if (!client.player?.ship || !port) {
     return false;
@@ -6475,9 +6488,10 @@ function dockPlayerShipAtStation(client, port = resolveShipExitDockPort(client.p
   client.player.ship.worldY = port.y;
   client.player.ship.facing = facingForDockPort(port);
   disembarkPassengers(shipId, port);
-  client.player.x = Number.isFinite(port.terminalX) ? port.terminalX : port.x;
-  client.player.y = Number.isFinite(port.terminalY) ? port.terminalY : port.y;
-  client.player.facing = facingForDockPort(port);
+  const plankExit = isNauticalHullClass(client.player.ship.hullClass) ? dockPlankDisembarkPoint(client.player.ship, port) : null;
+  client.player.x = plankExit?.x ?? (Number.isFinite(port.terminalX) ? port.terminalX : port.x);
+  client.player.y = plankExit?.y ?? (Number.isFinite(port.terminalY) ? port.terminalY : port.y);
+  client.player.facing = plankExit?.facing ?? facingForDockPort(port);
   client.player.moving = false;
   client.player._stillAccumulator = 0;
   saveClientCharacter(client);
@@ -7551,9 +7565,27 @@ function handleTravelToPlanet(client, message = {}) {
 }
 
 function handleShipDockRequest(client) {
-  if (client.player?.ship) {
-    client.player.ship.docking = null;
+  const player = client.player;
+  const ship = player?.ship;
+  if (!player || !ship?.boarded || !isNauticalHullClass(ship.hullClass)) {
+    send(client, { type: "serverMessage", message: "ship_dock_not_nearby" });
+    return;
   }
+  const role = player.shipStationRole || ship.stationRole;
+  if (ship.deckMode && !isPilotShipRole(role)) {
+    send(client, { type: "serverMessage", message: "ship_dock_not_piloting" });
+    return;
+  }
+  const center = shipCenter(ship, player);
+  const port = findNearestDockPort(center.x, center.y, SHIP_DOCK_PROMPT_RANGE + 2);
+  if (!port) {
+    send(client, { type: "serverMessage", message: "ship_dock_not_nearby" });
+    return;
+  }
+  ship.docking = null;
+  ship.warp = null;
+  ship.speed = 0;
+  dockPlayerShipAtStation(client, port);
 }
 
 function handleShipTerminalInteract(client, message = {}) {

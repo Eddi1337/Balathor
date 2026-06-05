@@ -2513,6 +2513,23 @@ function getExteriorShipControlCenter(player = state.players.get(state.selfId)) 
   return shipCenter(ship, player);
 }
 
+function getNauticalPilotCamera(player = state.players.get(state.selfId)) {
+  const ship = player?.ship;
+  if (!ship?.boarded || !ship.deckMode || !isNauticalHull(ship.hullClass)) return null;
+  if (!isPilotShipRole(ship.stationRole)) return null;
+  const center = shipCenter(ship, player);
+  const facing = Number.isFinite(Number(ship.facing)) ? Number(ship.facing) : Number(player?.facing) || 0;
+  const layout = getShipLayout(ship);
+  const aftOffset = Math.max(3.4, Math.min(7.2, layout.deckW * 0.3));
+  return {
+    center: {
+      x: center.x - Math.cos(facing) * aftOffset,
+      y: center.y - Math.sin(facing) * aftOffset
+    },
+    rotation: normalizeAngle(-facing - Math.PI / 2)
+  };
+}
+
 function getInteriorShipView(player = state.players.get(state.selfId)) {
   if (!player) return null;
   if ((selfIsInPilotSeat(player) || player.ship?.stationRole === "gunner") && !isNauticalHull(player.ship?.hullClass)) {
@@ -2589,10 +2606,8 @@ function predictLocalPlayer(player, dt) {
       const nauticalPilot = isNauticalHull(player.ship.hullClass);
       const dx = Number(state.input.right) - Number(state.input.left);
       if (nauticalPilot) {
-        const dy = Number(state.input.down) - Number(state.input.up);
-        const aimLength = Math.hypot(dx, dy);
-        if (aimLength > 0) {
-          player.ship.facing = Math.atan2(dy, dx);
+        if (dx !== 0) {
+          player.ship.facing = normalizeAngle((Number(player.ship.facing) || Number(player.facing) || 0) + dx * dt * 1.85);
         }
         player.facing = Number(player.ship.facing) || 0;
       } else {
@@ -2603,7 +2618,7 @@ function predictLocalPlayer(player, dt) {
           player.ship.facing = player.facing;
         }
       }
-      const thrusting = Boolean(state.input.engage);
+      const thrusting = nauticalPilot ? Boolean(state.input.up || state.input.engage) : Boolean(state.input.engage);
       if (thrusting) {
         const vx = Math.cos(player.facing) * speed * dt;
         const vy = Math.sin(player.facing) * speed * dt;
@@ -2629,7 +2644,7 @@ function predictLocalPlayer(player, dt) {
           }
         }
       }
-      player.renderMoving = Boolean(thrusting || (nauticalPilot && (state.input.left || state.input.right || state.input.up || state.input.down)));
+      player.renderMoving = Boolean(thrusting || (nauticalPilot && dx !== 0));
       return true;
     }
     if (role === "sail_trim") {
@@ -3620,6 +3635,10 @@ function wireUi() {
     function setShipStationButton(active, e) {
       if (!state.joined || state.menuOpen || !isSelfOnShip()) return;
       e.preventDefault();
+      if (active && e.currentTarget?.dataset?.dockAction === "dock") {
+        send({ type: "shipDockRequest" });
+        return;
+      }
       const role = selfShipStationRole();
       if (!role) {
         if (active) sendInteract();
@@ -4496,7 +4515,9 @@ function renderAbilityBar() {
       state.input.weaponMode = "laser";
     }
     if (button) {
-      button.dataset.dockAction = "";
+      const nauticalPilot = isPilotShipRole(role) && isNauticalHull(self.ship?.hullClass);
+      const canDock = shipMode && nauticalPilot && isShipNearAnyDockPort(self.ship);
+      button.dataset.dockAction = canDock ? "dock" : "";
       button.textContent = role === "gunner"
         ? (isNauticalHull(self.ship?.hullClass) ? "Fire Cannon" : "Fire")
         : role === "engineer"
@@ -4507,12 +4528,14 @@ function renderAbilityBar() {
               ? "Fish"
               : role === "lookout"
                 ? "Scan Horizon"
+          : canDock
+            ? "Dock"
           : isPilotShipRole(role) || !self.ship?.deckMode
             ? (isNauticalHull(self.ship?.hullClass) ? "Sail" : "Engage")
             : "Station";
     }
     if (key) {
-      key.textContent = isPilotShipRole(role) && isNauticalHull(self.ship?.hullClass) ? "Space + WASD" : role ? "Space" : "E";
+      key.textContent = isPilotShipRole(role) && isNauticalHull(self.ship?.hullClass) ? "W/Space + A/D" : role ? "Space" : "E";
     }
     const stats = document.getElementById("shipStationStats");
     if (stats) {
@@ -6524,9 +6547,16 @@ function updateCamera(dt) {
   }
 
   const follow = 1 - Math.pow(0.001, dt);
+  const nauticalPilotView = getNauticalPilotCamera(self);
   const interiorView = getInteriorShipView(self);
   const exteriorShipCenter = getExteriorShipControlCenter(self);
-  if (interiorView) {
+  if (nauticalPilotView) {
+    const targetX = nauticalPilotView.center.x * TILE_SIZE;
+    const targetY = nauticalPilotView.center.y * TILE_SIZE;
+    state.camera.x += (targetX - state.camera.x) * follow;
+    state.camera.y += (targetY - state.camera.y) * follow;
+    state.camera.rotation = normalizeAngle(state.camera.rotation + normalizeAngle(nauticalPilotView.rotation - state.camera.rotation) * follow);
+  } else if (interiorView) {
     state.camera.x = interiorView.center.x * TILE_SIZE;
     state.camera.y = interiorView.center.y * TILE_SIZE;
     const targetRotation = interiorView.rotateDeck ? interiorView.rotation : 0;
@@ -9534,6 +9564,7 @@ function getShipLayout(shipOrClass = "skiff") {
     const deckH = hullClass === "manowar" ? 9 : hullClass === "galleon" ? 8 : hullClass === "brig" ? 7 : 6;
     const halfW = deckW / 2;
     const sideY = Math.max(1.2, deckH / 2 - 2.0);
+    const mastX = halfW - 4.7;
     const crewCapacity = hullClass === "manowar" ? 6 : hullClass === "galleon" ? 4 : hullClass === "brig" ? 3 : 2;
     return {
       crewCapacity,
@@ -9548,7 +9579,7 @@ function getShipLayout(shipOrClass = "skiff") {
         { id: "anchor", role: "engineer", name: "Anchor", x: -halfW + 3.4, y: 0, defaultShieldFacing: "back" },
         { id: "cannon_port", role: "gunner", name: "Port Cannons", x: -0.8, y: -sideY, droneIndex: 0 },
         ...(large ? [{ id: "cannon_starboard", role: "gunner", name: "Starboard Cannons", x: -0.8, y: sideY, droneIndex: 1 }] : []),
-        { id: "sail_trim", role: "sail_trim", name: "Sail Trim", x: 0, y: 0 },
+        { id: "sail_trim", role: "sail_trim", name: "Sail Trim", x: mastX, y: 0 },
         { id: "lookout", role: "lookout", name: "Lookout", x: -halfW + 3.4, y: -sideY }
       ],
       crewIdle: [
@@ -9558,7 +9589,7 @@ function getShipLayout(shipOrClass = "skiff") {
         { x: halfW - 4.0, y: 1.1 }
       ],
       amenities: [
-        { kind: "mast", x: 0, y: 0 },
+        { kind: "mast", x: mastX, y: 0 },
         { kind: "anchor", x: -halfW + 3.4, y: 0 },
         { kind: "parrot", x: halfW - 4.6, y: sideY },
         { kind: "table", x: -halfW + 5.2, y: 0 },
@@ -10168,23 +10199,23 @@ function buildShipHullPath(hullClass, x, y, w, h) {
 }
 
 function drawAngledSail(cx, cy, w, h, sailAngle = 0, fill = "rgba(245, 230, 200, 0.92)") {
-  const angle = clampValue(sailAngle, -SAIL_ANGLE_LIMIT, SAIL_ANGLE_LIMIT, 0);
+  const angle = clampValue(sailAngle * 1.35, -1.45, 1.45, 0);
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(angle);
   ctx.strokeStyle = "#2a1808";
   ctx.lineWidth = Math.max(2, h * 0.02);
   ctx.beginPath();
-  ctx.moveTo(-w * 0.22, 0);
-  ctx.lineTo(w * 0.24, 0);
+  ctx.moveTo(-w * 0.28, 0);
+  ctx.lineTo(w * 0.32, 0);
   ctx.stroke();
   ctx.fillStyle = fill;
   ctx.strokeStyle = "rgba(42, 24, 8, 0.75)";
   ctx.lineWidth = Math.max(1.4, h * 0.012);
   ctx.beginPath();
-  ctx.moveTo(-w * 0.02, -h * 0.26);
-  ctx.quadraticCurveTo(w * 0.28, -h * 0.15, w * 0.18, 0);
-  ctx.quadraticCurveTo(w * 0.26, h * 0.16, -w * 0.02, h * 0.27);
+  ctx.moveTo(-w * 0.04, -h * 0.30);
+  ctx.quadraticCurveTo(w * 0.36, -h * 0.18, w * 0.24, 0);
+  ctx.quadraticCurveTo(w * 0.34, h * 0.19, -w * 0.04, h * 0.31);
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
@@ -10229,8 +10260,8 @@ function drawSailShipShape(hullClass, x, y, w, h, color, sailAngle = 0) {
   ctx.stroke();
 
   ctx.fillStyle = "#2a1808";
-  ctx.fillRect(x + w * 0.49, y + h * 0.10, Math.max(3, w * 0.035), h * 0.80);
-  drawAngledSail(x + w * 0.50, y + h * 0.50, w, h, sailAngle);
+  ctx.fillRect(x + w * 0.61, y + h * 0.10, Math.max(3, w * 0.035), h * 0.80);
+  drawAngledSail(x + w * 0.62, y + h * 0.50, w, h, sailAngle);
   ctx.strokeStyle = "#2a1808";
   ctx.lineWidth = 2;
   ctx.strokeRect(x + w * 0.76, y + h * 0.39, w * 0.07, h * 0.22);
