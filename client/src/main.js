@@ -5436,12 +5436,18 @@ function refreshWorldHoverTooltip(event) {
       if (crewHover) {
         state.hoverTooltipText = `${crewHover.crew.name || "Crew"} - assign post`;
         state.hoverTooltipSmall = true;
+        const pt = worldToScreenPoint(crewHover.x, crewHover.y);
+        state.hoverTooltipX = pt.x;
+        state.hoverTooltipY = pt.y;
         return;
       }
       const shipDeckHit = findShipDeckInteractionAt(world.x, world.y);
       if (shipDeckHit?.label) {
         state.hoverTooltipText = shipDeckHit.label;
         state.hoverTooltipSmall = true;
+        const pt = worldToScreenPoint(shipDeckHit.x, shipDeckHit.y);
+        state.hoverTooltipX = pt.x;
+        state.hoverTooltipY = pt.y;
         return;
       }
     }

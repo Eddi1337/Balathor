@@ -377,18 +377,27 @@ function dockPortForIsland(isle) {
 const OCEANUS_PORTS = Object.freeze(OCEANUS_ISLANDS.map(dockPortForIsland));
 const PORTS_BY_ISLAND = new Map(OCEANUS_PORTS.map((p) => [p.harbourId, p]));
 
-const STARTER_PORT = Object.freeze({
-  id: `${STARTER_ISLAND.id}_dock`,
-  harbourId: STARTER_ISLAND.id,
-  harbourName: STARTER_ISLAND.name,
-  x: STARTER_ISLAND.x,
-  y: STARTER_ISLAND.y + STARTER_ISLAND.landRadius + PIER_LEN + 8,
-  facing: STARTER_PIER_DIR,
-  terminalX: STARTER_ISLAND.x,
-  terminalY: STARTER_ISLAND.y + STARTER_ISLAND.landRadius + 1,
-  islandX: STARTER_ISLAND.x,
-  islandY: STARTER_ISLAND.y
-});
+function starterPortAt(idSuffix, xOffset, yOffset = 0) {
+  return Object.freeze({
+    id: `${STARTER_ISLAND.id}_${idSuffix}`,
+    harbourId: STARTER_ISLAND.id,
+    harbourName: STARTER_ISLAND.name,
+    x: STARTER_ISLAND.x + xOffset,
+    y: STARTER_ISLAND.y + STARTER_ISLAND.landRadius + PIER_LEN + 8 + yOffset,
+    facing: STARTER_PIER_DIR,
+    terminalX: STARTER_ISLAND.x + xOffset,
+    terminalY: STARTER_ISLAND.y + STARTER_ISLAND.landRadius + 1,
+    islandX: STARTER_ISLAND.x,
+    islandY: STARTER_ISLAND.y
+  });
+}
+
+const STARTER_PORTS = Object.freeze([
+  starterPortAt("dock", 0, 0),
+  starterPortAt("west_dock", -7, 1),
+  starterPortAt("east_dock", 7, 1)
+]);
+const STARTER_PORT = STARTER_PORTS[0];
 
 function buildFeatures() {
   const out = [];
@@ -484,12 +493,23 @@ const STARTER_FEATURES = Object.freeze([
     w: PIER_HALF_WIDTH * 2 + 1,
     h: PIER_LEN + 3
   }),
+  ...STARTER_PORTS.map((port) => Object.freeze({
+    id: port.id,
+    kind: "ship-port",
+    name: `${STARTER_ISLAND.name} Mooring`,
+    harbourId: STARTER_ISLAND.id,
+    x: port.x,
+    y: port.y,
+    w: 5,
+    h: 3,
+    facing: port.facing
+  })),
   Object.freeze({
     id: `${STARTER_ISLAND.id}_shipwright`,
     kind: "ship-console",
     name: `${STARTER_ISLAND.name} Shipwright`,
     harbourId: STARTER_ISLAND.id,
-    x: STARTER_PORT.terminalX,
+    x: STARTER_ISLAND.x - 5,
     y: STARTER_PORT.terminalY,
     w: 4,
     h: 4
@@ -501,8 +521,8 @@ const STARTER_FEATURES = Object.freeze([
     shopName: `${STARTER_ISLAND.name} Chandlery`,
     shopType: "ship",
     harbourId: STARTER_ISLAND.id,
-    x: STARTER_PORT.terminalX + 4,
-    y: STARTER_PORT.terminalY - 2,
+    x: STARTER_ISLAND.x + 5,
+    y: STARTER_PORT.terminalY,
     w: 4,
     h: 4
   })
@@ -527,6 +547,8 @@ function oceanusDockPortForPlayerId(/* playerId */) {
 function oceanusPortById(id) {
   if (typeof id !== "string" || !id) return null;
   if (id === STARTER_PORT.id) return STARTER_PORT;
+  const starter = STARTER_PORTS.find((p) => p.id === id);
+  if (starter) return starter;
   return OCEANUS_PORTS.find((p) => p.id === id) || null;
 }
 
@@ -534,13 +556,13 @@ function findNearestOceanusPort(px, py, maxDist = 14) {
   const md = maxDist * maxDist;
   let best = null;
   let bestD = md;
-  {
-    const dx = px - STARTER_PORT.x;
-    const dy = py - STARTER_PORT.y;
+  for (const port of STARTER_PORTS) {
+    const dx = px - port.x;
+    const dy = py - port.y;
     const d = dx * dx + dy * dy;
     if (d < bestD) {
       bestD = d;
-      best = STARTER_PORT;
+      best = port;
     }
   }
   for (const p of OCEANUS_PORTS) {
