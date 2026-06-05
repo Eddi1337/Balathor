@@ -573,6 +573,25 @@ function clientShipCollisionRadius(ship) {
   return Math.max(2.2, Math.min(6.4, Math.max(layout.deckW, layout.deckH) * 0.26));
 }
 
+function clientIsBlockedCircleByShip(wx, wy, radius, movingShip) {
+  const movingId = typeof movingShip?.id === "string" ? movingShip.id : null;
+  const seen = new Set();
+  for (const other of state.players.values()) {
+    const ship = other?.ship;
+    if (!ship || ship === movingShip) continue;
+    if (movingId && ship.id === movingId) continue;
+    if (ship.id && seen.has(ship.id)) continue;
+    if (ship.id) seen.add(ship.id);
+    const center = shipCenter(ship, other);
+    if (!Number.isFinite(center.x) || !Number.isFinite(center.y)) continue;
+    const otherRadius = clientShipCollisionRadius(ship);
+    if (Math.hypot(wx - center.x, wy - center.y) < radius + otherRadius) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Mirrors server/src/index.js on-foot movement: X axis first, then Y with updated X. */
 function clientTryFootMove(rx, ry, stepX, stepY) {
   const nextX = rx + stepX;
@@ -2608,9 +2627,8 @@ function predictLocalPlayer(player, dt) {
       const nauticalPilot = isNauticalHull(player.ship.hullClass);
       const dx = Number(state.input.right) - Number(state.input.left);
       if (nauticalPilot) {
-        const dy = Number(state.input.down) - Number(state.input.up);
-        if (Math.hypot(dx, dy) > 0) {
-          player.ship.facing = Math.atan2(dy, dx);
+        if (dx !== 0) {
+          player.ship.facing = normalizeAngle((Number(player.ship.facing) || Number(player.facing) || 0) + dx * dt * 1.85);
         }
         player.facing = Number(player.ship.facing) || 0;
       } else {
@@ -2631,8 +2649,12 @@ function predictLocalPlayer(player, dt) {
         const beforeY = center.y;
         let shipX = center.x;
         let shipY = center.y;
-        if (!clientIsBlockedCircleForShip(center.x + vx, center.y, radius)) shipX = center.x + vx;
-        if (!clientIsBlockedCircleForShip(shipX, center.y + vy, radius)) shipY = center.y + vy;
+        if (!clientIsBlockedCircleForShip(center.x + vx, center.y, radius) && !clientIsBlockedCircleByShip(center.x + vx, center.y, radius, player.ship)) {
+          shipX = center.x + vx;
+        }
+        if (!clientIsBlockedCircleForShip(shipX, center.y + vy, radius) && !clientIsBlockedCircleByShip(shipX, center.y + vy, radius, player.ship)) {
+          shipY = center.y + vy;
+        }
         const travelX = shipX - beforeX;
         const travelY = shipY - beforeY;
         player.renderX += travelX;
@@ -2647,7 +2669,7 @@ function predictLocalPlayer(player, dt) {
           }
         }
       }
-      player.renderMoving = Boolean(thrusting || (nauticalPilot && Math.hypot(dx, Number(state.input.down) - Number(state.input.up)) > 0));
+      player.renderMoving = Boolean(thrusting || (nauticalPilot && dx !== 0));
       return true;
     }
     if (role === "sail_trim") {

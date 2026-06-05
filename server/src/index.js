@@ -4402,8 +4402,8 @@ function simulate() {
       const dx = Number(input.right) - Number(input.left);
       const dy = Number(input.down) - Number(input.up);
       if (nauticalPilot) {
-        if (Math.hypot(dx, dy) > 0 && !shipWarping) {
-          ship.facing = Math.atan2(dy, dx);
+        if (dx !== 0 && !shipWarping) {
+          ship.facing = normalizeAngle((Number(ship.facing) || 0) + dx * dt * 1.85);
         }
         client.player.facing = Number(ship.facing) || 0;
       } else {
@@ -4428,12 +4428,20 @@ function simulate() {
         const nextY = center.y + vy;
         const radius = shipCollisionRadius(ship);
         let crashed = false;
-        if (!isBlockedCircleForShip(nextX, center.y, radius) && !isDoorLockedForPlayer(nextX, center.y, doorAccountKey)) {
+        if (
+          !isBlockedCircleForShip(nextX, center.y, radius) &&
+          !isDoorLockedForPlayer(nextX, center.y, doorAccountKey) &&
+          !isShipCircleBlockedByOtherShip(nextX, center.y, radius, ship)
+        ) {
           ship.worldX = nextX;
         } else {
           crashed = true;
         }
-        if (!isBlockedCircleForShip(ship.worldX ?? center.x, nextY, radius) && !isDoorLockedForPlayer(ship.worldX ?? center.x, nextY, doorAccountKey)) {
+        if (
+          !isBlockedCircleForShip(ship.worldX ?? center.x, nextY, radius) &&
+          !isDoorLockedForPlayer(ship.worldX ?? center.x, nextY, doorAccountKey) &&
+          !isShipCircleBlockedByOtherShip(ship.worldX ?? center.x, nextY, radius, ship)
+        ) {
           ship.worldY = nextY;
         } else {
           crashed = true;
@@ -4469,7 +4477,7 @@ function simulate() {
       setPlayerShipLocal(client.player, Number(station.x) || 0, Number(station.y) || 0);
       client.player.x = seat.x;
       client.player.y = seat.y;
-      client.player.moving = Boolean(thrusting || shipWarping || (nauticalPilot && Math.hypot(dx, dy) > 0));
+      client.player.moving = Boolean(thrusting || shipWarping || (nauticalPilot && dx !== 0));
     } else if (client.player.ship?.boarded && client.player.ship.deckMode) {
       const ship = client.player.ship;
       const role = client.player.shipStationRole || ship.stationRole;
@@ -6894,6 +6902,25 @@ function shipCollisionRadius(ship) {
   if (!isNauticalHullClass(ship?.hullClass)) return 0.34;
   const layout = getShipLayout(ship);
   return Math.max(2.2, Math.min(6.4, Math.max(layout.deckW, layout.deckH) * 0.26));
+}
+
+function isShipCircleBlockedByOtherShip(wx, wy, radius, movingShip) {
+  const movingId = typeof movingShip?.id === "string" ? movingShip.id : null;
+  const seen = new Set();
+  for (const otherClient of clients.values()) {
+    const ship = otherClient.player?.ship;
+    if (!ship || ship === movingShip) continue;
+    if (movingId && ship.id === movingId) continue;
+    if (ship.id && seen.has(ship.id)) continue;
+    if (ship.id) seen.add(ship.id);
+    const center = shipCenter(ship);
+    if (!Number.isFinite(center.x) || !Number.isFinite(center.y)) continue;
+    const otherRadius = shipCollisionRadius(ship);
+    if (Math.hypot(wx - center.x, wy - center.y) < radius + otherRadius) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function applyShipMobDamage(mob, rawDamage, now = Date.now(), sourceX = mob.x, sourceY = mob.y) {
