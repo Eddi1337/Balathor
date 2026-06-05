@@ -233,6 +233,9 @@
     if (state.session.gameId === "mining" && state.session.phase === "beam") {
       drawMiningBar(bx, by + h + 6, w, state.session.data);
     }
+    if (state.session.gameId === "ship_repair") {
+      drawShipRepairBar(bx, by + h + 6, w, state.session.data);
+    }
     if (state.session.gameId === "memory") {
       drawMemoryGrid(bx, by + h + 8, state.session.data);
     }
@@ -257,6 +260,10 @@
     if (g === "turret") return [`Defense — ${d.kills ?? 0}/${d.need ?? 8} kills`];
     if (g === "asteroid") return [`Asteroid lane — beacon ${(d.next ?? 0) + 1}/3`, "Fly your ship through"];
     if (g === "mining") return [`Mining — ${d.progress ?? 0}%`, "Pulse on the sweet spot (Space)"];
+    if (g === "ship_repair") {
+      const placed = Math.floor(Number(d.planks) || 0);
+      return [`Repair — planks ${placed}/${d.need ?? 5}`, `Hull ${d.hull ?? 0}/${d.maxHull ?? 0}`, "Place in the green zone (Space/click)"];
+    }
     if (g === "appraisal") return ["Appraisal — type guess in chat: /guess 123"];
     if (g === "lockpick") return ["Lock rhythm — keys 1-4 in order"];
     if (g === "scavenger") return ["Biome hunt — visit Oasis, Frost, Ember markers"];
@@ -281,6 +288,26 @@
     ctx.fillRect(x, y, w, 14);
     ctx.fillStyle = "#67f0ff";
     ctx.fillRect(x, y, w * ((data?.progress || 0) / 100), 14);
+  }
+
+  function drawShipRepairBar(x, y, w, data) {
+    const { ctx } = deps;
+    const now = Date.now();
+    const cycle = 1800;
+    const sweetAt = Number(data?.sweetAt) || now;
+    const phase = (((now - sweetAt + cycle / 2) % cycle) + cycle) % cycle;
+    const t = phase / cycle;
+    ctx.fillStyle = "rgba(2,8,14,0.86)";
+    ctx.fillRect(x, y, w, 14);
+    ctx.fillStyle = "rgba(245,222,179,0.22)";
+    ctx.fillRect(x + w * 0.18, y + 2, w * 0.64, 10);
+    ctx.fillStyle = "#74f29c";
+    ctx.fillRect(x + w * 0.44, y + 2, w * 0.12, 10);
+    ctx.fillStyle = "#f5deb3";
+    ctx.fillRect(x + t * w - 2, y - 3, 4, 20);
+    ctx.strokeStyle = data?.last === "flush" ? "#74f29c" : data?.last === "crooked" ? "#ffd166" : "#f87171";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, 14);
   }
 
   function drawMemoryGrid(x, y, data) {
@@ -383,6 +410,10 @@
     if (!deps.getJoined()) return false;
     const world = deps.screenEventToWorld(event);
     state.lastPointer = world;
+    if (state.session?.gameId === "ship_repair") {
+      deps.send({ type: "minigameAction", action: "place_plank" });
+      return true;
+    }
     const site = findSiteAtWorld(world.x, world.y);
     if (!site) return false;
     const self = deps.getSelf();
@@ -449,6 +480,11 @@
     if (state.session.gameId === "mining" && (event.code === "Space" || event.key === " ")) {
       event.preventDefault();
       deps.send({ type: "minigameAction", action: "pulse" });
+      return true;
+    }
+    if (state.session.gameId === "ship_repair" && (event.code === "Space" || event.key === " ")) {
+      event.preventDefault();
+      deps.send({ type: "minigameAction", action: "place_plank" });
       return true;
     }
     if (state.session.gameId === "lockpick") {

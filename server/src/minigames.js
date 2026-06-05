@@ -79,6 +79,8 @@ function createMinigameSystem(systemDeps) {
     findSiteNear: findMinigameSiteNearForPlayer,
     handleInteract,
     handleAction,
+    cancelSession: (client, reason = "cancelled") => endSession(client, reason),
+    startShipRepair,
     tick,
     onMobDefeat,
     onChestLoot,
@@ -191,6 +193,9 @@ function handleAction(client, message) {
       break;
     case "lockpick":
       if (action === "tap") return lockpickTap(client, message);
+      break;
+    case "ship_repair":
+      if (action === "place_plank") return shipRepairPlacePlank(client, message);
       break;
     default:
       break;
@@ -723,6 +728,63 @@ function startMining(client, site) {
   sendState(client, p._minigameSession);
   deps.pushChat({ kind: "system", name: "Realm", text: "Mining rig whines — pulse the beam on the sweet spot." });
   return true;
+}
+
+function startShipRepair(client, ship, station) {
+  const p = client.player;
+  if (!p || !ship || !station) return false;
+  const maxHealth = Math.max(1, Number(deps.getShipMaxHealth?.(ship)) || Number(ship.maxHealth) || 1);
+  if ((Number(ship.health) || 0) >= maxHealth) {
+    deps.send(client, { type: "serverMessage", message: "ship_repair_full" });
+    return true;
+  }
+  p._minigameSession = {
+    gameId: "ship_repair",
+    siteId: `ship:${ship.id}:repair`,
+    phase: "planking",
+    data: {
+      shipId: ship.id,
+      stationId: station.id,
+      planks: 0,
+      need: 5,
+      sweetAt: Date.now() + 550 + Math.floor(Math.random() * 900),
+      hull: Math.round(Number(ship.health) || 0),
+      maxHull: Math.round(maxHealth)
+    },
+    startedAt: Date.now(),
+    endsAt: Date.now() + 45000
+  };
+  sendState(client, p._minigameSession);
+  deps.pushChat({ kind: "system", name: "Realm", text: "Repair station ready — time the planks against the damaged hull." });
+  return true;
+}
+
+function shipRepairPlacePlank(client, message) {
+  const p = client.player;
+  const session = p?._minigameSession;
+  if (!session || session.gameId !== "ship_repair") return;
+  const ship = deps.getShipById?.(session.data.shipId) || p.ship;
+  if (!ship || !p.ship?.boarded || (p.shipStationRole || p.ship?.stationRole) !== "repair") {
+    endSession(client, "cancelled", { chat: "Repair interrupted." });
+    return;
+  }
+  const now = Date.now();
+  const accuracy = Math.abs(now - Number(session.data.sweetAt || 0));
+  const good = accuracy <= 260;
+  const ok = accuracy <= 520;
+  const heal = good ? 18 : ok ? 10 : 4;
+  const maxHealth = Math.max(1, Number(deps.getShipMaxHealth?.(ship)) || Number(ship.maxHealth) || 1);
+  ship.health = Math.min(maxHealth, (Number(ship.health) || 0) + heal);
+  session.data.planks += good ? 1 : ok ? 0.75 : 0.35;
+  session.data.last = good ? "flush" : ok ? "crooked" : "loose";
+  session.data.sweetAt = now + 650 + Math.floor(Math.random() * 950);
+  session.data.hull = Math.round(Number(ship.health) || 0);
+  session.data.maxHull = Math.round(maxHealth);
+  sendState(client, session);
+  deps.broadcastSnapshot();
+  if (ship.health >= maxHealth || session.data.planks >= session.data.need) {
+    endSession(client, "complete", { chat: `Repair complete — hull restored to ${Math.round(ship.health)}/${Math.round(maxHealth)}.` });
+  }
 }
 
 function miningPulse(client, message) {

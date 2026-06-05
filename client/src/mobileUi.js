@@ -172,8 +172,11 @@
       if (role === "gunner") {
         return { label: "Fire", action: "ship-station", hold: true };
       }
-      if (role === "engineer") {
+      if (role === "repair") {
         return { label: "Repair", action: "ship-station", hold: true };
+      }
+      if (role === "engineer") {
+        return { label: "Shields", action: "ship-station", hold: true };
       }
       return {
         label: isPilotShipRole(role) || !state.players.get(state.selfId)?.ship?.deckMode ? "Engage" : "Station",
@@ -366,9 +369,12 @@
         if (active) sendInteract();
         return;
       }
+      if (active && role === "repair" && globalThis.BalathorMinigames?.state?.session?.gameId === "ship_repair") {
+        send({ type: "minigameAction", action: "place_plank" });
+      }
       state.input.engage = Boolean(active && isPilotShipRole(role));
       state.input.fire = Boolean(active && role === "gunner");
-      state.input.repair = Boolean(active && role === "engineer");
+      state.input.repair = Boolean(active && role === "repair");
       sendInput();
       mobileShipHoldActive = active;
     }

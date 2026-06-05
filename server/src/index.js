@@ -1864,6 +1864,8 @@ function initMinigameModule() {
     getWorldHour: () => getWorldTimeSnapshot().hour,
     getCampById: (id) => ENEMY_CAMPS.find((c) => c.id === id) || null,
     getOwnedShip: getOwnedActiveShip,
+    getShipMaxHealth,
+    getShipById: (id) => findShipById(id)?.ship || null,
     getPartyView: (client) => social?.getPartyView(client) || null,
     getPartyMemberClients,
     spawnEscortAmbush: spawnMinigameAmbush,
@@ -2375,6 +2377,7 @@ function getNauticalShipLayout(hullClass) {
     stations: [
       { id: "helm", role: "pilot", name: "Helm", x: halfW - 3.2, y: 0 },
       { id: "anchor", role: "engineer", name: "Anchor", x: -halfW + 3.4, y: 0, defaultShieldFacing: "back" },
+      { id: "repair", role: "repair", name: "Repair", x: -halfW + 4.6, y: sideY, defaultShieldFacing: "back" },
       { id: "cannon_port", role: "gunner", name: "Port Cannons", x: -0.8, y: -sideY, droneIndex: 0 },
       ...(large ? [{ id: "cannon_starboard", role: "gunner", name: "Starboard Cannons", x: -0.8, y: sideY, droneIndex: 1 }] : []),
       { id: "sail_trim", role: "sail_trim", name: "Sail Trim", x: mastX, y: 0 },
@@ -2413,6 +2416,7 @@ function getShipLayout(shipOrClass = "skiff") {
       teleporter: { x: -12, y: 0 },
       stations: [
         { id: "helm", role: "pilot", name: "Helm", x: 11.0, y: 0 },
+        { id: "repair", role: "repair", name: "Repair", x: -10.0, y: 5.2, defaultShieldFacing: "back" },
         { id: "engineer_fwd", role: "engineer", name: "Fore Engineering", x: 4.0, y: -4.0, defaultShieldFacing: "front" },
         { id: "engineer_aft", role: "engineer", name: "Aft Engineering", x: 4.0, y: 4.0, defaultShieldFacing: "back" },
         { id: "engineer_port", role: "engineer", name: "Port Engineering", x: -8.0, y: -3.0, defaultShieldFacing: "left" },
@@ -2444,6 +2448,7 @@ function getShipLayout(shipOrClass = "skiff") {
       teleporter: { x: -8.5, y: 0 },
       stations: [
         { id: "helm", role: "pilot", name: "Helm", x: 8.5, y: 0 },
+        { id: "repair", role: "repair", name: "Repair", x: -7.0, y: 4.0, defaultShieldFacing: "back" },
         { id: "engineer_fwd", role: "engineer", name: "Fore Engineering", x: 2.5, y: -3.0, defaultShieldFacing: "front" },
         { id: "engineer_aft", role: "engineer", name: "Aft Engineering", x: 2.5, y: 3.0, defaultShieldFacing: "back" },
         { id: "gunner_1", role: "gunner", name: "Gunner I", x: -4.0, y: -3.0, droneIndex: 0 },
@@ -2469,6 +2474,7 @@ function getShipLayout(shipOrClass = "skiff") {
       teleporter: { x: -6.0, y: -1.5 },
       stations: [
         { id: "helm", role: "pilot", name: "Helm", x: 6.0, y: 0 },
+        { id: "repair", role: "repair", name: "Repair", x: -5.2, y: -2.4, defaultShieldFacing: "back" },
         { id: "engineer_main", role: "engineer", name: "Engineering", x: 0.5, y: -2.5, defaultShieldFacing: "front" },
         { id: "gunner_1", role: "gunner", name: "Gunner", x: -4.5, y: 2.0, droneIndex: 0 }
       ],
@@ -2863,7 +2869,7 @@ function handleShipCrewCommand(client, message = {}) {
   } else if (idleKind === "chill" || requested === "chill" || requested === "chilling" || requested === "idle") {
     crew.stationId = null;
     crew.idleKind = "chill";
-  } else if (["gunner", "engineer", "sail_trim", "lookout", "fishing"].includes(requestedRole)) {
+  } else if (["gunner", "engineer", "repair", "sail_trim", "lookout", "fishing"].includes(requestedRole)) {
     const station = layout.stations.find((s) =>
       s.role === requestedRole &&
       !shipStationPlayerOccupant(ship, s.id) &&
@@ -4396,9 +4402,8 @@ function simulate() {
       const dx = Number(input.right) - Number(input.left);
       const dy = Number(input.down) - Number(input.up);
       if (nauticalPilot) {
-        const turn = dx;
-        if (turn !== 0 && !shipWarping) {
-          ship.facing = normalizeAngle((Number(ship.facing) || 0) + turn * dt * 1.85);
+        if (Math.hypot(dx, dy) > 0 && !shipWarping) {
+          ship.facing = Math.atan2(dy, dx);
         }
         client.player.facing = Number(ship.facing) || 0;
       } else {
@@ -4464,7 +4469,7 @@ function simulate() {
       setPlayerShipLocal(client.player, Number(station.x) || 0, Number(station.y) || 0);
       client.player.x = seat.x;
       client.player.y = seat.y;
-      client.player.moving = Boolean(thrusting || shipWarping || (nauticalPilot && dx !== 0));
+      client.player.moving = Boolean(thrusting || shipWarping || (nauticalPilot && Math.hypot(dx, dy) > 0));
     } else if (client.player.ship?.boarded && client.player.ship.deckMode) {
       const ship = client.player.ship;
       const role = client.player.shipStationRole || ship.stationRole;
@@ -4492,8 +4497,12 @@ function simulate() {
           }
           ship.shieldFacing = shieldFacing;
         }
-        if (input.repair && station?.id !== "anchor") {
-          ship.health = Math.min(getShipMaxHealth(ship), (Number(ship.health) || 0) + SHIP_REPAIR_PER_SECOND * dt);
+        client.player.moving = false;
+      } else if (role === "repair") {
+        const station = getShipLayout(ship).stations.find((candidate) => candidate.id === (client.player.shipStationId || ship.stationId));
+        if (station) {
+          setPlayerShipLocal(client.player, Number(station.x) || 0, Number(station.y) || 0);
+          syncPlayerToShipLocal(client.player);
         }
         client.player.moving = false;
       } else if (role === "gunner") {
@@ -6717,6 +6726,9 @@ function handleShipInteract(client, message = {}) {
 
   if (hostShip.deckMode) {
     if (player.shipStationRole) {
+      if (player._minigameSession?.gameId === "ship_repair") {
+        minigames?.cancelSession?.(client, "cancelled");
+      }
       player.shipStationRole = null;
       player.shipStationId = null;
       client.input = normalizeInput();
@@ -6738,6 +6750,9 @@ function handleShipInteract(client, message = {}) {
       player.moving = false;
       client.input = normalizeInput();
       send(client, { type: "serverMessage", message: "ship_station_entered", stationName: station.name, stationRole: station.role });
+      if (station.role === "repair") {
+        minigames?.startShipRepair?.(client, hostShip, station);
+      }
       broadcastSnapshot();
       return true;
     }

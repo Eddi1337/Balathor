@@ -1852,6 +1852,8 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: `Docked ${message.shipName || "your ship"}` });
     } else if (message.message === "ship_hull_damaged") {
       appendChat({ kind: "system", name: "Realm", text: `Hull damaged: ${message.health || 0}/${message.maxHealth || 0}` });
+    } else if (message.message === "ship_repair_full") {
+      appendChat({ kind: "system", name: "Realm", text: "Hull is already fully repaired." });
     } else if (message.message === "ship_called") {
       appendChat({ kind: "system", name: "Realm", text: `Called ${message.shipName || "your ship"} to the dock` });
     } else if (message.message === "party_teleported_to_ship") {
@@ -2520,7 +2522,7 @@ function getNauticalPilotCamera(player = state.players.get(state.selfId)) {
   const center = shipCenter(ship, player);
   const facing = Number.isFinite(Number(ship.facing)) ? Number(ship.facing) : Number(player?.facing) || 0;
   const layout = getShipLayout(ship);
-  const aftOffset = Math.max(3.4, Math.min(7.2, layout.deckW * 0.3));
+  const aftOffset = Math.max(4.8, Math.min(9.5, layout.deckW * 0.42));
   return {
     center: {
       x: center.x - Math.cos(facing) * aftOffset,
@@ -2565,7 +2567,7 @@ function getEffectiveWorldZoom(player = state.players.get(state.selfId)) {
   const role = player?.ship?.stationRole;
   if (selfIsInPilotSeat(player)) return isNauticalHull(player?.ship?.hullClass) ? baseZoom * 0.45 : baseZoom * 0.7;
   if (role === "lookout") return baseZoom * 0.34;
-  if (role === "gunner" || role === "engineer") return baseZoom * 0.5;
+  if (role === "gunner" || role === "engineer" || role === "repair") return baseZoom * 0.5;
   return baseZoom;
 }
 
@@ -2606,8 +2608,9 @@ function predictLocalPlayer(player, dt) {
       const nauticalPilot = isNauticalHull(player.ship.hullClass);
       const dx = Number(state.input.right) - Number(state.input.left);
       if (nauticalPilot) {
-        if (dx !== 0) {
-          player.ship.facing = normalizeAngle((Number(player.ship.facing) || Number(player.facing) || 0) + dx * dt * 1.85);
+        const dy = Number(state.input.down) - Number(state.input.up);
+        if (Math.hypot(dx, dy) > 0) {
+          player.ship.facing = Math.atan2(dy, dx);
         }
         player.facing = Number(player.ship.facing) || 0;
       } else {
@@ -2644,7 +2647,7 @@ function predictLocalPlayer(player, dt) {
           }
         }
       }
-      player.renderMoving = Boolean(thrusting || (nauticalPilot && dx !== 0));
+      player.renderMoving = Boolean(thrusting || (nauticalPilot && Math.hypot(dx, Number(state.input.down) - Number(state.input.up)) > 0));
       return true;
     }
     if (role === "sail_trim") {
@@ -2676,7 +2679,7 @@ function predictLocalPlayer(player, dt) {
         }
       }
       player.renderMoving = Boolean(
-        (["engineer", "sail_trim", "fishing", "lookout"].includes(role) && state.input.repair) ||
+        (["repair", "sail_trim", "fishing", "lookout"].includes(role) && state.input.repair) ||
         (role === "gunner" && state.input.fire)
       );
       return true;
@@ -3644,9 +3647,12 @@ function wireUi() {
         if (active) sendInteract();
         return;
       }
+      if (active && role === "repair" && globalThis.BalathorMinigames?.state?.session?.gameId === "ship_repair") {
+        send({ type: "minigameAction", action: "place_plank" });
+      }
       state.input.engage = Boolean(active && isPilotShipRole(role));
       state.input.fire = Boolean(active && role === "gunner");
-      state.input.repair = Boolean(active && ["engineer", "sail_trim", "fishing", "lookout"].includes(role));
+      state.input.repair = Boolean(active && ["repair", "sail_trim", "fishing", "lookout"].includes(role));
       sendInput();
     }
     shipEngageEl.addEventListener("pointerdown", (e) => setShipStationButton(true, e), { passive: false });
@@ -4109,7 +4115,7 @@ function wireUi() {
         const role = selfShipStationRole();
         state.input.engage = Boolean(isPilotShipRole(role) || (isSelfFlyingShip() && !role));
         state.input.fire = Boolean(role === "gunner");
-        state.input.repair = Boolean(["engineer", "sail_trim", "fishing", "lookout"].includes(role));
+        state.input.repair = Boolean(["repair", "sail_trim", "fishing", "lookout"].includes(role));
         sendInput();
         return;
       }
@@ -4520,8 +4526,10 @@ function renderAbilityBar() {
       button.dataset.dockAction = canDock ? "dock" : "";
       button.textContent = role === "gunner"
         ? (isNauticalHull(self.ship?.hullClass) ? "Fire Cannon" : "Fire")
+        : role === "repair"
+          ? "Repair"
         : role === "engineer"
-          ? (self.ship?.stationId === "anchor" ? "Anchor" : "Repair")
+          ? (self.ship?.stationId === "anchor" ? "Anchor" : "Shields")
           : role === "sail_trim"
             ? "Trim Sail"
             : role === "fishing"
@@ -4547,7 +4555,7 @@ function renderAbilityBar() {
       const stationId = String(self.ship?.stationId || "engineer_mid");
       const shieldDir = String(shieldSections[stationId] || self.ship?.shieldFacing || "front");
       const nauticalPilot = shipMode && isPilotShipRole(role) && isNauticalHull(self.ship?.hullClass);
-      stats.classList.toggle("hidden", !shipMode || !(nauticalPilot || ["engineer", "gunner", "sail_trim", "fishing", "lookout"].includes(role)));
+      stats.classList.toggle("hidden", !shipMode || !(nauticalPilot || ["engineer", "repair", "gunner", "sail_trim", "fishing", "lookout"].includes(role)));
       if (shipMode && nauticalPilot) {
         const factor = Number.isFinite(Number(self.ship?.windSpeedFactor)) ? Number(self.ship.windSpeedFactor) : 1;
         const trim = Math.round((Number(self.ship?.sailTrim) || 0) * 100);
@@ -4562,6 +4570,15 @@ function renderAbilityBar() {
         shield.textContent = `Shield ${shields}/${maxShields} ${shieldDir}`;
         if (stationId === "anchor") stats.append(title, hull);
         else stats.append(title, hull, shield);
+      } else if (shipMode && role === "repair") {
+        stats.replaceChildren();
+        const title = document.createElement("strong");
+        title.textContent = "Repair";
+        const hull = document.createElement("span");
+        hull.textContent = `Hull ${hp}/${maxHp}`;
+        const prompt = document.createElement("span");
+        prompt.textContent = "Place planks in the green zone";
+        stats.append(title, hull, prompt);
       } else if (shipMode && role === "gunner") {
         stats.replaceChildren();
         const title = document.createElement("strong");
@@ -9577,6 +9594,7 @@ function getShipLayout(shipOrClass = "skiff") {
       stations: [
         { id: "helm", role: "pilot", name: "Helm", x: halfW - 3.2, y: 0 },
         { id: "anchor", role: "engineer", name: "Anchor", x: -halfW + 3.4, y: 0, defaultShieldFacing: "back" },
+        { id: "repair", role: "repair", name: "Repair", x: -halfW + 4.6, y: sideY, defaultShieldFacing: "back" },
         { id: "cannon_port", role: "gunner", name: "Port Cannons", x: -0.8, y: -sideY, droneIndex: 0 },
         ...(large ? [{ id: "cannon_starboard", role: "gunner", name: "Starboard Cannons", x: -0.8, y: sideY, droneIndex: 1 }] : []),
         { id: "sail_trim", role: "sail_trim", name: "Sail Trim", x: mastX, y: 0 },
@@ -9611,6 +9629,7 @@ function getShipLayout(shipOrClass = "skiff") {
       teleporter: { x: -12, y: 0 },
       stations: [
         { id: "helm", role: "pilot", name: "Helm", x: 11.0, y: 0 },
+        { id: "repair", role: "repair", name: "Repair", x: -10.0, y: 5.2, defaultShieldFacing: "back" },
         { id: "engineer_fwd", role: "engineer", name: "Fore Engineering", x: 4.0, y: -4.0, defaultShieldFacing: "front" },
         { id: "engineer_aft", role: "engineer", name: "Aft Engineering", x: 4.0, y: 4.0, defaultShieldFacing: "back" },
         { id: "engineer_port", role: "engineer", name: "Port Engineering", x: -8.0, y: -3.0, defaultShieldFacing: "left" },
@@ -9642,6 +9661,7 @@ function getShipLayout(shipOrClass = "skiff") {
       teleporter: { x: -8.5, y: 0 },
       stations: [
         { id: "helm", role: "pilot", name: "Helm", x: 8.5, y: 0 },
+        { id: "repair", role: "repair", name: "Repair", x: -7.0, y: 4.0, defaultShieldFacing: "back" },
         { id: "engineer_fwd", role: "engineer", name: "Fore Engineering", x: 2.5, y: -3.0, defaultShieldFacing: "front" },
         { id: "engineer_aft", role: "engineer", name: "Aft Engineering", x: 2.5, y: 3.0, defaultShieldFacing: "back" },
         { id: "gunner_1", role: "gunner", name: "Gunner I", x: -4.0, y: -3.0, droneIndex: 0 },
@@ -9667,6 +9687,7 @@ function getShipLayout(shipOrClass = "skiff") {
       teleporter: { x: -6.0, y: -1.5 },
       stations: [
         { id: "helm", role: "pilot", name: "Helm", x: 6.0, y: 0 },
+        { id: "repair", role: "repair", name: "Repair", x: -5.2, y: -2.4, defaultShieldFacing: "back" },
         { id: "engineer_main", role: "engineer", name: "Engineering", x: 0.5, y: -2.5, defaultShieldFacing: "front" },
         { id: "gunner_1", role: "gunner", name: "Gunner", x: -4.5, y: 2.0, droneIndex: 0 }
       ],
@@ -10011,6 +10032,8 @@ function showShipCrewMenu(ship, crew) {
   state.npcContext = { kind: "ship_crew", crewId: crew.id, shipId: ship.id };
   const labelRole = crew.role === "gunner"
     ? "Gunner"
+    : crew.role === "repair"
+      ? "Repair"
     : crew.role === "engineer"
       ? "Engineering"
       : crew.role === "sail_trim"
@@ -10504,6 +10527,29 @@ function drawEngineerStation(wx, wy, active, color, shieldFacing) {
   drawStationActiveRing(wx, wy, active, color, 23);
 }
 
+function drawRepairStation(wx, wy, active, color) {
+  ctx.fillStyle = "rgba(38, 24, 14, 0.96)";
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  roundedRect(wx - 21, wy - 14, 42, 28, 5);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = active ? "#f5deb3" : "#8b6239";
+  for (let i = 0; i < 3; i += 1) {
+    ctx.fillRect(wx - 15 + i * 10, wy - 8 + i * 2, 8, 18);
+  }
+  ctx.strokeStyle = active ? "#2a1808" : "rgba(42,24,8,0.75)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(wx - 14, wy + 8);
+  ctx.lineTo(wx + 16, wy - 6);
+  ctx.moveTo(wx - 9, wy - 10);
+  ctx.lineTo(wx + 13, wy + 9);
+  ctx.stroke();
+  drawStationActiveRing(wx, wy, active, color, 23);
+}
+
 function drawShipStationObject(ship, station, wx, wy) {
   const active = ship?.stationId === station.id;
   if (isNauticalHull(ship?.hullClass)) {
@@ -10545,6 +10591,10 @@ function drawShipStationObject(ship, station, wx, wy) {
       drawStationActiveRing(wx, wy, active, "#f5deb3", 20);
       return;
     }
+    if (station.role === "repair") {
+      drawRepairStation(wx, wy, active, "#f5deb3");
+      return;
+    }
   }
   if (station.role === "gunner") {
     drawGunnerStation(wx, wy, active, "#ff8f6b");
@@ -10552,6 +10602,10 @@ function drawShipStationObject(ship, station, wx, wy) {
   }
   if (station.role === "engineer") {
     drawEngineerStation(wx, wy, active, "#8fe388", stationShieldFacing(ship, station));
+    return;
+  }
+  if (station.role === "repair") {
+    drawRepairStation(wx, wy, active, "#f5deb3");
     return;
   }
   if (station.role === "sail_trim" || station.role === "fishing" || station.role === "lookout") {
@@ -10873,6 +10927,8 @@ function drawShipCrew(ship, shipSx, shipSy) {
     });
     const status = crew.role === "gunner"
       ? "gunner"
+      : crew.role === "repair"
+        ? "repair"
       : crew.role === "engineer"
         ? "engineering"
         : crew.role === "sail_trim"
