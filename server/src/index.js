@@ -236,6 +236,10 @@ const STARTING_GOLD = 120;
 const SHIP_BUY_PRICE = 850;
 const SHIP_SPEED = 9.75;
 const SHIP_COORD_LIMIT = 100000000;
+const OCEAN_WIND_BASE_ANGLE = -0.62;
+const OCEAN_WIND_STRENGTH = 1;
+const SAIL_ANGLE_LIMIT = 1.2;
+const SAIL_TRIM_SPEED = 1.35;
 const SHIP_WARP_APPROACH_SPEED = 26;
 const SHIP_WARP_APPROACH_MS = 800;
 const SHIP_WARP_JUMP_MS = 1700;
@@ -2158,6 +2162,10 @@ function serializeShip(ship) {
   const maxHealth = getShipMaxHealth(ship);
   const maxShields = getShipMaxShields(ship);
   const shieldSections = sanitizeShipShieldSections(ship);
+  const center = shipCenter(ship);
+  const nautical = isNauticalHullClass(ship?.hullClass);
+  const wind = nautical ? oceanWindAt(center.x, center.y) : null;
+  const sailAngle = clampNumber(ship.sailAngle, -SAIL_ANGLE_LIMIT, SAIL_ANGLE_LIMIT, 0);
   return {
     id: typeof ship.id === "string" ? ship.id.slice(0, 64) : "starter_ship",
     templateId: typeof ship.templateId === "string" ? ship.templateId : "starter_ship",
@@ -2174,6 +2182,13 @@ function serializeShip(ship) {
     facing: normalizeAngle(clampNumber(ship.facing, -Math.PI * 2, Math.PI * 2, 0)),
     speed: clampNumber(ship.speed, 0, 1000, SHIP_SPEED),
     sailTrim: clampNumber(ship.sailTrim, -1, 1, 0),
+    sailAngle,
+    ...(wind ? {
+      windAngle: Number(wind.angle.toFixed(4)),
+      windStrength: Number(wind.strength.toFixed(3)),
+      windSpeedFactor: Number(nauticalWindSpeedFactor({ ...ship, sailAngle }, wind).toFixed(3)),
+      optimalSailAngle: Number(optimalSailAngleForWind(Number(ship.facing) || 0, wind.angle).toFixed(4))
+    } : {}),
     laserTier: clampInteger(ship.laserTier ?? 1, 1, 5),
     thrustTier: clampInteger(ship.thrustTier ?? 1, 1, 5),
     crewCapacity: layout.crewCapacity,
@@ -2231,6 +2246,7 @@ function serializeShipForViewer(player, ship, viewerId) {
     worldY: clampNumber(ship.worldY, -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, ship.dockY ?? STARGATE_LANDING.y),
     facing: normalizeAngle(clampNumber(ship.facing, -Math.PI * 2, Math.PI * 2, 0)),
     sailTrim: clampNumber(ship.sailTrim, -1, 1, 0),
+    sailAngle: clampNumber(ship.sailAngle, -SAIL_ANGLE_LIMIT, SAIL_ANGLE_LIMIT, 0),
     stationRole: typeof player?.shipStationRole === "string" ? player.shipStationRole : null,
     stationId: typeof player?.shipStationId === "string" ? player.shipStationId : null
   };
@@ -2311,6 +2327,35 @@ function isNauticalHullClass(hullClass) {
   return hullClass === "sloop" || hullClass === "brig" || hullClass === "galleon" || hullClass === "manowar";
 }
 
+function oceanWindAt(x = 0, y = 0, now = Date.now()) {
+  const drift = Math.sin((now / 1000) * 0.035 + x * 0.0021 + y * 0.0017) * 0.32;
+  const gust = Math.sin((now / 1000) * 0.011 + x * 0.0007 - y * 0.0013) * 0.14;
+  return {
+    // Direction the wind is blowing toward: sailing this way is downwind.
+    angle: normalizeAngle(OCEAN_WIND_BASE_ANGLE + drift + gust),
+    strength: OCEAN_WIND_STRENGTH
+  };
+}
+
+function optimalSailAngleForWind(shipFacing, windAngle) {
+  const relativeWind = normalizeAngle(windAngle - shipFacing);
+  return clampNumber(relativeWind * 0.55, -SAIL_ANGLE_LIMIT, SAIL_ANGLE_LIMIT, 0);
+}
+
+function nauticalWindSpeedFactor(ship, wind = null, now = Date.now()) {
+  if (!isNauticalHullClass(ship?.hullClass)) return 1;
+  const center = shipCenter(ship);
+  const actualWind = wind || oceanWindAt(center.x, center.y, now);
+  const facing = Number(ship?.facing) || 0;
+  const alignment = Math.cos(normalizeAngle(facing - actualWind.angle));
+  const downwindFactor = 0.55 + ((alignment + 1) / 2) * 0.75;
+  const optimal = optimalSailAngleForWind(facing, actualWind.angle);
+  const sailAngle = clampNumber(ship?.sailAngle, -SAIL_ANGLE_LIMIT, SAIL_ANGLE_LIMIT, 0);
+  const sailError = Math.abs(normalizeAngle(sailAngle - optimal));
+  const sailQuality = Math.max(0, 1 - sailError / SAIL_ANGLE_LIMIT);
+  return clampNumber(downwindFactor * (0.72 + sailQuality * 0.38), 0.38, 1.45, 1);
+}
+
 function getNauticalShipLayout(hullClass) {
   const large = hullClass === "galleon" || hullClass === "manowar";
   const deckW = hullClass === "manowar" ? 24 : hullClass === "galleon" ? 20 : hullClass === "brig" ? 16 : 12;
@@ -2331,12 +2376,12 @@ function getNauticalShipLayout(hullClass) {
       { id: "anchor", role: "engineer", name: "Anchor", x: -halfW + 3.4, y: 0, defaultShieldFacing: "back" },
       { id: "cannon_port", role: "gunner", name: "Port Cannons", x: -0.8, y: -sideY, droneIndex: 0 },
       ...(large ? [{ id: "cannon_starboard", role: "gunner", name: "Starboard Cannons", x: -0.8, y: sideY, droneIndex: 1 }] : []),
-      { id: "sail_trim", role: "sail_trim", name: "Sail Trim", x: 1.2, y: sideY },
+      { id: "sail_trim", role: "sail_trim", name: "Sail Trim", x: 0, y: 0 },
       { id: "lookout", role: "lookout", name: "Lookout", x: -halfW + 3.4, y: -sideY }
     ],
     crewIdle: [
       { x: -halfW + 4.4, y: 0 },
-      { x: -0.5, y: 0 },
+      { x: -0.5, y: sideY },
       { x: halfW - 4.0, y: -1.1 },
       { x: halfW - 4.0, y: 1.1 }
     ],
@@ -3105,6 +3150,7 @@ function createStarterShip(playerId = "starter") {
     worldY: dp.y,
     facing: facingForDockPort(dp),
     speed: SHIP_SPEED,
+    sailAngle: 0,
     laserTier: 1,
     thrustTier: 1,
     deckMode: false,
@@ -3142,6 +3188,7 @@ function sanitizeShip(ship, fallbackId = null) {
     facing: normalizeAngle(clampNumber(ship.facing, -Math.PI * 2, Math.PI * 2, 0)),
     speed: clampNumber(ship.speed, 0, 1000, SHIP_SPEED),
     sailTrim: clampNumber(ship.sailTrim, -1, 1, 0),
+    sailAngle: clampNumber(ship.sailAngle, -SAIL_ANGLE_LIMIT, SAIL_ANGLE_LIMIT, 0),
     laserTier: clampInteger(ship.laserTier ?? 1, 1, 5),
     thrustTier: clampInteger(ship.thrustTier ?? 1, 1, 5),
     deckMode: Boolean(ship.deckMode),
@@ -4348,9 +4395,9 @@ function simulate() {
       const dx = Number(input.right) - Number(input.left);
       const dy = Number(input.down) - Number(input.up);
       if (nauticalPilot) {
-        const turn = dx;
-        if (turn !== 0 && !shipWarping) {
-          ship.facing = normalizeAngle((Number(ship.facing) || 0) + turn * dt * 1.85);
+        const aimLength = Math.hypot(dx, dy);
+        if (aimLength > 0 && !shipWarping) {
+          ship.facing = Math.atan2(dy, dx);
         }
         client.player.facing = Number(ship.facing) || 0;
       } else {
@@ -4363,8 +4410,8 @@ function simulate() {
           }
         }
       }
-      // Nautical ships sail forward with W from current heading; other ships use Engage.
-      const thrusting = nauticalPilot ? Boolean(input.up || input.engage) : Boolean(input.engage);
+      // Ship controls match spaceflight: steering keys set heading/turning, Space engages forward thrust.
+      const thrusting = Boolean(input.engage);
       if (thrusting && !shipWarping) {
         const sp = getPlayerSpeed(client.player);
         const vx = Math.cos(client.player.facing) * sp * dt;
@@ -4417,7 +4464,7 @@ function simulate() {
       setPlayerShipLocal(client.player, Number(station.x) || 0, Number(station.y) || 0);
       client.player.x = seat.x;
       client.player.y = seat.y;
-      client.player.moving = Boolean(thrusting || shipWarping || (nauticalPilot && dx !== 0));
+      client.player.moving = Boolean(thrusting || shipWarping || (nauticalPilot && (input.left || input.right || input.up || input.down)));
     } else if (client.player.ship?.boarded && client.player.ship.deckMode) {
       const ship = client.player.ship;
       const role = client.player.shipStationRole || ship.stationRole;
@@ -4482,9 +4529,30 @@ function simulate() {
           setPlayerShipLocal(client.player, Number(station.x) || 0, Number(station.y) || 0);
           syncPlayerToShipLocal(client.player);
         }
-        const trimDelta = (Number(input.up || input.right) - Number(input.down || input.left)) * dt * 0.5;
-        ship.sailTrim = clampNumber((Number(ship.sailTrim) || 0) + trimDelta, 0, 1, 0);
-        if (input.repair) ship.sailTrim = Math.min(1, (Number(ship.sailTrim) || 0) + dt * 0.7);
+        const turn = Number(input.right) - Number(input.left);
+        if (turn !== 0) {
+          ship.sailAngle = clampNumber((Number(ship.sailAngle) || 0) + turn * dt * SAIL_TRIM_SPEED, -SAIL_ANGLE_LIMIT, SAIL_ANGLE_LIMIT, 0);
+        }
+        if (input.up || input.repair) {
+          const center = shipCenter(ship);
+          const wind = oceanWindAt(center.x, center.y);
+          const optimal = optimalSailAngleForWind(Number(ship.facing) || 0, wind.angle);
+          const current = clampNumber(ship.sailAngle, -SAIL_ANGLE_LIMIT, SAIL_ANGLE_LIMIT, 0);
+          const delta = normalizeAngle(optimal - current);
+          const step = Math.min(Math.abs(delta), SAIL_TRIM_SPEED * 1.35 * dt);
+          ship.sailAngle = clampNumber(current + Math.sign(delta) * step, -SAIL_ANGLE_LIMIT, SAIL_ANGLE_LIMIT, 0);
+        }
+        if (input.down) {
+          const current = clampNumber(ship.sailAngle, -SAIL_ANGLE_LIMIT, SAIL_ANGLE_LIMIT, 0);
+          const step = Math.min(Math.abs(current), SAIL_TRIM_SPEED * dt);
+          ship.sailAngle = current - Math.sign(current) * step;
+        }
+        const center = shipCenter(ship);
+        const wind = oceanWindAt(center.x, center.y);
+        const optimal = optimalSailAngleForWind(Number(ship.facing) || 0, wind.angle);
+        const sailError = Math.abs(normalizeAngle(clampNumber(ship.sailAngle, -SAIL_ANGLE_LIMIT, SAIL_ANGLE_LIMIT, 0) - optimal));
+        ship.sailTrim = clampNumber(1 - sailError / SAIL_ANGLE_LIMIT, 0, 1, 0);
+        client.player.facing = Number(ship.facing) || client.player.facing || 0;
         client.player.moving = Boolean(input.left || input.right || input.up || input.down || input.repair);
       } else if (role === "fishing") {
         if (input.repair && Date.now() - (client.lastFishingAt || 0) >= 2400) {
@@ -8744,10 +8812,10 @@ function getPlayerSpeed(player) {
   if (player.ship?.boarded) {
     const base = Number(player.ship.speed) || SHIP_SPEED;
     const tt = Math.min(5, Math.max(1, Math.floor(Number(player.ship.thrustTier) || 1)));
-    const sailBonus = isNauticalHullClass(player.ship.hullClass)
-      ? Math.max(0, Number(player.ship.sailTrim) || 0) * 3.2
-      : 0;
-    return base + (tt - 1) * 0.55 + sailBonus;
+    const upgradeSpeed = base + (tt - 1) * 0.55;
+    return isNauticalHullClass(player.ship.hullClass)
+      ? upgradeSpeed * nauticalWindSpeedFactor(player.ship)
+      : upgradeSpeed;
   }
   return PLAYER_SPEED + player.stats.speed * STAT_POINT_SPEED + getEquipmentStats(player).speed;
 }

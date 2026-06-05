@@ -291,8 +291,11 @@ const TRADER_CARAVAN_SPOTS = [
 
 const CHUNK_SIZE = 16;
 const chunkCanvasCache = new Map();
+const MAX_CHUNKS_PER_REQUEST = 144;
 const CLIENT_PLAYER_SPEED = 5.2;
 const CLIENT_SHIP_TURN_SPEED = 2.65;
+const SAIL_ANGLE_LIMIT = 1.2;
+const SAIL_TRIM_SPEED = 1.35;
 const LOCAL_CORRECTION_DEADZONE_TILES = 0.65;
 const LOCAL_CORRECTION_BLEND_THRESHOLD_TILES = 1.35;
 const LOCAL_CORRECTION_SNAP_TILES = 3.0;
@@ -1534,6 +1537,7 @@ function handleServerMessage(message) {
   if (message.type === "chunk") {
     const key = chunkKey(message.cx, message.cy);
     state.chunks.set(key, message);
+    chunkCanvasCache.delete(key);
     indexChunkPortals(message);
     indexChunkCaveEntrances(message);
     indexChunkBuildings(message);
@@ -2482,6 +2486,12 @@ function normalizeAngle(value) {
   return angle;
 }
 
+function clampValue(value, min, max, fallback = 0) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
 // True when the viewer is sitting in a pilot / captain / copilot seat —
 // either on their own boarded ship or as a passenger on someone else's.
 function selfIsInPilotSeat(player = state.players.get(state.selfId)) {
@@ -2579,8 +2589,10 @@ function predictLocalPlayer(player, dt) {
       const nauticalPilot = isNauticalHull(player.ship.hullClass);
       const dx = Number(state.input.right) - Number(state.input.left);
       if (nauticalPilot) {
-        if (dx !== 0) {
-          player.ship.facing = normalizeAngle((Number(player.ship.facing) || Number(player.facing) || 0) + dx * dt * 1.85);
+        const dy = Number(state.input.down) - Number(state.input.up);
+        const aimLength = Math.hypot(dx, dy);
+        if (aimLength > 0) {
+          player.ship.facing = Math.atan2(dy, dx);
         }
         player.facing = Number(player.ship.facing) || 0;
       } else {
@@ -2591,7 +2603,7 @@ function predictLocalPlayer(player, dt) {
           player.ship.facing = player.facing;
         }
       }
-      const thrusting = nauticalPilot ? Boolean(state.input.up || state.input.engage) : Boolean(state.input.engage);
+      const thrusting = Boolean(state.input.engage);
       if (thrusting) {
         const vx = Math.cos(player.facing) * speed * dt;
         const vy = Math.sin(player.facing) * speed * dt;
@@ -2617,7 +2629,27 @@ function predictLocalPlayer(player, dt) {
           }
         }
       }
-      player.renderMoving = Boolean(thrusting || (nauticalPilot && dx !== 0));
+      player.renderMoving = Boolean(thrusting || (nauticalPilot && (state.input.left || state.input.right || state.input.up || state.input.down)));
+      return true;
+    }
+    if (role === "sail_trim") {
+      const turn = Number(state.input.right) - Number(state.input.left);
+      if (turn !== 0) {
+        player.ship.sailAngle = clampValue((Number(player.ship.sailAngle) || 0) + turn * dt * SAIL_TRIM_SPEED, -SAIL_ANGLE_LIMIT, SAIL_ANGLE_LIMIT, 0);
+      }
+      if (state.input.up || state.input.repair) {
+        const optimal = Number.isFinite(Number(player.ship.optimalSailAngle)) ? Number(player.ship.optimalSailAngle) : 0;
+        const current = clampValue(player.ship.sailAngle, -SAIL_ANGLE_LIMIT, SAIL_ANGLE_LIMIT, 0);
+        const delta = normalizeAngle(optimal - current);
+        const step = Math.min(Math.abs(delta), SAIL_TRIM_SPEED * 1.35 * dt);
+        player.ship.sailAngle = clampValue(current + Math.sign(delta) * step, -SAIL_ANGLE_LIMIT, SAIL_ANGLE_LIMIT, 0);
+      }
+      if (state.input.down) {
+        const current = clampValue(player.ship.sailAngle, -SAIL_ANGLE_LIMIT, SAIL_ANGLE_LIMIT, 0);
+        const step = Math.min(Math.abs(current), SAIL_TRIM_SPEED * dt);
+        player.ship.sailAngle = current - Math.sign(current) * step;
+      }
+      player.renderMoving = Boolean(state.input.left || state.input.right || state.input.up || state.input.down || state.input.repair);
       return true;
     }
     if (role) {
@@ -3925,9 +3957,6 @@ function wireUi() {
     if (tryRideCaravanAtClick(world.x, world.y)) {
       return;
     }
-    if (!playerAttackBlockedBySafeZone()) {
-      sendAttack(world.x, world.y);
-    }
   });
 
   document.addEventListener("pointerdown", (e) => {
@@ -4059,9 +4088,7 @@ function wireUi() {
       }
       if (isSelfOnShip()) {
         const role = selfShipStationRole();
-        const self = state.players.get(state.selfId);
-        const nauticalPilot = isPilotShipRole(role) && isNauticalHull(self?.ship?.hullClass);
-        state.input.engage = Boolean(!nauticalPilot && (isPilotShipRole(role) || (isSelfFlyingShip() && !role)));
+        state.input.engage = Boolean(isPilotShipRole(role) || (isSelfFlyingShip() && !role));
         state.input.fire = Boolean(role === "gunner");
         state.input.repair = Boolean(["engineer", "sail_trim", "fishing", "lookout"].includes(role));
         sendInput();
@@ -4485,7 +4512,7 @@ function renderAbilityBar() {
             : "Station";
     }
     if (key) {
-      key.textContent = isPilotShipRole(role) && isNauticalHull(self.ship?.hullClass) ? "W/A/D" : role ? "Space" : "E";
+      key.textContent = isPilotShipRole(role) && isNauticalHull(self.ship?.hullClass) ? "Space + WASD" : role ? "Space" : "E";
     }
     const stats = document.getElementById("shipStationStats");
     if (stats) {
@@ -4496,8 +4523,13 @@ function renderAbilityBar() {
       const shieldSections = self.ship?.shieldSections && typeof self.ship.shieldSections === "object" ? self.ship.shieldSections : {};
       const stationId = String(self.ship?.stationId || "engineer_mid");
       const shieldDir = String(shieldSections[stationId] || self.ship?.shieldFacing || "front");
-      stats.classList.toggle("hidden", !shipMode || !["engineer", "gunner", "sail_trim", "fishing", "lookout"].includes(role));
-      if (shipMode && role === "engineer") {
+      const nauticalPilot = shipMode && isPilotShipRole(role) && isNauticalHull(self.ship?.hullClass);
+      stats.classList.toggle("hidden", !shipMode || !(nauticalPilot || ["engineer", "gunner", "sail_trim", "fishing", "lookout"].includes(role)));
+      if (shipMode && nauticalPilot) {
+        const factor = Number.isFinite(Number(self.ship?.windSpeedFactor)) ? Number(self.ship.windSpeedFactor) : 1;
+        const trim = Math.round((Number(self.ship?.sailTrim) || 0) * 100);
+        stats.textContent = `Wind x${factor.toFixed(2)} - sail trim ${trim}%`;
+      } else if (shipMode && role === "engineer") {
         stats.replaceChildren();
         const title = document.createElement("strong");
         title.textContent = stationId === "anchor" ? "Anchor" : "Engineering";
@@ -4517,7 +4549,10 @@ function renderAbilityBar() {
         mode.style.color = isMissile ? "#ff7b3a" : "#67f0ff";
         stats.append(title, mode);
       } else if (shipMode && role === "sail_trim") {
-        stats.textContent = `Sail trim ${Math.round((Number(self.ship?.sailTrim) || 0) * 100)}% - press W/Space to trim faster`;
+        const trim = Math.round((Number(self.ship?.sailTrim) || 0) * 100);
+        const wind = Number.isFinite(Number(self.ship?.windSpeedFactor)) ? `Wind x${Number(self.ship.windSpeedFactor).toFixed(2)}` : "Wind";
+        const angle = Math.round((Number(self.ship?.sailAngle) || 0) * 180 / Math.PI);
+        stats.textContent = `${wind} - sail ${angle} deg - trim ${trim}%`;
       } else if (shipMode && role === "fishing") {
         stats.textContent = "Fishing - hold Space to cast";
       } else if (shipMode && role === "lookout") {
@@ -5673,8 +5708,8 @@ function tryDockPortClickInteract(event) {
 }
 
 function tryShipDeckClickInteract(event) {
-  // While seated at a station (e.g. a gunner aiming), clicks should fire/aim,
-  // not trigger deck interactions. Standing up is done with the interact key.
+  // While seated at a station, clicks should not trigger deck interactions.
+  // Standing up is done with the interact key; firing is keyboard/station control only.
   const selfSeated = state.players.get(state.selfId);
   if (selfSeated?.ship?.boarded && selfSeated.ship.stationRole) {
     return false;
@@ -7698,12 +7733,14 @@ function requestVisibleChunks() {
     return;
   }
 
-  const zoom = state.zoom || 1;
+  const zoom = getEffectiveWorldZoom(state.players.get(state.selfId));
   const widthTiles = Math.ceil(canvas.width / (TILE_SIZE * zoom));
   const heightTiles = Math.ceil(canvas.height / (TILE_SIZE * zoom));
   const centerTileX = Math.floor(state.camera.x / TILE_SIZE);
   const centerTileY = Math.floor(state.camera.y / TILE_SIZE);
-  const padChunks = isNauticalWorld() ? 3 : 1;
+  const padChunks = isNauticalWorld() ? 5 : 1;
+  const centerCx = Math.floor(centerTileX / CHUNK_SIZE);
+  const centerCy = Math.floor(centerTileY / CHUNK_SIZE);
   const minCx = Math.floor((centerTileX - widthTiles / 2) / CHUNK_SIZE) - padChunks;
   const maxCx = Math.floor((centerTileX + widthTiles / 2) / CHUNK_SIZE) + padChunks;
   const minCy = Math.floor((centerTileY - heightTiles / 2) / CHUNK_SIZE) - padChunks;
@@ -7714,14 +7751,22 @@ function requestVisibleChunks() {
     for (let cx = minCx; cx <= maxCx; cx += 1) {
       const key = chunkKey(cx, cy);
       if (!state.chunks.has(key) && !state.requestedChunks.has(key)) {
-        state.requestedChunks.add(key);
         chunks.push([cx, cy]);
       }
     }
   }
 
   if (chunks.length > 0) {
-    send({ type: "requestChunks", chunks });
+    chunks.sort((a, b) => {
+      const da = Math.hypot(a[0] - centerCx, a[1] - centerCy);
+      const db = Math.hypot(b[0] - centerCx, b[1] - centerCy);
+      return da - db;
+    });
+    const request = chunks.slice(0, MAX_CHUNKS_PER_REQUEST);
+    for (const [cx, cy] of request) {
+      state.requestedChunks.add(chunkKey(cx, cy));
+    }
+    send({ type: "requestChunks", chunks: request });
   }
 }
 
@@ -8189,6 +8234,8 @@ function draw() {
       ? "#07111a"
       : state.worldTheme === DUNGEON_THEME
         ? "#000000"
+        : state.worldTheme === NAUTICAL_THEME
+          ? "#1f5a82"
         : "#132118";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -8857,7 +8904,7 @@ function drawCaravanSprite(sx, sy, facingRight) {
 }
 
 function drawWorld() {
-  const zoom = state.zoom || 1;
+  const zoom = getEffectiveWorldZoom(state.players.get(state.selfId));
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
   const visHalfW = halfW / zoom;
@@ -8869,7 +8916,7 @@ function drawWorld() {
 
   for (let cy = minChunkY; cy <= maxChunkY; cy++) {
     for (let cx = minChunkX; cx <= maxChunkX; cx++) {
-      if (!state.chunks.has(`${cx},${cy}`)) continue;
+      if (!state.chunks.has(`${cx},${cy}`) && !isNauticalWorld()) continue;
       const chunkCanvas = getChunkCanvas(cx, cy);
       const sx = Math.floor(cx * CHUNK_SIZE * TILE_SIZE - state.camera.x + halfW);
       const sy = Math.floor(cy * CHUNK_SIZE * TILE_SIZE - state.camera.y + halfH);
@@ -9501,12 +9548,12 @@ function getShipLayout(shipOrClass = "skiff") {
         { id: "anchor", role: "engineer", name: "Anchor", x: -halfW + 3.4, y: 0, defaultShieldFacing: "back" },
         { id: "cannon_port", role: "gunner", name: "Port Cannons", x: -0.8, y: -sideY, droneIndex: 0 },
         ...(large ? [{ id: "cannon_starboard", role: "gunner", name: "Starboard Cannons", x: -0.8, y: sideY, droneIndex: 1 }] : []),
-        { id: "sail_trim", role: "sail_trim", name: "Sail Trim", x: 1.2, y: sideY },
+        { id: "sail_trim", role: "sail_trim", name: "Sail Trim", x: 0, y: 0 },
         { id: "lookout", role: "lookout", name: "Lookout", x: -halfW + 3.4, y: -sideY }
       ],
       crewIdle: [
         { x: -halfW + 4.4, y: 0 },
-        { x: -0.5, y: 0 },
+        { x: -0.5, y: sideY },
         { x: halfW - 4.0, y: -1.1 },
         { x: halfW - 4.0, y: 1.1 }
       ],
@@ -10120,7 +10167,39 @@ function buildShipHullPath(hullClass, x, y, w, h) {
   ctx.closePath();
 }
 
-function drawSailShipShape(hullClass, x, y, w, h, color) {
+function drawAngledSail(cx, cy, w, h, sailAngle = 0, fill = "rgba(245, 230, 200, 0.92)") {
+  const angle = clampValue(sailAngle, -SAIL_ANGLE_LIMIT, SAIL_ANGLE_LIMIT, 0);
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(angle);
+  ctx.strokeStyle = "#2a1808";
+  ctx.lineWidth = Math.max(2, h * 0.02);
+  ctx.beginPath();
+  ctx.moveTo(-w * 0.22, 0);
+  ctx.lineTo(w * 0.24, 0);
+  ctx.stroke();
+  ctx.fillStyle = fill;
+  ctx.strokeStyle = "rgba(42, 24, 8, 0.75)";
+  ctx.lineWidth = Math.max(1.4, h * 0.012);
+  ctx.beginPath();
+  ctx.moveTo(-w * 0.02, -h * 0.26);
+  ctx.quadraticCurveTo(w * 0.28, -h * 0.15, w * 0.18, 0);
+  ctx.quadraticCurveTo(w * 0.26, h * 0.16, -w * 0.02, h * 0.27);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(42, 24, 8, 0.32)";
+  ctx.lineWidth = 1;
+  for (let rib = -0.16; rib <= 0.16; rib += 0.08) {
+    ctx.beginPath();
+    ctx.moveTo(-w * 0.01, h * rib);
+    ctx.lineTo(w * 0.17, h * rib * 0.45);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawSailShipShape(hullClass, x, y, w, h, color, sailAngle = 0) {
   ctx.fillStyle = "#3b2614";
   buildShipHullPath(hullClass, x, y, w, h);
   ctx.fill();
@@ -10150,23 +10229,16 @@ function drawSailShipShape(hullClass, x, y, w, h, color) {
   ctx.stroke();
 
   ctx.fillStyle = "#2a1808";
-  ctx.fillRect(x + w * 0.47, y + h * 0.10, Math.max(3, w * 0.035), h * 0.80);
-  ctx.strokeStyle = "rgba(245, 230, 200, 0.86)";
-  ctx.lineWidth = Math.max(2, h * 0.045);
-  ctx.beginPath();
-  ctx.moveTo(x + w * 0.32, y + h * 0.32);
-  ctx.lineTo(x + w * 0.65, y + h * 0.30);
-  ctx.moveTo(x + w * 0.32, y + h * 0.68);
-  ctx.lineTo(x + w * 0.65, y + h * 0.70);
-  ctx.stroke();
+  ctx.fillRect(x + w * 0.49, y + h * 0.10, Math.max(3, w * 0.035), h * 0.80);
+  drawAngledSail(x + w * 0.50, y + h * 0.50, w, h, sailAngle);
   ctx.strokeStyle = "#2a1808";
   ctx.lineWidth = 2;
   ctx.strokeRect(x + w * 0.76, y + h * 0.39, w * 0.07, h * 0.22);
 }
 
-function drawShipHullShape(hullClass, x, y, w, h, color) {
+function drawShipHullShape(hullClass, x, y, w, h, color, ship = null) {
   if (isNauticalHull(hullClass)) {
-    drawSailShipShape(hullClass, x, y, w, h, color);
+    drawSailShipShape(hullClass, x, y, w, h, color, Number(ship?.sailAngle) || 0);
     return;
   }
   ctx.fillStyle = "rgba(18, 30, 48, 0.96)";
@@ -10238,7 +10310,7 @@ function drawShipVehicleObject(obj, sx, sy, boarded = false, facing = 0, thrust 
   if (!isNauticalHull(hullClass)) {
     drawEllipseShadow(x - 6, y + h * 0.84, w + 12, 10, 0.22);
   }
-  drawShipHullShape(hullClass, x, y, w, h, color);
+  drawShipHullShape(hullClass, x, y, w, h, color, obj);
   ctx.restore();
   // Combat drones orbit sci-fi hulls when underway; sailing ships use deck cannons instead.
   if (boarded && !isNauticalHull(hullClass)) {
@@ -10428,6 +10500,20 @@ function drawShipStationObject(ship, station, wx, wy) {
       drawStationActiveRing(wx, wy, active, "#f5deb3", 18);
       return;
     }
+    if (station.role === "sail_trim") {
+      ctx.save();
+      ctx.translate(wx, wy);
+      ctx.rotate(Number(ship?.sailAngle) || 0);
+      ctx.strokeStyle = active ? "#fff2cf" : "#2a1808";
+      ctx.lineWidth = active ? 4 : 3;
+      ctx.beginPath();
+      ctx.moveTo(-20, 0);
+      ctx.lineTo(22, 0);
+      ctx.stroke();
+      ctx.restore();
+      drawStationActiveRing(wx, wy, active, "#f5deb3", 20);
+      return;
+    }
   }
   if (station.role === "gunner") {
     drawGunnerStation(wx, wy, active, "#ff8f6b");
@@ -10524,14 +10610,7 @@ function drawShipDeckObject(ship, sx, sy) {
     } else if (amenity.kind === "mast") {
       ctx.fillStyle = "#2a1808";
       ctx.fillRect(ax - 5, ay - h * 0.38, 10, h * 0.76);
-      ctx.strokeStyle = "rgba(245, 230, 200, 0.9)";
-      ctx.lineWidth = 5;
-      ctx.beginPath();
-      ctx.moveTo(ax - w * 0.16, ay - h * 0.23);
-      ctx.lineTo(ax + w * 0.20, ay - h * 0.25);
-      ctx.moveTo(ax - w * 0.16, ay + h * 0.23);
-      ctx.lineTo(ax + w * 0.20, ay + h * 0.25);
-      ctx.stroke();
+      drawAngledSail(ax, ay, w * 0.74, h * 0.82, Number(ship?.sailAngle) || 0, "rgba(245, 230, 200, 0.9)");
     } else if (amenity.kind === "anchor") {
       ctx.strokeStyle = "#2a1808";
       ctx.lineWidth = 4;
@@ -14093,7 +14172,7 @@ function drawMobShipPirate(entity, x, y) {
   ctx.translate(x, y);
   ctx.rotate(facing);
   drawEllipseShadow(-w / 2 - 4, h * 0.36, w + 8, 8, 0.28);
-  drawShipHullShape(hullClass, -w / 2, -h / 2, w, h, color);
+  drawShipHullShape(hullClass, -w / 2, -h / 2, w, h, color, entity);
   ctx.restore();
   if (maxShield > 0 && shield > 0) {
     const recentHit = performance.now() - (Number(entity.lastShieldHitAt) || 0) < 420;
