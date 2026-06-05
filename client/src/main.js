@@ -4543,7 +4543,7 @@ function renderAbilityBar() {
             : "Station";
     }
     if (key) {
-      key.textContent = isPilotShipRole(role) && isNauticalHull(self.ship?.hullClass) ? "W/Space + A/D" : role ? "Space" : "E";
+      key.textContent = isPilotShipRole(role) && isNauticalHull(self.ship?.hullClass) ? "WASD + Space" : role ? "Space" : "E";
     }
     const stats = document.getElementById("shipStationStats");
     if (stats) {
@@ -9491,10 +9491,13 @@ function drawCargoCrateObject(obj, sx, sy) {
 }
 
 function shipHullDimensions(hullClass) {
-  if (hullClass === "galleon" || hullClass === "crew3" || hullClass === "cruiser") return { w: 108, h: 54 };
-  if (hullClass === "brig" || hullClass === "crew2" || hullClass === "corvette") return { w: 96, h: 48 };
-  if (hullClass === "manowar" || hullClass === "crew4" || hullClass === "frigate") return { w: 122, h: 58 };
-  if (hullClass === "sloop") return { w: 68, h: 38 };
+  if (hullClass === "galleon") return { w: 126, h: 60 };
+  if (hullClass === "brig") return { w: 112, h: 54 };
+  if (hullClass === "manowar") return { w: 142, h: 66 };
+  if (hullClass === "sloop") return { w: 82, h: 44 };
+  if (hullClass === "crew3" || hullClass === "cruiser") return { w: 108, h: 54 };
+  if (hullClass === "crew2" || hullClass === "corvette") return { w: 96, h: 48 };
+  if (hullClass === "crew4" || hullClass === "frigate") return { w: 122, h: 58 };
   // Exteriors stay modest so crew ships don't dwarf others in the shared view — the
   // size jump between tiers is felt inside (deckW/deckH), not from outside.
   if (hullClass === "crew4" || hullClass === "frigate") return { w: 116, h: 56 };
@@ -10222,32 +10225,32 @@ function buildShipHullPath(hullClass, x, y, w, h) {
 }
 
 function drawAngledSail(cx, cy, w, h, sailAngle = 0, fill = "rgba(245, 230, 200, 0.92)") {
-  const angle = clampValue(sailAngle * 1.35, -1.45, 1.45, 0);
+  const angle = clampValue(sailAngle * 0.8, -0.72, 0.72, 0);
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(angle);
   ctx.strokeStyle = "#2a1808";
-  ctx.lineWidth = Math.max(2, h * 0.02);
+  ctx.lineWidth = Math.max(2, h * 0.026);
   ctx.beginPath();
-  ctx.moveTo(-w * 0.28, 0);
-  ctx.lineTo(w * 0.32, 0);
+  ctx.moveTo(-w * 0.30, 0);
+  ctx.lineTo(w * 0.30, 0);
   ctx.stroke();
   ctx.fillStyle = fill;
   ctx.strokeStyle = "rgba(42, 24, 8, 0.75)";
-  ctx.lineWidth = Math.max(1.4, h * 0.012);
+  ctx.lineWidth = Math.max(1.4, h * 0.018);
   ctx.beginPath();
-  ctx.moveTo(-w * 0.04, -h * 0.30);
-  ctx.quadraticCurveTo(w * 0.36, -h * 0.18, w * 0.24, 0);
-  ctx.quadraticCurveTo(w * 0.34, h * 0.19, -w * 0.04, h * 0.31);
+  ctx.moveTo(-w * 0.20, -h * 0.19);
+  ctx.quadraticCurveTo(w * 0.22, -h * 0.13, w * 0.25, -h * 0.02);
+  ctx.quadraticCurveTo(w * 0.21, h * 0.13, -w * 0.20, h * 0.19);
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
   ctx.strokeStyle = "rgba(42, 24, 8, 0.32)";
   ctx.lineWidth = 1;
-  for (let rib = -0.16; rib <= 0.16; rib += 0.08) {
+  for (let rib = -0.10; rib <= 0.10; rib += 0.05) {
     ctx.beginPath();
-    ctx.moveTo(-w * 0.01, h * rib);
-    ctx.lineTo(w * 0.17, h * rib * 0.45);
+    ctx.moveTo(-w * 0.16, h * rib);
+    ctx.lineTo(w * 0.16, h * rib * 0.62);
     ctx.stroke();
   }
   ctx.restore();
@@ -10283,8 +10286,8 @@ function drawSailShipShape(hullClass, x, y, w, h, color, sailAngle = 0) {
   ctx.stroke();
 
   ctx.fillStyle = "#2a1808";
-  ctx.fillRect(x + w * 0.61, y + h * 0.10, Math.max(3, w * 0.035), h * 0.80);
-  drawAngledSail(x + w * 0.62, y + h * 0.50, w, h, sailAngle);
+  ctx.fillRect(x + w * 0.61, y + h * 0.20, Math.max(3, w * 0.028), h * 0.60);
+  drawAngledSail(x + w * 0.62, y + h * 0.50, w * 0.62, h * 0.58, sailAngle);
   ctx.strokeStyle = "#2a1808";
   ctx.lineWidth = 2;
   ctx.strokeRect(x + w * 0.76, y + h * 0.39, w * 0.07, h * 0.22);
@@ -10695,7 +10698,7 @@ function drawShipDeckObject(ship, sx, sy) {
     } else if (amenity.kind === "mast") {
       ctx.fillStyle = "#2a1808";
       ctx.fillRect(ax - 5, ay - h * 0.38, 10, h * 0.76);
-      drawAngledSail(ax, ay, w * 0.74, h * 0.82, Number(ship?.sailAngle) || 0, "rgba(245, 230, 200, 0.9)");
+      drawAngledSail(ax, ay, w * 0.48, h * 0.46, Number(ship?.sailAngle) || 0, "rgba(245, 230, 200, 0.9)");
     } else if (amenity.kind === "anchor") {
       ctx.strokeStyle = "#2a1808";
       ctx.lineWidth = 4;
@@ -10847,17 +10850,30 @@ function drawShipDeckObject(ship, sx, sy) {
   ctx.restore();
 }
 
-function withRotatedNauticalDeck(ship, shipSx, shipSy, callback) {
-  const facing = Number.isFinite(Number(ship?.facing)) ? Number(ship.facing) : 0;
+const NAUTICAL_HELM_SCREEN_ROTATION = -Math.PI / 2;
+
+function withNauticalDeckRotation(shipSx, shipSy, rotation, callback) {
   ctx.save();
   ctx.translate(shipSx, shipSy);
-  ctx.rotate(facing);
+  ctx.rotate(Number.isFinite(rotation) ? rotation : 0);
   callback();
   ctx.restore();
 }
 
+function withRotatedNauticalDeck(ship, shipSx, shipSy, callback) {
+  const facing = Number.isFinite(Number(ship?.facing)) ? Number(ship.facing) : 0;
+  withNauticalDeckRotation(shipSx, shipSy, facing, callback);
+}
+
 function drawRotatedNauticalDeck(ship, shipSx, shipSy) {
   withRotatedNauticalDeck(ship, shipSx, shipSy, () => {
+    drawShipDeckObject(ship, 0, 0);
+    drawShipCrew(ship, 0, 0);
+  });
+}
+
+function drawHelmNauticalDeck(ship, shipSx, shipSy) {
+  withNauticalDeckRotation(shipSx, shipSy, NAUTICAL_HELM_SCREEN_ROTATION, () => {
     drawShipDeckObject(ship, 0, 0);
     drawShipCrew(ship, 0, 0);
   });
@@ -10895,12 +10911,17 @@ function drawAmbientShipCrew(ship, shipSx, shipSy) {
   });
 }
 
-function drawCharacterOnRotatedNauticalDeck(entity, ship, center, shipSx, shipSy, isNpc, poseOpts = {}) {
+function drawCharacterOnNauticalDeckRotation(entity, center, shipSx, shipSy, rotation, isNpc, poseOpts = {}) {
   const localX = ((Number.isFinite(entity.renderX) ? entity.renderX : entity.x) - center.x) * TILE_SIZE;
   const localY = ((Number.isFinite(entity.renderY) ? entity.renderY : entity.y) - center.y) * TILE_SIZE;
-  withRotatedNauticalDeck(ship, shipSx, shipSy, () => {
+  withNauticalDeckRotation(shipSx, shipSy, rotation, () => {
     drawCharacter(entity, localX, localY, isNpc, poseOpts);
   });
+}
+
+function drawCharacterOnRotatedNauticalDeck(entity, ship, center, shipSx, shipSy, isNpc, poseOpts = {}) {
+  const facing = Number.isFinite(Number(ship?.facing)) ? Number(ship.facing) : 0;
+  drawCharacterOnNauticalDeckRotation(entity, center, shipSx, shipSy, facing, isNpc, poseOpts);
 }
 
 // Draws the bundled NPC crew standing at their posts (or idling) inside the
@@ -12308,6 +12329,7 @@ function drawPlayers() {
       const shipId = entity.ship.id;
       const nauticalDeck = isNauticalHull(entity.ship.hullClass);
       const sameAsViewer = shipId && shipId === viewerInteriorShipId;
+      const viewerAtNauticalHelm = Boolean(sameAsViewer && nauticalDeck && selfPiloting);
       if (sameAsViewer || nauticalDeck) {
         // Viewer is inside this ship and not in a pilot seat — render the interior view once and the crew inside it.
         // The interior view stays "locked" to ship orientation — counter-rotate so the deck and crew don't spin
@@ -12318,7 +12340,9 @@ function drawPlayers() {
           const shipSx = Math.floor(center.x * TILE_SIZE - state.camera.x + halfW);
           const shipSy = Math.floor(center.y * TILE_SIZE - state.camera.y + halfH);
           const drawDeck = () => {
-            if (nauticalDeck && !sameAsViewer) {
+            if (viewerAtNauticalHelm) {
+              drawHelmNauticalDeck(entity.ship, shipSx, shipSy);
+            } else if (nauticalDeck && !sameAsViewer) {
               drawRotatedNauticalDeck(entity.ship, shipSx, shipSy);
             } else {
               drawShipDeckObject(entity.ship, shipSx, shipSy);
@@ -12338,6 +12362,11 @@ function drawPlayers() {
             const shipSx = Math.floor(center.x * TILE_SIZE - state.camera.x + halfW);
             const shipSy = Math.floor(center.y * TILE_SIZE - state.camera.y + halfH);
             drawCharacterOnRotatedNauticalDeck(entity, entity.ship, center, shipSx, shipSy, isNpc, shipAmenityPoseOpts(entity, { restingBench: seated }));
+          } else if (viewerAtNauticalHelm) {
+            const center = shipCenter(entity.ship, entity);
+            const shipSx = Math.floor(center.x * TILE_SIZE - state.camera.x + halfW);
+            const shipSy = Math.floor(center.y * TILE_SIZE - state.camera.y + halfH);
+            drawCharacterOnNauticalDeckRotation(entity, center, shipSx, shipSy, NAUTICAL_HELM_SCREEN_ROTATION, isNpc, shipAmenityPoseOpts(entity, { restingBench: seated }));
           } else {
             drawCharacter(entity, sx, sy, isNpc, shipAmenityPoseOpts(entity, { restingBench: seated }));
             drawShieldBuff(entity, sx, sy);
