@@ -1884,7 +1884,21 @@ function handleServerMessage(message) {
     } else if (message.message === "party_disembarked") {
       appendChat({ kind: "system", name: "Realm", text: "Disembarked from crewmate's ship" });
     } else if (message.message === "ship_dock_engaged") {
-      appendChat({ kind: "system", name: "Realm", text: "Auto-dock engaged" });
+      appendChat({ kind: "system", name: "Realm", text: `Auto-dock engaged — gliding in to ${message.portName || "the pier"}` });
+    } else if (message.message === "ship_dock_cancelled") {
+      appendChat({ kind: "system", name: "Realm", text: "Auto-dock cancelled — helm control restored" });
+    } else if (message.message === "ship_moored") {
+      appendChat({ kind: "system", name: "Realm", text: `Moored at ${message.portName || "the pier"} — walk the side plank to step ashore` });
+    } else if (message.message === "ship_set_sail") {
+      appendChat({ kind: "system", name: "Realm", text: `${message.shipName || "Ship"} casts off — W to throttle up, A/D to steer` });
+    } else if (message.message === "ship_crew_dismissed") {
+      appendChat({ kind: "system", name: "Realm", text: `${message.crewName || "Crew member"} dismissed — they walk the plank and swim off` });
+    } else if (message.message === "ship_crew_not_owner") {
+      appendChat({ kind: "system", name: "Realm", text: "Only the captain can dismiss crew" });
+    } else if (message.message === "ship_plank_disembarked") {
+      appendChat({ kind: "system", name: "Realm", text: `Stepped off ${message.shipName || "the ship"}` });
+    } else if (message.message === "ship_plank_overboard") {
+      appendChat({ kind: "system", name: "Realm", text: `You walk the plank off ${message.shipName || "your ship"} — it lies at anchor here` });
     } else if (message.message === "ship_dock_not_nearby") {
       appendChat({ kind: "system", name: "Realm", text: "No dock port within range" });
     } else if (message.message === "ship_dock_not_piloting") {
@@ -2179,8 +2193,8 @@ function applySnapshot(players) {
     const isSelf = snapshot.id === state.selfId;
     const posGuarded = isSelf && now < state.teleportGuardUntil;
     if (snapshot.ship?.boarded && snapshot.ship.deckMode && player.ship?.boarded && player.ship.deckMode) {
-      const oldCenter = shipCenter(player.ship, player);
-      const newCenter = shipCenter(snapshot.ship, snapshot);
+      const oldCenter = shipCenterRaw(player.ship, player);
+      const newCenter = shipCenterRaw(snapshot.ship, snapshot);
       const dx = newCenter.x - oldCenter.x;
       const dy = newCenter.y - oldCenter.y;
       if (Number.isFinite(dx) && Number.isFinite(dy) && (dx || dy)) {
@@ -2188,12 +2202,20 @@ function applySnapshot(players) {
         player.renderY += dy;
       }
     }
+    const prevShip = player.ship;
     Object.assign(player, snapshot, {
       targetX: posGuarded ? player.targetX : snapshot.x,
       targetY: posGuarded ? player.targetY : snapshot.y,
       renderMoving: Boolean(snapshot.moving),
       lastSeen: now
     });
+    // Carry ship render-interpolation state across snapshot replaces so hulls
+    // glide instead of stepping at the snapshot rate.
+    if (player.ship && prevShip && prevShip.id === player.ship.id) {
+      player.ship.renderWorldX = prevShip.renderWorldX;
+      player.ship.renderWorldY = prevShip.renderWorldY;
+      player.ship.renderFacing = prevShip.renderFacing;
+    }
   }
 
   for (const [id] of state.players) {
@@ -2430,6 +2452,34 @@ function updateSmoothPlayers(dt) {
     player.renderX += (player.targetX - player.renderX) * follow;
     player.renderY += (player.targetY - player.renderY) * follow;
     player.renderMoving = isMoving || Math.hypot(player.targetX - player.renderX, player.targetY - player.renderY) > 0.01;
+
+    // Smooth the ship hull position/heading so sailing reads fluid.
+    const ship = player.ship;
+    if (ship) {
+      const shipTx = Number(ship.worldX);
+      const shipTy = Number(ship.worldY);
+      if (Number.isFinite(shipTx) && Number.isFinite(shipTy)) {
+        if (
+          !Number.isFinite(Number(ship.renderWorldX)) ||
+          !Number.isFinite(Number(ship.renderWorldY)) ||
+          Math.hypot(shipTx - ship.renderWorldX, shipTy - ship.renderWorldY) > 14
+        ) {
+          ship.renderWorldX = shipTx;
+          ship.renderWorldY = shipTy;
+        } else {
+          const shipFollow = 1 - Math.pow(0.0004, dt);
+          ship.renderWorldX += (shipTx - ship.renderWorldX) * shipFollow;
+          ship.renderWorldY += (shipTy - ship.renderWorldY) * shipFollow;
+        }
+      }
+      const shipTf = Number(ship.facing) || 0;
+      if (!Number.isFinite(Number(ship.renderFacing))) {
+        ship.renderFacing = shipTf;
+      } else {
+        const facingDelta = normalizeAngle(shipTf - ship.renderFacing);
+        ship.renderFacing = normalizeAngle(ship.renderFacing + facingDelta * Math.min(1, 9 * dt));
+      }
+    }
     if (player.renderMoving || player.renderSwimming) {
       const rate = player.renderSwimming ? (player.renderMoving ? 6.4 : 2.9) : 9;
       player.walkPhase = (player.walkPhase || 0) + dt * rate * walkStyleRate(player.walkStyle);
@@ -2539,7 +2589,7 @@ function getNauticalPilotCamera(player = state.players.get(state.selfId)) {
   if (!ship?.boarded || !ship.deckMode || !isNauticalHull(ship.hullClass)) return null;
   if (!isPilotShipRole(ship.stationRole)) return null;
   const center = shipCenter(ship, player);
-  const facing = Number.isFinite(Number(ship.facing)) ? Number(ship.facing) : Number(player?.facing) || 0;
+  const facing = shipRenderFacing(ship);
   const layout = getShipLayout(ship);
   const aftOffset = Math.max(4.8, Math.min(9.5, layout.deckW * 0.42));
   return {
@@ -4043,6 +4093,8 @@ function wireUi() {
         send({ type: "shipCrewCommand", crewId, role: "fishing" });
       } else if (act === "crew_role:lookout") {
         send({ type: "shipCrewCommand", crewId, role: "lookout" });
+      } else if (act === "crew_dismiss") {
+        send({ type: "shipCrewCommand", crewId, action: "dismiss" });
       } else if (act.startsWith("crew_station:")) {
         send({ type: "shipCrewCommand", crewId, stationId: act.slice("crew_station:".length) });
       }
@@ -4080,6 +4132,7 @@ function wireUi() {
     const world = screenEventToWorld(event);
     state.lastPointerWorldX = world.x;
     state.lastPointerWorldY = world.y;
+    updateShipCannonAim(world);
     refreshWorldHoverTooltip(event);
   });
 
@@ -4453,6 +4506,40 @@ function sendInput() {
   });
 }
 
+// Interior views render the world rotated around the camera without undoing
+// that rotation in screenPointToWorld — convert a pointer point back to true
+// world coordinates for things that need real geometry (cannon aim).
+function pointerWorldToTrueWorld(world) {
+  if (!isSelfInsideShipInterior()) return world;
+  const rot = Number(state.camera.rotation) || 0;
+  if (!rot) return world;
+  const cx = state.camera.x / TILE_SIZE;
+  const cy = state.camera.y / TILE_SIZE;
+  const dx = world.x - cx;
+  const dy = world.y - cy;
+  const cos = Math.cos(rot);
+  const sin = Math.sin(rot);
+  return { x: cx + dx * cos + dy * sin, y: cy - dx * sin + dy * cos };
+}
+
+// Track the mouse for nautical gunners: the server slews the cannon barrel
+// toward this point at a fixed traverse rate.
+let lastCannonAimSentAt = 0;
+function updateShipCannonAim(world) {
+  if (!state.joined || selfShipStationRole() !== "gunner") return;
+  const self = state.players.get(state.selfId);
+  const ship = self?.ship;
+  if (!ship || !isNauticalHull(ship.hullClass)) return;
+  const aim = pointerWorldToTrueWorld(world);
+  state.input.aimX = Number(aim.x.toFixed(3));
+  state.input.aimY = Number(aim.y.toFixed(3));
+  const now = performance.now();
+  if (now - lastCannonAimSentAt > 120) {
+    lastCannonAimSentAt = now;
+    sendInput();
+  }
+}
+
 let homeCastTimer = null;
 const HOME_CAST_MS = 3000;
 
@@ -4544,7 +4631,9 @@ function renderAbilityBar() {
     }
     if (button) {
       const nauticalPilot = isPilotShipRole(role) && isNauticalHull(self.ship?.hullClass);
-      const canDock = shipMode && nauticalPilot && isShipNearAnyDockPort(self.ship);
+      const docking = Boolean(nauticalPilot && self.ship?.docking);
+      const moored = Boolean(nauticalPilot && self.ship?.moored);
+      const canDock = shipMode && nauticalPilot && !docking && !moored && isShipNearAnyDockPort(self.ship);
       button.dataset.dockAction = canDock ? "dock" : "";
       button.textContent = role === "gunner"
         ? (isNauticalHull(self.ship?.hullClass) ? "Fire Cannon" : "Fire")
@@ -4558,6 +4647,10 @@ function renderAbilityBar() {
               ? "Fish"
               : role === "lookout"
                 ? "Scan Horizon"
+          : docking
+            ? "Docking..."
+          : moored
+            ? "Set Sail"
           : canDock
             ? "Dock"
           : isPilotShipRole(role) || !self.ship?.deckMode
@@ -4565,7 +4658,7 @@ function renderAbilityBar() {
             : "Station";
     }
     if (key) {
-      key.textContent = isPilotShipRole(role) && isNauticalHull(self.ship?.hullClass) ? "WASD + Space" : role ? "Space" : "E";
+      key.textContent = isPilotShipRole(role) && isNauticalHull(self.ship?.hullClass) ? "W/S throttle - A/D steer" : role ? "Space" : "E";
     }
     const stats = document.getElementById("shipStationStats");
     if (stats) {
@@ -4581,7 +4674,14 @@ function renderAbilityBar() {
       if (shipMode && nauticalPilot) {
         const factor = Number.isFinite(Number(self.ship?.windSpeedFactor)) ? Number(self.ship.windSpeedFactor) : 1;
         const trim = Math.round((Number(self.ship?.sailTrim) || 0) * 100);
-        stats.textContent = `Wind x${factor.toFixed(2)} - sail trim ${trim}%`;
+        const throttle = Math.round((Number(self.ship?.throttle) || 0) * 100);
+        const speed = Math.abs(Number(self.ship?.sailSpeed) || 0);
+        const status = self.ship?.docking
+          ? "AUTO-DOCKING"
+          : self.ship?.moored
+            ? "MOORED - W to cast off"
+            : `throttle ${throttle}% - ${speed.toFixed(1)} kn`;
+        stats.textContent = `${status} | wind x${factor.toFixed(2)} - sail trim ${trim}%`;
       } else if (shipMode && role === "engineer") {
         stats.replaceChildren();
         const title = document.createElement("strong");
@@ -9620,7 +9720,12 @@ function getShipLayout(shipOrClass = "skiff") {
       deckW,
       deckH,
       entry: { x: -halfW + 2.0, y: 0 },
-      plank: { x: -halfW - 0.55, y: 0, w: 2.2, h: 1.8 },
+      // Boarding planks bridge over both rails amidships (matches the server).
+      plank: { x: 0, y: deckH / 2 + 0.8, w: SHIP_PLANK_HALF_WIDTH * 2, h: SHIP_PLANK_REACH },
+      planks: [
+        { id: "plank_port", x: 0, side: -1 },
+        { id: "plank_starboard", x: 0, side: 1 }
+      ],
       teleporter: null,
       stations: [
         { id: "helm", role: "pilot", name: "Helm", x: halfW - 3.2, y: 0 },
@@ -9747,11 +9852,69 @@ function isPilotShipRole(role) {
   return role === "pilot" || role === "captain" || role === "copilot";
 }
 
-function shipCenter(ship, fallback) {
+const SHIP_PLANK_REACH = 1.6;
+const SHIP_PLANK_HALF_WIDTH = 1.05;
+
+// Raw server-authoritative center — used for deck-local math so positions stay
+// consistent with the server's coordinate scheme.
+function shipCenterRaw(ship, fallback) {
   return {
     x: Number.isFinite(Number(ship?.worldX)) ? Number(ship.worldX) : Number(ship?.dockX) || fallback?.x || 0,
     y: Number.isFinite(Number(ship?.worldY)) ? Number(ship.worldY) : Number(ship?.dockY) || fallback?.y || 0
   };
+}
+
+// Smoothed center for drawing/camera: hulls glide between snapshots instead of
+// stepping. Falls back to the raw center until interpolation state exists.
+function shipCenter(ship, fallback) {
+  if (Number.isFinite(Number(ship?.renderWorldX)) && Number.isFinite(Number(ship?.renderWorldY))) {
+    return { x: Number(ship.renderWorldX), y: Number(ship.renderWorldY) };
+  }
+  return shipCenterRaw(ship, fallback);
+}
+
+function shipRenderFacing(ship) {
+  const facing = Number(ship?.renderFacing);
+  return Number.isFinite(facing) ? facing : Number(ship?.facing) || 0;
+}
+
+function shipWorldToLocalClient(ship, wx, wy) {
+  const center = shipCenterRaw(ship);
+  const facing = Number(ship?.facing) || 0;
+  const cos = Math.cos(facing);
+  const sin = Math.sin(facing);
+  const dx = wx - center.x;
+  const dy = wy - center.y;
+  return { x: cos * dx + sin * dy, y: -sin * dx + cos * dy };
+}
+
+function shipLocalToWorldClient(ship, localX, localY) {
+  const center = shipCenterRaw(ship);
+  const facing = Number(ship?.facing) || 0;
+  const cos = Math.cos(facing);
+  const sin = Math.sin(facing);
+  return {
+    x: center.x + cos * localX - sin * localY,
+    y: center.y + sin * localX + cos * localY
+  };
+}
+
+// Plank corridor (deck-local) covering a world point, or null.
+function clientPlankZoneAt(ship, wx, wy, extraReach = 0) {
+  if (!isNauticalHull(ship?.hullClass)) return null;
+  const layout = getShipLayout(ship);
+  const planks = Array.isArray(layout.planks) ? layout.planks : [];
+  const local = shipWorldToLocalClient(ship, wx, wy);
+  const railY = layout.deckH / 2;
+  for (const plank of planks) {
+    const side = plank.side >= 0 ? 1 : -1;
+    const along = side * local.y;
+    if (Math.abs(local.x - (Number(plank.x) || 0)) > SHIP_PLANK_HALF_WIDTH + 0.25) continue;
+    if (along >= railY - 0.4 && along <= railY + SHIP_PLANK_REACH + extraReach) {
+      return { ...plank, side, railY };
+    }
+  }
+  return null;
 }
 
 function nearestShipStationForPlayer(player) {
@@ -9976,10 +10139,16 @@ function findShipDeckInteractionAt(wx, wy) {
     const layout = getShipLayout(ship);
     const center = shipCenter(ship, player);
     const isNautical = isNauticalHull(ship.hullClass);
-    const plank = layout.plank || { x: layout.entry?.x || -layout.deckW / 2, y: layout.entry?.y || 0, w: 2.4, h: 2.0 };
-    const plankInside =
-      Math.abs(wx - (center.x + plank.x)) <= (Number(plank.w) || 2.4) / 2 &&
-      Math.abs(wy - (center.y + plank.y)) <= (Number(plank.h) || 2.0) / 2;
+    const plankZone = isNautical ? clientPlankZoneAt(ship, wx, wy, 1.2) : null;
+    const plankInside = isNautical
+      ? Boolean(plankZone)
+      : (() => {
+          const plank = layout.plank || { x: layout.entry?.x || -layout.deckW / 2, y: layout.entry?.y || 0, w: 2.4, h: 2.0 };
+          return (
+            Math.abs(wx - (center.x + plank.x)) <= (Number(plank.w) || 2.4) / 2 &&
+            Math.abs(wy - (center.y + plank.y)) <= (Number(plank.h) || 2.0) / 2
+          );
+        })();
     const inside =
       wx >= center.x - layout.deckW / 2 - 0.5 &&
       wx <= center.x + layout.deckW / 2 + 0.5 &&
@@ -10013,7 +10182,10 @@ function findShipDeckInteractionAt(wx, wy) {
     }
 
     if (!best && !selfOnThisShip) {
-      best = { x: center.x + layout.entry.x, y: center.y + layout.entry.y, label: `${ship.name || "Ship"} - board at plank`, kind: "ship" };
+      const boardAt = isNautical && plankZone
+        ? shipLocalToWorldClient(ship, Number(plankZone.x) || 0, plankZone.side * (plankZone.railY + 0.8))
+        : { x: center.x + layout.entry.x, y: center.y + layout.entry.y };
+      best = { x: boardAt.x, y: boardAt.y, label: `${ship.name || "Ship"} - board at plank`, kind: "ship" };
     } else if (!best && selfOnThisShip) {
       best = { x: wx, y: wy, label: "Ship deck", kind: "deck" };
     }
@@ -10036,6 +10208,7 @@ function findShipCrewAt(wx, wy) {
     if (!onThis) continue;
     const center = shipCenter(ship, player);
     for (const crew of ship.crew) {
+      if (crew.overboard) continue; // mid-plank-walk, no more orders
       const cx = center.x + (Number(crew.localX) || 0);
       const cy = center.y + (Number(crew.localY) || 0);
       if (Math.hypot(wx - cx, wy - cy) > 1.8) continue;
@@ -10104,6 +10277,15 @@ function showShipCrewMenu(ship, crew) {
     bedBtn.dataset.npcAction = "crew_bed";
     bedBtn.textContent = (crew.idleKind === "bed" ? "* " : "") + "Bed";
     npcContextMenuButtons.append(chillBtn, galleyBtn, bedBtn);
+    // Captains can dismiss crew for good — they walk the plank and swim off.
+    const self = state.players.get(state.selfId);
+    const isOwner = Boolean(self?.ship?.id === ship.id && !self.aboardShipId);
+    if (isOwner) {
+      const dismissBtn = document.createElement("button");
+      dismissBtn.dataset.npcAction = "crew_dismiss";
+      dismissBtn.textContent = "Dismiss (overboard)";
+      npcContextMenuButtons.append(dismissBtn);
+    }
   }
   const center = shipCenter(ship, null);
   positionNpcContextMenu(center.x + (Number(crew.localX) || 0), center.y + (Number(crew.localY) || 0));
@@ -10589,7 +10771,33 @@ function drawShipStationObject(ship, station, wx, wy) {
       return;
     }
     if (station.role === "gunner") {
-      drawGunnerStation(wx, wy, active, "#2a1808");
+      // Deck cannon: the barrel slews toward the aim point (world angle from
+      // the server), drawn relative to the rotated deck frame.
+      const worldAngle = Number(ship?.cannons?.[station.id]);
+      const localAngle = Number.isFinite(worldAngle)
+        ? worldAngle - shipRenderFacing(ship)
+        : ((Number(station.y) || 0) >= 0 ? Math.PI / 2 : -Math.PI / 2);
+      ctx.save();
+      ctx.translate(wx, wy);
+      // Carriage
+      ctx.fillStyle = "#4a2f17";
+      ctx.fillRect(-10, -8, 20, 16);
+      ctx.strokeStyle = "#2a1808";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-10, -8, 20, 16);
+      // Barrel
+      ctx.rotate(localAngle);
+      ctx.fillStyle = active ? "#1d1208" : "#2a1808";
+      ctx.fillRect(-4, -5, 26, 10);
+      ctx.fillStyle = "#0f0a05";
+      ctx.fillRect(20, -6, 5, 12);
+      ctx.restore();
+      // Breech cap
+      ctx.fillStyle = "#1d1208";
+      ctx.beginPath();
+      ctx.arc(wx, wy, 7, 0, Math.PI * 2);
+      ctx.fill();
+      drawStationActiveRing(wx, wy, active, "#ff8f6b", 22);
       return;
     }
     if (station.id === "anchor") {
@@ -10663,6 +10871,31 @@ function drawShipDeckObject(ship, sx, sy) {
     drawEllipseShadow(x - 10, y + h * 0.82, w + 20, 14, 0.22);
   }
 
+  // Boarding planks bridge over both rails — drawn first so the hull overlaps
+  // their inboard ends and only the overhang reads outside the silhouette.
+  if (nautical && Array.isArray(layout.planks)) {
+    for (const plank of layout.planks) {
+      const side = plank.side >= 0 ? 1 : -1;
+      const plankW = SHIP_PLANK_HALF_WIDTH * 2 * TILE_SIZE;
+      const px = sx + (Number(plank.x) || 0) * TILE_SIZE - plankW / 2;
+      const yInner = sy + side * (layout.deckH / 2 - 0.9) * TILE_SIZE;
+      const yOuter = sy + side * (layout.deckH / 2 + SHIP_PLANK_REACH) * TILE_SIZE;
+      const py = Math.min(yInner, yOuter);
+      const ph = Math.abs(yOuter - yInner);
+      ctx.fillStyle = "#8b6239";
+      ctx.fillRect(px, py, plankW, ph);
+      ctx.strokeStyle = "#2a1808";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(px, py, plankW, ph);
+      ctx.strokeStyle = "rgba(42, 24, 8, 0.45)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(px + plankW / 2, py);
+      ctx.lineTo(px + plankW / 2, py + ph);
+      ctx.stroke();
+    }
+  }
+
   // Draw dark hull-shaped fill (silhouette matches the exterior)
   ctx.fillStyle = nautical ? "#3b2614" : "rgba(8, 15, 28, 0.96)";
   buildShipHullPath(hullClass, x, y, w, h);
@@ -10684,15 +10917,6 @@ function drawShipDeckObject(ship, sx, sy) {
       ctx.moveTo(x + w * i, y + h * 0.13);
       ctx.lineTo(x + w * i, y + h * 0.87);
       ctx.stroke();
-    }
-    if (layout.plank) {
-      const px = sx + layout.plank.x * TILE_SIZE;
-      const py = sy + layout.plank.y * TILE_SIZE;
-      ctx.fillStyle = "#8b6239";
-      ctx.fillRect(px - 36, py - 9, 72, 18);
-      ctx.strokeStyle = "#2a1808";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(px - 36, py - 9, 72, 18);
     }
   } else {
     // Bridge/cockpit highlight at the bow (right side)
@@ -10889,8 +11113,7 @@ function withNauticalDeckRotation(shipSx, shipSy, rotation, callback) {
 }
 
 function withRotatedNauticalDeck(ship, shipSx, shipSy, callback) {
-  const facing = Number.isFinite(Number(ship?.facing)) ? Number(ship.facing) : 0;
-  withNauticalDeckRotation(shipSx, shipSy, facing, callback);
+  withNauticalDeckRotation(shipSx, shipSy, shipRenderFacing(ship), callback);
 }
 
 function drawRotatedNauticalDeck(ship, shipSx, shipSy) {
@@ -10948,8 +11171,7 @@ function drawCharacterOnNauticalDeckRotation(entity, center, shipSx, shipSy, rot
 }
 
 function drawCharacterOnRotatedNauticalDeck(entity, ship, center, shipSx, shipSy, isNpc, poseOpts = {}) {
-  const facing = Number.isFinite(Number(ship?.facing)) ? Number(ship.facing) : 0;
-  drawCharacterOnNauticalDeckRotation(entity, center, shipSx, shipSy, facing, isNpc, poseOpts);
+  drawCharacterOnNauticalDeckRotation(entity, center, shipSx, shipSy, shipRenderFacing(ship), isNpc, poseOpts);
 }
 
 // Draws the bundled NPC crew standing at their posts (or idling) inside the
@@ -10968,6 +11190,35 @@ function drawShipCrew(ship, shipSx, shipSy) {
       sciFiLook: "crew",
       ship: { boarded: true, deckMode: true }
     };
+    if (crew.overboard) {
+      // Dismissed: walking the plank, then splashing away until they vanish.
+      const swimming = crew.overboard === "swim";
+      if (swimming) {
+        const t = performance.now() / 1000;
+        ctx.save();
+        ctx.strokeStyle = "rgba(190, 230, 255, 0.75)";
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 2; i += 1) {
+          const r = 8 + ((t * 18 + i * 9) % 18);
+          ctx.globalAlpha = Math.max(0, 0.7 - r / 30);
+          ctx.beginPath();
+          ctx.arc(cx, cy, r, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+      drawCharacter({ ...entity, renderMoving: true, renderSwimming: swimming, swimming }, cx, cy, true, {
+        insideShipDeck: !swimming
+      });
+      ctx.font = "9px ui-sans-serif, system-ui";
+      ctx.textAlign = "center";
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(4,8,16,0.85)";
+      ctx.fillStyle = "rgba(255, 196, 150, 0.95)";
+      ctx.strokeText(`${crew.name || "Crew"} - dismissed`, cx, cy - 15);
+      ctx.fillText(`${crew.name || "Crew"} - dismissed`, cx, cy - 15);
+      continue;
+    }
     drawCharacter(entity, cx, cy, true, {
       insideShipDeck: true,
       restingBench: Boolean(crew.stationId) || crew.idleKind === "galley",
@@ -11583,6 +11834,42 @@ function drawShipConsoleObject(obj, sx, sy) {
 }
 
 function drawDockPortObject(obj, sx, sy) {
+  // Nautical moorings (they carry a pier-head plank) render as a wooden
+  // boarding plank reaching out over the water toward the moored boat.
+  if (Number.isFinite(Number(obj.plankX)) && Number.isFinite(Number(obj.plankY))) {
+    const dir = obj.facing === "north" ? { x: 0, y: -1 }
+      : obj.facing === "west" ? { x: -1, y: 0 }
+        : obj.facing === "east" ? { x: 1, y: 0 }
+          : { x: 0, y: 1 };
+    const tipSx = sx + (Number(obj.plankX) - Number(obj.x)) * TILE_SIZE;
+    const tipSy = sy + (Number(obj.plankY) - Number(obj.y)) * TILE_SIZE;
+    const reach = 2.1 * TILE_SIZE;
+    const halfWidth = 0.55 * TILE_SIZE;
+    ctx.save();
+    ctx.translate(tipSx, tipSy);
+    ctx.rotate(Math.atan2(dir.y, dir.x));
+    ctx.fillStyle = "#8b6239";
+    ctx.fillRect(-0.4 * TILE_SIZE, -halfWidth, reach, halfWidth * 2);
+    ctx.strokeStyle = "#2a1808";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-0.4 * TILE_SIZE, -halfWidth, reach, halfWidth * 2);
+    ctx.strokeStyle = "rgba(42, 24, 8, 0.5)";
+    ctx.lineWidth = 1;
+    for (let i = 1; i <= 3; i += 1) {
+      const lx = -0.4 * TILE_SIZE + (reach / 4) * i;
+      ctx.beginPath();
+      ctx.moveTo(lx, -halfWidth);
+      ctx.lineTo(lx, halfWidth);
+      ctx.stroke();
+    }
+    // Mooring bollard at the pier head.
+    ctx.fillStyle = "#4a2f17";
+    ctx.beginPath();
+    ctx.arc(-0.2 * TILE_SIZE, 0, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
   const w = Math.max(4, Number(obj.w || 6)) * TILE_SIZE;
   const h = Math.max(3, Number(obj.h || 4)) * TILE_SIZE;
   const x = sx - w / 2;
@@ -12386,15 +12673,17 @@ function drawPlayers() {
         const seated = Boolean(entity.ship.stationRole);
         const drawDeckPlayer = () => {
           if (nauticalDeck && !sameAsViewer) {
-            const center = shipCenter(entity.ship, entity);
-            const shipSx = Math.floor(center.x * TILE_SIZE - state.camera.x + halfW);
-            const shipSy = Math.floor(center.y * TILE_SIZE - state.camera.y + halfH);
-            drawCharacterOnRotatedNauticalDeck(entity, entity.ship, center, shipSx, shipSy, isNpc, shipAmenityPoseOpts(entity, { restingBench: seated }));
+            const centerSmooth = shipCenter(entity.ship, entity);
+            const centerRaw = shipCenterRaw(entity.ship, entity);
+            const shipSx = Math.floor(centerSmooth.x * TILE_SIZE - state.camera.x + halfW);
+            const shipSy = Math.floor(centerSmooth.y * TILE_SIZE - state.camera.y + halfH);
+            drawCharacterOnRotatedNauticalDeck(entity, entity.ship, centerRaw, shipSx, shipSy, isNpc, shipAmenityPoseOpts(entity, { restingBench: seated }));
           } else if (viewerAtNauticalHelm) {
-            const center = shipCenter(entity.ship, entity);
-            const shipSx = Math.floor(center.x * TILE_SIZE - state.camera.x + halfW);
-            const shipSy = Math.floor(center.y * TILE_SIZE - state.camera.y + halfH);
-            drawCharacterOnNauticalDeckRotation(entity, center, shipSx, shipSy, NAUTICAL_HELM_SCREEN_ROTATION, isNpc, shipAmenityPoseOpts(entity, { restingBench: seated }));
+            const centerSmooth = shipCenter(entity.ship, entity);
+            const centerRaw = shipCenterRaw(entity.ship, entity);
+            const shipSx = Math.floor(centerSmooth.x * TILE_SIZE - state.camera.x + halfW);
+            const shipSy = Math.floor(centerSmooth.y * TILE_SIZE - state.camera.y + halfH);
+            drawCharacterOnNauticalDeckRotation(entity, centerRaw, shipSx, shipSy, NAUTICAL_HELM_SCREEN_ROTATION, isNpc, shipAmenityPoseOpts(entity, { restingBench: seated }));
           } else {
             drawCharacter(entity, sx, sy, isNpc, shipAmenityPoseOpts(entity, { restingBench: seated }));
             drawShieldBuff(entity, sx, sy);

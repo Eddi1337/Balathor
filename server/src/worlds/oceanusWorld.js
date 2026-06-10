@@ -226,9 +226,22 @@ function starterPierRect() {
   };
 }
 
+/** T-shaped pier head: a walkable crossbar covering all three starter moorings. */
+function starterPierHeadRect() {
+  const r = STARTER_ISLAND.landRadius;
+  return {
+    minX: STARTER_ISLAND.x - 8,
+    maxX: STARTER_ISLAND.x + 8,
+    minY: STARTER_ISLAND.y + r + PIER_LEN - 1,
+    maxY: STARTER_ISLAND.y + r + PIER_LEN
+  };
+}
+
 function onStarterPier(x, y) {
   const p = starterPierRect();
-  return x >= p.minX && x <= p.maxX && y >= p.minY && y <= p.maxY;
+  if (x >= p.minX && x <= p.maxX && y >= p.minY && y <= p.maxY) return true;
+  const head = starterPierHeadRect();
+  return x >= head.minX && x <= head.maxX && y >= head.minY && y <= head.maxY;
 }
 
 function pierRect(isle) {
@@ -351,6 +364,15 @@ function dockPortForIsland(isle) {
   else if (isle.pierDir === "east") x = isle.x + r + PIER_LEN + mooringClearance;
   else x = isle.x - r - PIER_LEN - mooringClearance;
 
+  // Pier-head plank tile: the walkable end of the pier where the boarding
+  // plank bridges across to a moored ship.
+  let plankX = isle.x;
+  let plankY = isle.y;
+  if (isle.pierDir === "south") plankY = isle.y + r + PIER_LEN;
+  else if (isle.pierDir === "north") plankY = isle.y - r - PIER_LEN;
+  else if (isle.pierDir === "east") plankX = isle.x + r + PIER_LEN;
+  else plankX = isle.x - r - PIER_LEN;
+
   // Terminal: a few tiles back toward the island (where you stand on the dock).
   const inward = isle.hub ? 25 : 5;
   let tx = x;
@@ -367,6 +389,8 @@ function dockPortForIsland(isle) {
     x,
     y,
     facing: facingForPier(isle.pierDir),
+    plankX,
+    plankY,
     terminalX: tx,
     terminalY: ty,
     islandX: isle.x,
@@ -385,6 +409,8 @@ function starterPortAt(idSuffix, xOffset, yOffset = 0) {
     x: STARTER_ISLAND.x + xOffset,
     y: STARTER_ISLAND.y + STARTER_ISLAND.landRadius + PIER_LEN + 8 + yOffset,
     facing: STARTER_PIER_DIR,
+    plankX: STARTER_ISLAND.x + xOffset,
+    plankY: STARTER_ISLAND.y + STARTER_ISLAND.landRadius + PIER_LEN,
     terminalX: STARTER_ISLAND.x + xOffset,
     terminalY: STARTER_ISLAND.y + STARTER_ISLAND.landRadius + 1,
     islandX: STARTER_ISLAND.x,
@@ -417,6 +443,22 @@ function buildFeatures() {
       })
     );
     if (port) {
+      out.push(
+        Object.freeze({
+          id: `${port.id}_mooring`,
+          kind: "ship-port",
+          name: `${isle.name} Mooring`,
+          harbourId: isle.id,
+          x: port.x,
+          y: port.y,
+          w: 5,
+          h: 3,
+          facing: port.facing,
+          plankX: port.plankX,
+          plankY: port.plankY,
+          portId: port.id
+        })
+      );
       out.push(
         Object.freeze({
           id: `${isle.id}_shipwright`,
@@ -502,7 +544,10 @@ const STARTER_FEATURES = Object.freeze([
     y: port.y,
     w: 5,
     h: 3,
-    facing: port.facing
+    facing: port.facing,
+    plankX: port.plankX,
+    plankY: port.plankY,
+    portId: port.id
   })),
   Object.freeze({
     id: `${STARTER_ISLAND.id}_shipwright`,

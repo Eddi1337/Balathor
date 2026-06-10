@@ -240,6 +240,28 @@ const OCEAN_WIND_BASE_ANGLE = -0.62;
 const OCEAN_WIND_STRENGTH = 1;
 const SAIL_ANGLE_LIMIT = 1.2;
 const SAIL_TRIM_SPEED = 1.35;
+// Nautical sailing physics — momentum model so boats glide, coast and drift
+// instead of starting/stopping instantly.
+const NAUTICAL_THROTTLE_RAMP = 0.8;     // throttle change per second while W/S held
+const NAUTICAL_THROTTLE_COAST = 0.14;   // throttle decay per second with no input
+const NAUTICAL_REVERSE_LIMIT = -0.3;    // max reverse throttle fraction
+const NAUTICAL_ACCEL_RATE = 0.7;        // exp approach rate toward target speed
+const NAUTICAL_DECEL_RATE = 0.5;        // exp approach rate when slowing down
+const NAUTICAL_GRIP = 2.3;              // how fast the velocity vector aligns to heading (drift)
+const NAUTICAL_RUDDER_RATE = 3.4;       // rudder input smoothing per second
+const NAUTICAL_TURN_RATE_MIN = 0.5;     // rad/s when nearly stopped
+const NAUTICAL_TURN_RATE_MAX = 1.6;     // rad/s at full sail
+// Boarding planks — the only way on/off a nautical deck.
+const SHIP_PLANK_REACH = 1.6;           // how far a plank extends past the hull edge
+const SHIP_PLANK_HALF_WIDTH = 1.05;
+// Automated docking
+const SHIP_AUTODOCK_RANGE = 9;          // engage distance from the mooring pose
+const SHIP_AUTODOCK_TURN_RATE = 0.7;    // rad/s while auto-docking
+const SHIP_AUTODOCK_MAX_SPEED = 2.6;    // tiles/s glide cap while auto-docking
+const SHIP_MOOR_GAP = 2.0;              // hull edge to pier-head plank tile
+const SHIP_DOCK_REENGAGE_HOLD_MS = 5000;
+// Deck cannons — barrels slew slowly toward the aim point.
+const SHIP_CANNON_TRAVERSE = 1.45;      // rad/s
 const SHIP_WARP_APPROACH_SPEED = 26;
 const SHIP_WARP_APPROACH_MS = 800;
 const SHIP_WARP_JUMP_MS = 1700;
@@ -2185,6 +2207,13 @@ function serializeShip(ship) {
     speed: clampNumber(ship.speed, 0, 1000, SHIP_SPEED),
     sailTrim: clampNumber(ship.sailTrim, -1, 1, 0),
     sailAngle,
+    ...(nautical ? {
+      moored: Boolean(ship.moored),
+      throttle: Number(clampNumber(ship.throttle, NAUTICAL_REVERSE_LIMIT, 1, 0).toFixed(3)),
+      sailSpeed: Number(clampNumber(ship.sailSpeed, -1000, 1000, 0).toFixed(3)),
+      cannons: serializeShipCannons(ship),
+      ...(Number.isFinite(Number(ship.crewTarget)) ? { crewTarget: Math.max(0, Math.round(Number(ship.crewTarget))) } : {})
+    } : {}),
     ...(wind ? {
       windAngle: Number(wind.angle.toFixed(4)),
       windStrength: Number(wind.strength.toFixed(3)),
@@ -2204,9 +2233,27 @@ function serializeShip(ship) {
     shieldFacing: normalizeShieldFacing(ship.shieldFacing || Object.values(shieldSections)[0]),
     shieldSections,
     crew: serializeShipCrew(ship),
-    docking: null,
+    docking: sanitizeShipDocking(ship.docking),
     warp: sanitizeShipWarp(ship.warp)
   };
+}
+
+function sanitizeShipDocking(docking) {
+  if (!docking || typeof docking !== "object" || typeof docking.portId !== "string") return null;
+  return {
+    portId: docking.portId.slice(0, 64),
+    engagedAt: Number(docking.engagedAt) || 0
+  };
+}
+
+function serializeShipCannons(ship) {
+  if (!ship?.cannons || typeof ship.cannons !== "object") return {};
+  const out = {};
+  for (const [stationId, cannon] of Object.entries(ship.cannons)) {
+    if (!cannon || typeof cannon !== "object") continue;
+    out[String(stationId).slice(0, 48)] = Number((Number(cannon.angle) || 0).toFixed(4));
+  }
+  return out;
 }
 
 function serializeShipForPlayer(player, ship = player?.ship) {
@@ -2249,6 +2296,12 @@ function serializeShipForViewer(player, ship, viewerId) {
     facing: normalizeAngle(clampNumber(ship.facing, -Math.PI * 2, Math.PI * 2, 0)),
     sailTrim: clampNumber(ship.sailTrim, -1, 1, 0),
     sailAngle: clampNumber(ship.sailAngle, -SAIL_ANGLE_LIMIT, SAIL_ANGLE_LIMIT, 0),
+    ...(isNauticalHullClass(ship?.hullClass) ? {
+      moored: Boolean(ship.moored),
+      sailSpeed: Number(clampNumber(ship.sailSpeed, -1000, 1000, 0).toFixed(3)),
+      cannons: serializeShipCannons(ship),
+      docking: sanitizeShipDocking(ship.docking)
+    } : {}),
     stationRole: typeof player?.shipStationRole === "string" ? player.shipStationRole : null,
     stationId: typeof player?.shipStationId === "string" ? player.shipStationId : null
   };
@@ -2358,6 +2411,46 @@ function nauticalWindSpeedFactor(ship, wind = null, now = Date.now()) {
   return clampNumber(downwindFactor * (0.72 + sailQuality * 0.38), 0.38, 1.45, 1);
 }
 
+// Side cannons on nautical decks — each gunner station owns a barrel that
+// slews slowly toward its target angle instead of snapping to the aim point.
+function ensureShipCannon(ship, station) {
+  if (!ship.cannons || typeof ship.cannons !== "object") ship.cannons = {};
+  let cannon = ship.cannons[station.id];
+  if (!cannon || typeof cannon !== "object") {
+    // Rest pointing off the station's side of the boat.
+    const restAngle = normalizeAngle((Number(ship.facing) || 0) + ((Number(station.y) || 0) >= 0 ? Math.PI / 2 : -Math.PI / 2));
+    cannon = { angle: restAngle, targetAngle: restAngle };
+    ship.cannons[station.id] = cannon;
+  }
+  return cannon;
+}
+
+function updateNauticalShipCannons(ship, dt) {
+  const layout = getShipLayout(ship);
+  for (const station of layout.stations) {
+    if (station.role !== "gunner") continue;
+    const cannon = ensureShipCannon(ship, station);
+    const delta = normalizeAngle((Number(cannon.targetAngle) || 0) - (Number(cannon.angle) || 0));
+    const step = Math.min(Math.abs(delta), SHIP_CANNON_TRAVERSE * dt);
+    cannon.angle = normalizeAngle((Number(cannon.angle) || 0) + Math.sign(delta) * step);
+  }
+}
+
+// World offset of the gunner station owning a drone index, rotated by facing —
+// nautical cannonballs leave from the ship's rail, not its centre.
+function nauticalCannonOffset(ship, droneIndex) {
+  const layout = getShipLayout(ship);
+  const station = layout.stations.find((s) => s.role === "gunner" && (Number.isFinite(s.droneIndex) ? s.droneIndex : 0) === droneIndex)
+    || layout.stations.find((s) => s.role === "gunner");
+  if (!station) return { x: 0, y: 0 };
+  const facing = Number(ship.facing) || 0;
+  const cos = Math.cos(facing);
+  const sin = Math.sin(facing);
+  const lx = Number(station.x) || 0;
+  const ly = Number(station.y) || 0;
+  return { x: cos * lx - sin * ly, y: sin * lx + cos * ly };
+}
+
 function getNauticalShipLayout(hullClass) {
   const large = hullClass === "galleon" || hullClass === "manowar";
   const deckW = hullClass === "manowar" ? 24 : hullClass === "galleon" ? 20 : hullClass === "brig" ? 16 : 12;
@@ -2372,7 +2465,12 @@ function getNauticalShipLayout(hullClass) {
     deckW,
     deckH,
     entry: { x: -halfW + 2.0, y: 0 },
-    plank: { x: -halfW - 0.55, y: 0, w: 2.2, h: 1.8 },
+    // Boarding planks bridge over both rails amidships — the only legal way on/off.
+    plank: { x: 0, y: deckH / 2 + 0.8, w: SHIP_PLANK_HALF_WIDTH * 2, h: SHIP_PLANK_REACH },
+    planks: [
+      { id: "plank_port", x: 0, side: -1 },
+      { id: "plank_starboard", x: 0, side: 1 }
+    ],
     teleporter: null,
     stations: [
       { id: "helm", role: "pilot", name: "Helm", x: halfW - 3.2, y: 0 },
@@ -2545,6 +2643,7 @@ function assignDefaultCrewStations(ship, layout = getShipLayout(ship)) {
   ];
   let i = 0;
   for (const crew of ship.crew) {
+    if (crew.overboard) continue;
     crew.stationId = order[i] ? order[i].id : null;
     i += 1;
   }
@@ -2556,6 +2655,7 @@ function placeShipCrew(ship, layout = getShipLayout(ship)) {
   const restSpots = idle.concat(amenitySpots.filter((spot) => spot.kind === "bed"));
   let idleIdx = 0;
   for (const crew of ship.crew) {
+    if (crew.overboard) continue; // dismissed crew walk the plank on their own
     const station = crew.stationId ? layout.stations.find((s) => s.id === crew.stationId) : null;
     if (station) {
       crew.localX = Number(station.x) || 0;
@@ -2581,11 +2681,20 @@ function placeShipCrew(ship, layout = getShipLayout(ship)) {
 function ensureShipCrew(ship) {
   if (!ship || typeof ship !== "object") return [];
   const layout = getShipLayout(ship);
-  const target = Math.max(0, Number(layout.npcCrew) || 0);
+  const baseTarget = Math.max(0, Number(layout.npcCrew) || 0);
+  // crewTarget tracks dismissals — dismissed crew never respawn.
+  const target = Math.max(0, Math.min(baseTarget, Number.isFinite(Number(ship.crewTarget)) ? Math.round(Number(ship.crewTarget)) : baseTarget));
   if (!Array.isArray(ship.crew)) ship.crew = [];
-  if (ship.crew.length > target) ship.crew.length = target;
-  while (ship.crew.length < target) {
-    ship.crew.push(makeShipCrewMember(ship, ship.crew.length));
+  const active = ship.crew.filter((c) => c && typeof c === "object" && !c.overboard);
+  while (active.length > target) {
+    const removed = active.pop();
+    const idx = ship.crew.indexOf(removed);
+    if (idx >= 0) ship.crew.splice(idx, 1);
+  }
+  while (active.length < target) {
+    const member = makeShipCrewMember(ship, ship.crew.length);
+    ship.crew.push(member);
+    active.push(member);
   }
   for (let i = 0; i < ship.crew.length; i += 1) {
     const crew = ship.crew[i];
@@ -2601,7 +2710,7 @@ function ensureShipCrew(ship) {
     if (crew.stationId && !validStationIds.has(crew.stationId)) crew.stationId = null;
   }
   // Fresh crew with no posting at all → auto-fill stations once.
-  if (target > 0 && ship.crew.every((c) => !c.stationId)) {
+  if (target > 0 && active.length && active.every((c) => !c.stationId)) {
     assignDefaultCrewStations(ship, layout);
   }
   placeShipCrew(ship, layout);
@@ -2657,7 +2766,8 @@ function serializeShipCrew(ship) {
       idleKind: station ? null : (crew.idleKind === "bed" ? "bed" : crew.idleKind === "galley" ? "galley" : "chill"),
       localX: Number(crew.localX) || 0,
       localY: Number(crew.localY) || 0,
-      facing: Number(crew.facing) || 0
+      facing: Number(crew.facing) || 0,
+      ...(crew.overboard ? { overboard: typeof crew.overboard.phase === "string" ? crew.overboard.phase : "walk" } : {})
     };
   });
 }
@@ -2688,7 +2798,7 @@ function gunnerDroneSelection(ship, stationId) {
 function fireOneShipDrone(ship, attributeClient, droneIndex, droneCount, tx, ty, now = Date.now()) {
   const center = shipCenter(ship);
   const nautical = isNauticalHullClass(ship?.hullClass);
-  const off = nautical ? { x: 0, y: 0 } : shipDroneOffset(ship, droneIndex, droneCount, now);
+  const off = nautical ? nauticalCannonOffset(ship, droneIndex) : shipDroneOffset(ship, droneIndex, droneCount, now);
   const ox = center.x + off.x;
   const oy = center.y + off.y;
   const tier = Math.max(1, Number(ship.laserTier) || 1);
@@ -2784,10 +2894,59 @@ function angleToShieldFacing(angle) {
 
 // One AI tick for a ship's NPC crew: gunners auto-fire their drone, engineers
 // hold shields up and patch the hull.
+// Dismissed crew walk to the nearest side plank, hop into the sea, paddle away
+// from the hull for a moment and then disappear for good.
+function tickShipCrewOverboard(ship, layout, aiDt, now) {
+  if (!Array.isArray(ship.crew)) return;
+  const railY = layout.deckH / 2;
+  let removedAny = false;
+  for (const crew of ship.crew) {
+    const ob = crew?.overboard;
+    if (!ob || typeof ob !== "object") continue;
+    const walkSpeed = 2.6;
+    if (ob.phase === "walk") {
+      const targetX = 0;
+      const targetY = ob.side * (railY - 0.4);
+      const dx = targetX - (Number(crew.localX) || 0);
+      const dy = targetY - (Number(crew.localY) || 0);
+      const dist = Math.hypot(dx, dy);
+      const step = walkSpeed * aiDt;
+      if (dist <= step || dist < 1e-4) {
+        crew.localX = targetX;
+        crew.localY = targetY;
+        ob.phase = "plank";
+      } else {
+        crew.localX += (dx / dist) * step;
+        crew.localY += (dy / dist) * step;
+        crew.facing = Math.atan2(dy, dx);
+      }
+    } else if (ob.phase === "plank") {
+      crew.localY = (Number(crew.localY) || 0) + ob.side * walkSpeed * aiDt;
+      crew.facing = ob.side > 0 ? Math.PI / 2 : -Math.PI / 2;
+      if (Math.abs(crew.localY) >= railY + SHIP_PLANK_REACH + 0.3) {
+        ob.phase = "swim";
+        ob.swimStartedAt = now;
+      }
+    } else if (ob.phase === "swim") {
+      crew.localY = (Number(crew.localY) || 0) + ob.side * 1.4 * aiDt;
+      if (now - (Number(ob.swimStartedAt) || now) >= 2600) {
+        ob.phase = "gone";
+        removedAny = true;
+      }
+    } else {
+      removedAny = true;
+    }
+  }
+  if (removedAny) {
+    ship.crew = ship.crew.filter((c) => c?.overboard?.phase !== "gone");
+  }
+}
+
 function tickShipCrew(ownerClient, ship, aiDt, now) {
   ensureShipCrew(ship);
   if (!Array.isArray(ship.crew) || !ship.crew.length) return;
   const layout = getShipLayout(ship);
+  tickShipCrewOverboard(ship, layout, aiDt, now);
   const count = getShipDroneCount(ship);
   const center = shipCenter(ship);
 
@@ -2815,8 +2974,18 @@ function tickShipCrew(ownerClient, ship, aiDt, now) {
       if (now - (crew.lastFireAt || 0) >= SHIP_CREW_NPC_FIRE_COOLDOWN_MS) {
         crew.lastFireAt = now;
         const droneIndex = Number.isFinite(station.droneIndex) ? station.droneIndex : 0;
-        crew.facing = Math.atan2(threat.y - center.y, threat.x - center.x);
-        fireOneShipDrone(ship, ownerClient, droneIndex, count, threat.x, threat.y, now);
+        if (isNauticalHullClass(ship.hullClass)) {
+          // Cannons traverse slowly: track the threat, fire along the barrel.
+          const cannon = ensureShipCannon(ship, station);
+          const muzzle = shipLocalToWorld(ship, Number(station.x) || 0, Number(station.y) || 0);
+          cannon.targetAngle = Math.atan2(threat.y - muzzle.y, threat.x - muzzle.x);
+          const angle = Number(cannon.angle) || 0;
+          crew.facing = normalizeAngle(angle - (Number(ship.facing) || 0));
+          fireOneShipDrone(ship, ownerClient, droneIndex, count, muzzle.x + Math.cos(angle) * 22, muzzle.y + Math.sin(angle) * 22, now);
+        } else {
+          crew.facing = Math.atan2(threat.y - center.y, threat.x - center.x);
+          fireOneShipDrone(ship, ownerClient, droneIndex, count, threat.x, threat.y, now);
+        }
       }
     } else if (station.role === "engineer") {
       const maxShields = getShipMaxShields(ship);
@@ -2850,7 +3019,7 @@ function handleShipCrewCommand(client, message = {}) {
   if (!ship || !ship.deckMode) return;
   ensureShipCrew(ship);
   const crew = ship.crew.find((c) => c.id === (typeof message.crewId === "string" ? message.crewId : null));
-  if (!crew) return;
+  if (!crew || crew.overboard) return;
   const layout = getShipLayout(ship);
   const center = shipCenter(ship);
   const cx = center.x + (Number(crew.localX) || 0);
@@ -2860,6 +3029,25 @@ function handleShipCrewCommand(client, message = {}) {
   const requested = typeof message.stationId === "string" ? message.stationId : null;
   const requestedRole = typeof message.role === "string" ? message.role : null;
   const idleKind = typeof message.idleKind === "string" ? message.idleKind : null;
+  if (String(message.action || "") === "dismiss" || requested === "dismiss") {
+    const isOwner = !player.aboardShipId && getOwnedActiveShip(player) === ship;
+    if (!isOwner) {
+      send(client, { type: "serverMessage", message: "ship_crew_not_owner" });
+      return;
+    }
+    const baseCrew = Math.max(0, Number(layout.npcCrew) || 0);
+    const currentTarget = Number.isFinite(Number(ship.crewTarget)) ? Math.round(Number(ship.crewTarget)) : baseCrew;
+    ship.crewTarget = Math.max(0, Math.min(baseCrew, currentTarget) - 1);
+    crew.stationId = null;
+    crew.overboard = {
+      phase: "walk",
+      side: (Number(crew.localY) || 0) >= 0 ? 1 : -1,
+      startedAt: Date.now()
+    };
+    send(client, { type: "serverMessage", message: "ship_crew_dismissed", crewName: crew.name });
+    broadcastSnapshot();
+    return;
+  }
   if (idleKind === "bed" || requested === "bed") {
     crew.stationId = null;
     crew.idleKind = "bed";
@@ -3092,16 +3280,94 @@ function clampShipLocalToHull(localX, localY, ship, layout = getShipLayout(ship)
   return [nx * halfW, ny * halfH];
 }
 
+// Ship-frame <-> world-frame conversion. Deck-local coordinates have the bow
+// along +x; the rendered deck (and the exterior hull) rotate by ship.facing.
+function shipLocalToWorld(ship, localX, localY) {
+  const center = shipCenter(ship);
+  const facing = Number(ship?.facing) || 0;
+  const cos = Math.cos(facing);
+  const sin = Math.sin(facing);
+  return {
+    x: center.x + cos * localX - sin * localY,
+    y: center.y + sin * localX + cos * localY
+  };
+}
+
+function shipWorldToLocal(ship, wx, wy) {
+  const center = shipCenter(ship);
+  const facing = Number(ship?.facing) || 0;
+  const cos = Math.cos(facing);
+  const sin = Math.sin(facing);
+  const dx = wx - center.x;
+  const dy = wy - center.y;
+  return {
+    x: cos * dx + sin * dy,
+    y: -sin * dx + cos * dy
+  };
+}
+
+// The plank corridor a deck-local point stands in, or null. Corridors start a
+// little inside the rail so stepping onto the plank feels natural.
+function shipPlankZoneAt(layout, localX, localY) {
+  const planks = Array.isArray(layout?.planks) ? layout.planks : [];
+  const railY = layout.deckH / 2;
+  // The corridor starts far enough inboard to overlap the hull-clamped walkable
+  // area, otherwise the boundary clamp would make the plank unreachable.
+  const entry = railY - Math.max(0.8, railY * 0.55);
+  for (const plank of planks) {
+    const side = plank.side >= 0 ? 1 : -1;
+    const along = side * localY;
+    if (Math.abs(localX - (Number(plank.x) || 0)) > SHIP_PLANK_HALF_WIDTH) continue;
+    if (along >= entry && along <= railY + SHIP_PLANK_REACH) {
+      return { ...plank, side, railY };
+    }
+  }
+  return null;
+}
+
+function dirVecForPortFacing(facing) {
+  if (facing === "north") return { x: 0, y: -1 };
+  if (facing === "south") return { x: 0, y: 1 };
+  if (facing === "west") return { x: -1, y: 0 };
+  return { x: 1, y: 0 };
+}
+
+// Where the automated docking system parks a ship: alongside the pier head,
+// rotated so the starboard plank lines up with the pier's boarding plank.
+function mooringPoseForPort(port, layout) {
+  const o = dirVecForPortFacing(port?.facing);
+  const tipX = Number.isFinite(Number(port?.plankX)) ? Number(port.plankX) : Number(port?.x) - o.x * 8;
+  const tipY = Number.isFinite(Number(port?.plankY)) ? Number(port.plankY) : Number(port?.y) - o.y * 8;
+  const offset = layout.deckH / 2 + SHIP_MOOR_GAP;
+  return {
+    x: tipX + o.x * offset,
+    y: tipY + o.y * offset,
+    // facing such that the deck-local +y (starboard) rail points back at the pier
+    facing: normalizeAngle(Math.atan2(o.y, o.x) + Math.PI / 2),
+    plankTipX: tipX,
+    plankTipY: tipY
+  };
+}
+
 function clampPlayerToShipDeck(player) {
   const ship = player?.ship;
   if (!ship) return;
   const layout = getShipLayout(ship);
-  const [clampedX, clampedY] = clampShipLocalToHull(
-    Number(player.shipLocalX) || 0,
-    Number(player.shipLocalY) || 0,
-    ship,
-    layout
-  );
+  let localX = Number(player.shipLocalX) || 0;
+  let localY = Number(player.shipLocalY) || 0;
+  const plank = isNauticalHullClass(ship.hullClass) ? shipPlankZoneAt(layout, localX, localY) : null;
+  if (plank) {
+    // On a plank: stay inside the corridor, never further out than the plank end.
+    localX = Math.max(plank.x - SHIP_PLANK_HALF_WIDTH, Math.min(plank.x + SHIP_PLANK_HALF_WIDTH, localX));
+    const along = plank.side * localY;
+    const clampedAlong = Math.min(plank.railY + SHIP_PLANK_REACH, along);
+    localY = plank.side * clampedAlong;
+    player.shipLocalX = localX;
+    player.shipLocalY = localY;
+    syncPlayerToShipLocal(player);
+    return;
+  }
+  const [clampedX, clampedY] = clampShipLocalToHull(localX, localY, ship, layout);
   player.shipLocalX = clampedX;
   player.shipLocalY = clampedY;
   syncPlayerToShipLocal(player);
@@ -3196,6 +3462,9 @@ function sanitizeShip(ship, fallbackId = null) {
     speed: clampNumber(ship.speed, 0, 1000, SHIP_SPEED),
     sailTrim: clampNumber(ship.sailTrim, -1, 1, 0),
     sailAngle: clampNumber(ship.sailAngle, -SAIL_ANGLE_LIMIT, SAIL_ANGLE_LIMIT, 0),
+    moored: Boolean(ship.moored),
+    throttle: clampNumber(ship.throttle, NAUTICAL_REVERSE_LIMIT, 1, 0),
+    ...(Number.isFinite(Number(ship.crewTarget)) ? { crewTarget: Math.max(0, Math.min(8, Math.round(Number(ship.crewTarget)))) } : {}),
     laserTier: clampInteger(ship.laserTier ?? 1, 1, 5),
     thrustTier: clampInteger(ship.thrustTier ?? 1, 1, 5),
     deckMode: Boolean(ship.deckMode),
@@ -4361,6 +4630,237 @@ function updateShipWarpForClient(client, dt, aboardShipClients) {
   return true;
 }
 
+function findNauticalPilotClient(ship) {
+  for (const client of clients.values()) {
+    const p = client.player;
+    if (!p || p.ship !== ship) continue;
+    if (isPilotShipRole(p.shipStationRole || ship.stationRole)) return client;
+  }
+  return null;
+}
+
+function notifyShipOccupants(ownerClient, ship, payload, aboardShipClients) {
+  if (ownerClient?.player?.ship === ship) {
+    send(ownerClient, payload);
+  }
+  const passengers = aboardShipClients.get(ship.id) || [];
+  for (const passengerClient of passengers) {
+    send(passengerClient, payload);
+  }
+}
+
+// Momentum-based sailing for nautical hulls: throttle ramps, the hull coasts,
+// the velocity vector drifts back in line with the heading, and an automated
+// docking system glides the ship onto the pier plank when it comes in close.
+function updateNauticalShipPhysics(ownerClient, ship, dt, aboardShipClients) {
+  if (!ship?.boarded || !isNauticalHullClass(ship.hullClass)) return;
+  if (sanitizeShipWarp(ship.warp)) return; // warp travel drives its own movement
+
+  updateNauticalShipCannons(ship, dt);
+
+  const layout = getShipLayout(ship);
+  const now = Date.now();
+  const pilotClient = findNauticalPilotClient(ship);
+  const input = pilotClient?.input || null;
+
+  ship.throttle = clampNumber(ship.throttle, NAUTICAL_REVERSE_LIMIT, 1, 0);
+  ship.sailSpeed = clampNumber(ship.sailSpeed, -1000, 1000, 0);
+  if (!Number.isFinite(ship.velX)) ship.velX = 0;
+  if (!Number.isFinite(ship.velY)) ship.velY = 0;
+  ship.rudder = clampNumber(ship.rudder, -1, 1, 0);
+
+  // Moored alongside a pier: nothing moves until the pilot throttles up.
+  if (ship.moored) {
+    ship.docking = null;
+    ship.sailSpeed = 0;
+    ship.velX = 0;
+    ship.velY = 0;
+    if (input && (input.up || input.engage)) {
+      ship.moored = false;
+      ship.dockHoldUntil = now + SHIP_DOCK_REENGAGE_HOLD_MS;
+      ship.throttle = 0.3;
+      if (pilotClient) send(pilotClient, { type: "serverMessage", message: "ship_set_sail", shipName: ship.name });
+    } else {
+      ship.throttle = 0;
+      return;
+    }
+  }
+
+  // Automated docking: ease heading and position onto the mooring pose so the
+  // ship's starboard plank lines up with the pier plank.
+  if (ship.docking && typeof ship.docking === "object") {
+    const port = resolveDockPortById(ship.docking.portId);
+    const steering = Boolean(input && (input.left || input.right || input.down));
+    if (!port) {
+      ship.docking = null;
+    } else if (steering) {
+      ship.docking = null;
+      ship.dockHoldUntil = now + SHIP_DOCK_REENGAGE_HOLD_MS;
+      if (pilotClient) send(pilotClient, { type: "serverMessage", message: "ship_dock_cancelled" });
+    } else {
+      const pose = mooringPoseForPort(port, layout);
+      const center = shipCenter(ship);
+      ship.throttle = 0;
+      ship.sailSpeed = 0;
+      ship.velX = 0;
+      ship.velY = 0;
+      const facing = Number(ship.facing) || 0;
+      const angleDelta = normalizeAngle(pose.facing - facing);
+      const angleStep = Math.min(Math.abs(angleDelta), SHIP_AUTODOCK_TURN_RATE * dt);
+      ship.facing = normalizeAngle(facing + Math.sign(angleDelta) * angleStep);
+      const dx = pose.x - center.x;
+      const dy = pose.y - center.y;
+      const dist = Math.hypot(dx, dy);
+      let movedX = 0;
+      let movedY = 0;
+      if (dist > 1e-4) {
+        const glide = Math.min(SHIP_AUTODOCK_MAX_SPEED, Math.max(0.55, dist * 0.9));
+        const step = Math.min(dist, glide * dt);
+        movedX = (dx / dist) * step;
+        movedY = (dy / dist) * step;
+        ship.worldX = center.x + movedX;
+        ship.worldY = center.y + movedY;
+      }
+      moveShipOccupantsWithWarp(ownerClient, ship, movedX, movedY, aboardShipClients);
+      const remaining = Math.hypot(pose.x - (ship.worldX ?? center.x), pose.y - (ship.worldY ?? center.y));
+      if (remaining <= 0.1 && Math.abs(normalizeAngle(pose.facing - ship.facing)) <= 0.05) {
+        const snapDx = pose.x - (ship.worldX ?? center.x);
+        const snapDy = pose.y - (ship.worldY ?? center.y);
+        ship.worldX = pose.x;
+        ship.worldY = pose.y;
+        ship.facing = pose.facing;
+        moveShipOccupantsWithWarp(ownerClient, ship, snapDx, snapDy, aboardShipClients);
+        ship.moored = true;
+        ship.docking = null;
+        ship.dockX = pose.x;
+        ship.dockY = pose.y;
+        ship.dockPortId = port.id;
+        ship.dockStationId = dockStationIdForPort(port);
+        saveClientCharacter(ownerClient);
+        notifyShipOccupants(ownerClient, ship, {
+          type: "serverMessage",
+          message: "ship_moored",
+          shipName: ship.name,
+          portName: port.harbourName || "the pier"
+        }, aboardShipClients);
+      }
+      return;
+    }
+  }
+
+  // Throttle: W ramps up, S brakes into a slow reverse, releasing coasts.
+  if (input) {
+    if (input.up || input.engage) {
+      ship.throttle = Math.min(1, ship.throttle + NAUTICAL_THROTTLE_RAMP * dt);
+    } else if (input.down) {
+      ship.throttle = Math.max(NAUTICAL_REVERSE_LIMIT, ship.throttle - NAUTICAL_THROTTLE_RAMP * dt);
+    } else if (ship.throttle !== 0) {
+      const decay = NAUTICAL_THROTTLE_COAST * dt;
+      ship.throttle = Math.abs(ship.throttle) <= decay ? 0 : ship.throttle - Math.sign(ship.throttle) * decay;
+    }
+    const turn = Number(input.right) - Number(input.left);
+    ship.rudder += (turn - ship.rudder) * Math.min(1, NAUTICAL_RUDDER_RATE * dt);
+  } else {
+    // No one at the helm — sails luff, the ship coasts to a stop.
+    const decay = NAUTICAL_THROTTLE_RAMP * dt;
+    ship.throttle = Math.abs(ship.throttle) <= decay ? 0 : ship.throttle - Math.sign(ship.throttle) * decay;
+    ship.rudder += (0 - ship.rudder) * Math.min(1, NAUTICAL_RUDDER_RATE * dt);
+  }
+
+  // Speed eases toward the throttle target; the wind factor scales top speed
+  // (mirrors getPlayerSpeed's nautical branch without needing the pilot object).
+  const baseSpeed = Number(ship.speed) || SHIP_SPEED;
+  const thrustTier = Math.min(5, Math.max(1, Math.floor(Number(ship.thrustTier) || 1)));
+  const maxSpeed = Math.max(0.5, (baseSpeed + (thrustTier - 1) * 0.55) * nauticalWindSpeedFactor(ship));
+  const targetSpeed = ship.throttle * maxSpeed;
+  const approachRate = Math.abs(targetSpeed) >= Math.abs(ship.sailSpeed) ? NAUTICAL_ACCEL_RATE : NAUTICAL_DECEL_RATE;
+  ship.sailSpeed += (targetSpeed - ship.sailSpeed) * (1 - Math.exp(-approachRate * dt));
+  if (Math.abs(ship.sailSpeed) < 0.02 && Math.abs(targetSpeed) < 0.02) ship.sailSpeed = 0;
+
+  // Turn rate scales with way on the boat — a drifting hull barely answers the helm.
+  const speedFrac = Math.min(1, Math.abs(ship.sailSpeed) / maxSpeed);
+  if (Math.abs(ship.rudder) > 0.02 && Math.abs(ship.sailSpeed) > 0.12) {
+    const turnRate = NAUTICAL_TURN_RATE_MIN + (NAUTICAL_TURN_RATE_MAX - NAUTICAL_TURN_RATE_MIN) * speedFrac;
+    const reverseSign = ship.sailSpeed < 0 ? -1 : 1;
+    ship.facing = normalizeAngle((Number(ship.facing) || 0) + ship.rudder * turnRate * reverseSign * dt);
+  }
+
+  // Velocity drifts back into line with the heading (the "grip" of the keel).
+  const facing = Number(ship.facing) || 0;
+  const grip = 1 - Math.exp(-NAUTICAL_GRIP * dt);
+  ship.velX += (Math.cos(facing) * ship.sailSpeed - ship.velX) * grip;
+  ship.velY += (Math.sin(facing) * ship.sailSpeed - ship.velY) * grip;
+
+  const center = shipCenter(ship);
+  const prevX = center.x;
+  const prevY = center.y;
+  if (Math.hypot(ship.velX, ship.velY) > 0.01) {
+    const doorAccountKey = ownerClient.account?.key || "";
+    const radius = shipCollisionRadius(ship);
+    const nextX = center.x + ship.velX * dt;
+    const nextY = center.y + ship.velY * dt;
+    let crashed = false;
+    if (
+      !isBlockedCircleForShip(nextX, center.y, radius) &&
+      !isDoorLockedForPlayer(nextX, center.y, doorAccountKey) &&
+      !isShipCircleBlockedByOtherShip(nextX, center.y, radius, ship)
+    ) {
+      ship.worldX = nextX;
+    } else {
+      crashed = Math.abs(ship.velX) > 1.4;
+      ship.velX = 0;
+      ship.sailSpeed *= 0.45;
+    }
+    if (
+      !isBlockedCircleForShip(ship.worldX ?? center.x, nextY, radius) &&
+      !isDoorLockedForPlayer(ship.worldX ?? center.x, nextY, doorAccountKey) &&
+      !isShipCircleBlockedByOtherShip(ship.worldX ?? center.x, nextY, radius, ship)
+    ) {
+      ship.worldY = nextY;
+    } else {
+      crashed = crashed || Math.abs(ship.velY) > 1.4;
+      ship.velY = 0;
+      ship.sailSpeed *= 0.45;
+    }
+    if (crashed && now - (ship.lastCrashDamageAt || 0) >= SHIP_CRASH_DAMAGE_COOLDOWN_MS) {
+      ship.lastCrashDamageAt = now;
+      const dealt = damagePlayerShip(ship, SHIP_CRASH_DAMAGE, now);
+      if (dealt > 0) {
+        notifyShipOccupants(ownerClient, ship, {
+          type: "serverMessage",
+          message: "ship_hull_damaged",
+          damage: dealt,
+          health: Math.round(ship.health),
+          maxHealth: Math.round(getShipMaxHealth(ship))
+        }, aboardShipClients);
+      }
+    }
+  }
+  const shipDx = (ship.worldX ?? prevX) - prevX;
+  const shipDy = (ship.worldY ?? prevY) - prevY;
+  moveShipOccupantsWithWarp(ownerClient, ship, shipDx, shipDy, aboardShipClients);
+
+  // Automated docking engages whenever the ship draws near a free mooring.
+  if (!ship.docking && now >= (Number(ship.dockHoldUntil) || 0)) {
+    const port = findNearestDockPort(ship.worldX ?? prevX, ship.worldY ?? prevY, SHIP_AUTODOCK_RANGE + 8);
+    if (port) {
+      const pose = mooringPoseForPort(port, layout);
+      const dist = Math.hypot(pose.x - (ship.worldX ?? prevX), pose.y - (ship.worldY ?? prevY));
+      if (
+        dist <= SHIP_AUTODOCK_RANGE &&
+        !isShipCircleBlockedByOtherShip(pose.x, pose.y, shipCollisionRadius(ship) * 0.8, ship)
+      ) {
+        ship.docking = { portId: port.id, engagedAt: now };
+        notifyShipOccupants(ownerClient, ship, {
+          type: "serverMessage",
+          message: "ship_dock_engaged",
+          portName: port.harbourName || "the pier"
+        }, aboardShipClients);
+      }
+    }
+  }
+}
+
 function simulate() {
   disconnectIdleClients(Date.now());
   if (clients.size === 0) {
@@ -4374,6 +4874,17 @@ function simulate() {
     pruneAsteroidState();
   }
   const aboardShipClients = buildAboardShipClientIndex();
+
+  // Nautical hulls run a shared physics pass (momentum, drift, auto-docking)
+  // regardless of who — if anyone — is at the helm.
+  for (const client of clients.values()) {
+    const p = client.player;
+    if (!p) continue;
+    const ownedShip = getOwnedActiveShip(p);
+    if (!ownedShip || ownedShip !== p.ship || !ownedShip.boarded) continue;
+    if (!isNauticalHullClass(ownedShip.hullClass)) continue;
+    updateNauticalShipPhysics(client, ownedShip, dt, aboardShipClients);
+  }
 
   for (const client of clients.values()) {
     if (!client.player) {
@@ -4393,30 +4904,39 @@ function simulate() {
       isShipNavTheme(getWorldThemeAt(client.player.x, client.player.y));
     const shipWarping = updateShipWarpForClient(client, dt, aboardShipClients);
 
-    if (shipPilot) {
+    if (shipPilot && isNauticalHullClass(client.player.ship.hullClass)) {
+      // Nautical helm: the shared physics pass already moved the ship this
+      // tick — the pilot just rides the helm seat.
+      const ship = client.player.ship;
+      client.player._stillAccumulator = 0;
+      client.player.facing = Number(ship.facing) || 0;
+      const station = getShipLayout(ship).stations.find((candidate) => candidate.id === (client.player.shipStationId || ship.stationId)) || getShipLayout(ship).stations[0];
+      const seat = shipStationWorld(ship, station);
+      setPlayerShipLocal(client.player, Number(station.x) || 0, Number(station.y) || 0);
+      client.player.x = seat.x;
+      client.player.y = seat.y;
+      client.player.moving = Boolean(
+        shipWarping ||
+        Math.abs(Number(ship.sailSpeed) || 0) > 0.25 ||
+        Boolean(ship.docking) ||
+        input.left || input.right || input.up || input.down || input.engage
+      );
+    } else if (shipPilot) {
       const ship = client.player.ship;
       client.player._stillAccumulator = 0;
       ship.docking = null;
 
-      const nauticalPilot = isNauticalHullClass(ship.hullClass);
       const dx = Number(input.right) - Number(input.left);
       const dy = Number(input.down) - Number(input.up);
-      if (nauticalPilot) {
-        if (dx !== 0 && !shipWarping) {
-          ship.facing = normalizeAngle((Number(ship.facing) || 0) + dx * dt * 1.85);
-        }
-        client.player.facing = Number(ship.facing) || 0;
-      } else {
-        // WASD sets the ship's facing direction for free-flight ships.
-        const aimLength = Math.hypot(dx, dy);
-        if (aimLength > 0) {
-          client.player.facing = Math.atan2(dy, dx);
-          if (!shipWarping) {
-            ship.facing = client.player.facing;
-          }
+      // WASD sets the ship's facing direction for free-flight ships.
+      const aimLength = Math.hypot(dx, dy);
+      if (aimLength > 0) {
+        client.player.facing = Math.atan2(dy, dx);
+        if (!shipWarping) {
+          ship.facing = client.player.facing;
         }
       }
-      const thrusting = nauticalPilot ? Boolean(input.up || input.engage) : Boolean(input.engage);
+      const thrusting = Boolean(input.engage);
       if (thrusting && !shipWarping) {
         const sp = getPlayerSpeed(client.player);
         const vx = Math.cos(client.player.facing) * sp * dt;
@@ -4459,10 +4979,8 @@ function simulate() {
         }
         if (shipDx !== 0 || shipDy !== 0) {
           const travelAngle = Math.atan2(shipDy, shipDx);
-          if (!nauticalPilot) {
-            ship.facing = travelAngle;
-            client.player.facing = travelAngle;
-          }
+          ship.facing = travelAngle;
+          client.player.facing = travelAngle;
           const passengers = aboardShipClients.get(ship.id) || [];
           for (const passengerClient of passengers) {
             const passenger = passengerClient.player;
@@ -4477,7 +4995,7 @@ function simulate() {
       setPlayerShipLocal(client.player, Number(station.x) || 0, Number(station.y) || 0);
       client.player.x = seat.x;
       client.player.y = seat.y;
-      client.player.moving = Boolean(thrusting || shipWarping || (nauticalPilot && dx !== 0));
+      client.player.moving = Boolean(thrusting || shipWarping);
     } else if (client.player.ship?.boarded && client.player.ship.deckMode) {
       const ship = client.player.ship;
       const role = client.player.shipStationRole || ship.stationRole;
@@ -4521,21 +5039,45 @@ function simulate() {
         }
         const dx = Number(input.right) - Number(input.left);
         const dy = Number(input.down) - Number(input.up);
-        if (Math.hypot(dx, dy) > 0) {
-          client.player.facing = Math.atan2(dy, dx);
-        }
-        if (input.fire) {
-          if (input.weaponMode === "missile") {
-            if (Date.now() - (client.lastShipMissileAt || 0) > SHIP_MISSILE_COOLDOWN_MS) {
-              handleShipMissile(client);
-            }
-          } else {
-            if (Date.now() - (client.lastShipFireAt || 0) > SHIP_GUNNER_COOLDOWN_MS) {
-              const center = shipCenter(ship);
-              handleShipFire(client, {
-                targetX: center.x + Math.cos(client.player.facing) * 24,
-                targetY: center.y + Math.sin(client.player.facing) * 24
-              });
+        if (isNauticalHullClass(ship.hullClass) && station) {
+          // Side cannon: the barrel slews slowly toward the mouse aim point and
+          // always fires along wherever it is pointing right now.
+          const cannon = ensureShipCannon(ship, station);
+          const muzzle = shipLocalToWorld(ship, Number(station.x) || 0, Number(station.y) || 0);
+          const aimX = Number(input.aimX);
+          const aimY = Number(input.aimY);
+          if (Number.isFinite(aimX) && Number.isFinite(aimY) && Math.hypot(aimX - muzzle.x, aimY - muzzle.y) > 0.4) {
+            cannon.targetAngle = Math.atan2(aimY - muzzle.y, aimX - muzzle.x);
+          } else if (Math.hypot(dx, dy) > 0) {
+            cannon.targetAngle = normalizeAngle((Number(ship.facing) || 0) + Math.atan2(dy, dx));
+          }
+          // Gunner sprite tracks the barrel in deck-local space.
+          client.player.facing = normalizeAngle((Number(cannon.angle) || 0) - (Number(ship.facing) || 0));
+          if (input.fire && Date.now() - (client.lastShipFireAt || 0) > SHIP_GUNNER_COOLDOWN_MS) {
+            const angle = Number(cannon.angle) || 0;
+            handleShipFire(client, {
+              targetX: muzzle.x + Math.cos(angle) * 24,
+              targetY: muzzle.y + Math.sin(angle) * 24,
+              alongBarrel: true
+            });
+          }
+        } else {
+          if (Math.hypot(dx, dy) > 0) {
+            client.player.facing = Math.atan2(dy, dx);
+          }
+          if (input.fire) {
+            if (input.weaponMode === "missile") {
+              if (Date.now() - (client.lastShipMissileAt || 0) > SHIP_MISSILE_COOLDOWN_MS) {
+                handleShipMissile(client);
+              }
+            } else {
+              if (Date.now() - (client.lastShipFireAt || 0) > SHIP_GUNNER_COOLDOWN_MS) {
+                const center = shipCenter(ship);
+                handleShipFire(client, {
+                  targetX: center.x + Math.cos(client.player.facing) * 24,
+                  targetY: center.y + Math.sin(client.player.facing) * 24
+                });
+              }
             }
           }
         }
@@ -4602,6 +5144,18 @@ function simulate() {
           clampPlayerToShipDeck(client.player);
           client.player.facing = Math.atan2(dy, dx);
           client.player.moving = true;
+          // Pushing outward past the end of a boarding plank steps you off the
+          // ship — the only place the deck boundary lets you leave.
+          if (isNauticalHullClass(ship.hullClass)) {
+            const plank = shipPlankZoneAt(getShipLayout(ship), client.player.shipLocalX, client.player.shipLocalY);
+            if (
+              plank &&
+              plank.side * client.player.shipLocalY >= plank.railY + SHIP_PLANK_REACH - 0.12 &&
+              plank.side * dy > 0.35
+            ) {
+              plankWalkOff(client, ship, plank);
+            }
+          }
         } else {
           syncPlayerToShipLocal(client.player);
           client.player.moving = false;
@@ -4669,6 +5223,11 @@ function simulate() {
       client.player.swimming = false;
     } else {
       client.player.swimming = isSwimmingAt(client.player.x, client.player.y);
+    }
+
+    // Walking onto a ship's plank from the pier (or the water) boards it.
+    if (client.player.moving) {
+      maybePlankBoarding(client);
     }
 
     handleDoorTravel(client);
@@ -6468,16 +7027,183 @@ function disembarkPassengers(shipId, port) {
 }
 
 function dockPlankDisembarkPoint(ship, port) {
+  // Step off onto the pier-head plank tile, facing back up the pier.
   const layout = getShipLayout(ship);
-  const facing = facingForDockPort(port);
-  const plank = layout.plank || { x: layout.entry?.x || -layout.deckW / 2, y: layout.entry?.y || 0, w: 2.4, h: 2.0 };
-  const localX = (Number(plank.x) || 0) - (Number(plank.w) || 2.4) / 2 - 0.65;
-  const localY = Number(plank.y) || 0;
+  const pose = mooringPoseForPort(port, layout);
+  const o = dirVecForPortFacing(port?.facing);
   return {
-    x: port.x + Math.cos(facing) * localX - Math.sin(facing) * localY,
-    y: port.y + Math.sin(facing) * localX + Math.cos(facing) * localY,
-    facing
+    x: pose.plankTipX - o.x * 0.6,
+    y: pose.plankTipY - o.y * 0.6,
+    facing: Math.atan2(-o.y, -o.x)
   };
+}
+
+// The plank corridor (in deck-local coords) that a world point stands in, with a
+// little extra reach so someone on the pier can step onto the plank's outer end.
+function plankZoneForWorldPoint(ship, wx, wy, extraReach = 0) {
+  if (!isNauticalHullClass(ship?.hullClass)) return null;
+  const layout = getShipLayout(ship);
+  const local = shipWorldToLocal(ship, wx, wy);
+  const planks = Array.isArray(layout.planks) ? layout.planks : [];
+  const railY = layout.deckH / 2;
+  for (const plank of planks) {
+    const side = plank.side >= 0 ? 1 : -1;
+    const along = side * local.y;
+    if (Math.abs(local.x - (Number(plank.x) || 0)) > SHIP_PLANK_HALF_WIDTH + 0.25) continue;
+    if (along >= railY - 0.4 && along <= railY + SHIP_PLANK_REACH + extraReach) {
+      return { ...plank, side, railY, layout };
+    }
+  }
+  return null;
+}
+
+// Owner steps off the plank away from any pier: the ship anchors where it is
+// and the captain goes into the drink.
+function disembarkOwnerAtSea(client, exit) {
+  const player = client.player;
+  const ship = player?.ship;
+  if (!player || !ship) return false;
+  const shipId = ship.id;
+  ship.boarded = false;
+  ship.deckMode = false;
+  ship.stationRole = null;
+  ship.stationId = null;
+  ship.docking = null;
+  ship.moored = false;
+  ship.throttle = 0;
+  ship.sailSpeed = 0;
+  ship.velX = 0;
+  ship.velY = 0;
+  ship.dockX = Number.isFinite(ship.worldX) ? ship.worldX : ship.dockX;
+  ship.dockY = Number.isFinite(ship.worldY) ? ship.worldY : ship.dockY;
+  ship.dockPortId = null;
+  player.shipStationRole = null;
+  player.shipStationId = null;
+  player.aboardShipId = null;
+  player.boardedShip = null;
+  disembarkPassengers(shipId, null);
+  player.x = exit.x;
+  player.y = exit.y;
+  player.moving = false;
+  player._stillAccumulator = 0;
+  player._plankBoardCooldownUntil = Date.now() + 2000;
+  saveClientCharacter(client);
+  send(client, { type: "serverMessage", message: "ship_plank_overboard", shipName: ship.name });
+  broadcastSnapshot();
+  return true;
+}
+
+// A deck-walker reached the outer end of a boarding plank — get them off the
+// ship: onto the pier when moored, into the sea otherwise.
+function plankWalkOff(client, ship, plank) {
+  const player = client.player;
+  if (!player) return false;
+  const exitLocalY = plank.side * (plank.railY + SHIP_PLANK_REACH + 1.0);
+  const exit = shipLocalToWorld(ship, Number(plank.x) || 0, exitLocalY);
+  const isOwner = !player.aboardShipId && getOwnedActiveShip(player) === ship;
+  player._plankBoardCooldownUntil = Date.now() + 2000;
+  if (isOwner) {
+    if (ship.moored) {
+      const port = resolveDockPortById(ship.dockPortId) || findNearestDockPort(exit.x, exit.y, 18);
+      if (port) {
+        return dockPlayerShipAtStation(client, port);
+      }
+    }
+    return disembarkOwnerAtSea(client, exit);
+  }
+  // Passenger: just step off where the plank ends.
+  player.aboardShipId = null;
+  player.boardedShip = null;
+  player.shipStationRole = null;
+  player.shipStationId = null;
+  player.shipLocalX = 0;
+  player.shipLocalY = 0;
+  player.ship = getOwnedActiveShip(player);
+  player.x = exit.x;
+  player.y = exit.y;
+  player.moving = false;
+  player._stillAccumulator = 0;
+  saveClientCharacter(client);
+  send(client, { type: "serverMessage", message: "ship_plank_disembarked", shipName: ship.name });
+  broadcastSnapshot();
+  return true;
+}
+
+// Walking onto a plank's outer end from the pier (or the water) boards the ship.
+function maybePlankBoarding(client) {
+  const player = client.player;
+  if (!player || player.ship?.boarded || player.aboardShipId || player.boardedShip) return false;
+  if (Date.now() < (Number(player._plankBoardCooldownUntil) || 0)) return false;
+  if (getWorldThemeAt(player.x, player.y) !== NAUTICAL_THEME) return false;
+
+  // Own parked / moored ship: walk the plank to re-board.
+  const owned = getOwnedActiveShip(player);
+  if (
+    owned && !owned.boarded && isNauticalHullClass(owned.hullClass) &&
+    Number.isFinite(Number(owned.worldX)) && Number.isFinite(Number(owned.worldY)) &&
+    Math.hypot(player.x - owned.worldX, player.y - owned.worldY) < 40
+  ) {
+    const plank = plankZoneForWorldPoint(owned, player.x, player.y, 0.9);
+    if (plank) {
+      const wasMoored = Boolean(owned.moored);
+      ensureShipCrew(owned);
+      selectPlayerShip(player, owned.id);
+      owned.boarded = true;
+      owned.deckMode = getShipLayout(owned).crewCapacity > 1;
+      owned.stationRole = owned.deckMode ? null : "pilot";
+      owned.stationId = owned.deckMode ? null : "pilot";
+      owned.docking = null;
+      owned.warp = null;
+      owned.moored = wasMoored;
+      owned.throttle = 0;
+      owned.sailSpeed = 0;
+      owned.velX = 0;
+      owned.velY = 0;
+      player.shipStationRole = owned.deckMode ? null : "pilot";
+      player.shipStationId = owned.deckMode ? null : "pilot";
+      setPlayerShipLocal(player, Number(plank.x) || 0, plank.side * (plank.railY - 1.0));
+      clampPlayerToShipDeck(player);
+      player.facing = plank.side > 0 ? -Math.PI / 2 : Math.PI / 2;
+      player.moving = false;
+      saveClientCharacter(client);
+      send(client, { type: "serverMessage", message: "ship_boarded", shipName: owned.name });
+      broadcastSnapshot();
+      return true;
+    }
+  }
+
+  // Someone else's crewed ship: step aboard via the plank while it is not under way.
+  for (const other of clients.values()) {
+    if (other === client) continue;
+    const ship = other.player?.ship;
+    if (!ship?.boarded || !ship.deckMode || !isNauticalHullClass(ship.hullClass)) continue;
+    if (other.player.aboardShipId) continue; // only via the owner's entry
+    if (Math.abs(Number(ship.sailSpeed) || 0) > 1.6) continue;
+    if (Math.hypot(player.x - (ship.worldX || 0), player.y - (ship.worldY || 0)) > 40) continue;
+    const plank = plankZoneForWorldPoint(ship, player.x, player.y, 0.9);
+    if (!plank) continue;
+    const owned2 = getOwnedActiveShip(player);
+    if (owned2 && owned2 !== ship) {
+      owned2.boarded = false;
+      owned2.deckMode = false;
+      owned2.stationRole = null;
+      owned2.stationId = null;
+    }
+    player.boardedShip = { ownerId: other.player.id, shipId: ship.id };
+    player.aboardShipId = ship.id;
+    player.ship = ship;
+    player.shipStationRole = null;
+    player.shipStationId = null;
+    setPlayerShipLocal(player, Number(plank.x) || 0, plank.side * (plank.railY - 1.0));
+    clampPlayerToShipDeck(player);
+    player.facing = plank.side > 0 ? -Math.PI / 2 : Math.PI / 2;
+    player.moving = false;
+    saveClientCharacter(client);
+    send(client, { type: "serverMessage", message: "ship_boarded", shipName: ship.name });
+    broadcastSnapshot();
+    return true;
+  }
+  return false;
 }
 
 function dockPlayerShipAtStation(client, port = resolveShipExitDockPort(client.player)) {
@@ -6489,23 +7215,41 @@ function dockPlayerShipAtStation(client, port = resolveShipExitDockPort(client.p
   }
 
   const shipId = client.player.ship.id;
-  client.player.ship.boarded = false;
-  client.player.ship.deckMode = false;
-  client.player.ship.stationRole = null;
-  client.player.ship.stationId = null;
+  const ship = client.player.ship;
+  const nautical = isNauticalHullClass(ship.hullClass);
+  ship.boarded = false;
+  ship.deckMode = false;
+  ship.stationRole = null;
+  ship.stationId = null;
   client.player.shipStationRole = null;
   client.player.shipStationId = null;
   client.player.boardedShip = null;
   client.player.aboardShipId = null;
-  client.player.ship.dockX = port.x;
-  client.player.ship.dockY = port.y;
-  client.player.ship.dockStationId = dockStationIdForPort(port);
-  client.player.ship.dockPortId = port.id;
-  client.player.ship.worldX = port.x;
-  client.player.ship.worldY = port.y;
-  client.player.ship.facing = facingForDockPort(port);
+  ship.dockStationId = dockStationIdForPort(port);
+  ship.dockPortId = port.id;
+  if (nautical) {
+    // Park at the mooring pose so the side plank stays lined up with the pier.
+    const pose = mooringPoseForPort(port, getShipLayout(ship));
+    ship.dockX = pose.x;
+    ship.dockY = pose.y;
+    ship.worldX = pose.x;
+    ship.worldY = pose.y;
+    ship.facing = pose.facing;
+    ship.moored = true;
+    ship.docking = null;
+    ship.throttle = 0;
+    ship.sailSpeed = 0;
+    ship.velX = 0;
+    ship.velY = 0;
+  } else {
+    ship.dockX = port.x;
+    ship.dockY = port.y;
+    ship.worldX = port.x;
+    ship.worldY = port.y;
+    ship.facing = facingForDockPort(port);
+  }
   disembarkPassengers(shipId, port);
-  const plankExit = isNauticalHullClass(client.player.ship.hullClass) ? dockPlankDisembarkPoint(client.player.ship, port) : null;
+  const plankExit = nautical ? dockPlankDisembarkPoint(ship, port) : null;
   client.player.x = plankExit?.x ?? (Number.isFinite(port.terminalX) ? port.terminalX : port.x);
   client.player.y = plankExit?.y ?? (Number.isFinite(port.terminalY) ? port.terminalY : port.y);
   client.player.facing = plankExit?.facing ?? facingForDockPort(port);
@@ -6595,12 +7339,17 @@ function findBoardableSharedShip(client, message = {}) {
     if (client.player.ship === ship) continue;
     const layout = getShipLayout(ship);
     const center = shipCenter(ship);
-    const plank = layout.plank || { x: layout.entry?.x || -layout.deckW / 2, y: layout.entry?.y || 0, w: 2.4, h: 2.0 };
-    const localX = tx - center.x;
-    const localY = ty - center.y;
-    const nearPlank =
-      Math.abs(localX - plank.x) <= (Number(plank.w) || 2.4) / 2 &&
-      Math.abs(localY - plank.y) <= (Number(plank.h) || 2.0) / 2;
+    const nearPlank = isNauticalHullClass(ship.hullClass)
+      ? Boolean(plankZoneForWorldPoint(ship, tx, ty, 1.2))
+      : (() => {
+          const plank = layout.plank || { x: layout.entry?.x || -layout.deckW / 2, y: layout.entry?.y || 0, w: 2.4, h: 2.0 };
+          const localX = tx - center.x;
+          const localY = ty - center.y;
+          return (
+            Math.abs(localX - plank.x) <= (Number(plank.w) || 2.4) / 2 &&
+            Math.abs(localY - plank.y) <= (Number(plank.h) || 2.0) / 2
+          );
+        })();
     if (!nearPlank) continue;
     const travelDist = Math.hypot(client.player.x - tx, client.player.y - ty);
     if (travelDist > 42) continue;
@@ -6629,8 +7378,12 @@ function boardSharedShip(client, match, message = {}) {
   const tx = Number(message.x);
   const ty = Number(message.y);
   const center = shipCenter(ship);
-  const localX = Number.isFinite(tx) ? tx - center.x : layout.entry.x;
-  const localY = Number.isFinite(ty) ? ty - center.y : layout.entry.y;
+  const nautical = isNauticalHullClass(ship.hullClass);
+  const rotatedLocal = nautical && Number.isFinite(tx) && Number.isFinite(ty)
+    ? shipWorldToLocal(ship, tx, ty)
+    : null;
+  const localX = rotatedLocal ? rotatedLocal.x : Number.isFinite(tx) ? tx - center.x : layout.entry.x;
+  const localY = rotatedLocal ? rotatedLocal.y : Number.isFinite(ty) ? ty - center.y : layout.entry.y;
   client.player.boardedShip = { ownerId: match.owner.id, shipId: ship.id };
   client.player.aboardShipId = ship.id;
   client.player.ship = ship;
@@ -6791,6 +7544,24 @@ function handleShipInteract(client, message = {}) {
   }
   // Only the owner can trigger landing.
   if (hostShip === ownShip) {
+    if (isNauticalHullClass(ownShip.hullClass)) {
+      // Boats never teleport to the dock: either finalize while moored, or
+      // hand control to the automated docking system when a pier is close.
+      if (ownShip.moored) {
+        return dockPlayerShipAtStation(client);
+      }
+      const center = shipCenter(ownShip);
+      const port = findNearestDockPort(center.x, center.y, SHIP_AUTODOCK_RANGE + 8);
+      if (port) {
+        ownShip.warp = null;
+        ownShip.dockHoldUntil = 0;
+        ownShip.docking = { portId: port.id, engagedAt: Date.now() };
+        send(client, { type: "serverMessage", message: "ship_dock_engaged", portName: port.harbourName || "the pier" });
+        return true;
+      }
+      send(client, { type: "serverMessage", message: "ship_dock_not_nearby" });
+      return true;
+    }
     return dockPlayerShipAtStation(client);
   }
   return false;
@@ -6985,14 +7756,33 @@ function handleShipFire(client, message = {}) {
   client.lastShipFireAt = now;
 
   const center = shipCenter(ship);
-  const tx = Number.isFinite(Number(message.targetX)) ? Number(message.targetX) : center.x + Math.cos(client.player.facing) * 8;
-  const ty = Number.isFinite(Number(message.targetY)) ? Number(message.targetY) : center.y + Math.sin(client.player.facing) * 8;
+  let tx = Number.isFinite(Number(message.targetX)) ? Number(message.targetX) : center.x + Math.cos(client.player.facing) * 8;
+  let ty = Number.isFinite(Number(message.targetY)) ? Number(message.targetY) : center.y + Math.sin(client.player.facing) * 8;
 
-  // Update the gunner's facing toward the aim point so the seat orientation tracks.
-  const aimDx = tx - center.x;
-  const aimDy = ty - center.y;
-  if (aimDx * aimDx + aimDy * aimDy > 0.0001) {
-    client.player.facing = Math.atan2(aimDy, aimDx);
+  if (isNauticalHullClass(ship.hullClass) && !message.alongBarrel) {
+    // Clicking re-aims the side cannon, but the shot leaves along wherever the
+    // slow-traversing barrel points right now.
+    const layout = getShipLayout(ship);
+    const station = layout.stations.find((s) => s.id === ctx.stationId && s.role === "gunner")
+      || layout.stations.find((s) => s.role === "gunner");
+    if (station) {
+      const cannon = ensureShipCannon(ship, station);
+      const muzzle = shipLocalToWorld(ship, Number(station.x) || 0, Number(station.y) || 0);
+      if (Math.hypot(tx - muzzle.x, ty - muzzle.y) > 0.4) {
+        cannon.targetAngle = Math.atan2(ty - muzzle.y, tx - muzzle.x);
+      }
+      const angle = Number(cannon.angle) || 0;
+      tx = muzzle.x + Math.cos(angle) * 24;
+      ty = muzzle.y + Math.sin(angle) * 24;
+      client.player.facing = normalizeAngle(angle - (Number(ship.facing) || 0));
+    }
+  } else {
+    // Update the gunner's facing toward the aim point so the seat orientation tracks.
+    const aimDx = tx - center.x;
+    const aimDy = ty - center.y;
+    if (aimDx * aimDx + aimDy * aimDy > 0.0001) {
+      client.player.facing = Math.atan2(aimDy, aimDx);
+    }
   }
 
   ensureShipCrew(ship);
@@ -7618,16 +8408,26 @@ function handleShipDockRequest(client) {
     send(client, { type: "serverMessage", message: "ship_dock_not_piloting" });
     return;
   }
+  if (ship.moored) {
+    // Already alongside — treat the request as casting off.
+    ship.moored = false;
+    ship.dockHoldUntil = Date.now() + SHIP_DOCK_REENGAGE_HOLD_MS;
+    ship.throttle = 0.3;
+    send(client, { type: "serverMessage", message: "ship_set_sail", shipName: ship.name });
+    return;
+  }
   const center = shipCenter(ship, player);
-  const port = findNearestDockPort(center.x, center.y, SHIP_DOCK_PROMPT_RANGE + 2);
+  const port = findNearestDockPort(center.x, center.y, SHIP_AUTODOCK_RANGE + 8);
   if (!port) {
     send(client, { type: "serverMessage", message: "ship_dock_not_nearby" });
     return;
   }
-  ship.docking = null;
+  // Engage the automated docking system — it glides the ship onto the pier
+  // plank instead of teleporting it.
   ship.warp = null;
-  ship.speed = 0;
-  dockPlayerShipAtStation(client, port);
+  ship.dockHoldUntil = 0;
+  ship.docking = { portId: port.id, engagedAt: Date.now() };
+  send(client, { type: "serverMessage", message: "ship_dock_engaged", portName: port.harbourName || "the pier" });
 }
 
 function handleShipTerminalInteract(client, message = {}) {
@@ -7649,13 +8449,29 @@ function summonPlayerShipToPort(player, ship, port) {
   }
   selectPlayerShip(player, ship.id);
   ship.boarded = false;
-  ship.dockX = port.x;
-  ship.dockY = port.y;
   ship.dockStationId = dockStationIdForPort(port);
   ship.dockPortId = port.id;
-  ship.worldX = port.x;
-  ship.worldY = port.y;
-  ship.facing = facingForDockPort(port);
+  if (isNauticalHullClass(ship.hullClass)) {
+    // Summoned boats arrive already moored, plank against the pier head.
+    const pose = mooringPoseForPort(port, getShipLayout(ship));
+    ship.dockX = pose.x;
+    ship.dockY = pose.y;
+    ship.worldX = pose.x;
+    ship.worldY = pose.y;
+    ship.facing = pose.facing;
+    ship.moored = true;
+    ship.docking = null;
+    ship.throttle = 0;
+    ship.sailSpeed = 0;
+    ship.velX = 0;
+    ship.velY = 0;
+  } else {
+    ship.dockX = port.x;
+    ship.dockY = port.y;
+    ship.worldX = port.x;
+    ship.worldY = port.y;
+    ship.facing = facingForDockPort(port);
+  }
   return true;
 }
 
@@ -7672,6 +8488,7 @@ function boardPlayerShipAtPort(client, ship, port, options = {}) {
   ensureShipCrew(ship);
   const layout = getShipLayout(ship);
   const deckMode = layout.crewCapacity > 1;
+  const nautical = isNauticalHullClass(ship.hullClass);
   ship.boarded = true;
   ship.deckMode = deckMode;
   ship.stationRole = null;
@@ -7682,9 +8499,21 @@ function boardPlayerShipAtPort(client, ship, port, options = {}) {
   client.player.boardedShip = null;
   client.player.shipStationRole = deckMode ? null : "pilot";
   client.player.shipStationId = deckMode ? null : "pilot";
-  ship.worldX = Number.isFinite(spawnX) ? spawnX : port.x;
-  ship.worldY = Number.isFinite(spawnY) ? spawnY : port.y;
-  ship.facing = Number.isFinite(spawnFacing) ? spawnFacing : facingForDockPort(port);
+  if (nautical) {
+    // The summon step already moored the boat at the pier plank; boarding keeps
+    // that pose unless an explicit spawn override is given.
+    ship.worldX = Number.isFinite(spawnX) ? spawnX : (Number.isFinite(ship.worldX) ? ship.worldX : port.x);
+    ship.worldY = Number.isFinite(spawnY) ? spawnY : (Number.isFinite(ship.worldY) ? ship.worldY : port.y);
+    ship.facing = Number.isFinite(spawnFacing) ? spawnFacing : (Number(ship.facing) || 0);
+    ship.throttle = 0;
+    ship.sailSpeed = 0;
+    ship.velX = 0;
+    ship.velY = 0;
+  } else {
+    ship.worldX = Number.isFinite(spawnX) ? spawnX : port.x;
+    ship.worldY = Number.isFinite(spawnY) ? spawnY : port.y;
+    ship.facing = Number.isFinite(spawnFacing) ? spawnFacing : facingForDockPort(port);
+  }
   setPlayerShipLocal(client.player, deckMode ? layout.entry.x : 0, deckMode ? layout.entry.y : 0);
   if (deckMode) {
     clampPlayerToShipDeck(client.player);
@@ -12502,7 +13331,10 @@ function normalizeInput(keys = {}) {
     engage: Boolean(keys.engage),
     fire: Boolean(keys.fire),
     repair: Boolean(keys.repair),
-    weaponMode: keys.weaponMode === "missile" ? "missile" : "laser"
+    weaponMode: keys.weaponMode === "missile" ? "missile" : "laser",
+    // World-space aim point for slow-traverse ship cannons (mouse tracking).
+    aimX: Number.isFinite(Number(keys.aimX)) ? clampNumber(Number(keys.aimX), -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, 0) : null,
+    aimY: Number.isFinite(Number(keys.aimY)) ? clampNumber(Number(keys.aimY), -SHIP_COORD_LIMIT, SHIP_COORD_LIMIT, 0) : null
   };
 }
 
