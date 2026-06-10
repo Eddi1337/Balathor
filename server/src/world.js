@@ -43,7 +43,11 @@ const TILE = {
   WALKWAY: 24,
   HULL: 25,
   WINDOW: 26,
-  ENERGY: 27
+  ENERGY: 27,
+  /** Town road tiers — packed dirt lanes, cobbled streets, flagstone avenues. */
+  DIRT: 28,
+  COBBLE: 29,
+  STONE_ROAD: 30
 };
 
 const BLOCKED_TILES = new Set([
@@ -145,6 +149,7 @@ const { getMinigameSitesInChunk } = require("./minigameSites.js");
 /** Walled procedural hub + arterial sets (paths never overlap building rects). */
 const _hubDistrict = computeHubDistrict();
 const HUB_PATH_TILE_KEYS = _hubDistrict.pathTileKeys;
+const HUB_ROAD_COBBLE_KEYS = _hubDistrict.roadCobbleKeys instanceof Set ? _hubDistrict.roadCobbleKeys : new Set();
 const HUB_WALL_TILE_KEYS = _hubDistrict.wallTileKeys;
 const HUB_GARDEN_TILE_KEYS = _hubDistrict.gardenTileKeys;
 const HUB_ROADSIDE_FEATURES = _hubDistrict.hubRoadsides || [];
@@ -2443,17 +2448,18 @@ function generateExteriorTileCore(x, y) {
     return TILE.STONE;
   }
 
-  // Main cross-roads radiate outward from the ring.
+  // Main cross-roads radiate outward from the ring. Inside the town walls they
+  // are grand flagstone avenues; beyond the gates they fade to a worn path.
   if (
     !isPortalCourtyardStoneTile(tiGrid, tjGrid) &&
     ((ax <= 1 && ay <= 260) || (ay <= 1 && ax <= 260))
   ) {
-    return TILE.PATH;
+    return dist <= 121 ? TILE.STONE_ROAD : TILE.PATH;
   }
 
-  // Circular ring road (town-square perimeter, radius 7–9).
+  // Circular ring road (town-square perimeter, radius 7–9) — cobbled plaza ring.
   if (dist >= 7 && dist <= 9) {
-    return TILE.PATH;
+    return TILE.COBBLE;
   }
 
   // Village internal street network.
@@ -2466,7 +2472,9 @@ function generateExteriorTileCore(x, y) {
     dist < HUB_TOWN_GRASS_RADIUS + 35 &&
     HUB_PATH_TILE_KEYS.has(hk)
   ) {
-    return TILE.PATH;
+    // Ring roads and radial spokes are cobbled; little lanes that connect each
+    // doorway to the network stay as packed dirt.
+    return HUB_ROAD_COBBLE_KEYS.has(hk) ? TILE.COBBLE : TILE.DIRT;
   }
 
   if (isStoneHighway(tiGrid, tjGrid)) {
@@ -2837,6 +2845,7 @@ function getBuildingsInChunk(cx, cy) {
       type: b.type,
       forSale: !!b.forSale,
       isPub: !!b.isPub,
+      style: typeof b.style === "string" ? b.style.slice(0, 16) : undefined,
       residentLabel: typeof b.residentLabel === "string" ? b.residentLabel.slice(0, 48) : undefined,
       residentSign:
         b.residentSign && typeof b.residentSign.sx === "number" && typeof b.residentSign.sy === "number"

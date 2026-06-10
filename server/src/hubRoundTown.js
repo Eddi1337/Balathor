@@ -531,7 +531,7 @@ function addGardenPatches(gardenKeys, rects) {
 /**
  * Lawns touching paths: benches & small trees; separate pass for 2×1 upright market stalls + traders.
  */
-function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
+function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects, pubRects = []) {
   const list = [];
   const used = new Set();
   const pathSet = pathKeys;
@@ -588,25 +588,25 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
     }
   }
 
-  for (const [key, cel] of lawnEdge) {
+  for (const [key] of lawnEdge) {
     const [nx, ny] = key.split(",").map(Number);
-    if (hz(nx, ny, 7721) < 0.965) continue;
+    // Denser, more varied roadside clutter — the cute stuff lives here.
+    if (hz(nx, ny, 7721) < 0.94) continue;
     if (isTileNearMinigameSite(nx, ny, "fantasy", 2)) continue;
 
     const pick = hz(nx, ny, 7722);
-    const kind = pick < 0.55 ? "bench" : "small_tree";
+    const kind =
+      pick < 0.2 ? "bench"
+        : pick < 0.4 ? "small_tree"
+          : pick < 0.62 ? "flower_bed"
+            : pick < 0.76 ? "planter"
+              : pick < 0.88 ? "lantern"
+                : pick < 0.95 ? "hedge"
+                  : "barrel";
 
     if (isUsed(nx, ny)) continue;
     stampUsed(nx, ny);
 
-    let meanDx = 0;
-    let meanDy = 0;
-    for (let ii = 0; ii < cel.adx.length; ii += 1) {
-      meanDx += cel.adx[ii];
-      meanDy += cel.ady[ii];
-    }
-    meanDx /= cel.adx.length;
-    meanDy /= cel.ady.length;
     list.push({
       id: `hub_rs_${nx}_${ny}`,
       x: nx,
@@ -614,6 +614,93 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
       kind,
       facing: 0
     });
+  }
+
+  /** Lantern posts march along the four grand avenues, two tiles off the kerb. */
+  const lanternLim = HUB_WALL_R_IN_MAIN - 6;
+  for (let t = -lanternLim; t <= lanternLim; t += 13) {
+    if (Math.abs(t) < 12) continue; // keep the plaza clear
+    for (const [lx, ly] of [
+      [t, -2], [t, 2],   // E–W avenue
+      [-2, t], [2, t]    // N–S avenue
+    ]) {
+      if (plazaTree(lx, ly) || nearListedPortal(lx, ly, 130)) continue;
+      if (isPath(lx, ly) || wallKeys.has(`${lx},${ly}`)) continue;
+      if (buildingBlock(lx, ly) || isUsed(lx, ly)) continue;
+      if (isTileNearMinigameSite(lx, ly, "fantasy", 2)) continue;
+      stampUsed(lx, ly);
+      list.push({ id: `hub_lamp_${lx}_${ly}`, x: lx, y: ly, kind: "lantern", facing: 0 });
+    }
+  }
+
+  /** A stone well in each quadrant, nudged onto clear grass. */
+  for (const base of [
+    { cx: 46, cy: 46 },
+    { cx: -46, cy: 46 },
+    { cx: -46, cy: -46 },
+    { cx: 46, cy: -46 }
+  ]) {
+    let placed = false;
+    for (let ring = 0; ring <= 6 && !placed; ring += 1) {
+      for (let oy = -ring; oy <= ring && !placed; oy += 1) {
+        for (let ox = -ring; ox <= ring && !placed; ox += 1) {
+          if (Math.max(Math.abs(ox), Math.abs(oy)) !== ring) continue;
+          const tx = base.cx + ox;
+          const ty = base.cy + oy;
+          let clear = true;
+          for (let dy = 0; dy < 2 && clear; dy += 1) {
+            for (let dx = 0; dx < 2; dx += 1) {
+              const ax = tx + dx;
+              const ay = ty + dy;
+              if (
+                plazaTree(ax, ay) || nearListedPortal(ax, ay, 125) ||
+                isPath(ax, ay) || wallKeys.has(`${ax},${ay}`) ||
+                buildingBlock(ax, ay) || isUsed(ax, ay) ||
+                isTileNearMinigameSite(ax, ay, "fantasy", 2)
+              ) {
+                clear = false;
+                break;
+              }
+            }
+          }
+          if (!clear) continue;
+          for (let dy = 0; dy < 2; dy += 1) {
+            for (let dx = 0; dx < 2; dx += 1) stampUsed(tx + dx, ty + dy);
+          }
+          list.push({ id: `hub_well_${tx}_${ty}`, x: tx, y: ty, kind: "well", facing: 0, footprintW: 2, footprintH: 2 });
+          placed = true;
+        }
+      }
+    }
+  }
+
+  /** Beer-garden seating outside every pub: tables, chairs, benches, a lantern. */
+  for (const pub of pubRects) {
+    const door = hubSouthDoorApprox(pub.x, pub.y, pub.w, pub.h);
+    const dx0 = Math.floor(door.sx);
+    const dy0 = Math.floor(door.sy);
+    const spots = [
+      { ox: -3, oy: 1, kind: "pub_table" },
+      { ox: -4, oy: 1, kind: "pub_chair" },
+      { ox: -2, oy: 1, kind: "pub_chair" },
+      { ox: -3, oy: 2, kind: "pub_chair" },
+      { ox: 3, oy: 1, kind: "pub_table" },
+      { ox: 2, oy: 1, kind: "pub_chair" },
+      { ox: 4, oy: 1, kind: "pub_chair" },
+      { ox: 3, oy: 2, kind: "pub_chair" },
+      { ox: -5, oy: 2, kind: "barrel" },
+      { ox: 5, oy: 2, kind: "lantern" },
+      { ox: 0, oy: 3, kind: "bench" }
+    ];
+    for (const s of spots) {
+      const tx = dx0 + s.ox;
+      const ty = dy0 + s.oy;
+      if (plazaTree(tx, ty) || nearListedPortal(tx, ty, 110)) continue;
+      if (wallKeys.has(`${tx},${ty}`) || buildingBlock(tx, ty) || isUsed(tx, ty)) continue;
+      if (isTileNearMinigameSite(tx, ty, "fantasy", 2)) continue;
+      stampUsed(tx, ty);
+      list.push({ id: `hub_pubseat_${tx}_${ty}`, x: tx, y: ty, kind: s.kind, facing: 0 });
+    }
   }
 
   /** Upright 2×1 stalls on flat grass with path along the south edge (customer side). */
@@ -635,7 +722,7 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
       if (isTileNearMinigameSite(nx, ny, "fantasy", 2) || isTileNearMinigameSite(nx + 1, ny, "fantasy", 2)) continue;
       if (!isPath(nx, ny + 1) || !isPath(nx + 1, ny + 1)) continue;
       if (isUsed(nx, ny) || isUsed(nx + 1, ny)) continue;
-      if (hz(nx, ny, 9911) < 0.987) continue;
+      if (hz(nx, ny, 9911) < 0.982) continue;
 
       stampUsed(nx, ny);
       stampUsed(nx + 1, ny);
@@ -712,18 +799,20 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
     }
   }
 
-  /** Small park clusters in the four inter-spoke quadrants */
+  /** Pocket parks in the four inter-spoke quadrants — trees, flower rings,
+   *  hedge rims, benches and a picnic table at the heart of each. */
   const PARK_CENTERS = [
     { cx: 32, cy: -42 },
     { cx: 42, cy:  32 },
     { cx: -42, cy:  32 },
     { cx: -32, cy: -42 }
   ];
-  const PARK_R = 5;
+  const PARK_R = 8;
   for (const pk of PARK_CENTERS) {
     for (let dy = -PARK_R; dy <= PARK_R; dy += 1) {
       for (let dx = -PARK_R; dx <= PARK_R; dx += 1) {
-        if (dx * dx + dy * dy > PARK_R * PARK_R) continue;
+        const dist = Math.hypot(dx, dy);
+        if (dist > PARK_R) continue;
         const tx = pk.cx + dx;
         const ty = pk.cy + dy;
         if (plazaTree(tx, ty)) continue;
@@ -733,12 +822,22 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
         if (isUsed(tx, ty)) continue;
         if (isTileNearMinigameSite(tx, ty, "fantasy", 2)) continue;
         const r = hz(tx, ty, 3344);
-        const dist = Math.hypot(dx, dy);
         let kind;
-        if (dist < 1.5)      kind = "small_tree";
-        else if (r < 0.22)   kind = "small_tree";
-        else if (r < 0.42)   kind = "bench";
-        else continue; // ~58 % stays open grass
+        if (dist < 1.2) {
+          kind = r < 0.5 ? "pub_table" : "pub_chair"; // picnic spot at the heart
+        } else if (dist >= PARK_R - 1.0) {
+          if (r < 0.4) kind = "hedge"; // soft hedge rim
+          else continue;
+        } else if (dist >= PARK_R - 2.6 && dist < PARK_R - 1.4) {
+          if (r < 0.34) kind = "flower_bed"; // flower ring inside the hedge
+          else continue;
+        } else {
+          if (r < 0.14) kind = "small_tree";
+          else if (r < 0.26) kind = "bench";
+          else if (r < 0.34) kind = "flower_bed";
+          else if (r < 0.38) kind = "lantern";
+          else continue; // most of the park stays open lawn
+        }
         stampUsed(tx, ty);
         list.push({ id: `hub_park_${tx}_${ty}`, x: tx, y: ty, kind, facing: 0 });
       }
@@ -748,9 +847,114 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects) {
   return Object.freeze(list);
 }
 
+/**
+ * Footprint sizes dwellings may roll — no two streets look stamped from one
+ * mould. Minimum stays 7×6 so buyable homes keep their residential interior
+ * (bed/chest layout requires w≥7, h≥6).
+ */
+const DWELLING_SIZE_VARIANTS = Object.freeze([
+  { w: 7, h: 6 },
+  { w: 7, h: 7 },
+  { w: 8, h: 7 },
+  { w: 8, h: 7 },
+  { w: 9, h: 7 },
+  { w: 9, h: 8 },
+  { w: 10, h: 8 }
+]);
+
+/** Cute cottage-core wall/roof styles the client knows how to paint. */
+const DWELLING_STYLES = Object.freeze(["timber", "rose", "cream", "sage", "sky", "honey", "stone"]);
+
+const CUTE_HOUSE_FIRSTS = Object.freeze(["Rosehip", "Honeysuckle", "Bluebell", "Foxglove", "Clover", "Daisy", "Lavender", "Primrose", "Buttercup", "Willow", "Bramble", "Poppy"]);
+const CUTE_HOUSE_SECONDS = Object.freeze(["Cottage", "Nook", "Burrow", "Lodge", "Snug", "Roost", "Hollow", "Perch"]);
+
+function rectsOverlapPadded(a, b, pad) {
+  return (
+    a.x - pad < b.x + b.w &&
+    a.x + a.w + pad > b.x &&
+    a.y - pad < b.y + b.h &&
+    a.y + a.h + pad > b.y
+  );
+}
+
+function rectFitsTown(cand, selfIndex, rects, reserved) {
+  // Stay well inside the curtain wall.
+  for (const [cx, cy] of [
+    [cand.x, cand.y],
+    [cand.x + cand.w, cand.y],
+    [cand.x, cand.y + cand.h],
+    [cand.x + cand.w, cand.y + cand.h]
+  ]) {
+    if (Math.hypot(cx, cy) > HUB_WALL_R_IN_MAIN - 5) return false;
+  }
+  // Clear of the gate-portal courtyards.
+  for (const [px, py] of HUB_GATE_PORTAL_TILES) {
+    const nx = Math.max(cand.x, Math.min(px, cand.x + cand.w));
+    const ny = Math.max(cand.y, Math.min(py, cand.y + cand.h));
+    if (Math.hypot(px - nx, py - ny) < PORTAL_COURTYARD_R + 3) return false;
+  }
+  // Clear of the central plaza.
+  if (Math.hypot(cand.x + cand.w / 2, cand.y + cand.h / 2) < 24) return false;
+  for (let j = 0; j < rects.length; j += 1) {
+    if (j === selfIndex) continue;
+    if (rectsOverlapPadded(cand, rects[j], 3)) return false;
+  }
+  for (const r of reserved) {
+    if (rectsOverlapPadded(cand, r, 3)) return false;
+  }
+  return true;
+}
+
+/** Resize dwelling footprints in place (centre-anchored) where the town allows it. */
+function applyDwellingSizeVariety(rects, reserved) {
+  for (let i = 4; i < rects.length; i += 1) {
+    const r = rects[i];
+    const pick = DWELLING_SIZE_VARIANTS[Math.floor(hz(r.x, r.y, 5151) * DWELLING_SIZE_VARIANTS.length)];
+    if (!pick || (pick.w === r.w && pick.h === r.h)) continue;
+    const cand = {
+      x: r.x - Math.floor((pick.w - r.w) / 2),
+      y: r.y - Math.floor((pick.h - r.h) / 2),
+      w: pick.w,
+      h: pick.h
+    };
+    if (!rectFitsTown(cand, i, rects, reserved)) continue;
+    r.x = cand.x;
+    r.y = cand.y;
+    r.w = cand.w;
+    r.h = cand.h;
+  }
+}
+
+function dwellingStyleFor(x, y) {
+  return DWELLING_STYLES[Math.floor(hz(x, y, 6161) * DWELLING_STYLES.length)] || "timber";
+}
+
+function cuteHouseName(x, y) {
+  const first = CUTE_HOUSE_FIRSTS[Math.floor(hz(x, y, 6171) * CUTE_HOUSE_FIRSTS.length)];
+  const second = CUTE_HOUSE_SECONDS[Math.floor(hz(x, y, 6172) * CUTE_HOUSE_SECONDS.length)];
+  return `${first} ${second}`;
+}
+
 function computeHubDistrict() {
   /** @type {{x:number,y:number,w:number,h:number}[]} */
   const rects = HUB_BLUEPRINT_RECT.map(([x, y, w, h]) => ({ x, y, w, h }));
+
+  /** Fixed footprints added later in this function — size rolls must respect them. */
+  const reservedRects = [
+    ...HUB_FLETCHER_RECTS.map(([x, y, w, h]) => ({ x, y, w, h })),
+    { x: 6, y: -116, w: 3, h: 5 },
+    { x: 83, y: -79, w: 3, h: 5 },
+    { x: 112, y: 4, w: 3, h: 5 },
+    { x: 75, y: 82, w: 3, h: 5 },
+    { x: -8, y: 112, w: 3, h: 5 },
+    { x: -86, y: 73, w: 3, h: 5 },
+    { x: -114, y: -8, w: 3, h: 5 },
+    { x: -78, y: -87, w: 3, h: 5 },
+    { x: -28, y: 78, w: 10, h: 8 },
+    { x: 48, y: 34, w: 12, h: 9 },
+    { x: 30, y: 48, w: 11, h: 8 }
+  ];
+  applyDwellingSizeVariety(rects, reservedRects);
 
   /** Assign NPC lots by angular sweep from east */
   /** @type {{r:{x:number,y:number,w:number,h:number}, angle:number}[]} */
@@ -788,6 +992,51 @@ function computeHubDistrict() {
     ni += 1;
   }
 
+  /**
+   * Two extra taverns besides the Blue Tavern — pick free filler huts nearest
+   * the SE plaza and the western mid-ring, then grow them to taproom size.
+   */
+  const PUB_PICK_DEFS = [
+    { angle: Math.PI / 4, name: "The Gilded Goose" },
+    { angle: Math.PI, name: "The Dancing Pony" }
+  ];
+  /** @type {Map<string,string>} footprint key -> pub name */
+  const pubByFoot = new Map();
+  for (const def of PUB_PICK_DEFS) {
+    let best = null;
+    let bestScore = Infinity;
+    for (let i = 4; i < rects.length; i += 1) {
+      const r = rects[i];
+      const kk = `${r.x},${r.y}`;
+      if (purchSet.has(kk) || attachByFoot.has(kk) || pubByFoot.has(kk)) continue;
+      const cx = r.x + r.w / 2;
+      const cy = r.y + r.h / 2;
+      const dd = Math.hypot(cx, cy);
+      if (dd < 30 || dd > 80) continue;
+      let da = Math.abs(Math.atan2(cy, cx) - def.angle);
+      if (da > Math.PI) da = TWO_PI - da;
+      if (da < bestScore) {
+        bestScore = da;
+        best = { r, index: i };
+      }
+    }
+    if (!best) continue;
+    // Taprooms want a roomier footprint; keep the roll if the lot is cramped.
+    const cand = {
+      x: best.r.x - Math.floor((11 - best.r.w) / 2),
+      y: best.r.y - Math.floor((8 - best.r.h) / 2),
+      w: 11,
+      h: 8
+    };
+    if (rectFitsTown(cand, best.index, rects, reservedRects)) {
+      best.r.x = cand.x;
+      best.r.y = cand.y;
+      best.r.w = cand.w;
+      best.r.h = cand.h;
+    }
+    pubByFoot.set(`${best.r.x},${best.r.y}`, def.name);
+  }
+
   /** @type {any[]} */
   const hubBuildings = [];
   hubBuildings.push({
@@ -823,6 +1072,7 @@ function computeHubDistrict() {
     let npcId = attachByFoot.get(kk);
     const buy = purchSet.has(kk);
     if (buy) npcId = undefined;
+    const pubName = pubByFoot.get(kk);
 
     /** @type {any} */
     const bld = {
@@ -830,10 +1080,17 @@ function computeHubDistrict() {
       y: r.y,
       w: r.w,
       h: r.h,
-      forSale: buy
+      forSale: buy,
+      style: dwellingStyleFor(r.x, r.y)
     };
 
-    if (npcId) {
+    if (pubName) {
+      bld.name = pubName;
+      bld.type = "house";
+      bld.isPub = true;
+      bld.forSale = false;
+      bld.style = "timber";
+    } else if (npcId) {
       const nd = HUB_NPC_ORDER.find((z) => z.id === npcId);
       bld.name = nd ? nd.cottage : `NPC ${npcId}`;
       bld.type = "hut";
@@ -842,11 +1099,13 @@ function computeHubDistrict() {
       const sig = residentSignBesideDoor(r.x, r.y, r.w, r.h);
       bld.residentSign = { sx: sig.sx, sy: sig.sy };
     } else {
-      /** Player purchasable or filler */
-      const typ = buy && Number(i) % 4 === 0 ? "big_house" : buy ? "house" : "hut";
+      /** Player purchasable or filler — bigger lots read as houses, snug ones as huts. */
+      const roomy = r.w * r.h >= 63;
+      const typ = buy && roomy ? "big_house" : buy ? "house" : roomy && hz(r.x, r.y, 6183) > 0.5 ? "house" : "hut";
       bld.type = typ;
+      const cute = cuteHouseName(r.x, r.y);
       const tag = `${r.x}_${r.y}`.slice(-12);
-      bld.name = buy ? `${typ === "big_house" ? "Garden Villa" : "Garden Close"} #${tag}` : `Garden Close (${tag})`;
+      bld.name = buy ? `${cute} #${tag}` : `${cute} (${tag})`;
     }
 
     hubBuildings.push(bld);
@@ -920,6 +1179,10 @@ function computeHubDistrict() {
     if (wallKeys.has(k)) pathKeys.delete(k);
   }
 
+  // Everything laid by buildPathTiles (ring roads + radial spokes) is cobbled
+  // street; the doorway lanes and island bridges carved afterwards stay dirt.
+  const roadCobbleKeys = new Set(pathKeys);
+
   pruneTilesNearListedPortals(pathKeys, HUB_GATE_PORTAL_TILES);
   connectHouseDoorways(rects, pathKeys, wallKeys);
   mergePathComponents(pathKeys, wallKeys, rects);
@@ -938,12 +1201,19 @@ function computeHubDistrict() {
     }
   }
 
+  // Keep the cobble layer in sync with the pruned network.
+  for (const k of [...roadCobbleKeys]) {
+    if (!pathKeys.has(k)) roadCobbleKeys.delete(k);
+  }
+
   const hubNavPathKeys = buildHubNavPathKeys(pathKeys, wallKeys);
-  const hubRoadsides = buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects);
+  const pubRects = hubBuildings.filter((b) => b.isPub).map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h }));
+  const hubRoadsides = buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects, pubRects);
 
   return {
     hubBuildings,
     pathTileKeys: pathKeys,
+    roadCobbleKeys,
     wallTileKeys: wallKeys,
     gardenTileKeys: gardenKeys,
     hubNavPathKeys,

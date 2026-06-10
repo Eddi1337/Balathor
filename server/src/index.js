@@ -107,6 +107,7 @@ const {
 const { createSocialSystem } = require("./social.js");
 const { createMinigameSystem } = require("./minigames.js");
 const { postAuthEventToDiscord, isAllowedDiscordWebhookUrl, resolveDiscordAuthWebhookUrl } = require("./discordWebhook");
+const companionAi = require("./companionAi.js");
 
 const SHIP_NAV_THEMES = new Set(["sci-fi", NAUTICAL_THEME]);
 
@@ -1713,6 +1714,7 @@ const server = http.createServer((req, res) => {
       forceSimulatedEnemies: forceSimulateMobs.size,
       measuredSimHz: getMeasuredSimHz(),
       perf: perfLastSnapshot,
+      companionAi: companionAi.aiStatus(),
       chunkWorkers: chunkWorkerPool.length,
       chunkQueue: chunkGenQueue.length,
       chunkSize: CHUNK_SIZE,
@@ -5303,6 +5305,9 @@ function simulate() {
     _pt = process.hrtime.bigint();
     processConsecrationZones(Date.now());
     perfAcc.consecration += Number(process.hrtime.bigint() - _pt) / 1e3;
+
+    // Ollama-driven companion agent (fully async — only queues work).
+    processCompanionAiAgents(Date.now());
   }
 
   if (minigames) {
@@ -5572,6 +5577,9 @@ function handleHouseCompanionAction(client, message) {
     const line = pickHouseCompanionComplimentLine(ctx.hc);
     const nm = typeof ctx.hc.name === "string" ? ctx.hc.name : "Companion";
     send(client, { type: "houseCompanionChat", name: nm, text: line });
+    // The canned line answers instantly; the AI controller follows up with a
+    // fresh topic whenever the Ollama host gets back to us.
+    queueCompanionAiReply(client, `${ctx.p.name} sits down with you and asks what's on your mind. Open up with an interesting new topic.`);
     return;
   }
   if (act === "breakup") {
@@ -5596,6 +5604,156 @@ function handleHouseCompanionAction(client, message) {
     return;
   }
   send(client, { type: "serverMessage", message: "house_companion_bad" });
+}
+
+// ---------------------------------------------------------------------------
+// AI companion controller — companion NPC dialogue and small actions come from
+// the operator's Ollama instance (see companionAi.js; model pinned qwen2.5:3b).
+// The host is slow, so canned lines answer instantly and the AI line follows
+// whenever it lands. All calls are queued/async; failures fall back silently.
+// ---------------------------------------------------------------------------
+const COMPANION_GIFT_TEMPLATES = Object.freeze([
+  { templateId: "companion_honey_bun", type: "potion", name: "Warm Honey Bun", icon: "potion", rarity: "common", color: "#e8b04a", value: 6, stats: { healing: 12 } },
+  { templateId: "companion_wildflower", type: "potion", name: "Pressed Wildflower", icon: "potion", rarity: "common", color: "#f08ab8", value: 5, stats: { healing: 6 } },
+  { templateId: "companion_berry_tart", type: "potion", name: "Bramble Berry Tart", icon: "potion", rarity: "uncommon", color: "#a04a78", value: 9, stats: { healing: 18 } }
+]);
+const COMPANION_AI_MOODS = Object.freeze([
+  "warm, playful and curious",
+  "dry-witted and observant",
+  "dreamy and romantic",
+  "energetic and a little mischievous",
+  "calm, bookish and gentle"
+]);
+
+function companionAiKey(client) {
+  return `hc_${client.account?.key || client.player?.id || "anon"}`;
+}
+
+function companionPersona(client, hc) {
+  let seed = 0;
+  const idStr = typeof hc.npcId === "string" ? hc.npcId : "companion";
+  for (let i = 0; i < idStr.length; i += 1) seed = (seed * 31 + idStr.charCodeAt(i)) >>> 0;
+  return {
+    name: hc.name || "Companion",
+    playerName: client.player?.name || "the adventurer",
+    place: "the little cottage you share in the walled starter town",
+    mood: COMPANION_AI_MOODS[seed % COMPANION_AI_MOODS.length]
+  };
+}
+
+function applyCompanionAiResult(client, result) {
+  const p = client.player;
+  const hc = p?.houseCompanion;
+  if (!p || !hc || !result?.say) return;
+  send(client, { type: "houseCompanionChat", name: hc.name || "Companion", text: result.say });
+  // The pose rides along in the player's own snapshot; the homestead cutaway
+  // renders the companion doing it (cooking, napping, dancing, ...).
+  hc.aiPose = {
+    kind: typeof result.action === "string" ? result.action.slice(0, 24) : "chat",
+    line: result.say.slice(0, 140),
+    until: Date.now() + 75000
+  };
+  if (result.action === "gift") {
+    const tpl = COMPANION_GIFT_TEMPLATES[Math.floor(Math.random() * COMPANION_GIFT_TEMPLATES.length)];
+    const item = cloneItem(tpl);
+    if (addItemToInventory(p, item)) {
+      send(client, { type: "serverMessage", message: "companion_gift", itemName: item.name, companionName: hc.name || "Companion" });
+      saveClientCharacter(client);
+    }
+  }
+  broadcastSnapshot();
+}
+
+function queueCompanionAiReply(client, eventText, { priority = true } = {}) {
+  const hc = client.player?.houseCompanion;
+  if (!hc || client._companionAiPending) return false;
+  client._companionAiPending = true;
+  companionAi
+    .requestCompanionReply(companionAiKey(client), companionPersona(client, hc), eventText, { priority })
+    .then((result) => {
+      client._companionAiPending = false;
+      if (client.player?.houseCompanion) {
+        applyCompanionAiResult(client, result);
+      }
+    })
+    .catch(() => {
+      client._companionAiPending = false;
+    });
+  return true;
+}
+
+function queueFlirtNpcAiLine(client, npc, eventText) {
+  if (client._companionAiPending) return false;
+  client._companionAiPending = true;
+  const persona = {
+    name: npc.name || "Admirer",
+    playerName: client.player?.name || "the adventurer",
+    place: "the cobbled lanes of the starter town, walking at the player's side",
+    mood: "flirty, lively and endlessly curious"
+  };
+  companionAi
+    .requestCompanionReply(`flirt_${npc.id}_${client.player?.id || ""}`, persona, eventText, { priority: true })
+    .then((result) => {
+      client._companionAiPending = false;
+      const live = getNpcById(npc.id);
+      if (live && result?.say) {
+        pushChat({ kind: "npc", fromId: live.id, name: live.name, text: result.say, x: live.x, y: live.y });
+      }
+    })
+    .catch(() => {
+      client._companionAiPending = false;
+    });
+  return true;
+}
+
+/** Player chat near a companion gets an in-character AI reply. */
+function companionAiOnPlayerChat(client, text) {
+  const p = client.player;
+  if (!p || typeof text !== "string" || !text.trim()) return;
+  const session = sanitizePlayerHouseCompanionSession(client);
+  if (session) {
+    queueCompanionAiReply(client, `${p.name} says to you: "${text.slice(0, 220)}". Respond in character and pick what you do.`);
+    return;
+  }
+  if (typeof p.flirtFollowNpcId === "string" && p.flirtFollowNpcId) {
+    const npc = getNpcById(p.flirtFollowNpcId);
+    if (npc && Math.hypot(npc.x - p.x, npc.y - p.y) <= 14) {
+      queueFlirtNpcAiLine(client, npc, `${p.name} says to you while you walk together: "${text.slice(0, 220)}". Reply in character.`);
+    }
+  }
+}
+
+/**
+ * Proactive agent: every so often a companion picks its own topic and action —
+ * cooking, napping, dancing, gardening, gifting — and tells the player about it.
+ */
+function processCompanionAiAgents(now) {
+  for (const client of clients.values()) {
+    const p = client.player;
+    if (!p || client._companionAiPending) continue;
+    if (now < (client._companionAiNextAt || 0)) continue;
+    const session = sanitizePlayerHouseCompanionSession(client);
+    if (session) {
+      client._companionAiNextAt = now + 150000 + Math.random() * 150000;
+      const hour = new Date(now).getHours();
+      const daypart = hour < 6 ? "deep night" : hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening";
+      queueCompanionAiReply(
+        client,
+        `It is ${daypart}. ${p.name} (a level ${p.level || 1} ${p.classId || "adventurer"}) is home with you in the cottage. Decide what you do next around the house and say one fresh, interesting line about it — a new topic, never a repeat.`,
+        { priority: false }
+      );
+      continue;
+    }
+    if (typeof p.flirtFollowNpcId === "string" && p.flirtFollowNpcId) {
+      const npc = getNpcById(p.flirtFollowNpcId);
+      if (npc && Math.hypot(npc.x - p.x, npc.y - p.y) <= 14) {
+        client._companionAiNextAt = now + 180000 + Math.random() * 180000;
+        queueFlirtNpcAiLine(client, npc, `You are strolling through the starter town beside ${p.name}. Bring up something new and interesting — gossip, a dream, a dare, a question about their adventures.`);
+        continue;
+      }
+    }
+    client._companionAiNextAt = now + 25000; // nothing eligible — check again soon
+  }
 }
 
 function enterCaveDungeon(client, dungeon) {
@@ -10037,6 +10195,9 @@ function handleChat(client, message) {
     chatRow.modChatTag = client.account.username.trim();
   }
   pushChat(chatRow);
+  // Companions listen: speaking at home (or beside a smitten follower) earns
+  // an in-character AI reply from the Ollama-driven controller.
+  companionAiOnPlayerChat(client, text);
 }
 
 function pushChat({ kind, fromId = null, name, text, x = null, y = null, modChatTag = null }) {

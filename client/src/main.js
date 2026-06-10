@@ -417,7 +417,11 @@ const TILE = {
   WALKWAY: 24,
   HULL: 25,
   WINDOW: 26,
-  ENERGY: 27
+  ENERGY: 27,
+  /** Town road tiers — packed dirt lanes, cobbled streets, flagstone avenues. */
+  DIRT: 28,
+  COBBLE: 29,
+  STONE_ROAD: 30
 };
 
 /** Local foot collision: mirrors server blocked tiles except WATER (swimmable). */
@@ -1115,7 +1119,10 @@ const tilePalette = {
   [TILE.FIREPLACE]: ["#3a2820", "#e05010", "#ffa040"],
   [TILE.CHAIR]: ["#5f3d24", "#8b5f3e", "#352010"],
   [TILE.CHEST]: ["#4a3018", "#7a5230", "#d4af37"],
-  [TILE.HOME_TREE]: ["#315f45", "#2f7a4e", "#6c4b2e"]
+  [TILE.HOME_TREE]: ["#315f45", "#2f7a4e", "#6c4b2e"],
+  [TILE.DIRT]: ["#a98a58", "#c9ab78", "#7c6240"],
+  [TILE.COBBLE]: ["#9b948a", "#c2bcae", "#6f6960"],
+  [TILE.STONE_ROAD]: ["#aaa49b", "#d4cec0", "#7d776e"]
 };
 
 const sciFiTilePalette = {
@@ -1146,7 +1153,10 @@ const sciFiTilePalette = {
   [TILE.WALKWAY]: ["#314152", "#7dcfff", "#1a2430"],
   [TILE.HULL]: ["#233041", "#637a93", "#111721"],
   [TILE.WINDOW]: ["#09131f", "#67f0ff", "#d8fbff"],
-  [TILE.ENERGY]: ["#103a40", "#67f0ff", "#e8ffff"]
+  [TILE.ENERGY]: ["#103a40", "#67f0ff", "#e8ffff"],
+  [TILE.DIRT]: ["#33424e", "#5d7585", "#1f2b34"],
+  [TILE.COBBLE]: ["#3a4a58", "#6e8496", "#242f3a"],
+  [TILE.STONE_ROAD]: ["#46586a", "#8aa2b8", "#2c3947"]
 };
 
 const alienTilePalette = {
@@ -1177,7 +1187,10 @@ const alienTilePalette = {
   [TILE.WALKWAY]: ["#273447", "#67f0ff", "#111827"],
   [TILE.HULL]: ["#233041", "#637a93", "#111721"],
   [TILE.WINDOW]: ["#09131f", "#67f0ff", "#d8fbff"],
-  [TILE.ENERGY]: ["#15224a", "#a78bfa", "#e9d5ff"]
+  [TILE.ENERGY]: ["#15224a", "#a78bfa", "#e9d5ff"],
+  [TILE.DIRT]: ["#2f3a44", "#62788a", "#1b2530"],
+  [TILE.COBBLE]: ["#363650", "#9ca3af", "#1d1d30"],
+  [TILE.STONE_ROAD]: ["#3e3e5a", "#b4bac8", "#252540"]
 };
 
 const dungeonTilePalette = {
@@ -1211,7 +1224,10 @@ const nauticalTilePalette = {
   [TILE.FIREPLACE]: ["#3a2820", "#e05010", "#ffa040"],
   [TILE.CHAIR]: ["#5f3d24", "#8b5f3e", "#352010"],
   [TILE.CHEST]: ["#4a3018", "#7a5230", "#d4af37"],
-  [TILE.HOME_TREE]: ["#315f45", "#2f7a4e", "#6c4b2e"]
+  [TILE.HOME_TREE]: ["#315f45", "#2f7a4e", "#6c4b2e"],
+  [TILE.DIRT]: ["#9a7e52", "#bfa070", "#75603e"],
+  [TILE.COBBLE]: ["#948b7c", "#beb4a0", "#6a6356"],
+  [TILE.STONE_ROAD]: ["#a39c8e", "#cdc6b4", "#787264"]
 };
 
 function getTileColors(tile, theme = state.worldTheme) {
@@ -1984,6 +2000,8 @@ function handleServerMessage(message) {
     } else if (message.message === "house_companion_bad") {
       state.intimateBlackoutUntil = 0;
       appendChat({ kind: "system", name: "Realm", text: "You can only do that with your partner inside your home." });
+    } else if (message.message === "companion_gift") {
+      appendChat({ kind: "system", name: "Realm", text: `${message.companionName || "Your companion"} slips you a gift: ${message.itemName || "a little something"}` });
     } else if (message.message === "companion_left_home") {
       appendChat({
         kind: "system",
@@ -5371,6 +5389,16 @@ function resolveHouseCompanionPhantomLayout(self, building) {
   const hc = self.houseCompanion;
   const npcId = typeof hc.npcId === "string" ? hc.npcId : "companion";
   let mode = homeCompanionAmbientMode(npcId, self.homeBuildingKey);
+  // The Ollama agent controller can pin a pose for a while ("I'm baking!",
+  // a nap, a dance...) — it wins over the ambient cycle until it expires.
+  let aiPose = null;
+  if (hc.aiPose && typeof hc.aiPose === "object" && Number(hc.aiPose.until) > Date.now()) {
+    aiPose = hc.aiPose;
+    const kind = String(aiPose.kind || "chat");
+    if (kind === "nap") mode = "bed";
+    else if (kind === "cook" || kind === "read" || kind === "gift") mode = "eat";
+    else mode = "flirt";
+  }
   if ((state.morningAfterCompanionBedUntil || 0) > performance.now()) {
     mode = "bed";
   }
@@ -5386,11 +5414,13 @@ function resolveHouseCompanionPhantomLayout(self, building) {
     wx = anchors.bed.wx;
     wy = anchors.bed.wy;
     poseExtras = { lyingBed: true };
+    if (aiPose?.line) poseExtras.ambientLine = String(aiPose.line);
   } else if (mode === "eat") {
     wx = anchors.dine.wx;
     wy = anchors.dine.wy;
     facing = anchors.dine.facing;
     poseExtras = { restingBench: true };
+    if (aiPose?.line) poseExtras.ambientLine = String(aiPose.line);
   } else {
     const px = Number.isFinite(self.renderX) ? self.renderX : self.x;
     const py = Number.isFinite(self.renderY) ? self.renderY : self.y;
@@ -5405,8 +5435,8 @@ function resolveHouseCompanionPhantomLayout(self, building) {
     wy = cl.y;
     facing = Math.atan2(py - wy, px - wx);
     poseExtras = {
-      ambientLine: hashHomeCompanionPhrase(npcId, self.homeBuildingKey),
-      companionReachOut: true
+      ambientLine: aiPose?.line ? String(aiPose.line) : hashHomeCompanionPhrase(npcId, self.homeBuildingKey),
+      companionReachOut: !aiPose || aiPose.kind === "chat" || aiPose.kind === "gift"
     };
   }
 
@@ -5592,6 +5622,18 @@ function refreshWorldHoverTooltip(event) {
               ? "Small tree"
               : f.kind === "fountain"
                 ? "Fountain — interact"
+                : f.kind === "lantern"
+                  ? "Street lantern"
+                  : f.kind === "flower_bed"
+                    ? "Flower bed"
+                    : f.kind === "hedge"
+                      ? "Hedge"
+                      : f.kind === "planter"
+                        ? "Planter"
+                        : f.kind === "well"
+                          ? "Town well"
+                          : f.kind === "barrel"
+                            ? "Barrel"
                 : f.kind.includes("chair")
                   ? "Outdoor chair"
                   : f.kind.includes("pub")
@@ -8866,6 +8908,128 @@ function drawRoadsideFeatures(minTileX, maxTileX, minTileY, maxTileY) {
       ctx.fillRect(cx - 8, gy - 12, 16, 14);
       ctx.fillStyle = "#8a6040";
       ctx.fillRect(cx - 6, gy - 10, 12, 6);
+      ctx.restore();
+    } else if (f.kind === "lantern") {
+      ctx.save();
+      drawEllipseShadow(cx - 5, gy + 2, 12, 4, 0.22);
+      const glow = 0.55 + Math.sin(performance.now() * 0.0026 + (f.x * 7 + f.y * 13)) * 0.25;
+      ctx.fillStyle = "#3c2a1a";
+      ctx.fillRect(cx - 2, gy - 30, 4, 32);
+      ctx.fillStyle = "#2a1c10";
+      ctx.fillRect(cx - 5, gy - 36, 10, 9);
+      ctx.fillStyle = `rgba(255, 214, 130, ${glow.toFixed(2)})`;
+      ctx.fillRect(cx - 3, gy - 34, 6, 5);
+      const halo = ctx.createRadialGradient(cx, gy - 32, 1, cx, gy - 32, 16);
+      halo.addColorStop(0, `rgba(255, 214, 130, ${(glow * 0.35).toFixed(2)})`);
+      halo.addColorStop(1, "rgba(255, 214, 130, 0)");
+      ctx.fillStyle = halo;
+      ctx.fillRect(cx - 16, gy - 48, 32, 32);
+      ctx.restore();
+    } else if (f.kind === "flower_bed") {
+      ctx.save();
+      ctx.fillStyle = "#6b4a2c";
+      roundedRect(cx - 14, gy - 10, 28, 12, 4);
+      ctx.fill();
+      ctx.strokeStyle = "#4a3018";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      const blossomColors = ["#f48ab8", "#f2d46f", "#9ad1ff", "#ff9f7a", "#d8a6ff"];
+      for (let i = 0; i < 5; i += 1) {
+        const bx = cx - 10 + i * 5;
+        const by = gy - 8 + ((i * 7 + f.x + f.y) % 3) * 2;
+        ctx.fillStyle = blossomColors[(i + Math.abs(f.x + f.y)) % blossomColors.length];
+        ctx.beginPath();
+        ctx.arc(bx, by, 2.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#fff7d8";
+        ctx.fillRect(bx - 0.5, by - 0.5, 1.4, 1.4);
+      }
+      ctx.restore();
+    } else if (f.kind === "hedge") {
+      ctx.save();
+      drawEllipseShadow(cx - 14, gy + 1, 30, 5, 0.18);
+      ctx.fillStyle = "#3a7244";
+      roundedRect(cx - 15, gy - 14, 30, 16, 7);
+      ctx.fill();
+      ctx.fillStyle = "rgba(110, 180, 110, 0.5)";
+      ctx.beginPath();
+      ctx.arc(cx - 7, gy - 11, 4, 0, Math.PI * 2);
+      ctx.arc(cx + 5, gy - 12, 3.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(26, 56, 30, 0.6)";
+      ctx.lineWidth = 1.5;
+      roundedRect(cx - 15, gy - 14, 30, 16, 7);
+      ctx.stroke();
+      ctx.restore();
+    } else if (f.kind === "planter") {
+      ctx.save();
+      drawEllipseShadow(cx - 7, gy + 1, 16, 4, 0.2);
+      ctx.fillStyle = "#b06a3c";
+      ctx.fillRect(cx - 7, gy - 8, 14, 9);
+      ctx.fillStyle = "#8a4e28";
+      ctx.fillRect(cx - 8, gy - 9, 16, 3);
+      ctx.fillStyle = "#3d8348";
+      ctx.beginPath();
+      ctx.arc(cx, gy - 13, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = ["#f48ab8", "#f2d46f", "#ff9f7a"][Math.abs(f.x * 3 + f.y) % 3];
+      ctx.beginPath();
+      ctx.arc(cx - 2, gy - 15, 2, 0, Math.PI * 2);
+      ctx.arc(cx + 3, gy - 12, 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    } else if (f.kind === "well") {
+      ctx.save();
+      drawEllipseShadow(cx - 20, gy + 2, 40, 9, 0.24);
+      // Stone ring
+      ctx.fillStyle = "#8a8478";
+      ctx.beginPath();
+      ctx.ellipse(cx, gy - 6, 19, 11, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#2c4a66";
+      ctx.beginPath();
+      ctx.ellipse(cx, gy - 7, 12, 6.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#5a554a";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(cx, gy - 6, 19, 11, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      // Posts + little roof
+      ctx.fillStyle = "#5a3a20";
+      ctx.fillRect(cx - 16, gy - 34, 4, 28);
+      ctx.fillRect(cx + 12, gy - 34, 4, 28);
+      ctx.fillStyle = "#a3502e";
+      ctx.beginPath();
+      ctx.moveTo(cx - 22, gy - 32);
+      ctx.lineTo(cx, gy - 44);
+      ctx.lineTo(cx + 22, gy - 32);
+      ctx.lineTo(cx + 18, gy - 28);
+      ctx.lineTo(cx, gy - 39);
+      ctx.lineTo(cx - 18, gy - 28);
+      ctx.closePath();
+      ctx.fill();
+      // Rope + bucket
+      ctx.strokeStyle = "#d8c8a0";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(cx, gy - 38);
+      ctx.lineTo(cx, gy - 18);
+      ctx.stroke();
+      ctx.fillStyle = "#6a4828";
+      ctx.fillRect(cx - 4, gy - 18, 8, 6);
+      ctx.restore();
+    } else if (f.kind === "barrel") {
+      ctx.save();
+      drawEllipseShadow(cx - 7, gy + 1, 16, 5, 0.22);
+      ctx.fillStyle = "#7a4e28";
+      roundedRect(cx - 7, gy - 16, 14, 18, 3);
+      ctx.fill();
+      ctx.fillStyle = "#4a2c12";
+      ctx.fillRect(cx - 8, gy - 13, 16, 2);
+      ctx.fillRect(cx - 8, gy - 5, 16, 2);
+      ctx.fillStyle = "rgba(255, 220, 160, 0.25)";
+      ctx.fillRect(cx - 5, gy - 15, 3, 16);
       ctx.restore();
     }
   }
@@ -12334,6 +12498,62 @@ function drawTile(tile, sx, sy, tx, ty) {
 
   if (tile === TILE.PATH) {
     drawPath(sx, sy, tx, ty, colors);
+    return;
+  }
+
+  if (tile === TILE.DIRT) {
+    // Packed-earth lane: soft wheel ruts and pebbles.
+    ctx.fillStyle = colors[2];
+    ctx.fillRect(sx + 6, sy, 3, TILE_SIZE);
+    ctx.fillRect(sx + 22, sy, 3, TILE_SIZE);
+    ctx.fillStyle = colors[1];
+    for (let i = 0; i < 4; i += 1) {
+      const px = sx + ((hash2(tx, ty, 81 + i) * 28) | 0);
+      const py = sy + ((hash2(ty, tx, 91 + i) * 28) | 0);
+      ctx.fillRect(px, py, 3, 2);
+    }
+    return;
+  }
+
+  if (tile === TILE.COBBLE) {
+    // Rounded cobbles in an offset grid with mossy joints.
+    ctx.fillStyle = colors[2];
+    ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+    for (let row = 0; row < 4; row += 1) {
+      const offset = row % 2 === 0 ? 0 : 5;
+      for (let col = -1; col < 4; col += 1) {
+        const px = sx + offset + col * 10;
+        const py = sy + row * 8;
+        const shade = hash2(tx * 4 + col, ty * 4 + row, 77);
+        ctx.fillStyle = shade > 0.66 ? colors[1] : colors[0];
+        ctx.beginPath();
+        ctx.ellipse(px + 5, py + 4, 4.6, 3.4, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    if (hash2(tx, ty, 78) > 0.86) {
+      ctx.fillStyle = "rgba(94, 138, 80, 0.5)";
+      ctx.fillRect(sx + ((hash2(ty, tx, 79) * 24) | 0), sy + ((hash2(tx, ty, 80) * 24) | 0), 4, 3);
+    }
+    return;
+  }
+
+  if (tile === TILE.STONE_ROAD) {
+    // Grand flagstone avenue: big warm slabs with tight joints.
+    ctx.fillStyle = colors[2];
+    ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+    const half = TILE_SIZE / 2;
+    for (let qy = 0; qy < 2; qy += 1) {
+      for (let qx = 0; qx < 2; qx += 1) {
+        const shade = hash2(tx * 2 + qx, ty * 2 + qy, 83);
+        ctx.fillStyle = shade > 0.55 ? colors[0] : colors[1];
+        ctx.fillRect(sx + qx * half + 1, sy + qy * half + 1, half - 2, half - 2);
+      }
+    }
+    if (hash2(tx, ty, 84) > 0.9) {
+      ctx.fillStyle = "rgba(255,255,255,0.12)";
+      ctx.fillRect(sx + 4, sy + 4, half - 6, 3);
+    }
     return;
   }
 
@@ -16503,12 +16723,13 @@ function drawWorldAssets(minTileX, maxTileX, minTileY, maxTileY) {
         drawCuratedRock(sx, sy, tx, ty, tile === TILE.SAND);
       } else if (tile === TILE.PATH && hash2(tx, ty, 503) > 0.985) {
         drawCuratedSign(sx, sy);
-      } else if (tile === TILE.PATH && hash2(tx, ty, 505) > 0.96) {
+      } else if ((tile === TILE.PATH || tile === TILE.COBBLE) && hash2(tx, ty, 505) > 0.96) {
         drawTownLampPost(sx, sy, tx, ty);
       } else if (tile === TILE.FLOWERS) {
         // Potted plants / decorative shrubs on flower strips alongside roads
-        const nearPath = getTile(tx - 1, ty) === TILE.PATH || getTile(tx + 1, ty) === TILE.PATH ||
-                         getTile(tx, ty - 1) === TILE.PATH || getTile(tx, ty + 1) === TILE.PATH;
+        const roadTile = (t) => t === TILE.PATH || t === TILE.DIRT || t === TILE.COBBLE || t === TILE.STONE_ROAD;
+        const nearPath = roadTile(getTile(tx - 1, ty)) || roadTile(getTile(tx + 1, ty)) ||
+                         roadTile(getTile(tx, ty - 1)) || roadTile(getTile(tx, ty + 1));
         if (nearPath && hash2(tx, ty, 504) > 0.55) {
           drawTownPlanter(sx, sy, tx, ty);
         }
@@ -17113,6 +17334,10 @@ function clientOwnsBuyableHouse(building) {
 }
 
 function getBuildingVariant(building) {
+  // Server-assigned cottage style wins (hub dwellings come in pastel variety).
+  if (typeof building.style === "string" && BUILDING_PALETTES[building.style]) {
+    return building.style;
+  }
   const n = building.name;
   if (n.includes("Frost") || n.includes("Snow") || n.includes("Pine") || n.includes("Ice")) return "stone";
   if (n.includes("Keep") || n.includes("Castle") || n.includes("Citadel") || n.includes("Hall") || n.includes("Shrine")) return "stone";
@@ -17128,6 +17353,12 @@ const BUILDING_PALETTES = {
   wood:   { roofBase: "#5c3818", roofDark: "#341e0c", roofMid: "#7a5028", roofLight: "#9a7040", roofRidge: "#200e04", eave: "#200e04", wall: "#4a2e14", wallLight: "#6a4828", wallDark: "#2c1a08", wallLine: "#1e0e04", win: "#b8e8b8", door: "#180c04", doorFrame: "#9a6828", ground: "#3a5a2a" },
   desert: { roofBase: "#c07830", roofDark: "#8a4c18", roofMid: "#d89848", roofLight: "#f0c070", roofRidge: "#5a2c0c", eave: "#5a2c0c", wall: "#c8a060", wallLight: "#e4c890", wallDark: "#8a6a30", wallLine: "#6a4820", win: "#fff0c0", door: "#5c3010", doorFrame: "#e0a040", ground: "#b88840" },
   ember:  { roofBase: "#2c1c10", roofDark: "#140c08", roofMid: "#482818", roofLight: "#7a3c1c", roofRidge: "#080404", eave: "#0c0604", wall: "#281410", wallLight: "#483028", wallDark: "#140a08", wallLine: "#0c0604", win: "#ff8820", door: "#0c0404", doorFrame: "#8c3410", ground: "#2c2014" },
+  // Cottage-core pastels for the starter town — Fable-village vibes.
+  rose:   { roofBase: "#b85a72", roofDark: "#8a3a50", roofMid: "#cc7088", roofLight: "#e898ac", roofRidge: "#5e2434", eave: "#5e2434", wall: "#f2e4d4", wallLight: "#fcf4e8", wallDark: "#c8b09a", wallLine: "#9a7e68", win: "#bce4ff", door: "#7a4030", doorFrame: "#d8a070", ground: "#5a7a44" },
+  cream:  { roofBase: "#a3502e", roofDark: "#76341c", roofMid: "#bc6840", roofLight: "#d8895c", roofRidge: "#4e2010", eave: "#4e2010", wall: "#f6ecd8", wallLight: "#fffaf0", wallDark: "#d0bc9c", wallLine: "#a08868", win: "#bce4ff", door: "#5c3a20", doorFrame: "#c89058", ground: "#5a7a44" },
+  sage:   { roofBase: "#5e7e54", roofDark: "#3e5a38", roofMid: "#739668", roofLight: "#94b486", roofRidge: "#28401e", eave: "#28401e", wall: "#e8e0c8", wallLight: "#f6f0dc", wallDark: "#b8ac8c", wallLine: "#8a7e60", win: "#cdeffa", door: "#54382a", doorFrame: "#b08c5c", ground: "#5a7a44" },
+  sky:    { roofBase: "#5878a0", roofDark: "#3a5276", roofMid: "#7090b4", roofLight: "#94b0d0", roofRidge: "#243650", eave: "#243650", wall: "#eef2f4", wallLight: "#fbfdff", wallDark: "#bcc8d0", wallLine: "#8898a4", win: "#ffe9b8", door: "#4e5a78", doorFrame: "#a8bcd4", ground: "#5a7a44" },
+  honey:  { roofBase: "#c08a36", roofDark: "#92621e", roofMid: "#d4a050", roofLight: "#ecc278", roofRidge: "#5c3c10", eave: "#5c3c10", wall: "#f4dcb0", wallLight: "#fdeece", wallDark: "#c8a878", wallLine: "#9a7c4e", win: "#c4ecff", door: "#6a4424", doorFrame: "#dcb068", ground: "#5a7a44" },
 };
 
 function getFrontDoorOpenFactor(building, roofless) {
@@ -18481,7 +18712,7 @@ function drawPortalPreviewTile(tile, x, y, w, h, px, py, time, theme = state.wor
     return;
   }
 
-  if (tile === TILE.PATH || tile === TILE.STONE || tile === TILE.FLOOR) {
+  if (tile === TILE.PATH || tile === TILE.STONE || tile === TILE.FLOOR || tile === TILE.DIRT || tile === TILE.COBBLE || tile === TILE.STONE_ROAD) {
     ctx.fillStyle = colors[1] || colors[0];
     ctx.fillRect(x, y + h * 0.42, w, Math.max(1, h * 0.18));
     return;

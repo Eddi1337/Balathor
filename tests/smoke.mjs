@@ -12,7 +12,11 @@ assert.equal(world.CHUNK_SIZE, 16);
 assert.ok(world.ENEMY_CAMPS.length >= 30);
 assert.equal(world.ENEMY_CAMPS.some((camp) => camp.boss), true);
 for (const camp of world.ENEMY_CAMPS) {
-  assert.equal([world.TILE.STONE, world.TILE.PATH].includes(world.generateTile(camp.x, camp.y)), true);
+  // Camps sit on hard walkable ground — any of the road tiers counts.
+  assert.equal(
+    [world.TILE.STONE, world.TILE.PATH, world.TILE.DIRT, world.TILE.COBBLE, world.TILE.STONE_ROAD].includes(world.generateTile(camp.x, camp.y)),
+    true
+  );
   assert.equal(world.canAttackAt(camp.x, camp.y), true);
 }
 const originChunk = world.generateChunk(0, 0);
