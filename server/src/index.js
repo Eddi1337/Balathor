@@ -5647,7 +5647,13 @@ function handleStairTravel(client) {
   p.x = dest.x;
   p.y = dest.y;
   p.moving = false;
-  p.layer = 0;
+  // Most stair travel lands on the ground floor; loft↔bridge doors carry an
+  // explicit destination layer so the player ends up on the sky promenade.
+  p.layer = dest.layer === 1 ? 1 : 0;
+  // Keep the layer-transition tracker in sync so we don't immediately get
+  // bumped back to ground by handleTownLayerTransition's safety net.
+  p._layerTileKey = `${Math.floor(p.x)},${Math.floor(p.y)}`;
+  p._onUpperStairs = false;
   p._stairLockUntil = now + 700;
   client.input = normalizeInput();
   send(client, {

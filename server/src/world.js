@@ -1420,6 +1420,35 @@ BUILDINGS.forEach((b, index) => {
     name: b.name,
     dir: "down"
   });
+
+  /**
+   * Loft ↔ bridge door for bridged two-story cottages: a door on the loft's
+   * bridge-facing wall steps out onto the layer-1 plank bridge just outside
+   * the house (and the adjacent bridge cell steps back into the loft). Uses
+   * the same stair-travel teleport, but carries an explicit destination layer
+   * so the player lands on (or leaves) the sky promenade correctly.
+   */
+  if (b.bridgeDoor && (b.bridgeDir === "e" || b.bridgeDir === "w")) {
+    const loftLy = Math.max(1, Math.min(b.h - 2, b.bridgeDoor.y - b.y));
+    const loftLx = b.bridgeDir === "e" ? b.w - 2 : 1;
+    const loftKey = `${ux + loftLx},${UPSTAIRS_BASE_Y + loftLy}`;
+    const bridgeKey = `${b.bridgeDoor.x},${b.bridgeDoor.y}`;
+    STAIR_TRAVEL.set(loftKey, {
+      x: b.bridgeDoor.x + 0.5,
+      y: b.bridgeDoor.y + 0.5,
+      name: `${b.name} — Bridge`,
+      dir: "down",
+      layer: 1
+    });
+    STAIR_TRAVEL.set(bridgeKey, {
+      x: ux + loftLx + 0.5,
+      y: UPSTAIRS_BASE_Y + loftLy + 0.5,
+      name: `${b.name} — Loft`,
+      dir: "up",
+      layer: 0
+    });
+    b._loftBridge = { loftLx, loftLy, bridgeX: b.bridgeDoor.x, bridgeY: b.bridgeDoor.y };
+  }
 });
 
 function getStairTravelAt(x, y) {
@@ -1453,6 +1482,9 @@ function getUpstairsTile(x, y) {
   if (lx === 0 || lx === w - 1 || ly === 0 || ly === h - 1) return TILE.WALL;
   const st = twoStoryStairLocal(area.building);
   if (lx === st.lx && ly === st.ly) return TILE.STAIRS;
+  // Loft door onto the plank bridge (bridged cottages only).
+  const lb = area.building._loftBridge;
+  if (lb && lx === lb.loftLx && ly === lb.loftLy) return TILE.DOOR;
   if (area.building.isPub) {
     /** Inn loft: row of guest beds with side tables. */
     if (ly === 1 && lx >= 1 && lx <= w - 3 && lx % 2 === 1) return TILE.BED;
@@ -3008,6 +3040,8 @@ function getBuildingsInChunk(cx, cy) {
       forSale: !!b.forSale,
       isPub: !!b.isPub,
       twoStory: b.twoStory ? true : undefined,
+      roofShape: Number.isInteger(b.roofShape) ? b.roofShape : undefined,
+      bridgeDir: b.bridgeDir === "e" || b.bridgeDir === "w" ? b.bridgeDir : undefined,
       style: typeof b.style === "string" ? b.style.slice(0, 16) : undefined,
       residentLabel: typeof b.residentLabel === "string" ? b.residentLabel.slice(0, 48) : undefined,
       residentSign:
@@ -3136,5 +3170,6 @@ module.exports = {
   isUpperStairsAt,
   isUpperBlockedCircle,
   getUpperCellsInChunk,
-  getStairTravelAt
+  getStairTravelAt,
+  getUpstairsTile
 };

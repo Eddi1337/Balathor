@@ -151,6 +151,27 @@ const downTravel = world.getStairTravelAt(downGx + 0.5, downGy + 0.5);
 assert.equal(downTravel?.dir, "down");
 assert.equal(world.isBlocked(downTravel.x, downTravel.y), false);
 
+// ── Bridged cottages: loft door ↔ plank bridge teleport (sky-promenade link) ─
+const bridgedHome = world.BUILDINGS.find((b) => b._loftBridge && b.bridgeDoor);
+assert.ok(bridgedHome, "bridged cottages should expose a loft↔bridge door");
+const lb = bridgedHome._loftBridge;
+// Bridge endpoint adjacent to the house is a walkable upper (layer-1) bridge cell.
+assert.equal(world.isUpperWalkableAt(lb.bridgeX, lb.bridgeY), true, "loft bridge door lands on a walkable bridge cell");
+// Standing on the bridge door cell teleports up into the loft.
+const toLoft = world.getStairTravelAt(lb.bridgeX + 0.5, lb.bridgeY + 0.5);
+assert.equal(toLoft?.dir, "up", "bridge endpoint steps into the loft");
+assert.equal(toLoft?.layer, 0, "entering the loft drops the player back to layer 0");
+// The loft door cell teleports out onto the bridge on layer 1.
+const loftDoorTile = world.getUpstairsTile(Math.floor(toLoft.x), Math.floor(toLoft.y));
+assert.equal(loftDoorTile, world.TILE.DOOR, "loft has a walkable bridge door tile");
+const toBridge = world.getStairTravelAt(toLoft.x, toLoft.y);
+assert.equal(toBridge?.dir, "down");
+assert.equal(toBridge?.layer, 1, "loft door places the player onto the layer-1 bridge");
+assert.ok(Math.abs(Math.floor(toBridge.x) - lb.bridgeX) < 1 && Math.abs(Math.floor(toBridge.y) - lb.bridgeY) < 1,
+  "loft door returns to the same bridge cell");
+// Paired roofs share a style so the connection reads visually.
+assert.ok(Number.isInteger(bridgedHome.roofShape), "bridged houses carry a shared roof style");
+
 // ── Spread pass: every town footprint keeps a ≥3-tile walkable ring ───────
 const hubFootprints = world.BUILDINGS.filter((b) => Math.hypot(b.x, b.y) < 130);
 for (const a of hubFootprints) {

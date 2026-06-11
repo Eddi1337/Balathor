@@ -1117,6 +1117,25 @@ function computeHubUpperDeck(hubBuildings, rects, pathKeys, wallKeys) {
       for (const c of cand) cells.set(key(c.x, c.y), { kind: c.kind });
       for (const sy of stair.rows) cells.set(key(stair.x, sy), { kind: "stairs", dir: stair.dir });
       accepted.push({ cx, cy: yr });
+
+      /**
+       * Make the paired roofs read as connected and wire their lofts to the
+       * bridge: both houses go two-story, share a roof style, and remember the
+       * adjacent bridge cell they open onto. `a` meets the bridge on its east
+       * edge, `b` on its west edge. The loft door lands the player on the
+       * bridge span just outside the house wall (and entering from there sends
+       * them back into the loft) via the stair-travel machinery.
+       */
+      const sharedShape = Math.floor(hz(a.x, a.y, 4477) * 5);
+      for (const [bld, dir, doorX] of [
+        [a, "e", a.x + a.w],
+        [b, "w", b.x - 1]
+      ]) {
+        bld.twoStory = true;
+        bld.roofShape = sharedShape;
+        bld.bridgeDir = dir;
+        bld.bridgeDoor = { x: doorX, y: yr };
+      }
       break;
     }
   }
