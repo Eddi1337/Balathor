@@ -9502,6 +9502,12 @@ function drawSpaceObjects() {
       drawHarbourObject(obj, sx, sy);
     } else if (obj.kind === "harbour-pier") {
       drawHarbourPierObject(obj, sx, sy);
+    } else if (obj.kind === "harbour-building") {
+      drawHarbourBuildingObject(obj, sx, sy);
+    } else if (obj.kind === "harbour-lighthouse") {
+      drawHarbourLighthouseObject(obj, sx, sy);
+    } else if (obj.kind === "harbour-prop") {
+      drawHarbourPropObject(obj, sx, sy);
     } else if (obj.kind === "ship-shop") {
       drawHarbourChandleryObject(obj, sx, sy);
     } else if (obj.kind === "oceanus-decor") {
@@ -9530,6 +9536,9 @@ function spaceObjectDrawOrder(obj) {
   if (kind === "sci-shop" || kind === "station-kiosk") return 6;
   if (kind === "defense-turret" || kind === "orbital-cannon") return 6;
   if (kind === "harbour" || kind === "harbour-pier") return 2;
+  if (kind === "harbour-building") return 3;
+  if (kind === "harbour-lighthouse") return 4;
+  if (kind === "harbour-prop") return 5;
   if (kind === "oceanus-decor") return 4;
   if (kind === "ambient-sailing-ship") return 5;
   if (kind === "ship-shop") return 6;
@@ -11965,6 +11974,178 @@ function drawHarbourPierObject(obj, sx, sy) {
   ctx.strokeStyle = "rgba(78,197,255,0.35)";
   ctx.lineWidth = 2;
   ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+  ctx.restore();
+}
+
+// A dockside town building: walls, gabled roof, door, windows, and a hanging
+// sign with the building's name. `subKind` tweaks the trim/roof accents.
+function drawHarbourBuildingObject(obj, sx, sy) {
+  const w = Math.max(4, Number(obj.w || 6)) * TILE_SIZE;
+  const h = Math.max(4, Number(obj.h || 5)) * TILE_SIZE;
+  const x = sx - w / 2;
+  const y = sy - h / 2;
+  const wall = obj.wallColor || "#7c6648";
+  const roof = obj.roofColor || "#5a3b2a";
+  ctx.save();
+  drawEllipseShadow(x - 4, y + h * 0.98, w + 8, 12, 0.24);
+  // Walls.
+  ctx.fillStyle = wall;
+  ctx.fillRect(x, y + h * 0.30, w, h * 0.70);
+  // Plank texture.
+  ctx.strokeStyle = "rgba(40, 26, 14, 0.28)";
+  ctx.lineWidth = 1;
+  for (let py = 0.42; py < 1; py += 0.18) {
+    ctx.beginPath();
+    ctx.moveTo(x, y + h * py);
+    ctx.lineTo(x + w, y + h * py);
+    ctx.stroke();
+  }
+  // Gabled roof.
+  ctx.fillStyle = roof;
+  ctx.beginPath();
+  ctx.moveTo(x - w * 0.06, y + h * 0.34);
+  ctx.lineTo(sx, y - h * 0.04);
+  ctx.lineTo(x + w * 1.06, y + h * 0.34);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(20, 12, 6, 0.5)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  // Door.
+  ctx.fillStyle = "#3a2412";
+  ctx.fillRect(sx - w * 0.10, y + h * 0.62, w * 0.20, h * 0.38);
+  // Windows with warm light.
+  ctx.fillStyle = "rgba(255, 214, 120, 0.92)";
+  ctx.fillRect(x + w * 0.14, y + h * 0.44, w * 0.16, h * 0.16);
+  ctx.fillRect(x + w * 0.70, y + h * 0.44, w * 0.16, h * 0.16);
+  ctx.strokeStyle = "rgba(40, 26, 14, 0.6)";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x + w * 0.14, y + h * 0.44, w * 0.16, h * 0.16);
+  ctx.strokeRect(x + w * 0.70, y + h * 0.44, w * 0.16, h * 0.16);
+  // Hanging sign.
+  if (obj.name) {
+    ctx.font = "bold 10px ui-sans-serif, system-ui";
+    ctx.textAlign = "center";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(8,16,28,0.9)";
+    ctx.fillStyle = "#ffe6a8";
+    ctx.strokeText(obj.name, sx, y - h * 0.12);
+    ctx.fillText(obj.name, sx, y - h * 0.12);
+  }
+  ctx.restore();
+}
+
+// A tapered lighthouse with red/white bands and a glowing lamp room.
+function drawHarbourLighthouseObject(obj, sx, sy) {
+  const w = Math.max(2, Number(obj.w || 3)) * TILE_SIZE;
+  const h = w * 2.6;
+  const x = sx - w / 2;
+  const y = sy - h * 0.78;
+  ctx.save();
+  drawEllipseShadow(sx - w * 0.5, y + h, w * 1.2, 12, 0.26);
+  // Tower body (tapered).
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.18, y + h);
+  ctx.lineTo(x + w * 0.34, y + h * 0.12);
+  ctx.lineTo(x + w * 0.66, y + h * 0.12);
+  ctx.lineTo(x + w * 0.82, y + h);
+  ctx.closePath();
+  ctx.fillStyle = "#e8e2d6";
+  ctx.fill();
+  // Red bands.
+  ctx.fillStyle = "#b8392c";
+  for (let b = 0.25; b < 1; b += 0.32) {
+    ctx.fillRect(x + w * 0.22, y + h * b, w * 0.56, h * 0.10);
+  }
+  // Lamp room + glow.
+  ctx.fillStyle = "rgba(255, 226, 130, 0.95)";
+  ctx.fillRect(x + w * 0.34, y + h * 0.02, w * 0.32, h * 0.12);
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  const pulse = 0.4 + Math.sin(performance.now() / 600) * 0.25;
+  ctx.fillStyle = `rgba(255, 236, 160, ${pulse})`;
+  ctx.beginPath();
+  ctx.arc(sx, y + h * 0.07, w * 0.9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  // Cap.
+  ctx.fillStyle = "#3a2a18";
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.30, y + h * 0.02);
+  ctx.lineTo(sx, y - h * 0.06);
+  ctx.lineTo(x + w * 0.70, y + h * 0.02);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+// Small dockside clutter: barrels, crates, lanterns, capstans, ropes, anchors,
+// shore cannons — sprinkled around the quay to make the port feel lived-in.
+function drawHarbourPropObject(obj, sx, sy) {
+  const kind = String(obj.propKind || "barrel");
+  ctx.save();
+  drawEllipseShadow(sx - 11, sy + 8, 22, 7, 0.2);
+  if (kind === "barrel") {
+    ctx.fillStyle = "#7a4f28";
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, 9, 11, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#3a2410";
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(sx - 9, sy - 4); ctx.lineTo(sx + 9, sy - 4); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx - 9, sy + 4); ctx.lineTo(sx + 9, sy + 4); ctx.stroke();
+  } else if (kind === "crate") {
+    ctx.fillStyle = "#8a6438";
+    ctx.fillRect(sx - 10, sy - 9, 20, 18);
+    ctx.strokeStyle = "#4a2f16";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(sx - 10, sy - 9, 20, 18);
+    ctx.beginPath(); ctx.moveTo(sx - 10, sy - 9); ctx.lineTo(sx + 10, sy + 9); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx + 10, sy - 9); ctx.lineTo(sx - 10, sy + 9); ctx.stroke();
+  } else if (kind === "lantern") {
+    ctx.strokeStyle = "#3a2a18";
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(sx, sy + 12); ctx.lineTo(sx, sy - 14); ctx.stroke();
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const pulse = 0.5 + Math.sin(performance.now() / 400 + sx) * 0.2;
+    ctx.fillStyle = `rgba(255, 210, 110, ${pulse})`;
+    ctx.beginPath(); ctx.arc(sx, sy - 10, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = "#ffd66e";
+    ctx.beginPath(); ctx.arc(sx, sy - 10, 4, 0, Math.PI * 2); ctx.fill();
+  } else if (kind === "capstan") {
+    ctx.fillStyle = "#5c3c20";
+    ctx.beginPath(); ctx.arc(sx, sy, 8, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "#3a2410";
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 4; i += 1) {
+      const a = (Math.PI / 2) * i + 0.4;
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + Math.cos(a) * 14, sy + Math.sin(a) * 14); ctx.stroke();
+    }
+  } else if (kind === "rope") {
+    ctx.strokeStyle = "#a98a5a";
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 3; i += 1) {
+      ctx.beginPath();
+      ctx.arc(sx, sy, 5 + i * 3, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  } else if (kind === "anchor") {
+    ctx.strokeStyle = "#566069";
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(sx, sy - 11); ctx.lineTo(sx, sy + 9); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx - 9, sy + 2); ctx.quadraticCurveTo(sx, sy + 13, sx + 9, sy + 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx - 6, sy - 8); ctx.lineTo(sx + 6, sy - 8); ctx.stroke();
+    ctx.fillStyle = "#566069";
+    ctx.beginPath(); ctx.arc(sx, sy - 11, 3, 0, Math.PI * 2); ctx.fill();
+  } else if (kind === "cannon") {
+    ctx.fillStyle = "#2c3138";
+    ctx.fillRect(sx - 11, sy - 4, 20, 8);
+    ctx.beginPath(); ctx.arc(sx - 11, sy, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#5c3c20";
+    ctx.fillRect(sx - 8, sy + 3, 14, 5);
+  }
   ctx.restore();
 }
 

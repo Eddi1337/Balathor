@@ -33,10 +33,10 @@ const OCEANUS_BOUNDS = Object.freeze({
 
 const STARTER_ISLAND = Object.freeze({
   id: "starter_isle",
-  name: "Castaway Cay",
+  name: "Port Bilgewater",
   x: (Number(DATA.landing?.x) || -43240) - 580,
   y: (Number(DATA.landing?.y) || -162) + 42,
-  landRadius: 22
+  landRadius: 26
 });
 const STARTER_PIER_DIR = "south";
 
@@ -216,23 +216,27 @@ function starterIslandScore(x, y) {
   return 1 - Math.hypot(dx, dy) / STARTER_ISLAND.landRadius;
 }
 
+const STARTER_PIER_HALF_WIDTH = 4;       // broad central boardwalk leading off the island
+const STARTER_PIER_HEAD_HALF = 18;       // crossbar spanning all five moorings
+const STARTER_MOORING_CLEARANCE = 14;    // open water gap between the quay and a moored hull
+
 function starterPierRect() {
   const r = STARTER_ISLAND.landRadius;
   return {
-    minX: STARTER_ISLAND.x - PIER_HALF_WIDTH,
-    maxX: STARTER_ISLAND.x + PIER_HALF_WIDTH,
+    minX: STARTER_ISLAND.x - STARTER_PIER_HALF_WIDTH,
+    maxX: STARTER_ISLAND.x + STARTER_PIER_HALF_WIDTH,
     minY: STARTER_ISLAND.y + r - 2,
     maxY: STARTER_ISLAND.y + r + PIER_LEN
   };
 }
 
-/** T-shaped pier head: a walkable crossbar covering all three starter moorings. */
+/** T-shaped pier head: a wide walkable crossbar spanning all starter moorings. */
 function starterPierHeadRect() {
   const r = STARTER_ISLAND.landRadius;
   return {
-    minX: STARTER_ISLAND.x - 8,
-    maxX: STARTER_ISLAND.x + 8,
-    minY: STARTER_ISLAND.y + r + PIER_LEN - 1,
+    minX: STARTER_ISLAND.x - STARTER_PIER_HEAD_HALF,
+    maxX: STARTER_ISLAND.x + STARTER_PIER_HEAD_HALF,
+    minY: STARTER_ISLAND.y + r + PIER_LEN - 3,
     maxY: STARTER_ISLAND.y + r + PIER_LEN
   };
 }
@@ -241,7 +245,8 @@ function onStarterPier(x, y) {
   const p = starterPierRect();
   if (x >= p.minX && x <= p.maxX && y >= p.minY && y <= p.maxY) return true;
   const head = starterPierHeadRect();
-  return x >= head.minX && x <= head.maxX && y >= head.minY && y <= head.maxY;
+  if (x >= head.minX && x <= head.maxX && y >= head.minY && y <= head.maxY) return true;
+  return false;
 }
 
 function pierRect(isle) {
@@ -407,7 +412,7 @@ function starterPortAt(idSuffix, xOffset, yOffset = 0) {
     harbourId: STARTER_ISLAND.id,
     harbourName: STARTER_ISLAND.name,
     x: STARTER_ISLAND.x + xOffset,
-    y: STARTER_ISLAND.y + STARTER_ISLAND.landRadius + PIER_LEN + 8 + yOffset,
+    y: STARTER_ISLAND.y + STARTER_ISLAND.landRadius + PIER_LEN + STARTER_MOORING_CLEARANCE + yOffset,
     facing: STARTER_PIER_DIR,
     plankX: STARTER_ISLAND.x + xOffset,
     plankY: STARTER_ISLAND.y + STARTER_ISLAND.landRadius + PIER_LEN,
@@ -421,7 +426,9 @@ function starterPortAt(idSuffix, xOffset, yOffset = 0) {
 const STARTER_PORTS = Object.freeze([
   starterPortAt("dock", 0, 0),
   starterPortAt("west_dock", -7, 1),
-  starterPortAt("east_dock", 7, 1)
+  starterPortAt("east_dock", 7, 1),
+  starterPortAt("far_west_dock", -14, 2),
+  starterPortAt("far_east_dock", 14, 2)
 ]);
 const STARTER_PORT = STARTER_PORTS[0];
 
@@ -514,64 +521,160 @@ function buildFeatures() {
 }
 
 const OCEANUS_FEATURES = buildFeatures();
-const STARTER_FEATURES = Object.freeze([
-  Object.freeze({
+
+/**
+ * Port Bilgewater — the big pirate starter harbour. A broad central boardwalk
+ * runs out from the island to a wide crossbar pier with five finger-pier
+ * moorings; dockside buildings (taverns, warehouses, the shipwright, market
+ * stalls) and props (barrels, crates, lanterns, capstans) cluster around the
+ * waterfront so it reads as a bustling pirate town rather than a lone jetty.
+ */
+function buildStarterFeatures() {
+  const out = [];
+  const ix = STARTER_ISLAND.x;
+  const iy = STARTER_ISLAND.y;
+  const r = STARTER_ISLAND.landRadius;
+  const dockY = STARTER_PORT.terminalY; // dockside terminal row, just inland of the pier
+
+  out.push(Object.freeze({
     id: `${STARTER_ISLAND.id}_harbour`,
     kind: "harbour",
     name: STARTER_ISLAND.name,
-    x: STARTER_ISLAND.x,
-    y: STARTER_ISLAND.y,
-    radius: STARTER_ISLAND.landRadius,
-    w: STARTER_ISLAND.landRadius * 2,
-    h: STARTER_ISLAND.landRadius * 2
-  }),
-  Object.freeze({
+    x: ix,
+    y: iy,
+    radius: r,
+    w: r * 2,
+    h: r * 2
+  }));
+
+  // Broad central boardwalk + the wide crossbar pier head.
+  out.push(Object.freeze({
     id: `${STARTER_ISLAND.id}_pier`,
     kind: "harbour-pier",
-    name: `${STARTER_ISLAND.name} Pier`,
+    name: `${STARTER_ISLAND.name} Boardwalk`,
     harbourId: STARTER_ISLAND.id,
-    x: STARTER_ISLAND.x,
-    y: STARTER_ISLAND.y + STARTER_ISLAND.landRadius + Math.floor(PIER_LEN / 2),
-    w: PIER_HALF_WIDTH * 2 + 1,
+    x: ix,
+    y: iy + r + Math.floor(PIER_LEN / 2),
+    w: STARTER_PIER_HALF_WIDTH * 2 + 1,
     h: PIER_LEN + 3
-  }),
-  ...STARTER_PORTS.map((port) => Object.freeze({
-    id: port.id,
-    kind: "ship-port",
-    name: `${STARTER_ISLAND.name} Mooring`,
+  }));
+  out.push(Object.freeze({
+    id: `${STARTER_ISLAND.id}_pier_head`,
+    kind: "harbour-pier",
+    name: `${STARTER_ISLAND.name} Quay`,
     harbourId: STARTER_ISLAND.id,
-    x: port.x,
-    y: port.y,
-    w: 5,
-    h: 3,
-    facing: port.facing,
-    plankX: port.plankX,
-    plankY: port.plankY,
-    portId: port.id
-  })),
-  Object.freeze({
+    x: ix,
+    y: iy + r + PIER_LEN - 1,
+    w: STARTER_PIER_HEAD_HALF * 2 + 1,
+    h: 4
+  }));
+
+  for (const port of STARTER_PORTS) {
+    out.push(Object.freeze({
+      id: port.id,
+      kind: "ship-port",
+      name: `${STARTER_ISLAND.name} Mooring`,
+      harbourId: STARTER_ISLAND.id,
+      x: port.x,
+      y: port.y,
+      w: 5,
+      h: 3,
+      facing: port.facing,
+      plankX: port.plankX,
+      plankY: port.plankY,
+      portId: port.id
+    }));
+  }
+
+  // Dockside service buildings.
+  out.push(Object.freeze({
     id: `${STARTER_ISLAND.id}_shipwright`,
     kind: "ship-console",
     name: `${STARTER_ISLAND.name} Shipwright`,
     harbourId: STARTER_ISLAND.id,
-    x: STARTER_ISLAND.x - 5,
-    y: STARTER_PORT.terminalY,
+    x: ix - 6,
+    y: dockY,
     w: 4,
     h: 4
-  }),
-  Object.freeze({
+  }));
+  out.push(Object.freeze({
     id: `${STARTER_ISLAND.id}_chandler`,
     kind: "ship-shop",
     name: `${STARTER_ISLAND.name} Chandlery`,
     shopName: `${STARTER_ISLAND.name} Chandlery`,
     shopType: "ship",
     harbourId: STARTER_ISLAND.id,
-    x: STARTER_ISLAND.x + 5,
-    y: STARTER_PORT.terminalY,
+    x: ix + 6,
+    y: dockY,
     w: 4,
     h: 4
-  })
-]);
+  }));
+
+  // Waterfront town buildings flanking the boardwalk.
+  const buildings = [
+    { sub: "tavern", name: "The Salty Siren Tavern", dx: -14, dy: -2, w: 7, h: 6, roof: "#7a3b2a", wall: "#8a6a44" },
+    { sub: "warehouse", name: "Bilgewater Warehouse", dx: 14, dy: -2, w: 7, h: 6, roof: "#4a4036", wall: "#6e5a3c" },
+    { sub: "market", name: "Smuggler's Market", dx: -16, dy: 6, w: 6, h: 5, roof: "#5a6b3a", wall: "#7c7048" },
+    { sub: "guild", name: "Pirate Guild Hall", dx: 16, dy: 6, w: 6, h: 5, roof: "#3a3550", wall: "#5c5470" },
+    { sub: "house", name: "Harbourmaster's Lodge", dx: -8, dy: -10, w: 5, h: 5, roof: "#6a4a30", wall: "#8a7250" },
+    { sub: "house", name: "Keeper's Cottage", dx: 8, dy: -10, w: 5, h: 5, roof: "#52442e", wall: "#7c6648" }
+  ];
+  for (const b of buildings) {
+    out.push(Object.freeze({
+      id: `${STARTER_ISLAND.id}_bld_${b.sub}_${b.dx}_${b.dy}`,
+      kind: "harbour-building",
+      subKind: b.sub,
+      name: b.name,
+      harbourId: STARTER_ISLAND.id,
+      x: ix + b.dx,
+      y: iy + b.dy,
+      w: b.w,
+      h: b.h,
+      roofColor: b.roof,
+      wallColor: b.wall
+    }));
+  }
+
+  // Lighthouse landmark at the seaward tip.
+  out.push(Object.freeze({
+    id: `${STARTER_ISLAND.id}_lighthouse`,
+    kind: "harbour-lighthouse",
+    name: `${STARTER_ISLAND.name} Lighthouse`,
+    harbourId: STARTER_ISLAND.id,
+    x: ix - r + 5,
+    y: iy + r - 8,
+    w: 3,
+    h: 3
+  }));
+
+  // Dockside props scattered along the quay and boardwalk.
+  const props = [
+    { kind: "barrel", dx: -10, dy: 14 }, { kind: "barrel", dx: -8, dy: 15 },
+    { kind: "crate", dx: 9, dy: 14 }, { kind: "crate", dx: 11, dy: 15 },
+    { kind: "crate", dx: -14, dy: 12 }, { kind: "barrel", dx: 13, dy: 12 },
+    { kind: "lantern", dx: -5, dy: 16 }, { kind: "lantern", dx: 5, dy: 16 },
+    { kind: "capstan", dx: 0, dy: 16 },
+    { kind: "barrel", dx: -3, dy: 10 }, { kind: "crate", dx: 3, dy: 10 },
+    { kind: "cannon", dx: -17, dy: 9 }, { kind: "cannon", dx: 17, dy: 9 },
+    { kind: "barrel", dx: -22, dy: 1 }, { kind: "crate", dx: 22, dy: 1 },
+    { kind: "rope", dx: -12, dy: 17 }, { kind: "rope", dx: 12, dy: 17 },
+    { kind: "anchor", dx: 7, dy: 18 }, { kind: "anchor", dx: -7, dy: 18 }
+  ];
+  for (const [index, prop] of props.entries()) {
+    out.push(Object.freeze({
+      id: `${STARTER_ISLAND.id}_dprop_${index}`,
+      kind: "harbour-prop",
+      propKind: prop.kind,
+      harbourId: STARTER_ISLAND.id,
+      x: ix + prop.dx,
+      y: iy + prop.dy
+    }));
+  }
+
+  return Object.freeze(out);
+}
+
+const STARTER_FEATURES = buildStarterFeatures();
 
 const OCEANUS_LANDING = Object.freeze({
   x: STARTER_ISLAND.x,
