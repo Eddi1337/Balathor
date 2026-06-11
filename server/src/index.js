@@ -93,7 +93,8 @@ const {
   pickPubDreamGirlfriendNpcId,
   getWorldTimeSnapshot,
   setWorldTimeHour,
-  syncNpcHubHomesFromBuildings
+  syncNpcHubHomesFromBuildings,
+  notifyCombatAt
 } = require("./npcs");
 const {
   openWorldDb,
@@ -5811,16 +5812,38 @@ function processCompanionAiAgents(now) {
     if (now < (client._companionAiNextAt || 0)) continue;
     const session = sanitizePlayerHouseCompanionSession(client);
     if (session) {
+      // Homecoming detection: first tick inside the house triggers a warm welcome.
+      const justArrived = !client._wasInsideHouse;
+      client._wasInsideHouse = true;
+      if (justArrived) {
+        // Welcome-home reaction fires immediately (priority); idle timer gets a
+        // short head-start so it doesn't pile on right after.
+        client._companionAiNextAt = now + 180000 + Math.random() * 120000;
+        const hc = p.houseCompanion;
+        if (hc && !client._companionAiPending) {
+          client._companionAiPending = true;
+          companionAi
+            .requestCompanionHomeReturn(companionAiKey(client), companionPersona(client, hc), p.name, p.level || 1)
+            .then((result) => {
+              client._companionAiPending = false;
+              if (client.player?.houseCompanion) applyCompanionAiResult(client, result);
+            })
+            .catch(() => { client._companionAiPending = false; });
+        }
+        continue;
+      }
       client._companionAiNextAt = now + 150000 + Math.random() * 150000;
       const hour = new Date(now).getHours();
       const daypart = hour < 6 ? "deep night" : hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening";
       queueCompanionAiReply(
         client,
-        `It is ${daypart}. ${p.name} (a level ${p.level || 1} ${p.classId || "adventurer"}) is home with you in the cottage. Decide what you do next around the house and say one fresh, interesting line about it — a new topic, never a repeat.`,
+        `It is ${daypart}. ${p.name} (a level ${p.level || 1} ${p.classId || "adventurer"}) is home with you in the cottage. Decide what you do next around the house and say one fresh, interesting line about it — a new topic, never a repeat. Feel free to be warmly flirtatious.`,
         { priority: false }
       );
       continue;
     }
+    // Reset homecoming flag when player leaves their house
+    client._wasInsideHouse = false;
     if (typeof p.flirtFollowNpcId === "string" && p.flirtFollowNpcId) {
       const npc = getNpcById(p.flirtFollowNpcId);
       if (npc && Math.hypot(npc.x - p.x, npc.y - p.y) <= 14) {
@@ -7970,6 +7993,25 @@ function awardMobDefeatToClient(client, mob, event, now = Date.now()) {
   event.goldGained = goldReward;
   dropLootForMob(mob);
   recordMobDefeatForQuests(client, mob);
+  // Notify nearby AI-enabled NPCs so their next batch mentions the nearby combat.
+  notifyCombatAt(mob.x, mob.y, now);
+
+  // Companion level-up reaction — fires when the player levels up and has an
+  // active companion (house companion or flirt-follow NPC nearby).
+  if (progress.levelsGained > 0) {
+    const p = client.player;
+    const hc = p?.houseCompanion;
+    if (hc && !client._companionAiPending) {
+      client._companionAiPending = true;
+      companionAi
+        .requestCompanionLevelUpReaction(companionAiKey(client), companionPersona(client, hc), p.name, p.level)
+        .then((result) => {
+          client._companionAiPending = false;
+          if (client.player?.houseCompanion) applyCompanionAiResult(client, result);
+        })
+        .catch(() => { client._companionAiPending = false; });
+    }
+  }
 }
 
 function handleShipFire(client, message = {}) {

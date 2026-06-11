@@ -1539,6 +1539,7 @@ const BASE_NPC_DEFINITIONS = [
     patrolRadius: 4,
     questGiver: true,
     questIds: ["q_wisp_sample"],
+    aiPersonality: "a quiet, precise mage-scholar who speaks in careful measured sentences about light, cold, and anomalies she cannot explain",
     dialogue: [
       "Cold lights have been drifting from the frost road.",
       "Bring me proof, not a heroic limp.",
@@ -1556,6 +1557,7 @@ const BASE_NPC_DEFINITIONS = [
     patrolRadius: 4,
     questGiver: true,
     questIds: ["q_ember_cinders"],
+    aiPersonality: "a soot-stained smith's assistant who speaks bluntly about fire, pests, and getting the job done",
     dialogue: [
       "Ember imps have been chewing on my coal sacks.",
       "If it smokes and laughs, hit it.",
@@ -1574,6 +1576,7 @@ const BASE_NPC_DEFINITIONS = [
     questGiver: true,
     questIds: ["q_wild_swamp_trace"],
     professionTrainer: "surveying",
+    aiPersonality: "a calm, methodical surveyor who reads nature like a map and speaks about marshes, footprints, and careful observation",
     dialogue: [
       "The bog keeps records in footprints and bubbles.",
       "Learn to survey properly and the wild stops looking random.",
@@ -1591,6 +1594,7 @@ const BASE_NPC_DEFINITIONS = [
     patrolRadius: 8,
     questGiver: true,
     questIds: ["q_wild_dune_bones"],
+    aiPersonality: "a weathered desert guide who speaks matter-of-factly about heat, bones, and the dangers of the glass dunes",
     dialogue: [
       "Glass dunes cut boots and confidence in equal measure.",
       "The caravan road needs fewer teeth beside it.",
@@ -1608,6 +1612,7 @@ const BASE_NPC_DEFINITIONS = [
     patrolRadius: 8,
     questGiver: true,
     questIds: ["q_wild_frost_signal"],
+    aiPersonality: "a soft-spoken frost-mage who listens to the snow and speaks in hushed warnings about signals and cold places that answer back",
     dialogue: [
       "The snow hums when danger gets close.",
       "I do not like patterns I did not make.",
@@ -1682,6 +1687,7 @@ const BASE_NPC_DEFINITIONS = [
     classId: "ranger", primary: "#5a4a35", accent: "#c8a86b",
     homeX: 0, homeY: -62, patrolRadius: 8,
     isTrader: true,
+    aiPersonality: "an amiable travelling merchant who loves boasting about rare wares and knows all the local trade gossip",
     dialogue: [
       "Finest wares from across the realm, step right up!",
       "Business has been booming since the new road opened.",
@@ -1694,6 +1700,7 @@ const BASE_NPC_DEFINITIONS = [
     id: "npc_aldric", name: "Guard Aldric",
     classId: "knight", primary: "#6e7a8a", accent: "#c8c8c8",
     homeX: 2, homeY: -54, patrolRadius: 6,
+    aiPersonality: "a stoic guard who speaks sparingly but with authority, always scanning for threats while pretending to chat",
     dialogue: [
       "The north road is safe under my watch.",
       "Report any trouble to me immediately.",
@@ -1723,6 +1730,7 @@ const BASE_NPC_DEFINITIONS = [
     classId: "ranger", primary: "#7b5ea7", accent: "#ffd700",
     homeX: 60, homeY: -11, patrolRadius: 8,
     isTrader: true,
+    aiPersonality: "an exotic spice trader from distant lands who is endlessly enthusiastic about rare goods and is easily impressed by powerful adventurers",
     dialogue: [
       "The market has everything the heart desires!",
       "My spices come from lands you could not imagine.",
@@ -1736,6 +1744,7 @@ const BASE_NPC_DEFINITIONS = [
     classId: "ranger", primary: "#5a7a5a", accent: "#ff8c00",
     homeX: 57, homeY: 12, patrolRadius: 5,
     professionTrainer: "blacksmithing",
+    aiPersonality: "an eager, accident-prone blacksmithing apprentice who looks up to adventurers and rambles enthusiastically about his dream of forging a legendary weapon",
     dialogue: [
       "Master Ren says I still have much to learn.",
       "I burned myself on the forge again today...",
@@ -1748,6 +1757,7 @@ const BASE_NPC_DEFINITIONS = [
     id: "npc_sera", name: "Guard Sera",
     classId: "knight", primary: "#6e7a8a", accent: "#ffd700",
     homeX: 50, homeY: 0, patrolRadius: 8,
+    aiPersonality: "a sharp-eyed guard who speaks crisply about market safety and watches powerful adventurers with professional admiration",
     dialogue: [
       "The east road is under my protection.",
       "I keep watch so others may sleep soundly.",
@@ -1776,6 +1786,7 @@ const BASE_NPC_DEFINITIONS = [
     classId: "ranger", primary: "#6b4e2f", accent: "#e8c84a",
     homeX: -2, homeY: 58, patrolRadius: 6,
     isTrader: true,
+    aiPersonality: "a bustling, practical provisioner who fusses about adventurers going out without proper supplies and takes pride in her herbal remedies",
     dialogue: [
       "Potions, rations, and remedies — all in stock!",
       "The hamlet folk keep me busy with orders.",
@@ -1789,6 +1800,7 @@ const BASE_NPC_DEFINITIONS = [
     classId: "mage", primary: "#c8a86b", accent: "#fff8dc",
     homeX: -8, homeY: 61, patrolRadius: 7,
     professionTrainer: "baking",
+    aiPersonality: "a cheerful miller who speaks philosophically about flour, the rhythm of grinding, and how bread connects the four villages",
     dialogue: [
       "Fresh flour, ground this very morning!",
       "The mill wheel turns as long as the river flows.",
@@ -1801,6 +1813,7 @@ const BASE_NPC_DEFINITIONS = [
     id: "npc_wyn", name: "Shepherd Wyn",
     classId: "ranger", primary: "#6b8e6b", accent: "#f5f5dc",
     homeX: -5, homeY: 72, patrolRadius: 13,
+    aiPersonality: "a gentle, philosophical shepherd who moves slowly, speaks quietly about the land, and is quietly in awe of adventurers who survive the wild",
     dialogue: [
       "The sheep know the land better than any map.",
       "I find peace in long walks through the fields.",
@@ -1842,6 +1855,7 @@ const BASE_NPC_DEFINITIONS = [
     id: "npc_cael", name: "Hermit Cael",
     classId: "mage", primary: "#1a1a2e", accent: "#6a0dad",
     homeX: -65, homeY: 10, patrolRadius: 5,
+    aiPersonality: "a deeply unsettling hermit who speaks in fragmented, ominous sentences as if hearing things others cannot — quietly terrified of powerful adventurers",
     dialogue: [
       "...",
       "The walls remember everything.",
@@ -1854,6 +1868,7 @@ const BASE_NPC_DEFINITIONS = [
     id: "npc_zix", name: "Wanderer Zix",
     classId: "ranger", primary: "#4a5568", accent: "#ed8936",
     homeX: -52, homeY: 2, patrolRadius: 14,
+    aiPersonality: "a cheerful world-traveller who has seen everything and loves swapping stories — genuinely delighted by impressive adventurers and their tales",
     dialogue: [
       "I have been everywhere and nowhere.",
       "The ruins fascinate me. So much history!",
@@ -1869,6 +1884,7 @@ const BASE_NPC_DEFINITIONS = [
     classId: "knight", primary: "#8b5e3c", accent: "#ffd166",
     homeX: 5, homeY: -3, patrolRadius: 5,
     isTrader: true,
+    aiPersonality: "a boisterous bazaar owner who shouts about deals, banter with customers, and openly admires adventurers who look like they can afford his best stock",
     dialogue: [
       "Welcome to Kael's Bazaar! Best prices in the hub!",
       "Fresh stock every day, straight from the caravans.",
@@ -1910,6 +1926,7 @@ const BASE_NPC_DEFINITIONS = [
     classId: "ranger", primary: "#5c4632", accent: "#e8c040",
     homeX: -40, homeY: -10, patrolRadius: 0,
     isTrader: true,
+    aiPersonality: "a no-nonsense wagon merchant who values honesty, gives blunt opinions, and perks up when famous adventurers browse her stock",
     dialogue: [
       "Everything on this wagon is priced for neighbours.",
       "Arrows, twine, and trail biscuits — take your pick.",
@@ -1923,6 +1940,7 @@ const BASE_NPC_DEFINITIONS = [
     classId: "knight", primary: "#4a3a28", accent: "#c49a6c",
     homeX: 40, homeY: -10, patrolRadius: 0,
     isTrader: true,
+    aiPersonality: "a seasoned road-hawker who field-tests everything he sells and loves chatting with battle-hardened adventurers about what gear actually holds up",
     dialogue: [
       "Fine steel wool, oils, and wax — maintain your kit!",
       "I've walked every road out of this village; I know what sells.",
@@ -1936,6 +1954,7 @@ const BASE_NPC_DEFINITIONS = [
     classId: "mage", primary: "#4a3558", accent: "#9adbc9",
     homeX: -26, homeY: 44, patrolRadius: 0,
     isTrader: true,
+    aiPersonality: "a dreamy, moon-struck potion vendor who speaks with quiet mystery about brews, charms, and the people she watches pass through the plaza",
     dialogue: [
       "Potions, dusts, and curious little charms.",
       "My stock shifts with the moon — always something new.",
@@ -1949,6 +1968,7 @@ const BASE_NPC_DEFINITIONS = [
     classId: "ranger", primary: "#3d4f3a", accent: "#f0e6a8",
     homeX: 28, homeY: 50, patrolRadius: 0,
     isTrader: true,
+    aiPersonality: "a laconic caravan driver who has seen too many roads to be impressed by most things — except genuinely legendary adventurers, who earn a rare nod of respect",
     dialogue: [
       "Salt, spice, leather straps — straight off the wagon.",
       "I park here between runs east and west.",
@@ -4155,6 +4175,24 @@ function getTraderDefinitions() {
   return DEFINITIONS.filter((d) => d.isTrader);
 }
 
+/**
+ * Called by index.js when combat occurs at a world position.
+ * Marks all nearby NPCs so the next npcAi batch can include "combat nearby"
+ * in their perception context, making them react accordingly.
+ * @param {number} x - world x of combat event
+ * @param {number} y - world y of combat event
+ * @param {number} now - Date.now()
+ */
+function notifyCombatAt(x, y, now) {
+  const RADIUS = 20;
+  for (const npc of npcs) {
+    if (!npc || !npc.aiPersonality) continue;
+    if (Math.hypot(npc.x - x, npc.y - y) < RADIUS) {
+      npcAi.notifyNpcCombatNearby(npc, now);
+    }
+  }
+}
+
 module.exports = {
   updateNpcs,
   getNpcSnapshot,
@@ -4169,5 +4207,6 @@ module.exports = {
   getCompanionNpcTemplate,
   pickPubDreamGirlfriendNpcId,
   getWorldTimeSnapshot,
-  setWorldTimeHour
+  setWorldTimeHour,
+  notifyCombatAt
 };

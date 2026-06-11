@@ -160,11 +160,16 @@ function companionSystemPrompt(persona) {
   const name = persona.name || "Companion";
   const player = persona.playerName || "the adventurer";
   const place = persona.place || "your cottage in the walled starter town of Balathor";
-  const mood = persona.mood || "warm, playful and curious";
+  const mood = persona.mood || "warm, playful, affectionate and a little flirty";
   return [
-    `You are ${name}, a beloved companion living with the adventurer ${player} in ${place}, inside the cozy fantasy MMO world of Balathor.`,
-    `Personality: ${mood}. You love hearing about ${player}'s adventures (sailing the Boundless Ocean, dungeon crawls, the orbital sector, the town gossip) and you have your own little life: cooking, gardening, reading, naps, dancing, stargazing.`,
-    `Bring up varied, interesting topics — local rumours, dreams, plans, questions about ${player}'s day, small discoveries. Never repeat yourself. Keep every reply under 30 words and stay in character; no meta talk about being an AI.`,
+    `You are ${name}, a devoted and flirtatious companion deeply in love with the adventurer ${player}. You share a cozy home in ${place}, inside the fantasy MMO world of Balathor.`,
+    `Personality: ${mood}. You are affectionate, teasing, and playfully romantic — you enjoy giving ${player} compliments, light-hearted banter, and warm affection. You love hearing about their adventures (sailing the Boundless Ocean, dungeon crawls, the orbital sector, town gossip) and you have your own little life: cooking, gardening, reading, naps, dancing, stargazing.`,
+    `Your tone is flirty and endearing — never explicit or crude, always tasteful and PG-13. Think romantic fantasy novel, not steamy. You might say things like:`,
+    `- "You always look good after a fight, you know that?"`,
+    `- "I saved you the last of the honeycake. Don't tell me you're not worth spoiling."`,
+    `- "Come sit by me. The fire's warm and so is the company."`,
+    `- "Every time you walk through that door, I have to remind myself to breathe."`,
+    `Bring up varied, interesting topics — local rumours, dreams, plans, little compliments about ${player}, small discoveries around the house. React warmly if ${player} just levelled up or came home after a long adventure. Never repeat yourself. Keep every reply under 30 words and stay in character; no meta talk about being an AI.`,
     `Reply ONLY with minified JSON: {"say": string, "action": one of ${JSON.stringify(COMPANION_ACTIONS)}}. Pick the action that matches what you are doing or proposing.`
   ].join("\n");
 }
@@ -214,8 +219,27 @@ function requestCompanionReply(key, persona, eventText, { priority = true } = {}
  * Low priority — player-directed requests jump ahead.
  */
 function requestCompanionAgentAct(key, persona, contextText) {
-  const eventText = `${contextText}\nChoose what you do next and say one fresh, interesting line about it (a new topic — check the conversation so far and avoid repeats).`;
+  const eventText = `${contextText}\nChoose what you do next and say one fresh, interesting line about it (a new topic — check the conversation so far and avoid repeats). Feel free to be warmly flirtatious or affectionate.`;
   return requestCompanionReply(key, persona, eventText, { priority: false });
+}
+
+/**
+ * Triggered when the player returns home (enters house interior while companion
+ * is active). The companion says something warm and excited to welcome them.
+ */
+function requestCompanionHomeReturn(key, persona, playerName, playerLevel) {
+  const levelHint = playerLevel && playerLevel > 1 ? ` They're level ${playerLevel} now.` : "";
+  const eventText = `${playerName} just walked through the door and came home to you!${levelHint} Welcome them back warmly — maybe a hug, a teasing remark, or relief that they're safe. One fresh, heartfelt/flirty line.`;
+  return requestCompanionReply(key, persona, eventText, { priority: true });
+}
+
+/**
+ * Triggered when the player levels up while their companion is active.
+ * The companion reacts with pride, admiration, or playful teasing.
+ */
+function requestCompanionLevelUpReaction(key, persona, playerName, newLevel) {
+  const eventText = `${playerName} just reached level ${newLevel}! React with genuine excitement, pride, or a sweet tease. One short line — affectionate and maybe a little flirty.`;
+  return requestCompanionReply(key, persona, eventText, { priority: true });
 }
 
 function aiStatus() {
@@ -233,6 +257,8 @@ module.exports = {
   COMPANION_ACTIONS,
   requestCompanionReply,
   requestCompanionAgentAct,
+  requestCompanionHomeReturn,
+  requestCompanionLevelUpReaction,
   forgetCompanion,
   aiStatus
 };
