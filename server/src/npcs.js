@@ -2457,6 +2457,7 @@ function buildPirateNpcDefinitions() {
       accent: "#e8c84a",
       dx: -2, dy: -6, patrolRadius: 4,
       questGiver: true,
+      questIds: ["q_pirate_initiation"],
       aiPersonality:
         "a swaggering, gold-toothed pirate captain who booms orders, brags about plundered treasure, and addresses everyone as 'matey' or 'ye scurvy dog'; never breaks the pirate accent",
       dialogue: [
@@ -2474,6 +2475,7 @@ function buildPirateNpcDefinitions() {
       accent: "#d8b048",
       dx: 5, dy: -3, patrolRadius: 3,
       questGiver: true,
+      questIds: ["q_pirate_supplies"],
       aiPersonality:
         "a sharp-tongued, bookkeeping pirate quartermaster obsessed with counting shares of plunder, rum rations, and powder kegs; speaks in pirate slang but is fussy about numbers",
       dialogue: [
@@ -2490,6 +2492,7 @@ function buildPirateNpcDefinitions() {
       accent: "#9fd0ff",
       dx: -7, dy: 0, patrolRadius: 3,
       questGiver: true,
+      questIds: ["q_pirate_charting"],
       aiPersonality:
         "a mystical pirate navigator who reads the stars and tides, speaks half in sailor superstition and half in cryptic omens, and warns of storms and sea monsters; keeps a pirate cadence",
       dialogue: [
@@ -2521,6 +2524,7 @@ function buildPirateNpcDefinitions() {
       accent: "#ff8a3a",
       dx: -10, dy: 4, patrolRadius: 3,
       questGiver: true,
+      questIds: ["q_pirate_gunnery"],
       aiPersonality:
         "a loud, fearless pirate cannon-master who loves explosions, talks fast about black powder and broadsides, and is half-deaf from the guns; gruff but warm, always in pirate dialect",
       dialogue: [
@@ -2567,6 +2571,7 @@ function buildPirateNpcDefinitions() {
       accent: "#a8d0c0",
       dx: -4, dy: 7, patrolRadius: 3,
       questGiver: true,
+      questIds: ["q_pirate_lost_treasure"],
       aiPersonality:
         "an ancient, weather-beaten retired pirate who rambles endlessly about legendary voyages, lost treasure maps, and the friends the sea took; wistful, salty, and deeply piratey",
       dialogue: [
@@ -2594,6 +2599,7 @@ function buildPirateNpcDefinitions() {
       homeY,
       patrolRadius: Number(p.patrolRadius) || 3,
       questGiver: !!p.questGiver,
+      ...(Array.isArray(p.questIds) && p.questIds.length ? { questIds: p.questIds } : {}),
       aiPersonality: p.aiPersonality,
       dialogue: p.dialogue,
     };

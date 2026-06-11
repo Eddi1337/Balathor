@@ -718,6 +718,84 @@ const QUEST_DEFINITIONS = Object.freeze({
       { type: "kill", text: "Defeat 4 desert lifeforms near the relay", count: 4, faction: "planet_desert", target: { x: PLANET_RUST.surfaceX + 88, y: PLANET_RUST.surfaceY - 44 } },
       { type: "talk", text: "Return to the Rust guide", npcId: "npc_planet_guide_planet_rust", target: { x: PLANET_RUST.surfaceX + 22, y: PLANET_RUST.surfaceY + 6 } }
     ]
+  },
+
+  // ── Port Bilgewater pirate quest line (Oceanus) ──────────────────────────
+  // A short, sailing-flavoured chain that teaches boarding, ocean travel, ship
+  // combat against oceanus_marauder mobs, and ends on the Storm Cay boss.
+  // Talk `target` coords are map markers only (completion is by npcId); they
+  // sit near the Port Bilgewater crew at roughly (-43820, -130).
+  q_pirate_initiation: {
+    id: "q_pirate_initiation",
+    giverId: "npc_pirate_captain_redbeard",
+    title: "Sign the Articles",
+    summary: "Captain Redmaw will take you on as crew — if you go see Quartermaster Sal and get your name in the ledger first.",
+    offer: "Arrr! Ye've the look of a sea-dog who's not yet wet their boots. Want a berth aboard my crew, matey? Then go find Quartermaster Sal an' sign the articles — no signature, no share o' the loot!",
+    complete: "Welcome aboard, ye scurvy dog! Yer name's in the ledger an' yer fate's tied to Port Bilgewater now. Yo ho ho!",
+    rewardGold: 25,
+    rewardXp: 70,
+    steps: [
+      { type: "talk", text: "Sign on with Quartermaster Sal", npcId: "npc_pirate_quartermaster_sal", target: { x: -43815, y: -134 } },
+      { type: "talk", text: "Report back to Captain Redmaw", npcId: "npc_pirate_captain_redbeard", target: { x: -43822, y: -136 } }
+    ]
+  },
+  q_pirate_supplies: {
+    id: "q_pirate_supplies",
+    giverId: "npc_pirate_quartermaster_sal",
+    title: "Run the Supply Line",
+    summary: "Sal's stores are low. Take a ship out to Iron Haven up the north channel, log the supply cache, and sail home.",
+    offer: "Every doubloon counts, an' so does every barrel. Iron Haven to the north has a cache we paid good coin for. Board a ship, sail out, log it, an' bring yerself back. No skimmin', savvy?",
+    complete: "Cache logged an' counted twice, just how I like it. Ye pull yer weight after all. Here's yer cut — fair an' square.",
+    rewardGold: 40,
+    rewardXp: 110,
+    steps: [
+      { type: "location", text: "Sail your ship out to Iron Haven (north channel)", target: { x: -43700, y: -371 }, radius: 46 },
+      { type: "talk", text: "Report the run to Quartermaster Sal", npcId: "npc_pirate_quartermaster_sal", target: { x: -43815, y: -134 } }
+    ]
+  },
+  q_pirate_gunnery: {
+    id: "q_pirate_gunnery",
+    giverId: "npc_pirate_gunner_blackpowder",
+    title: "Broadsides at Storm Atoll",
+    summary: "Castaway marauders have fouled the waters off Storm Atoll. Bess wants them sent to the deep.",
+    offer: "FIRE IN THE — sorry, matey, force o' habit. Listen: castaway scum be squattin' on Storm Atoll, west-nor'west. Sail out an' put three of 'em down. Nothin' settles an argument like a good broadside, ARR!",
+    complete: "HA! Did ye hear 'em squeal? That's the sweetest music on the seven seas. Yer a natural with the guns, matey. Keep yer powder dry.",
+    rewardGold: 55,
+    rewardXp: 160,
+    steps: [
+      { type: "kill", text: "Defeat 3 castaway marauders at Storm Atoll", count: 3, faction: "oceanus_marauder", target: { x: -44349, y: -266 } },
+      { type: "talk", text: "Report the battle to Gunner Bess", npcId: "npc_pirate_gunner_blackpowder", target: { x: -43830, y: -126 } }
+    ]
+  },
+  q_pirate_charting: {
+    id: "q_pirate_charting",
+    giverId: "npc_pirate_navigator_meg",
+    title: "Chart the Kraken's Star",
+    summary: "Meg reads omens in the tides and needs two waypoints sailed and confirmed before the next storm.",
+    offer: "The tide be whisperin' tonight, matey. I need a steady hand to chart two marks afore the storm rolls in — Mariner's Rest to the north, then Black Cay to the south. Follow the kraken's star an' the charts'll never lie again.",
+    complete: "Both marks confirmed — the chart sings true now. Ye read the stars better than ye let on. The sea'll remember yer name, an' so will I.",
+    rewardGold: 60,
+    rewardXp: 180,
+    steps: [
+      { type: "location", text: "Sail to the Mariner's Rest waypoint", target: { x: -43240, y: -240 }, radius: 64 },
+      { type: "location", text: "Sail south to the Black Cay waypoint", target: { x: -43788, y: 301 }, radius: 46 },
+      { type: "talk", text: "Bring the chart to Stargazer Meg", npcId: "npc_pirate_navigator_meg", target: { x: -43826, y: -130 } }
+    ]
+  },
+  q_pirate_lost_treasure: {
+    id: "q_pirate_lost_treasure",
+    giverId: "npc_pirate_old_salt_barnacle",
+    title: "The Skull Reefs Hoard",
+    summary: "Old Barnacle Joe lost a treasure map years ago. He remembers enough: chart Black Cay, then break the pirate captain holding Storm Cay to claim the hoard.",
+    offer: "Sit, matey, an' let an old salt talk. There's a chest o' gold off the Skull Reefs — lost the map in a card game, I did, but I remember the bones of it. Sail past Black Cay, then take Storm Cay from the cutthroat captain squattin' on it. The hoard's yours if ye've the spine.",
+    complete: "By the deep, ye DID it! The Skull Reefs hoard, after all these years. The sea gives, an' the sea takes — but today, matey, she gave. Yer a true pirate now, an' no mistake.",
+    rewardGold: 120,
+    rewardXp: 320,
+    steps: [
+      { type: "location", text: "Sail past Black Cay to find the reef bearings", target: { x: -43788, y: 301 }, radius: 46 },
+      { type: "kill", text: "Defeat the pirate captain holding Storm Cay", count: 1, matchName: "pirate captain", target: { x: -43369, y: 372 } },
+      { type: "talk", text: "Bring word of the hoard to Old Barnacle Joe", npcId: "npc_pirate_old_salt_barnacle", target: { x: -43825, y: -122 } }
+    ]
   }
 });
 

@@ -102,6 +102,12 @@ function buildNpcPerception(npc, nearbyPlayers, nearbyNpcs, phase, recentCombatN
     if (r > topRenown) { topRenown = r; topPlayer = p; }
   }
 
+  // Quest givers should advertise their work when an adventurer is within
+  // earshot. We don't have per-player quest logs here, so this is a soft hint:
+  // if the NPC offers quests and a player is nearby, encourage an invitation.
+  const isQuestGiver = !!(npc.questGiver && Array.isArray(npc.questIds) && npc.questIds.length > 0);
+  const hasQuestForPlayers = isQuestGiver && nearbyPlayers.length > 0;
+
   return {
     id: npc.id,
     name: npc.name,
@@ -109,6 +115,8 @@ function buildNpcPerception(npc, nearbyPlayers, nearbyNpcs, phase, recentCombatN
     location: describeLocation(npc),
     timeOfDay: phase,
     isTrader: !!(npc.isTrader || npc.professionTrainer),
+    isQuestGiver,
+    hasQuestForPlayers,
     nearbyPlayers: nearbyPlayers.map(p => describeRenown(p)),
     nearbyNpcCount: nearbyNpcs.length,
     nearbyNpcNames: nearbyNpcs.slice(0, 3).map(n => n.name),
@@ -142,7 +150,10 @@ function buildPrompt(perceptions, phase) {
       ? ` ${p.nearbyNpcCount} other townsfolk nearby (${p.nearbyNpcNames.join(", ")}).`
       : "";
     const traderHint = p.isTrader ? " You are a trader/trainer — stay near your stall (stand_still or patrol short distances, approach customers)." : "";
-    return `[${p.name}] Personality: ${p.personality}. Location: ${p.location}. Time: ${p.timeOfDay}. ${playerList}${trade}${combat}${renownHint}${npcChat}${traderHint}`;
+    const questHint = p.hasQuestForPlayers
+      ? " You are a QUEST GIVER and have a job/task available — if an adventurer is nearby, invite them in-character to hear about the work you need done (do NOT invent specific quest details, just beckon them over)."
+      : (p.isQuestGiver ? " You give out quests/tasks to adventurers who come to you." : "");
+    return `[${p.name}] Personality: ${p.personality}. Location: ${p.location}. Time: ${p.timeOfDay}. ${playerList}${trade}${combat}${renownHint}${npcChat}${traderHint}${questHint}`;
   }).join("\n---\n");
 
   return [
@@ -152,6 +163,7 @@ function buildPrompt(perceptions, phase) {
     "- wander_to_landmark: NPC strolls toward a nearby town landmark (pub, market, fountain, forge).",
     "- chat_with_nearby_npc: NPC says something TO a nearby townsfolk (makes the world feel alive).",
     "- Traders and trainers should mostly stand_still or patrol short distances near their stall.",
+    "- Quest givers with work available should beckon nearby adventurers over (in character) and may approach_nearest_player to flag them down.",
     "- If a very famous/high-level player is nearby, NPCs should react with admiration or try to approach them.",
     "Respond ONLY with a valid JSON array. No explanation, no markdown. Example:",
     `[{"id":"npc_baker_pip","line":"Fresh bread just out!","action":"stand_still"}]`,
