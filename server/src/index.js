@@ -402,6 +402,8 @@ const QUEST_DEFINITIONS = Object.freeze({
     giverId: "npc_town_guide_rin",
     title: "A Quick Look Around",
     summary: "Guide Rin can show new arrivals the useful places around the starting town: quests, crafting games, shops, the gate, and the stargate.",
+    offer: "Oh — new here? I can show you around! Quests, crafting games, shops, the gate, the stargate path... just follow the markers and I'll point things out. It's, um, my favourite part of the job!",
+    complete: "And that's the whole tour! You did great. Come find me any time you get turned around — I love showing folks the ropes.",
     rewardGold: 18,
     rewardXp: 60,
     steps: [
@@ -420,6 +422,8 @@ const QUEST_DEFINITIONS = Object.freeze({
     giverId: "npc_quest_wynn_hearth",
     title: "Welcome to the Hearth",
     summary: "Sage Wynn — at the home tree — offers a starter task to teach you the basics of combat.",
+    offer: "A blade unused is a question unanswered. Two meadow slimes drift by the south pasture — go and learn your own measure.",
+    complete: "Well struck, traveler. The realm remembers who keeps its quiet paths walked.",
     rewardGold: 12,
     rewardXp: 40,
     steps: [
@@ -432,6 +436,8 @@ const QUEST_DEFINITIONS = Object.freeze({
     giverId: "npc_quest_elm_watch",
     title: "Slimes at the Pasture",
     summary: "Elder Elm wants the nearby slime pockets thinned before they spill into the hub lanes.",
+    offer: "Slimes by the oasis road again. Two of them, down the pasture lane. Honest work — go thin them out and mind the grass line.",
+    complete: "Good. A steady hand turns a whole town's luck. The pasture'll keep a while longer thanks to you.",
     rewardGold: 18,
     rewardXp: 65,
     steps: [
@@ -444,6 +450,8 @@ const QUEST_DEFINITIONS = Object.freeze({
     giverId: "npc_quest_mara_gate",
     title: "North Watch Sweep",
     summary: "Gatewarden Mara needs the north approach cleared and reported.",
+    offer: "North post's gone loud. Three of them, give or take. Clear it, then report back. Heroics second, news first.",
+    complete: "Reported and cleared. That's how the gate stays a gate. Dismissed, soldier — good work.",
     rewardGold: 24,
     rewardXp: 85,
     steps: [
@@ -456,6 +464,8 @@ const QUEST_DEFINITIONS = Object.freeze({
     giverId: "npc_quest_mara_gate",
     title: "Market Road Report",
     summary: "Mara needs you to check in with Borin at the market before the gate can send help.",
+    offer: "Before I send anyone out, I need Borin's count from the market. Go get it, bring it back. Paperwork first.",
+    complete: "There — now the numbers add up. The gate can move. You'd make a fair runner, you would.",
     rewardGold: 16,
     rewardXp: 50,
     steps: [
@@ -468,6 +478,8 @@ const QUEST_DEFINITIONS = Object.freeze({
     giverId: "npc_quest_borin_market",
     title: "Briar Crate Recovery",
     summary: "Borin's missing crates are guarded by raiders past the eastern road.",
+    offer: "The road still owes me three crates, and the Hollow Band's sitting on them. Knock a few heads loose, would you? Bandits hate paperwork — so do I.",
+    complete: "Crates as good as recovered. Tell Mara I said the road's clearer. And tell her I still want that gate report.",
     rewardGold: 30,
     rewardXp: 105,
     steps: [
@@ -480,6 +492,8 @@ const QUEST_DEFINITIONS = Object.freeze({
     giverId: "npc_quest_lira_brook",
     title: "Cold-Light Samples",
     summary: "Lira wants frost wisps dispersed so she can study the residue safely.",
+    offer: "Cold lights keep drifting off the frost road. Disperse two wisps for me — carefully. Bring me proof, not a heroic limp.",
+    complete: "There it is — the residue settles into a pattern. Every strange glow has one, if you stop squinting. My thanks.",
     rewardGold: 34,
     rewardXp: 120,
     steps: [
@@ -492,6 +506,8 @@ const QUEST_DEFINITIONS = Object.freeze({
     giverId: "npc_quest_tamsin_anvil",
     title: "Cinders for the Forge",
     summary: "Tamsin needs ember imps driven back from the forge supply road.",
+    offer: "Ember imps are chewing my coal sacks again. Two of them, out on the supply road. If it smokes and laughs — hit it.",
+    complete: "Ha! That'll teach the little cinders. A clean forge needs dirty work outside town. Take your pay and welcome.",
     rewardGold: 38,
     rewardXp: 135,
     steps: [
@@ -589,6 +605,8 @@ const QUEST_DEFINITIONS = Object.freeze({
     giverId: "npc_quest_iona_swamp",
     title: "Boglight Trail",
     summary: "Iona wants the swamp paths checked before night raiders use them.",
+    offer: "The bog keeps records in footprints and bubbles. Something's been walking the old marker trail after dusk. Thin three of them and read the marker for me.",
+    complete: "Good eyes. The wild stops looking random once you learn to read it. The trail's quiet again — for now.",
     rewardGold: 52,
     rewardXp: 170,
     steps: [
@@ -602,6 +620,8 @@ const QUEST_DEFINITIONS = Object.freeze({
     giverId: "npc_quest_orren_dunes",
     title: "Bones in the Glass Dunes",
     summary: "Orren needs the desert camp disrupted before it finds the caravan road.",
+    offer: "Glass dunes cut boots and confidence alike. There's a camp out there inching toward the caravan road — disrupt three of them. Bring water, bring shade, bring proof.",
+    complete: "That's three fewer teeth beside the road. The caravans owe you, even if they'll never know your name. I'll know it.",
     rewardGold: 58,
     rewardXp: 190,
     steps: [
@@ -614,6 +634,8 @@ const QUEST_DEFINITIONS = Object.freeze({
     giverId: "npc_quest_vaela_frost",
     title: "Signal Under Snow",
     summary: "Vaela hears a pattern under the frost road and wants the source quieted.",
+    offer: "The snow hums when danger gets close... and it is humming. Quiet three of them on the frost road, then stand by the signal stone. Step back before it answers.",
+    complete: "The humming's stopped. I do not like patterns I did not make — and that one is unmade now. You have my quiet thanks.",
     rewardGold: 62,
     rewardXp: 205,
     steps: [
@@ -9010,6 +9032,8 @@ function completeQuestStep(client, questId) {
   if (!player || !quest || !def || quest.completed) return false;
   quest.step += 1;
   quest.progress = 0;
+  const giver = getNpcById(def.giverId);
+  const giverName = giver?.name || "";
   if (quest.step >= def.steps.length) {
     quest.completed = true;
     const xpReward = clampInteger(def.rewardXp || 0, 0, 1000000);
@@ -9025,7 +9049,9 @@ function completeQuestStep(client, questId) {
       message: "quest_completed",
       questTitle: def.title,
       xpGained: xpReward,
-      goldGained: goldReward
+      goldGained: goldReward,
+      giverName,
+      completeLine: typeof def.complete === "string" ? def.complete : ""
     });
   } else {
     send(client, { type: "serverMessage", message: "quest_updated", questTitle: def.title });
@@ -9113,6 +9139,7 @@ function handleQuestNpc(client, message = {}) {
     type: "questOffer",
     npcId: npc.id,
     npcName: npc.name || "",
+    offerLine: typeof next.offer === "string" ? next.offer : "",
     quest: {
       id: next.id,
       title: next.title,

@@ -2018,6 +2018,10 @@ function handleServerMessage(message) {
     } else if (message.message === "quest_completed") {
       const xp = Number(message.xpGained) || 0;
       const gold = Number(message.goldGained) || 0;
+      const line = typeof message.completeLine === "string" ? message.completeLine.trim() : "";
+      if (line) {
+        appendChat({ kind: "system", name: message.giverName || "Quest", text: `“${line}”` });
+      }
       appendChat({ kind: "system", name: "Quest", text: `Completed: ${message.questTitle || "Quest"} (+${xp} XP, +${gold}g)` });
     } else if (message.message === "quest_in_progress") {
       appendChat({ kind: "system", name: "Quest", text: `${message.questTitle || "That quest"} is already in progress` });
@@ -7620,7 +7624,22 @@ function showQuestOffer(payload) {
   state.questOffer = { npcId: payload.npcId || null, quest };
   if (questOfferTitle) questOfferTitle.textContent = quest.title;
   if (questOfferGiver) questOfferGiver.textContent = payload.npcName ? `Offered by ${payload.npcName}` : "";
-  if (questOfferSummary) questOfferSummary.textContent = quest.summary || "";
+  if (questOfferSummary) {
+    const line = typeof payload.offerLine === "string" ? payload.offerLine.trim() : "";
+    if (line) {
+      questOfferSummary.replaceChildren();
+      const quote = document.createElement("em");
+      quote.textContent = `“${line}”`;
+      quote.style.display = "block";
+      quote.style.marginBottom = "6px";
+      quote.style.opacity = "0.92";
+      const body = document.createElement("span");
+      body.textContent = quest.summary || "";
+      questOfferSummary.append(quote, body);
+    } else {
+      questOfferSummary.textContent = quest.summary || "";
+    }
+  }
   if (questOfferSteps) {
     questOfferSteps.replaceChildren();
     for (const step of quest.steps || []) {
