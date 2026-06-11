@@ -18489,8 +18489,24 @@ function drawCuteCottage(building, sx, sy, w, h, variant, roofless, kind) {
   const p = BUILDING_PALETTES[variant] || BUILDING_PALETTES.timber;
   const seedA = hash2(building.x | 0, building.y | 0, 4451);
   const seedB = hash2(building.x | 0, building.y | 0, 4452);
-  /** Roof silhouette: 0 = rounded dome, 1 = swooped gable, 2 = scalloped thatch. */
-  const shape = kind === "hut" ? (seedA > 0.55 ? 2 : 0) : seedA > 0.62 ? 0 : seedA > 0.24 ? 1 : 2;
+  /**
+   * Roof silhouette, seeded deterministically per building:
+   *   0 = rounded dome, 1 = swooped gable, 2 = scalloped thatch,
+   *   3 = triangle (pointed gable), 4 = square (flat/pyramid hip).
+   * Bridged houses are forced to a shared style so paired roofs read as a set;
+   * the server stamps `building.roofShape` (and `roofPeak`) for those.
+   */
+  let shape;
+  if (Number.isInteger(building.roofShape)) {
+    shape = building.roofShape;
+  } else {
+    const r = hash2(building.x | 0, building.y | 0, 4455);
+    if (kind === "hut") {
+      shape = r < 0.34 ? 0 : r < 0.55 ? 2 : r < 0.80 ? 3 : 4;
+    } else {
+      shape = r < 0.28 ? 0 : r < 0.46 ? 1 : r < 0.62 ? 2 : r < 0.82 ? 3 : 4;
+    }
+  }
   const twoStory = Boolean(building.twoStory);
 
   const wallH = twoStory
@@ -18513,6 +18529,12 @@ function drawCuteCottage(building, sx, sy, w, h, variant, roofless, kind) {
     const peakY = sy + 2;
     const eaveY = wallY + 2;
     const midX = (left + right) / 2;
+    // Opaque footprint base painted BEFORE the shaped roof so no interior
+    // (baked floor/furniture tiles) bleeds through the triangular/curved gaps
+    // at the roof corners. This is the roof-occlusion guarantee.
+    ctx.fillStyle = p.roofDark;
+    ctx.fillRect(left - 4, sy, fw + 8, (wallY + 3) - sy);
+    ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
     const traceRoofPath = () => {
       ctx.beginPath();
       if (shape === 0 || shape === 2) {
@@ -18520,11 +18542,25 @@ function drawCuteCottage(building, sx, sy, w, h, variant, roofless, kind) {
         ctx.moveTo(left - 4, eaveY);
         ctx.quadraticCurveTo(left + fw * 0.04, peakY + roofH * 0.22, midX, peakY);
         ctx.quadraticCurveTo(right - fw * 0.04, peakY + roofH * 0.22, right + 4, eaveY);
-      } else {
+      } else if (shape === 1) {
         // Swooped gable (concave Fable eaves)
         ctx.moveTo(left - 6, eaveY);
         ctx.quadraticCurveTo(left + fw * 0.30, eaveY - roofH * 0.52, midX, peakY);
         ctx.quadraticCurveTo(right - fw * 0.30, eaveY - roofH * 0.52, right + 6, eaveY);
+      } else if (shape === 3) {
+        // Triangle (pointed gable) — straight pitched sides to a sharp peak
+        ctx.moveTo(left - 5, eaveY);
+        ctx.lineTo(midX, peakY);
+        ctx.lineTo(right + 5, eaveY);
+      } else {
+        // Square (flat / pyramid hip) — broad low pyramid with a flat-ish ridge
+        const ridgeY = peakY + roofH * 0.30;
+        const ridgeL = midX - fw * 0.22;
+        const ridgeR = midX + fw * 0.22;
+        ctx.moveTo(left - 5, eaveY);
+        ctx.lineTo(ridgeL, ridgeY);
+        ctx.lineTo(ridgeR, ridgeY);
+        ctx.lineTo(right + 5, eaveY);
       }
       ctx.closePath();
     };
@@ -18610,6 +18646,31 @@ function drawCuteCottage(building, sx, sy, w, h, variant, roofless, kind) {
       ctx.lineTo(hx + 5.2, hy - 0.4);
       ctx.closePath();
       ctx.fill();
+    }
+
+    // Bridge dormer — where a plank bridge meets this roof, draw a little
+    // gabled dormer + landing door on that side so the span reads as joining
+    // the house rather than floating between unrelated roofs.
+    if (building.bridgeDir === "e" || building.bridgeDir === "w") {
+      const east = building.bridgeDir === "e";
+      const dx = east ? right - 16 : left + 4;
+      const dy = wallY - 14;
+      ctx.fillStyle = p.roofBase;
+      ctx.beginPath();
+      ctx.moveTo(dx, dy + 14);
+      ctx.lineTo(dx + 6, dy);
+      ctx.lineTo(dx + 12, dy + 14);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = p.roofRidge;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      // Glowing landing doorway under the dormer
+      ctx.fillStyle = "#ffd886";
+      ctx.fillRect(dx + 3, dy + 6, 6, 8);
+      ctx.strokeStyle = p.wallDark;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(dx + 3, dy + 6, 6, 8);
     }
   } else {
     ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
