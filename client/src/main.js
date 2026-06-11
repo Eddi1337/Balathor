@@ -10728,41 +10728,117 @@ function drawAngledSail(cx, cy, w, h, sailAngle = 0, fill = "rgba(245, 230, 200,
   ctx.restore();
 }
 
+// Draws a properly "boaty" sailing-ship exterior, seen from above with the bow
+// pointing along +x (right). Layers, stern to bow: hull shell, planked deck,
+// inner bulwark rails, hatches, masts with billowing sails + rigging, and a
+// bowsprit. The number of masts scales with the hull class. `(x,y)` is the
+// top-left of the w×h bounding box; the caller has already rotated to heading.
 function drawSailShipShape(hullClass, x, y, w, h, color, sailAngle = 0) {
-  ctx.fillStyle = "#3b2614";
+  const cx = x + w * 0.5;
+  const cy = y + h * 0.5;
+
+  // 1) Dark outer hull shell (waterline planking shows beneath the deck).
+  ctx.fillStyle = "#2d1c0f";
   buildShipHullPath(hullClass, x, y, w, h);
   ctx.fill();
 
-  ctx.fillStyle = "#7b522e";
-  ctx.beginPath();
-  ctx.moveTo(x + w * 0.89, y + h * 0.50);
-  ctx.lineTo(x + w * 0.72, y + h * 0.28);
-  ctx.lineTo(x + w * 0.18, y + h * 0.33);
-  ctx.lineTo(x + w * 0.11, y + h * 0.50);
-  ctx.lineTo(x + w * 0.18, y + h * 0.67);
-  ctx.lineTo(x + w * 0.72, y + h * 0.72);
-  ctx.closePath();
-  ctx.fill();
+  // 2) Raised wooden deck inset from the hull edge — the walkable area.
+  ctx.save();
+  buildShipHullPath(hullClass, x, y, w, h);
+  ctx.clip();
+  const deckGrad = ctx.createLinearGradient(x, y + h * 0.2, x, y + h * 0.8);
+  deckGrad.addColorStop(0, "#a9783f");
+  deckGrad.addColorStop(0.5, "#8a5d30");
+  deckGrad.addColorStop(1, "#6f4a26");
+  ctx.fillStyle = deckGrad;
+  ctx.fillRect(x + w * 0.04, y + h * 0.10, w * 0.92, h * 0.80);
 
-  ctx.strokeStyle = "rgba(45, 26, 10, 0.55)";
-  ctx.lineWidth = 1;
-  for (let i = 0.24; i <= 0.72; i += 0.09) {
+  // Fore-and-aft deck planks (run the length of the ship).
+  ctx.strokeStyle = "rgba(45, 26, 10, 0.45)";
+  ctx.lineWidth = Math.max(1, h * 0.018);
+  for (let p = 0.16; p <= 0.86; p += 0.105) {
     ctx.beginPath();
-    ctx.moveTo(x + w * i, y + h * 0.31);
-    ctx.lineTo(x + w * i, y + h * 0.69);
+    ctx.moveTo(x + w * 0.07, y + h * p);
+    ctx.lineTo(x + w * 0.93, y + h * p);
     ctx.stroke();
   }
+  // Subtle caulking cross-seams.
+  ctx.strokeStyle = "rgba(45, 26, 10, 0.22)";
+  ctx.lineWidth = 1;
+  for (let i = 0.16; i <= 0.86; i += 0.085) {
+    ctx.beginPath();
+    ctx.moveTo(x + w * i, y + h * 0.14);
+    ctx.lineTo(x + w * i, y + h * 0.86);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // 3) Inner bulwark rail (a lighter lip around the deck edge).
+  ctx.strokeStyle = "#c79a5d";
+  ctx.lineWidth = Math.max(2, h * 0.05);
+  buildShipHullPath(hullClass, x + w * 0.025, y + h * 0.05, w * 0.95, h * 0.90);
+  ctx.stroke();
+
+  // 4) Painted hull trim along the very outside, in the ship's accent colour.
   ctx.strokeStyle = color;
-  ctx.lineWidth = 3;
+  ctx.lineWidth = Math.max(2.5, h * 0.045);
   buildShipHullPath(hullClass, x, y, w, h);
   ctx.stroke();
 
+  // 5) Cargo hatch / cabin amidships-aft.
+  ctx.fillStyle = "#5c3c20";
+  ctx.fillRect(x + w * 0.18, y + h * 0.40, w * 0.12, h * 0.20);
+  ctx.strokeStyle = "rgba(28, 16, 6, 0.7)";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x + w * 0.18, y + h * 0.40, w * 0.12, h * 0.20);
+
+  // Stern cabin (raised quarterdeck) toward the bow side for the helm.
+  ctx.fillStyle = "#7a5430";
+  ctx.fillRect(x + w * 0.74, y + h * 0.34, w * 0.12, h * 0.32);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x + w * 0.74, y + h * 0.34, w * 0.12, h * 0.32);
+
+  // 6) Masts + sails. Tall ships get extra masts.
+  const mastCount = hullClass === "manowar" ? 3 : hullClass === "galleon" ? 3 : hullClass === "brig" ? 2 : 1;
+  const mastXs = mastCount === 3 ? [0.34, 0.55, 0.72]
+    : mastCount === 2 ? [0.40, 0.66]
+      : [0.56];
+  const sailScale = mastCount === 1 ? 0.60 : mastCount === 2 ? 0.40 : 0.30;
+  // Rigging lines fore/aft to the mast tops (drawn under the sails).
+  ctx.strokeStyle = "rgba(30, 18, 8, 0.5)";
+  ctx.lineWidth = 1;
+  for (const mx of mastXs) {
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.02, cy);
+    ctx.lineTo(x + w * mx, cy);
+    ctx.lineTo(x + w * 0.97, cy);
+    ctx.stroke();
+  }
+  for (const mx of mastXs) {
+    drawAngledSail(x + w * mx, cy, w * sailScale, h * 0.66, sailAngle);
+  }
+  // Mast trunks drawn over the sails so they read as the spine.
   ctx.fillStyle = "#2a1808";
-  ctx.fillRect(x + w * 0.61, y + h * 0.20, Math.max(3, w * 0.028), h * 0.60);
-  drawAngledSail(x + w * 0.62, y + h * 0.50, w * 0.62, h * 0.58, sailAngle);
+  for (const mx of mastXs) {
+    const mw = Math.max(2.5, w * 0.02);
+    ctx.fillRect(x + w * mx - mw / 2, y + h * 0.18, mw, h * 0.64);
+  }
+
+  // 7) Bowsprit jutting off the bow with a small jib sail.
   ctx.strokeStyle = "#2a1808";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(x + w * 0.76, y + h * 0.39, w * 0.07, h * 0.22);
+  ctx.lineWidth = Math.max(2, w * 0.012);
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.90, cy);
+  ctx.lineTo(x + w * 1.04, cy);
+  ctx.stroke();
+  ctx.fillStyle = "rgba(245, 230, 200, 0.85)";
+  ctx.beginPath();
+  ctx.moveTo(x + w * 0.92, cy);
+  ctx.lineTo(x + w * 1.03, cy - h * 0.09);
+  ctx.lineTo(x + w * 1.03, cy + h * 0.09);
+  ctx.closePath();
+  ctx.fill();
 }
 
 function drawShipHullShape(hullClass, x, y, w, h, color, ship = null) {
@@ -10813,11 +10889,29 @@ function drawShipVehicleObject(obj, sx, sy, boarded = false, facing = 0, thrust 
   }
   if (thrust && boarded) {
     if (isNauticalHull(hullClass)) {
-      const flick = 0.45 + Math.sin(performance.now() / 70) * 0.2;
-      ctx.fillStyle = `rgba(180, 230, 255, ${flick * 0.55})`;
+      // Foamy V-shaped wake trailing off the stern (left, -x), plus bow spray.
+      const t = performance.now() / 160;
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      for (let i = 0; i < 4; i += 1) {
+        const ph = (t + i * 0.55) % 1;
+        const len = w * (0.18 + ph * 0.85);
+        const spread = h * (0.18 + ph * 0.55);
+        const fade = (1 - ph) * 0.32;
+        ctx.strokeStyle = `rgba(210, 240, 255, ${fade})`;
+        ctx.lineWidth = Math.max(1.5, h * 0.05 * (1 - ph * 0.5));
+        ctx.beginPath();
+        ctx.moveTo(x - len, y + h * 0.5 - spread);
+        ctx.lineTo(x + w * 0.08, y + h * 0.5);
+        ctx.lineTo(x - len, y + h * 0.5 + spread);
+        ctx.stroke();
+      }
+      const bowFlick = 0.4 + Math.sin(performance.now() / 90) * 0.2;
+      ctx.fillStyle = `rgba(225, 245, 255, ${bowFlick * 0.5})`;
       ctx.beginPath();
-      ctx.ellipse(x + w * 0.12, y + h * 0.72, w * 0.18, h * 0.08, 0, 0, Math.PI * 2);
+      ctx.ellipse(x + w * 0.96, y + h * 0.5, w * 0.07, h * 0.16, 0, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
     } else {
       const flick = 0.55 + Math.sin(performance.now() / 45) * 0.25;
       ctx.fillStyle = `rgba(255, 160, 80, ${flick})`;
