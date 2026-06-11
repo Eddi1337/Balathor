@@ -818,6 +818,8 @@ const SERVER_TALENT_TREES = {
 };
 const TORSO_STYLE_IDS = ["tunic", "armor", "robe"];
 const WEAPON_STYLE_IDS = ["classic", "heavy", "ornate"];
+/** Numeric rank for equipment rarity — transmitted in player snapshots for client glow scaling. */
+const RARITY_RANK = { common: 0, uncommon: 1, rare: 2, epic: 3, legendary: 4, mythic: 5 };
 const WALK_STYLE_IDS = ["steady", "swift", "heavy"];
 const CLASS_LOADOUTS = Object.freeze({
   ranger: {
@@ -1350,49 +1352,58 @@ const ITEM_COLORS = [
 ];
 
 const WEAPON_KINDS = [
-  { name: "Sword",          wk: "sword", style: "classic",  dmgMin: 7,  dmgMax: 12 },
-  { name: "Bow",            wk: "bow",   style: "classic",  dmgMin: 6,  dmgMax: 10 },
-  { name: "Staff",          wk: "staff", style: "classic",  dmgMin: 5,  dmgMax: 9  },
-  { name: "Scimitar",       wk: "sword", style: "curved",   dmgMin: 8,  dmgMax: 13 },
-  { name: "Dagger",         wk: "sword", style: "dagger",   dmgMin: 5,  dmgMax: 8  },
-  { name: "Greatsword",     wk: "sword", style: "heavy",    dmgMin: 10, dmgMax: 15 },
-  { name: "Crossbow",       wk: "bow",   style: "heavy",    dmgMin: 8,  dmgMax: 13 },
-  { name: "Wand",           wk: "staff", style: "ornate",   dmgMin: 4,  dmgMax: 7  },
-  { name: "Spear",          wk: "sword", style: "spear",    dmgMin: 8,  dmgMax: 12 },
-  { name: "Mace",           wk: "sword", style: "mace",     dmgMin: 9,  dmgMax: 14 },
-  { name: "Rapier",         wk: "sword", style: "ornate",   dmgMin: 7,  dmgMax: 11 },
-  { name: "Longbow",        wk: "bow",   style: "heavy",    dmgMin: 9,  dmgMax: 14 },
-  { name: "Crystal Sword",  wk: "sword", style: "crystal",  dmgMin: 8,  dmgMax: 13 },
-  { name: "Shadow Blade",   wk: "sword", style: "dark",     dmgMin: 9,  dmgMax: 14 },
-  { name: "Frost Bow",      wk: "bow",   style: "frost",    dmgMin: 7,  dmgMax: 11 },
-  { name: "Flame Staff",    wk: "staff", style: "fire",     dmgMin: 7,  dmgMax: 12 },
-  { name: "Runic Axe",      wk: "sword", style: "runic",    dmgMin: 9,  dmgMax: 15 },
-  { name: "Spectral Blade", wk: "sword", style: "spectral", dmgMin: 8,  dmgMax: 13 },
-  { name: "Glaive",         wk: "sword", style: "spear",    dmgMin: 10, dmgMax: 16 },
-  { name: "Void Scepter",   wk: "staff", style: "dark",     dmgMin: 6,  dmgMax: 11 },
+  { name: "Sword",          wk: "sword", style: "classic",    dmgMin: 7,  dmgMax: 12 },
+  { name: "Bow",            wk: "bow",   style: "classic",    dmgMin: 6,  dmgMax: 10 },
+  { name: "Staff",          wk: "staff", style: "classic",    dmgMin: 5,  dmgMax: 9  },
+  { name: "Scimitar",       wk: "sword", style: "curved",     dmgMin: 8,  dmgMax: 13 },
+  { name: "Dagger",         wk: "sword", style: "dagger",     dmgMin: 5,  dmgMax: 8  },
+  { name: "Greatsword",     wk: "sword", style: "heavy",      dmgMin: 10, dmgMax: 15 },
+  { name: "Crossbow",       wk: "bow",   style: "heavy",      dmgMin: 8,  dmgMax: 13 },
+  { name: "Wand",           wk: "staff", style: "ornate",     dmgMin: 4,  dmgMax: 7  },
+  { name: "Spear",          wk: "sword", style: "spear",      dmgMin: 8,  dmgMax: 12 },
+  { name: "Mace",           wk: "sword", style: "mace",       dmgMin: 9,  dmgMax: 14 },
+  { name: "Rapier",         wk: "sword", style: "ornate",     dmgMin: 7,  dmgMax: 11 },
+  { name: "Longbow",        wk: "bow",   style: "heavy",      dmgMin: 9,  dmgMax: 14 },
+  { name: "Crystal Sword",  wk: "sword", style: "crystal",    dmgMin: 8,  dmgMax: 13 },
+  { name: "Shadow Blade",   wk: "sword", style: "dark",       dmgMin: 9,  dmgMax: 14 },
+  { name: "Frost Bow",      wk: "bow",   style: "frost",      dmgMin: 7,  dmgMax: 11 },
+  { name: "Flame Staff",    wk: "staff", style: "fire",       dmgMin: 7,  dmgMax: 12 },
+  { name: "Runic Axe",      wk: "sword", style: "runic",      dmgMin: 9,  dmgMax: 15 },
+  { name: "Spectral Blade", wk: "sword", style: "spectral",   dmgMin: 8,  dmgMax: 13 },
+  { name: "Glaive",         wk: "sword", style: "spear",      dmgMin: 10, dmgMax: 16 },
+  { name: "Void Scepter",   wk: "staff", style: "dark",       dmgMin: 6,  dmgMax: 11 },
+  // Class-flavoured higher-tier weapons (style tags read by drawClassEquipment)
+  { name: "Arcane Staff",   wk: "staff", style: "wizard",     dmgMin: 8,  dmgMax: 14 },
+  { name: "Battle Recurve", wk: "bow",   style: "recurve",    dmgMin: 10, dmgMax: 16 },
+  { name: "War Crossbow",   wk: "bow",   style: "crossbow",   dmgMin: 11, dmgMax: 17 },
+  { name: "Knight Blade",   wk: "sword", style: "knightsword",dmgMin: 11, dmgMax: 18 },
 ];
 
 const ARMOR_KINDS = [
-  { name: "Jerkin",        style: "tunic",       hpMin: 8,  hpMax: 22, armMin: 1, armMax: 3 },
-  { name: "Chestplate",    style: "armor",       hpMin: 6,  hpMax: 18, armMin: 2, armMax: 5 },
-  { name: "Robe",          style: "robe",        hpMin: 12, hpMax: 28, armMin: 1, armMax: 2 },
-  { name: "Plate Armor",   style: "plate",       hpMin: 5,  hpMax: 14, armMin: 3, armMax: 6 },
-  { name: "Chainmail",     style: "chainmail",   hpMin: 8,  hpMax: 19, armMin: 2, armMax: 4 },
-  { name: "Leather Vest",  style: "leather",     hpMin: 10, hpMax: 23, armMin: 1, armMax: 3 },
-  { name: "Battle Cloak",  style: "cloak",       hpMin: 14, hpMax: 30, armMin: 1, armMax: 2 },
-  { name: "Scale Mail",    style: "scale",       hpMin: 7,  hpMax: 18, armMin: 2, armMax: 4 },
-  { name: "War Plate",     style: "battle",      hpMin: 5,  hpMax: 13, armMin: 3, armMax: 7 },
-  { name: "Cloth Wraps",   style: "cloth",       hpMin: 16, hpMax: 34, armMin: 0, armMax: 1 },
-  { name: "Shadow Weave",  style: "shadowweave", hpMin: 12, hpMax: 26, armMin: 1, armMax: 3 },
-  { name: "Iron Hauberk",  style: "chainmail",   hpMin: 7,  hpMax: 17, armMin: 2, armMax: 5 },
-  { name: "Void Shroud",   style: "shadowweave", hpMin: 11, hpMax: 24, armMin: 1, armMax: 3 },
-  { name: "Forest Cloak",  style: "cloak",       hpMin: 14, hpMax: 28, armMin: 1, armMax: 2 },
-  { name: "Crystal Vest",  style: "crystal",     hpMin: 9,  hpMax: 21, armMin: 2, armMax: 3 },
-  { name: "Flame Mantle",  style: "fire",        hpMin: 10, hpMax: 22, armMin: 1, armMax: 3 },
-  { name: "Frost Shell",   style: "frost",       hpMin: 8,  hpMax: 19, armMin: 2, armMax: 4 },
-  { name: "Runic Plate",   style: "runic",       hpMin: 6,  hpMax: 15, armMin: 3, armMax: 5 },
-  { name: "Battle Jerkin", style: "leather",     hpMin: 12, hpMax: 24, armMin: 1, armMax: 3 },
-  { name: "Mystic Robe",   style: "robe",        hpMin: 16, hpMax: 32, armMin: 1, armMax: 2 },
+  { name: "Jerkin",          style: "tunic",       hpMin: 8,  hpMax: 22, armMin: 1, armMax: 3 },
+  { name: "Chestplate",      style: "armor",       hpMin: 6,  hpMax: 18, armMin: 2, armMax: 5 },
+  { name: "Robe",            style: "robe",        hpMin: 12, hpMax: 28, armMin: 1, armMax: 2 },
+  { name: "Plate Armor",     style: "plate",       hpMin: 5,  hpMax: 14, armMin: 3, armMax: 6 },
+  { name: "Chainmail",       style: "chainmail",   hpMin: 8,  hpMax: 19, armMin: 2, armMax: 4 },
+  { name: "Leather Vest",    style: "leather",     hpMin: 10, hpMax: 23, armMin: 1, armMax: 3 },
+  { name: "Battle Cloak",    style: "cloak",       hpMin: 14, hpMax: 30, armMin: 1, armMax: 2 },
+  { name: "Scale Mail",      style: "scale",       hpMin: 7,  hpMax: 18, armMin: 2, armMax: 4 },
+  { name: "War Plate",       style: "battle",      hpMin: 5,  hpMax: 13, armMin: 3, armMax: 7 },
+  { name: "Cloth Wraps",     style: "cloth",       hpMin: 16, hpMax: 34, armMin: 0, armMax: 1 },
+  { name: "Shadow Weave",    style: "shadowweave", hpMin: 12, hpMax: 26, armMin: 1, armMax: 3 },
+  { name: "Iron Hauberk",    style: "chainmail",   hpMin: 7,  hpMax: 17, armMin: 2, armMax: 5 },
+  { name: "Void Shroud",     style: "shadowweave", hpMin: 11, hpMax: 24, armMin: 1, armMax: 3 },
+  { name: "Forest Cloak",    style: "cloak",       hpMin: 14, hpMax: 28, armMin: 1, armMax: 2 },
+  { name: "Crystal Vest",    style: "crystal",     hpMin: 9,  hpMax: 21, armMin: 2, armMax: 3 },
+  { name: "Flame Mantle",    style: "fire",        hpMin: 10, hpMax: 22, armMin: 1, armMax: 3 },
+  { name: "Frost Shell",     style: "frost",       hpMin: 8,  hpMax: 19, armMin: 2, armMax: 4 },
+  { name: "Runic Plate",     style: "runic",       hpMin: 6,  hpMax: 15, armMin: 3, armMax: 5 },
+  { name: "Battle Jerkin",   style: "leather",     hpMin: 12, hpMax: 24, armMin: 1, armMax: 3 },
+  { name: "Mystic Robe",     style: "robe",        hpMin: 16, hpMax: 32, armMin: 1, armMax: 2 },
+  // Class-flavoured high-tier armors (visual styles read by drawTorso2 / drawClassEquipment)
+  { name: "Wizard Vestment", style: "wizardrobe",  hpMin: 18, hpMax: 38, armMin: 1, armMax: 2 },
+  { name: "Knight Plate",    style: "knightplate", hpMin: 5,  hpMax: 12, armMin: 4, armMax: 8 },
+  { name: "Ranger Cloak",    style: "rangercloak", hpMin: 14, hpMax: 30, armMin: 1, armMax: 3 },
 ];
 
 const RING_KINDS = [
@@ -1517,6 +1528,141 @@ const MYTHIC_ARTIFACT_TEMPLATES = [
     stats: { health: 95, armour: 34 },
     specialEffects: { consecrationPower: 0.22 },
     value: 11900
+  },
+  // ── Class-specific legendary/mythic items ──────────────────────────────────
+  // Mage — tall ornate wizard staff with glowing orb, flowing star-shot vestment
+  {
+    templateId: "legendary_archstaff_starweald",
+    type: "weapon",
+    name: "⚜ Archstaff of Starweald",
+    icon: "staff",
+    rarity: "legendary",
+    color: "#a78bfa",
+    weaponKind: "staff",
+    visual: { weaponStyle: "wizard", weaponColor: "#a78bfa" },
+    stats: { damage: 36, strength: 7 },
+    value: 7200
+  },
+  {
+    templateId: "legendary_celestial_vestment",
+    type: "armor",
+    name: "⚜ Celestial Vestment",
+    icon: "armor",
+    rarity: "legendary",
+    color: "#818cf8",
+    visual: { torsoStyle: "wizardrobe", torsoColor: "#818cf8" },
+    stats: { health: 80, armour: 8 },
+    value: 6800
+  },
+  {
+    templateId: "mythic_void_starstaff",
+    type: "weapon",
+    name: "☆ Voidstar Greatstaff",
+    icon: "staff",
+    rarity: "mythic",
+    color: "#c4b5fd",
+    weaponKind: "staff",
+    visual: { weaponStyle: "wizard", weaponColor: "#c4b5fd" },
+    stats: { damage: 48, strength: 10 },
+    specialEffects: { lifesteal: 0.06 },
+    value: 13200
+  },
+  // Knight — massive warplate with pauldrons, plume helmet, legend sword
+  {
+    templateId: "legendary_ironveil_warplate",
+    type: "armor",
+    name: "⚜ Ironveil Warplate",
+    icon: "armor",
+    rarity: "legendary",
+    color: "#94a3b8",
+    visual: { torsoStyle: "knightplate", torsoColor: "#94a3b8" },
+    stats: { health: 55, armour: 26 },
+    value: 7400
+  },
+  {
+    templateId: "legendary_crusader_blade",
+    type: "weapon",
+    name: "⚜ Crusader's Greatsword",
+    icon: "sword",
+    rarity: "legendary",
+    color: "#fbbf24",
+    weaponKind: "sword",
+    visual: { weaponStyle: "knightsword", weaponColor: "#fbbf24" },
+    stats: { damage: 38, strength: 9 },
+    value: 7600
+  },
+  {
+    templateId: "mythic_siege_mantle",
+    type: "armor",
+    name: "☆ Siegebreaker Mantle",
+    icon: "armor",
+    rarity: "mythic",
+    color: "#64748b",
+    visual: { torsoStyle: "knightplate", torsoColor: "#64748b" },
+    stats: { health: 70, armour: 42 },
+    specialEffects: { consecrationPower: 0.28 },
+    value: 14000
+  },
+  // Ranger — peaked hood, glowing recurve bow with quiver, cloaked silhouette
+  {
+    templateId: "legendary_shadowpeak_cloak",
+    type: "armor",
+    name: "⚜ Shadowpeak Cloak",
+    icon: "armor",
+    rarity: "legendary",
+    color: "#065f46",
+    visual: { torsoStyle: "rangercloak", torsoColor: "#065f46" },
+    stats: { health: 72, armour: 10 },
+    value: 6600
+  },
+  {
+    templateId: "legendary_stormcay_recurve",
+    type: "weapon",
+    name: "⚜ Storm Cay Recurve",
+    icon: "bow",
+    rarity: "legendary",
+    color: "#34d399",
+    weaponKind: "bow",
+    visual: { weaponStyle: "recurve", weaponColor: "#34d399" },
+    stats: { damage: 34, strength: 6 },
+    value: 7000
+  },
+  {
+    templateId: "mythic_voidpeak_longbow",
+    type: "weapon",
+    name: "☆ Voidpeak Shadowbow",
+    icon: "bow",
+    rarity: "mythic",
+    color: "#7c3aed",
+    weaponKind: "bow",
+    visual: { weaponStyle: "recurve", weaponColor: "#7c3aed" },
+    stats: { damage: 45, strength: 9 },
+    specialEffects: { lifesteal: 0.055 },
+    value: 12800
+  },
+  // Pirate Captain boss drop — themed legendary gear
+  {
+    templateId: "legendary_captains_cutlass",
+    type: "weapon",
+    name: "⚜ Captain's Runed Cutlass",
+    icon: "sword",
+    rarity: "legendary",
+    color: "#ffd166",
+    weaponKind: "sword",
+    visual: { weaponStyle: "legendary", weaponColor: "#ffd166" },
+    stats: { damage: 40, strength: 8 },
+    value: 8200
+  },
+  {
+    templateId: "legendary_corsair_mantle",
+    type: "armor",
+    name: "⚜ Corsair's Mantle",
+    icon: "armor",
+    rarity: "legendary",
+    color: "#7f1d1d",
+    visual: { torsoStyle: "legendary", torsoColor: "#7f1d1d" },
+    stats: { health: 90, armour: 16 },
+    value: 7800
   }
 ];
 
@@ -10813,6 +10959,7 @@ function emitSnapshot() {
       weaponColor: appearance.weaponColor,
       primary: appearance.torsoColor,
       accent: appearance.weaponColor,
+      equipRarityRank: appearance.equipRarityRank || 0,
       skinColor: p.skinColor || "#f0c9a2",
       hairColor: p.hairColor || "#202437",
       sizeScale: clampNumber(p.sizeScale, 0.75, 1.3, 1),
@@ -11347,6 +11494,18 @@ function dropLootForMob(mob) {
   if (Math.random() > chance) {
     return;
   }
+  // Pirate Captain boss: always drops a legendary/mythic themed item
+  if (mob.isBoss && mob.name === "Pirate Captain") {
+    const piratePool = itemDatabase.filter(
+      (it) => it && (it.rarity === "legendary" || it.rarity === "mythic")
+    );
+    const template = piratePool[Math.floor(Math.random() * piratePool.length)] || itemDatabase[0];
+    addGroundItem(cloneItem(template), mob.x, mob.y);
+    // Also drop a second item for named pirate bosses
+    const second = createLootItem(mob.homeX, mob.homeY, 0.75);
+    addGroundItem(second, mob.x + 0.4, mob.y + 0.4);
+    return;
+  }
   const item = createLootItem(mob.homeX, mob.homeY, mob.isBoss ? 0.65 : 0);
   addGroundItem(item, mob.x, mob.y);
 }
@@ -11682,12 +11841,16 @@ function handleShopSell(client, message) {
 function getPlayerAppearance(player) {
   const armor = player.equipment?.body;
   const weapon = player.equipment?.weapon;
+  // equipRarityRank: highest rarity rank of equipped weapon/armor, used by client for glow scaling.
+  const armorRank  = RARITY_RANK[armor?.rarity]  ?? 0;
+  const weaponRank = RARITY_RANK[weapon?.rarity] ?? 0;
   return {
     torsoStyle: armor?.visual?.torsoStyle || "tunic",
     weaponStyle: weapon?.visual?.weaponStyle || player.baseWeaponStyle || player.weaponStyle,
     weaponKind: weapon?.weaponKind || null,
     torsoColor: armor?.visual?.torsoColor || "#8a929e",
-    weaponColor: weapon?.visual?.weaponColor || player.weaponColor
+    weaponColor: weapon?.visual?.weaponColor || player.weaponColor,
+    equipRarityRank: Math.max(armorRank, weaponRank)
   };
 }
 
