@@ -3,6 +3,7 @@ const { isBlockedCircle, SCI_FI_PLANETS } = WORLD;
 const { HUB_NPC_ORDER } = require("./hubRoundTown.js");
 const npcAi = require("./npcAi");
 const { SCI_FI_STATION_FEATURES, RINGFORGE_CENTER, STATION_INTERIOR_WAYPOINTS, stationInteriorPoint, clampToStationInterior, isInsideStationInterior } = require("./sciFiStationLayout.js");
+const { STARTER_ISLAND: OCEANUS_STARTER_ISLAND } = require("./worlds/oceanusWorld.js");
 
 const NPC_SPEED = 2.0;
 const NPC_STOP_DISTANCE = 0.08;
@@ -2411,11 +2412,180 @@ function buildPlanetAlienNpcDefinitions() {
   });
 }
 
+/**
+ * Pirate crew of Port Bilgewater — populates the Oceanus starter island.
+ *
+ * Homes are authored as offsets from the island centre and snapped onto the
+ * landmass (the NPC patrol/target logic already rejects ocean tiles via
+ * isBlockedCircle, so small patrol radii keep them ashore). Every pirate gets a
+ * shanty-soaked dialogue array plus an `aiPersonality` so the Ollama ambient AI
+ * keeps them talking like buccaneers.
+ */
+function buildPirateNpcDefinitions() {
+  const isle = OCEANUS_STARTER_ISLAND;
+  if (!isle || !Number.isFinite(isle.x) || !Number.isFinite(isle.y)) {
+    return [];
+  }
+  const ix = Number(isle.x);
+  const iy = Number(isle.y);
+  // Negative dy = inland (north); positive dy = toward the seaward docks (south).
+  const crew = [
+    {
+      id: "npc_pirate_captain_redbeard",
+      name: "Captain Redmaw",
+      primary: "#7a1f1f",
+      accent: "#e8c84a",
+      dx: -2, dy: -6, patrolRadius: 4,
+      questGiver: true,
+      aiPersonality:
+        "a swaggering, gold-toothed pirate captain who booms orders, brags about plundered treasure, and addresses everyone as 'matey' or 'ye scurvy dog'; never breaks the pirate accent",
+      dialogue: [
+        "Arrr! Welcome to Port Bilgewater, ye landlubber!",
+        "I be Captain Redmaw, scourge o' these seven sloshin' seas!",
+        "Fancy joinin' me crew? We split the loot fair — mostly.",
+        "Yo ho ho, there be treasure on the horizon, I can smell it!",
+        "Mind the plank, matey. It bites them what don't pay their tab.",
+      ],
+    },
+    {
+      id: "npc_pirate_quartermaster_sal",
+      name: "Quartermaster Sal",
+      primary: "#3a5a4a",
+      accent: "#d8b048",
+      dx: 5, dy: -3, patrolRadius: 3,
+      questGiver: true,
+      aiPersonality:
+        "a sharp-tongued, bookkeeping pirate quartermaster obsessed with counting shares of plunder, rum rations, and powder kegs; speaks in pirate slang but is fussy about numbers",
+      dialogue: [
+        "Every doubloon gets counted twice, matey. No skimmin' on my watch.",
+        "Rum rations be at dawn an' dusk, not a drop afore.",
+        "Ye want a share o' the haul? Then ye pull yer weight, savvy?",
+        "Lost three barrels o' powder to the damp. Captain'll have me keelhauled.",
+      ],
+    },
+    {
+      id: "npc_pirate_navigator_meg",
+      name: "Stargazer Meg",
+      primary: "#2f3f6f",
+      accent: "#9fd0ff",
+      dx: -7, dy: 0, patrolRadius: 3,
+      questGiver: true,
+      aiPersonality:
+        "a mystical pirate navigator who reads the stars and tides, speaks half in sailor superstition and half in cryptic omens, and warns of storms and sea monsters; keeps a pirate cadence",
+      dialogue: [
+        "The tide be whisperin' secrets tonight, if ye know how to listen.",
+        "Follow the kraken's star three points to port an' ye'll find the cove.",
+        "Storm's brewin' out east. I feel it in me old sea-bones.",
+        "Charts lie, matey. The stars never do.",
+      ],
+    },
+    {
+      id: "npc_pirate_cook_grog",
+      name: "Cook Greasy Grog",
+      primary: "#6a4a2a",
+      accent: "#e0a85a",
+      dx: 8, dy: 2, patrolRadius: 2,
+      aiPersonality:
+        "a jolly, perpetually rum-soaked pirate cook who talks about hardtack, salted fish, mystery stew, and grog; cheerful, slurred, and always trying to feed people",
+      dialogue: [
+        "Stew's on, matey! Don't ask what's in it — ye won't like the answer.",
+        "A pirate marches on his belly an' floats on his grog!",
+        "Hardtack again, lads. Tap out the weevils afore ye bite.",
+        "Yo ho ho an' a bottle o' grog! Have a swig, won't ye?",
+      ],
+    },
+    {
+      id: "npc_pirate_gunner_blackpowder",
+      name: "Gunner Blackpowder Bess",
+      primary: "#444048",
+      accent: "#ff8a3a",
+      dx: -10, dy: 4, patrolRadius: 3,
+      questGiver: true,
+      aiPersonality:
+        "a loud, fearless pirate cannon-master who loves explosions, talks fast about black powder and broadsides, and is half-deaf from the guns; gruff but warm, always in pirate dialect",
+      dialogue: [
+        "FIRE IN THE HOLE! ...sorry, force o' habit, matey.",
+        "Nothin' settles an argument like a good broadside, arr!",
+        "Keep yer powder dry an' yer fuses shorter than yer temper.",
+        "I named me favourite cannon 'Sweet Thunder'. She sings, she does.",
+      ],
+    },
+    {
+      id: "npc_pirate_lookout_one_eye",
+      name: "One-Eye Pelter",
+      primary: "#5a3a5a",
+      accent: "#c8e84a",
+      dx: 11, dy: -1, patrolRadius: 3,
+      aiPersonality:
+        "a paranoid, eagle-eyed pirate lookout with one good eye who is convinced enemy sails are always on the horizon, talks in nervous bursts, and trusts no one; full pirate accent",
+      dialogue: [
+        "Sail ho! ...nay, false alarm. A gull. Cursed gulls.",
+        "I see everythin' with this one good eye, matey. EVERYTHIN'.",
+        "Trust no flag ye can't read, an' no smile ye can't see twice.",
+        "Crow's nest is the only honest place on this whole rotten dock.",
+      ],
+    },
+    {
+      id: "npc_pirate_swab_little_tom",
+      name: "Cabin Boy Little Tom",
+      primary: "#3a6a8a",
+      accent: "#ffe08a",
+      dx: 2, dy: 6, patrolRadius: 4,
+      aiPersonality:
+        "an excitable young pirate cabin boy who idolizes the captain, dreams of his first treasure, swabs the decks, and peppers everyone with eager questions; squeaky but eager pirate slang",
+      dialogue: [
+        "One day I'll be a captain too, just ye wait an' see, matey!",
+        "I swabbed this deck thrice! Cap'n still says it ain't shiny enough.",
+        "Is it true there be sea monsters big as a galleon? Is it??",
+        "Arr! ...did I say it right? Captain says I gotta growl more.",
+      ],
+    },
+    {
+      id: "npc_pirate_old_salt_barnacle",
+      name: "Old Salt Barnacle Joe",
+      primary: "#4a4a3a",
+      accent: "#a8d0c0",
+      dx: -4, dy: 7, patrolRadius: 3,
+      questGiver: true,
+      aiPersonality:
+        "an ancient, weather-beaten retired pirate who rambles endlessly about legendary voyages, lost treasure maps, and the friends the sea took; wistful, salty, and deeply piratey",
+      dialogue: [
+        "I sailed afore yer grandpappy was a glimmer, matey. Sit, an' I'll tell ye.",
+        "There's a chest o' gold off the Skull Reefs. Lost the map in a card game, I did.",
+        "The sea gives, an' the sea takes. Mostly she takes, arr.",
+        "These barnacles on me knees? Badges of honour, every one.",
+      ],
+    },
+  ];
+
+  return crew.map((p) => {
+    const homeX = ix + p.dx;
+    const homeY = iy + p.dy;
+    return {
+      id: p.id,
+      name: p.name,
+      classId: "ranger",
+      npcTheme: "oceanus",
+      primary: p.primary,
+      accent: p.accent,
+      torsoColor: p.primary,
+      weaponColor: p.accent,
+      homeX,
+      homeY,
+      patrolRadius: Number(p.patrolRadius) || 3,
+      questGiver: !!p.questGiver,
+      aiPersonality: p.aiPersonality,
+      dialogue: p.dialogue,
+    };
+  });
+}
+
 const DEFINITIONS = BASE_NPC_DEFINITIONS.concat(
   buildHydratedHubNpcExtras(),
   buildPlanetAlienNpcDefinitions(),
   buildSciFiShopkeeperNpcDefinitions(),
-  buildSciFiTrafficNpcDefinitions()
+  buildSciFiTrafficNpcDefinitions(),
+  buildPirateNpcDefinitions()
 );
 
 const soldCompanionNpcIds = new Set();
@@ -2513,6 +2683,25 @@ const npcs = DEFINITIONS.map((def) => {
       npc._targetX = fallback.x;
       npc._targetY = fallback.y;
     }
+  }
+  // Keep Oceanus pirates ashore: if their home landed on water, march them back
+  // toward the island centre until they find a walkable tile.
+  if (npc.npcTheme === "oceanus" && OCEANUS_STARTER_ISLAND && isBlockedCircle(npc.x, npc.y)) {
+    const cx = Number(OCEANUS_STARTER_ISLAND.x);
+    const cy = Number(OCEANUS_STARTER_ISLAND.y);
+    for (let t = 0.2; t <= 1.0; t += 0.1) {
+      const sx = npc.x + (cx - npc.x) * t;
+      const sy = npc.y + (cy - npc.y) * t;
+      if (!isBlockedCircle(sx, sy)) {
+        npc.x = sx;
+        npc.y = sy;
+        break;
+      }
+    }
+    npc.homeX = npc.x;
+    npc.homeY = npc.y;
+    npc._targetX = npc.x;
+    npc._targetY = npc.y;
   }
   return npc;
 });

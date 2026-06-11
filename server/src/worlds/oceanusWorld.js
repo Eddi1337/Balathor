@@ -218,7 +218,9 @@ function starterIslandScore(x, y) {
 
 const STARTER_PIER_HALF_WIDTH = 4;       // broad central boardwalk leading off the island
 const STARTER_PIER_HEAD_HALF = 18;       // crossbar spanning all five moorings
-const STARTER_MOORING_CLEARANCE = 14;    // open water gap between the quay and a moored hull
+const STARTER_MOORING_CLEARANCE = 9;     // open water gap between the quay and a moored hull
+                                         // (kept within the ~14-tile dock-terminal reach so players
+                                         // standing on the pier head can still summon/board)
 
 function starterPierRect() {
   const r = STARTER_ISLAND.landRadius;
@@ -827,6 +829,7 @@ function getOceanusContentSpawns() {
 
 module.exports = {
   NAUTICAL_THEME,
+  STARTER_ISLAND,
   OCEANUS_BOUNDS,
   OCEANUS_LANDING,
   OCEANUS_TELEPORTER,
