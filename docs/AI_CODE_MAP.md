@@ -43,6 +43,13 @@ When changing behavior, confine edits to the smallest section possible and avoid
 - `index.js`: `player.layer` (0 ground / 1 deck). Movement uses `isUpperBlockedCircle` on layer 1; `handleTownLayerTransition` flips the layer when stepping off a stair cell; `handleStairTravel` teleports between house floors. Player snapshots include `layer`.
 - `client/src/main.js`: `state.upperCells` + `state.predictedLayer`, layer-aware prediction (`predictTownLayer`), deck overlay pass (`drawUpperDeckLayer` draws planks/railings above ground entities, then layer-1 entities above that; `drawUpperDeckShadows` shades the ground beneath). Cute cottage art: `drawCuteCottage` / `drawCuteWindow` (hut/house/big_house all route here).
 
+### Oceanus port, pirates & ship interiors
+
+- `worlds/oceanusWorld.js`: `buildStarterFeatures()` authors **Port Bilgewater** (the starter island) — five finger-pier moorings, a wide crossbar quay, dockside buildings (`harbour-building`), a `harbour-lighthouse`, and `harbour-prop` clutter (barrels/crates/lanterns/capstans/ropes/anchors/cannons). `STARTER_MOORING_CLEARANCE` (=9) must stay within the ~14-tile dock-terminal reach (`resolveShipLaunchPort` in `index.js`) or summon/board breaks. Exports `STARTER_ISLAND` for NPC anchoring.
+- `client/src/main.js`: `drawHarbourBuildingObject` / `drawHarbourLighthouseObject` / `drawHarbourPropObject` render the new dockside art; draw-order tiers added in `spaceObjectDrawOrder`.
+- `npcs.js`: `buildPirateNpcDefinitions()` places 8 pirate crew NPCs (`npc_pirate_*`, `npcTheme: "oceanus"`) around the island centre with shanty dialogue + `aiPersonality`; the runtime spawner snaps any pirate whose home lands on water back toward the island centre.
+- **Interior↔exterior ship mapping** (already in place, used by the ocean overhaul): the server keeps each aboard player's deck-frame position in `shipLocalX/shipLocalY` (axis-aligned to the deck, NOT world). `syncPlayerToShipLocal` sets `player.x = center + local`; passengers are dragged with the hull each tick (`index.js` ~4986). On the client, an exterior viewer draws a boarded nautical ship via `drawRotatedNauticalDeck` + `drawCharacterOnRotatedNauticalDeck`, which translate to ship center and `ctx.rotate(shipRenderFacing(ship))` (`withNauticalDeckRotation`) so deck-local figures appear oriented with the ship's heading — i.e. interior coords → deck-local → heading-rotated figures on the exterior hull.
+
 ### Systems modules
 
 - `npcs.js`: NPC templates/schedules/world-time integration.
