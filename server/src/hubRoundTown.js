@@ -561,6 +561,20 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects, pubRect
   function isUsed(tx, ty) {
     return used.has(`${tx},${ty}`);
   }
+  /**
+   * Declutter spacing guard: returns true if any already-placed prop sits within
+   * `r` tiles of (tx,ty). Used to keep scattered scenery sparse and walkable so
+   * the town reads tidy instead of buried under loose props.
+   */
+  function nearUsed(tx, ty, r) {
+    for (let dy = -r; dy <= r; dy += 1) {
+      for (let dx = -r; dx <= r; dx += 1) {
+        if (dx === 0 && dy === 0) continue;
+        if (used.has(`${tx + dx},${ty + dy}`)) return true;
+      }
+    }
+    return false;
+  }
 
   /** Road-adjacent grass cells */
   const lawnEdge = new Map();
@@ -590,21 +604,22 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects, pubRect
 
   for (const [key] of lawnEdge) {
     const [nx, ny] = key.split(",").map(Number);
-    // Denser, more varied roadside clutter — the cute stuff lives here.
-    if (hz(nx, ny, 7721) < 0.94) continue;
+    // Sparse roadside scenery: a few purposeful accents along the verges, not a
+    // wall of clutter. High rejection threshold + a 2-tile spacing guard keep
+    // the streets open and walkable; loose barrels are gone, the mix favours
+    // greenery (trees/hedges/flowers) with the occasional bench or planter.
+    if (hz(nx, ny, 7721) < 0.985) continue;
     if (isTileNearMinigameSite(nx, ny, "fantasy", 2)) continue;
+    if (isUsed(nx, ny) || nearUsed(nx, ny, 2)) continue;
 
     const pick = hz(nx, ny, 7722);
     const kind =
-      pick < 0.2 ? "bench"
-        : pick < 0.4 ? "small_tree"
-          : pick < 0.62 ? "flower_bed"
-            : pick < 0.76 ? "planter"
-              : pick < 0.88 ? "lantern"
-                : pick < 0.95 ? "hedge"
-                  : "barrel";
+      pick < 0.34 ? "small_tree"
+        : pick < 0.58 ? "flower_bed"
+          : pick < 0.78 ? "hedge"
+            : pick < 0.92 ? "bench"
+              : "planter";
 
-    if (isUsed(nx, ny)) continue;
     stampUsed(nx, ny);
 
     list.push({
@@ -826,18 +841,20 @@ function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects, pubRect
         if (dist < 1.2) {
           kind = r < 0.5 ? "pub_table" : "pub_chair"; // picnic spot at the heart
         } else if (dist >= PARK_R - 1.0) {
-          if (r < 0.4) kind = "hedge"; // soft hedge rim
+          // Sparse hedge rim — a soft, broken hedge edge, not a solid wall.
+          if (r < 0.22) kind = "hedge";
           else continue;
         } else if (dist >= PARK_R - 2.6 && dist < PARK_R - 1.4) {
-          if (r < 0.34) kind = "flower_bed"; // flower ring inside the hedge
+          if (r < 0.18) kind = "flower_bed"; // light flower ring inside the hedge
           else continue;
         } else {
-          if (r < 0.14) kind = "small_tree";
-          else if (r < 0.26) kind = "bench";
-          else if (r < 0.34) kind = "flower_bed";
-          else if (r < 0.38) kind = "lantern";
-          else continue; // most of the park stays open lawn
+          // Keep the park interior mostly open lawn with a few scattered features.
+          if (r < 0.07) kind = "small_tree";
+          else if (r < 0.12) kind = "flower_bed";
+          else continue;
         }
+        // Spacing guard so park features stay scattered, not packed.
+        if (kind !== "hedge" && nearUsed(tx, ty, 2)) continue;
         stampUsed(tx, ty);
         list.push({ id: `hub_park_${tx}_${ty}`, x: tx, y: ty, kind, facing: 0 });
       }
