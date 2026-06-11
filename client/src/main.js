@@ -14317,6 +14317,7 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const bowHeadNudge = bowing ? Math.round(3 * s) : 0;
   const hx = bx - 2 * s + fx * s + (bowing ? Math.round(s) : 0);
   const hy = by - 7 * s + fy + headSitNudge + bowHeadNudge;
+  const equipRarityRank = Number(entity.equipRarityRank) || 0;
   if (sciFiNpc) {
     if (sciFiLook === "alien") {
       drawAlienHead(hx, hy, s, helmetColor, visorColor, fx);
@@ -14333,23 +14334,174 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
     // Hair / hat stripe
     ctx.fillStyle = entity.hairColor || weaponColor;
     ctx.fillRect(hx, hy, 5 * s, s + 1);
-    if (entity.classId === "mage") {
-      ctx.fillRect(hx + s,           hy - 2 * s, 3 * s, 2 * s);
+
+    // Class-specific headgear — scales in complexity with equipRarityRank (0-5)
+    if (entity.classId === "mage" && (entity.torsoStyle === "wizardrobe" || entity.torsoStyle === "robe" || entity.torsoStyle === "ascendant" || equipRarityRank >= 1)) {
+      // Big pointed wizard hat: brim + cone, glow scales with rarity
+      const hatColor   = entity.torsoColor || weaponColor;
+      const hatTrimCol = weaponColor;
+      const brimW  = Math.round(9 * s);
+      const brimH  = Math.round(2.2 * s);
+      const coneH  = Math.round((7 + equipRarityRank * 1.5) * s);
+      const brimX  = hx - 2 * s;
+      const brimY  = hy - brimH + s;
+      if (equipRarityRank >= 3) {
+        ctx.save();
+        ctx.shadowColor = blend(hatColor, "#fff0cc", 0.5);
+        ctx.shadowBlur  = 6 + equipRarityRank * 3;
+      }
+      // Brim
+      ctx.fillStyle = hatColor;
+      ctx.beginPath();
+      ctx.ellipse(hx + 2.5 * s, brimY + brimH, brimW / 2, brimH, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Cone body (trapezoid)
+      ctx.fillStyle = hatColor;
+      ctx.beginPath();
+      ctx.moveTo(brimX + 1 * s,      brimY + brimH);
+      ctx.lineTo(brimX + brimW - s,  brimY + brimH);
+      ctx.lineTo(hx + Math.round(2.5 * s) + Math.round(s * 0.5), brimY + brimH - coneH + 3);
+      ctx.lineTo(hx + Math.round(2.5 * s) - Math.round(s * 0.5), brimY + brimH - coneH + 3);
+      ctx.closePath();
+      ctx.fill();
+      // Tip pixel
+      ctx.fillRect(hx + Math.round(2 * s), brimY + brimH - coneH, Math.max(2, s), Math.max(3, s));
+      // Hat band trim
+      ctx.fillStyle = hatTrimCol;
+      ctx.fillRect(brimX + s, brimY + brimH - Math.round(2.5 * s), brimW - 2 * s, Math.max(2, Math.round(s * 0.9)));
+      // Rarity star / gem on hat band
+      if (equipRarityRank >= 2) {
+        ctx.fillStyle = equipRarityRank >= 4 ? "#ffd700" : equipRarityRank >= 3 ? "#c4b5fd" : "#67e8f9";
+        ctx.beginPath();
+        ctx.arc(hx + Math.round(2.5 * s), brimY + brimH - Math.round(2.5 * s), Math.max(2, Math.round(s * 0.9)), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (equipRarityRank >= 3) {
+        ctx.restore();
+      }
+    } else if (entity.classId === "mage") {
+      // Low-rarity mage: original small pointy hat stub
+      ctx.fillStyle = entity.hairColor || weaponColor;
+      ctx.fillRect(hx + s,             hy - 2 * s, 3 * s, 2 * s);
       ctx.fillRect(hx + s + (s >> 1), hy - 3 * s, 2 * s, s);
+    } else if (entity.classId === "knight" && equipRarityRank >= 2) {
+      // Full knight helmet with visor slot and plume
+      const helColor = entity.torsoColor || "#7a8899";
+      const plumeCol = weaponColor;
+      const vH = Math.round(5 * s);
+      const vW = Math.round(5 * s);
+      const vX = hx - Math.round(0.5 * s);
+      const vY = hy - Math.round(1 * s);
+      if (equipRarityRank >= 4) {
+        ctx.save();
+        ctx.shadowColor = blend(helColor, "#ffffff", 0.4);
+        ctx.shadowBlur  = 8 + (equipRarityRank - 4) * 6;
+      }
+      // Helmet body
+      ctx.fillStyle = helColor;
+      ctx.fillRect(vX, vY, vW, vH);
+      // Visor slit (dark slot)
+      ctx.fillStyle = "rgba(0,0,0,0.72)";
+      ctx.fillRect(vX + Math.round(s * 0.5), vY + Math.round(1.8 * s), vW - s, Math.max(2, Math.round(s * 0.9)));
+      // Cheekguard / chin
+      ctx.fillStyle = blend(helColor, "#000000", 0.22);
+      ctx.fillRect(vX, vY + vH - s, vW, s);
+      // Metal sheen strip
+      ctx.fillStyle = blend(helColor, "#ffffff", 0.25);
+      ctx.fillRect(vX + Math.round(s * 0.5), vY, s, vH - s);
+      // Plume (taller/more prominent with rarity)
+      const plumeH = Math.round((3 + equipRarityRank) * s);
+      ctx.fillStyle = plumeCol;
+      ctx.fillRect(hx + Math.round(1.5 * s), vY - plumeH, Math.max(2, Math.round(1.5 * s)), plumeH);
+      // Plume tip curl
+      ctx.fillRect(hx + Math.round(s * 0.5), vY - plumeH, Math.max(2, Math.round(3 * s)), Math.max(2, s));
+      // Trim accent
+      ctx.fillStyle = plumeCol;
+      ctx.fillRect(vX, vY, vW, Math.max(2, Math.round(s * 0.7)));
+      if (equipRarityRank >= 4) {
+        ctx.restore();
+      }
+    } else if (entity.classId === "ranger" && equipRarityRank >= 2) {
+      // Peaked ranger hood
+      const hoodCol  = entity.torsoColor || "#2d4a32";
+      const hoodTrim = weaponColor;
+      const hoodW = Math.round(6 * s);
+      const hoodH = Math.round(6 * s);
+      const hoodX = hx - s;
+      const hoodY = hy - Math.round(2 * s);
+      if (equipRarityRank >= 4) {
+        ctx.save();
+        ctx.shadowColor = blend(hoodCol, "#00ff88", 0.5);
+        ctx.shadowBlur  = 6 + (equipRarityRank - 4) * 4;
+      }
+      // Hood main shape (rounded top + drape sides)
+      ctx.fillStyle = hoodCol;
+      ctx.fillRect(hoodX, hoodY, hoodW, hoodH);
+      // Peaked tip
+      ctx.fillRect(hx + Math.round(s), hoodY - Math.round(3 * s), Math.max(2, Math.round(2.5 * s)), Math.round(3 * s));
+      ctx.fillRect(hx + Math.round(1.5 * s), hoodY - Math.round(4.5 * s), Math.max(2, Math.round(1.5 * s)), Math.round(2 * s));
+      // Shadow / depth on hood
+      ctx.fillStyle = blend(hoodCol, "#000000", 0.3);
+      ctx.fillRect(hoodX + hoodW - s, hoodY, s, hoodH);
+      // Cowl drape at shoulders
+      ctx.fillStyle = hoodCol;
+      ctx.fillRect(hoodX - s, hy, Math.round(2 * s), Math.round(3 * s));
+      ctx.fillRect(hoodX + hoodW, hy, Math.round(2 * s), Math.round(3 * s));
+      // Trim edge
+      ctx.fillStyle = hoodTrim;
+      ctx.fillRect(hoodX, hoodY, hoodW, Math.max(2, Math.round(s * 0.6)));
+      if (equipRarityRank >= 4) {
+        ctx.restore();
+      }
+    } else {
+      // Default low-rarity mage stub (no class-specific hat needed for knight/ranger below rank 2)
     }
-    if (entity.longHair) {
+
+    if (entity.longHair && entity.classId !== "knight") {
       ctx.fillStyle = weaponColor;
       ctx.fillRect(hx - 1 * s, hy - 3 * s, 2 * s, 5 * s);
       ctx.fillRect(hx + 4 * s, hy - 2 * s, 2 * s, 4 * s);
       ctx.fillRect(hx + s, hy - 4 * s, 3 * s, 2 * s);
       ctx.fillRect(hx + 2 * s, hy - 5 * s, 2 * s, 2 * s);
     }
-    // Eyes
-    ctx.fillStyle = "#1d2430";
-    const eyeY = hy + 2 * s;
-    const eo   = Math.max(0, fx) * s;
-    ctx.fillRect(hx +     s + eo, eyeY, s, s);
-    ctx.fillRect(hx + 3 * s + eo, eyeY, s, s);
+    // Eyes (skip if full helmet equipped)
+    if (!(entity.classId === "knight" && equipRarityRank >= 4)) {
+      ctx.fillStyle = "#1d2430";
+      const eyeY = hy + 2 * s;
+      const eo   = Math.max(0, fx) * s;
+      ctx.fillRect(hx +     s + eo, eyeY, s, s);
+      ctx.fillRect(hx + 3 * s + eo, eyeY, s, s);
+    }
+  }
+
+  // Rarity shimmer/sparkle aura — drawn around the character for legendary+ gear (rank 4-5)
+  if (!sciFiNpc && !isMod && equipRarityRank >= 4 && !lyingBedPose && !benchSeatPose) {
+    const now = performance.now();
+    const isMythic = equipRarityRank >= 5;
+    const shimmerColor = isMythic ? "#e879f9" : "#ffd166";
+    ctx.save();
+    ctx.globalAlpha = 0.55 + Math.sin(now / 380) * 0.18;
+    ctx.shadowColor = shimmerColor;
+    ctx.shadowBlur  = isMythic ? 22 : 14;
+    ctx.strokeStyle = shimmerColor;
+    ctx.lineWidth   = isMythic ? 2.2 : 1.6;
+    // Subtle outline glow around torso
+    ctx.strokeRect(bx - 5 * s, by - 3 * s, 10 * s, 9 * s);
+    ctx.shadowBlur = 0;
+    // Particle-ish sparks: small dots orbiting character
+    ctx.fillStyle = shimmerColor;
+    const sparkCount = isMythic ? 5 : 3;
+    const sparkR = 13 * s;
+    for (let si = 0; si < sparkCount; si++) {
+      const angle = (now / (isMythic ? 900 : 1400)) + (si / sparkCount) * Math.PI * 2;
+      const sx2 = bx + Math.cos(angle) * sparkR;
+      const sy2 = by - 2 * s + Math.sin(angle) * sparkR * 0.6;
+      const sparkSize = Math.max(1.5, s * 0.9) * (0.7 + 0.3 * Math.sin(now / 200 + si));
+      ctx.beginPath();
+      ctx.arc(sx2, sy2, sparkSize, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   // Weapon / equipment (stash weapon while channeling home / sitting / swimming)
@@ -14665,6 +14817,100 @@ function drawTorso2(tx, ty, s, style, torsoColor, trimColor, classId, fx, fy) {
     return;
   }
 
+  if (style === "wizardrobe") {
+    // Wide flowing arcane robe with glowing runic trim and star-shot shimmer
+    const glowCol = blend(torsoColor, "#ffffff", 0.25);
+    ctx.shadowColor = blend(torsoColor, "#c4b5fd", 0.6);
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = torsoColor;
+    ctx.fillRect(tx - s, ty, w + 2 * s, h + 3 * s);  // wider/longer robe skirt
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = "transparent";
+    // Robe depth shading
+    ctx.fillStyle = blend(torsoColor, "#000000", 0.28);
+    ctx.fillRect(tx - s, ty + h + s, w + 2 * s, 2 * s);
+    // Star-shot rune stripes
+    ctx.fillStyle = glowCol;
+    ctx.fillRect(tx - s,         ty, s,                        h + 3 * s);
+    ctx.fillRect(tx + w,         ty, s,                        h + 3 * s);
+    ctx.fillRect(tx + (w >> 1) - 1, ty + s, Math.max(2, s), h);
+    // Glowing collar trim
+    ctx.fillStyle = trimColor;
+    ctx.fillRect(tx, ty, w, s);
+    ctx.fillRect(tx, ty + h + s, w, s);
+    // Tiny rune dots on body
+    ctx.fillStyle = blend(trimColor, "#ffffff", 0.3);
+    ctx.fillRect(tx + 2 * s, ty + 2 * s, Math.max(2, s >> 1), Math.max(2, s >> 1));
+    ctx.fillRect(tx + w - 3 * s, ty + 2 * s, Math.max(2, s >> 1), Math.max(2, s >> 1));
+    ctx.fillRect(tx + 2 * s, ty + 4 * s, Math.max(2, s >> 1), Math.max(2, s >> 1));
+    return;
+  }
+
+  if (style === "knightplate") {
+    // Broad chunky warplate with wide pauldrons and chest emblem
+    const plateCol = blend(torsoColor, "#708090", 0.42);
+    const shineCol = blend(torsoColor, "#e0e8f0", 0.3);
+    ctx.shadowColor = blend(torsoColor, "#ffffff", 0.25);
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = plateCol;
+    ctx.fillRect(tx, ty, w, h);
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = "transparent";
+    // Chest plate inner panel
+    ctx.fillStyle = shineCol;
+    ctx.fillRect(tx + s, ty + s, w - 2 * s, h - 2 * s);
+    // Wide pauldrons (shoulder guards) — stick out wider than normal torso
+    ctx.fillStyle = plateCol;
+    ctx.fillRect(tx - 2 * s, ty, 3 * s, Math.round(h * 0.55));   // left shoulder
+    ctx.fillRect(tx + w - s, ty, 3 * s, Math.round(h * 0.55));   // right shoulder
+    // Pauldron shine
+    ctx.fillStyle = shineCol;
+    ctx.fillRect(tx - 2 * s, ty, Math.round(s * 0.7), Math.round(h * 0.4));
+    ctx.fillRect(tx + w - s, ty, Math.round(s * 0.7), Math.round(h * 0.4));
+    // Center vertical ridge
+    ctx.fillStyle = blend(torsoColor, "#c8d4dc", 0.4);
+    ctx.fillRect(tx + (w >> 1) - s, ty, 2 * s, h);
+    // Gold trim top/bottom
+    ctx.fillStyle = trimColor;
+    ctx.fillRect(tx, ty, w, s);
+    ctx.fillRect(tx, ty, s, h);
+    ctx.fillRect(tx + w - s, ty, s, h);
+    ctx.fillRect(tx, ty + h - s, w, s);
+    // Chest emblem (small cross)
+    ctx.fillStyle = trimColor;
+    ctx.fillRect(tx + (w >> 1) - 1, ty + Math.round(h * 0.35), Math.max(2, s), Math.round(h * 0.3));
+    ctx.fillRect(tx + (w >> 1) - Math.round(s * 1.2), ty + Math.round(h * 0.47), Math.round(s * 2.4), Math.max(2, s));
+    return;
+  }
+
+  if (style === "rangercloak") {
+    // Hooded forest cloak with earthy tones and subtle stitching
+    const cloakCol   = torsoColor;
+    const innerCol   = blend(torsoColor, "#000000", 0.3);
+    const stitchCol  = blend(torsoColor, "#c08040", 0.4);
+    ctx.fillStyle = cloakCol;
+    ctx.fillRect(tx - s, ty, w + 2 * s, h + 4 * s);   // flowing outer cloak
+    ctx.fillStyle = innerCol;
+    ctx.fillRect(tx, ty + s, w, h + 2 * s);            // inner darker body
+    // Cloak edge panels
+    ctx.fillStyle = cloakCol;
+    ctx.fillRect(tx - s, ty, s + Math.round(s * 0.5), h + 4 * s);
+    ctx.fillRect(tx + w - Math.round(s * 0.5), ty, s + Math.round(s * 0.5), h + 4 * s);
+    // Stitching detail stripes
+    ctx.fillStyle = stitchCol;
+    for (let i = 1; i <= 3; i++) {
+      ctx.fillRect(tx + s, ty + Math.round(i * h / 4) - 1, w - 2 * s, Math.max(1, s - 1));
+    }
+    // Clasps / buttons
+    ctx.fillStyle = trimColor;
+    ctx.fillRect(tx + (w >> 1) - 1, ty + s, Math.max(2, s >> 1), Math.max(3, s));
+    ctx.fillRect(tx + (w >> 1) - 1, ty + 3 * s, Math.max(2, s >> 1), Math.max(3, s));
+    // Hood drape at top (darker strip)
+    ctx.fillStyle = blend(cloakCol, "#000000", 0.18);
+    ctx.fillRect(tx, ty, w, s);
+    return;
+  }
+
   // Default tunic
   ctx.fillStyle = torsoColor;
   ctx.fillRect(tx, ty, w, h);
@@ -14842,10 +15088,18 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
     "pulse",
     "ion",
     "plasma",
-    "rail"
+    "rail",
+    "wizard",
+    "recurve",
+    "crossbow",
+    "knightsword"
   ].includes(style);
   const isLegendary = style === "legendary";
   const isAscendant = style === "ascendant";
+  const isWizard    = style === "wizard";
+  const isRecurve   = style === "recurve";
+  const isCrossbow  = style === "crossbow";
+  const isKnightSword = style === "knightsword";
   ctx.save();
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
@@ -14854,6 +15108,12 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
     ctx.save();
     ctx.shadowColor = isAscendant ? "#c084fc" : "#ffd166";
     ctx.shadowBlur = isAscendant ? 17 : 14;
+  } else if (isWizard) {
+    ctx.save(); ctx.shadowColor = accent; ctx.shadowBlur = 12;
+  } else if (isRecurve || isCrossbow) {
+    ctx.save(); ctx.shadowColor = accent; ctx.shadowBlur = 8;
+  } else if (isKnightSword) {
+    ctx.save(); ctx.shadowColor = accent; ctx.shadowBlur = 10;
   } else if (style === "crystal") {
     ctx.save(); ctx.shadowColor = "#67e8f9"; ctx.shadowBlur = 10;
   } else if (style === "dark") {
@@ -15002,10 +15262,11 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
     const gait = moving ? walkSin : 0;
     /** Staff held in right hand — same silhouette as before; horizontal anchor follows hand, not torso center. */
     const cx = rHandX + (moving ? gait * s * 0.45 : 0);
-    const shaftTipY = y - 13 * s - 14;
+    // Wizard style: staff extends taller than character (head-height + crown above)
+    const shaftTipY = isWizard ? y - 17 * s - 18 : y - 13 * s - 14;
     const shaftW = style === "heavy" ? Math.max(6, Math.round(s + 2)) : Math.round(s + 1.8);
-    const orn = ornateWeapon ? (isAscendant ? "#67e8f9" : "#c79cff") : "#ff7a45";
-    const orbR = (style === "heavy" ? 8 : 7) * Math.min(ks, 1.2);
+    const orn = ornateWeapon ? (isAscendant ? "#67e8f9" : isWizard ? accent : "#c79cff") : "#ff7a45";
+    const orbR = isWizard ? 9 * Math.min(ks, 1.2) : (style === "heavy" ? 8 : 7) * Math.min(ks, 1.2);
     const orbCy = shaftTipY - orbR;
     const shaftTopJoin = orbCy + orbR - 1;
 
@@ -15018,13 +15279,43 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
     ctx.lineTo(cx, shaftTopJoin);
     ctx.stroke();
 
+    // Wizard staff: ornate flanges / cross-piece near top
+    if (isWizard) {
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = Math.max(2, Math.round(s * 0.85));
+      // Upper cross-arm
+      ctx.beginPath();
+      ctx.moveTo(cx - 5 * ks, orbCy + orbR + 4 * ks);
+      ctx.lineTo(cx + 5 * ks, orbCy + orbR + 4 * ks);
+      ctx.stroke();
+      // Lower cross-arm
+      ctx.beginPath();
+      ctx.moveTo(cx - 3.5 * ks, orbCy + orbR + 8 * ks);
+      ctx.lineTo(cx + 3.5 * ks, orbCy + orbR + 8 * ks);
+      ctx.stroke();
+    }
+
+    // Glowing orb
     ctx.fillStyle = orn;
     ctx.beginPath();
     ctx.arc(cx, orbCy, orbR, 0, Math.PI * 2);
     ctx.fill();
+    // Orb highlight
+    ctx.fillStyle = blend(orn, "#ffffff", 0.4);
+    ctx.beginPath();
+    ctx.arc(cx - orbR * 0.28, orbCy - orbR * 0.28, orbR * 0.4, 0, Math.PI * 2);
+    ctx.fill();
 
-    ctx.fillStyle = isAscendant ? "#fde68a" : "#ffd166";
-    ctx.fillRect(Math.round(cx) - 3, Math.round(orbCy) - 4, 6, 6);
+    if (isWizard) {
+      // Inner orb core — glowing bright heart
+      ctx.fillStyle = "rgba(255,255,255,0.72)";
+      ctx.beginPath();
+      ctx.arc(cx, orbCy, orbR * 0.38, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = isAscendant ? "#fde68a" : "#ffd166";
+      ctx.fillRect(Math.round(cx) - 3, Math.round(orbCy) - 4, 6, 6);
+    }
 
     const gripBlend = ornateWeapon ? blend(accent, "#2a1810", 0.52) : "#4a3424";
     ctx.strokeStyle = gripBlend;
@@ -15114,6 +15405,62 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
       ctx.stroke();
       ctx.fillStyle = accent;
       ctx.fillRect(lHandX - 2 * ks, lHandY - 12 * ks, 4 * ks, 18 * ks);
+    } else if (isKnightSword) {
+      // Crusader Greatsword — thick blade, wide ornate crossguard, pommel jewel, big shield in off-hand
+      // Blade
+      const swordTipX = rHandX + dirX * (36 * ks) + sideX * (6 * ks);
+      const swordTipY = rHandY - 12 * ks + dirY * (36 * ks) + sideY * (6 * ks);
+      ctx.strokeStyle = blend(accent, "#e0e8f0", 0.4);
+      ctx.lineWidth = 8 * Math.min(ks, 1.2);
+      ctx.beginPath();
+      ctx.moveTo(rHandX, rHandY);
+      ctx.lineTo(swordTipX, swordTipY);
+      ctx.stroke();
+      // Blade fuller (center groove)
+      ctx.strokeStyle = blend(accent, "#ffffff", 0.5);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(rHandX + dirX * 2, rHandY + dirY * 2);
+      ctx.lineTo(swordTipX - dirX * 4, swordTipY - dirY * 4);
+      ctx.stroke();
+      // Wide crossguard
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 5 * Math.min(ks, 1.2);
+      ctx.beginPath();
+      ctx.moveTo(rHandX - sideX * (9 * ks), rHandY - sideY * (9 * ks));
+      ctx.lineTo(rHandX + sideX * (9 * ks), rHandY + sideY * (9 * ks));
+      ctx.stroke();
+      // Pommel
+      ctx.fillStyle = accent;
+      ctx.beginPath();
+      ctx.arc(rHandX - dirX * (5 * ks), rHandY - dirY * (5 * ks), 4 * Math.min(ks, 1.1), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.65)";
+      ctx.beginPath();
+      ctx.arc(rHandX - dirX * (5 * ks), rHandY - dirY * (5 * ks), 1.8 * Math.min(ks, 1.1), 0, Math.PI * 2);
+      ctx.fill();
+      // Shield in left hand (big kite shield silhouette)
+      ctx.fillStyle = blend(entity.torsoColor || "#7a8899", "#374151", 0.3);
+      ctx.beginPath();
+      ctx.moveTo(lHandX - sideX * (9 * ks), lHandY - 16 * ks);
+      ctx.lineTo(lHandX + sideX * (9 * ks), lHandY - 16 * ks);
+      ctx.lineTo(lHandX + sideX * (7 * ks), lHandY + 6 * ks);
+      ctx.lineTo(lHandX,                     lHandY + 12 * ks);
+      ctx.lineTo(lHandX - sideX * (7 * ks), lHandY + 6 * ks);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = Math.max(2, 2 * ks);
+      ctx.stroke();
+      // Shield emblem
+      ctx.strokeStyle = blend(accent, "#ffffff", 0.35);
+      ctx.lineWidth = Math.max(1.5, 1.5 * ks);
+      ctx.beginPath();
+      ctx.moveTo(lHandX, lHandY - 14 * ks);
+      ctx.lineTo(lHandX, lHandY + 10 * ks);
+      ctx.moveTo(lHandX - 6 * ks, lHandY - 6 * ks);
+      ctx.lineTo(lHandX + 6 * ks, lHandY - 6 * ks);
+      ctx.stroke();
     } else {
       // classic / heavy / ornate / crystal / dark / runic / spectral + default
       const swordTipX = rHandX + dirX * (28 * ks) + sideX * (6 * ks);
@@ -15143,6 +15490,112 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
         ctx.fillRect(lHandX - 7 * ks, lHandY - 6 * ks, 14 * ks, 4 * ks);
       }
     }
+  } else if (isRecurve) {
+    // Recurve bow — elegant curves with distinct limb tips, glowing string, quiver
+    // Upper limb — curved outward from hand
+    ctx.strokeStyle = ornateWeapon ? accent : "#8b5a34";
+    ctx.lineWidth = 4 * Math.min(ks, 1.25);
+    ctx.beginPath();
+    ctx.moveTo(lHandX, lHandY);
+    ctx.quadraticCurveTo(
+      lHandX + sideX * (12 * ks),
+      lHandY + sideY * (12 * ks) - 4 * ks,
+      lHandX - dirX * (14 * ks),
+      lHandY - (14 + dirY * 14) * ks
+    );
+    ctx.stroke();
+    // Lower limb — mirrored
+    ctx.beginPath();
+    ctx.moveTo(lHandX, lHandY);
+    ctx.quadraticCurveTo(
+      lHandX + sideX * (12 * ks),
+      lHandY + sideY * (12 * ks) + 4 * ks,
+      lHandX + dirX * (14 * ks),
+      lHandY + (8 + dirY * 14) * ks
+    );
+    ctx.stroke();
+    // Bowstring — glowing line tip to tip
+    ctx.strokeStyle = ornateWeapon ? blend(accent, "#ffffff", 0.4) : "#f4ead3";
+    ctx.lineWidth = Math.max(1, 1.5 * ks);
+    ctx.beginPath();
+    ctx.moveTo(lHandX - dirX * (14 * ks), lHandY - (14 + dirY * 14) * ks);
+    ctx.lineTo(lHandX + dirX * (14 * ks), lHandY + (8 + dirY * 14) * ks);
+    ctx.stroke();
+    // Limb tips — small accent nocks
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.arc(lHandX - dirX * (14 * ks), lHandY - (14 + dirY * 14) * ks, 2.5 * ks, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(lHandX + dirX * (14 * ks), lHandY + (8 + dirY * 14) * ks, 2.5 * ks, 0, Math.PI * 2);
+    ctx.fill();
+    // Nocked arrow
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = style === "heavy" ? 4 * ks : Math.max(2, 3 * ks);
+    ctx.beginPath();
+    ctx.moveTo(rHandX, rHandY);
+    ctx.lineTo(rHandX + dirX * (18 * ks), rHandY + (-14 + dirY * 18) * ks);
+    ctx.stroke();
+    // Arrowhead
+    ctx.fillStyle = blend(accent, "#e0e8f0", 0.3);
+    ctx.fillRect(
+      Math.round(rHandX + dirX * (16 * ks)) - 2,
+      Math.round(rHandY + (-16 + dirY * 16) * ks) - 2,
+      Math.max(3, Math.round(4 * ks)), Math.max(3, Math.round(4 * ks))
+    );
+    // Quiver (small rectangle at lower back — cosmetic detail)
+    ctx.fillStyle = blend(entity.torsoColor || "#4a3424", "#000000", 0.2);
+    ctx.fillRect(lHandX + Math.round(3 * ks), lHandY + Math.round(4 * ks), Math.max(4, Math.round(4 * ks)), Math.max(8, Math.round(8 * ks)));
+    ctx.fillStyle = accent;
+    ctx.fillRect(lHandX + Math.round(3.5 * ks), lHandY + Math.round(2 * ks), Math.max(3, Math.round(3 * ks)), Math.max(2, Math.round(s * 0.7)));
+  } else if (isCrossbow) {
+    // Crossbow — horizontal stock, prod (bow), string, bolt groove
+    const cbX = rHandX + dirX * (10 * ks);
+    const cbY = rHandY + dirY * (10 * ks);
+    // Stock (body) — along firing direction
+    ctx.strokeStyle = "#5a3a1e";
+    ctx.lineWidth = 5 * Math.min(ks, 1.2);
+    ctx.beginPath();
+    ctx.moveTo(rHandX, rHandY);
+    ctx.lineTo(rHandX + dirX * (26 * ks), rHandY + dirY * (26 * ks));
+    ctx.stroke();
+    // Prod (horizontal bow perpendicular to stock)
+    ctx.strokeStyle = ornateWeapon ? accent : "#8b5a34";
+    ctx.lineWidth = 4 * Math.min(ks, 1.2);
+    ctx.beginPath();
+    ctx.moveTo(cbX - sideX * (11 * ks), cbY - sideY * (11 * ks));
+    ctx.lineTo(cbX + sideX * (11 * ks), cbY + sideY * (11 * ks));
+    ctx.stroke();
+    // Prod tips accent
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.arc(cbX - sideX * (11 * ks), cbY - sideY * (11 * ks), 2.5 * ks, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cbX + sideX * (11 * ks), cbY + sideY * (11 * ks), 2.5 * ks, 0, Math.PI * 2);
+    ctx.fill();
+    // Crossbow string
+    ctx.strokeStyle = "#f4ead3";
+    ctx.lineWidth = Math.max(1, 1.5 * ks);
+    ctx.beginPath();
+    ctx.moveTo(cbX - sideX * (11 * ks), cbY - sideY * (11 * ks));
+    ctx.lineTo(cbX + dirX * (6 * ks), cbY + dirY * (6 * ks));
+    ctx.lineTo(cbX + sideX * (11 * ks), cbY + sideY * (11 * ks));
+    ctx.stroke();
+    // Bolt on groove
+    ctx.strokeStyle = "#d4a840";
+    ctx.lineWidth = Math.max(2, 2.5 * ks);
+    ctx.beginPath();
+    ctx.moveTo(cbX + dirX * (4 * ks), cbY + dirY * (4 * ks));
+    ctx.lineTo(cbX + dirX * (22 * ks), cbY + dirY * (22 * ks));
+    ctx.stroke();
+    // Trigger / tiller detail
+    ctx.strokeStyle = "#3a2412";
+    ctx.lineWidth = Math.max(2, 2 * ks);
+    ctx.beginPath();
+    ctx.moveTo(rHandX + dirX * (4 * ks), rHandY + dirY * (4 * ks) + 4 * ks);
+    ctx.lineTo(rHandX + dirX * (7 * ks), rHandY + dirY * (7 * ks));
+    ctx.stroke();
   } else {
     ctx.strokeStyle = ornateWeapon ? accent : "#8b5a34";
     ctx.lineWidth = style === "heavy" ? 7 : 5 * Math.min(ks, 1.25);
@@ -15169,7 +15622,7 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
     ctx.stroke();
   }
 
-  const hasGlowSave = isLegendary || isAscendant ||
+  const hasGlowSave = isLegendary || isAscendant || isWizard || isRecurve || isCrossbow || isKnightSword ||
     style === "crystal" || style === "dark" || style === "frost" ||
     style === "fire" || style === "runic" || style === "spectral";
   if (hasGlowSave) {
