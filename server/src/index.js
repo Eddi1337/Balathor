@@ -423,7 +423,7 @@ const QUEST_DEFINITIONS = Object.freeze({
     rewardGold: 12,
     rewardXp: 40,
     steps: [
-      { type: "kill", text: "Defeat 2 slimes near the home tree", count: 2, matchName: "slime", target: { x: 12, y: 12 } },
+      { type: "kill", text: "Defeat 2 meadow slimes just south of the home tree", count: 2, matchName: "slime", target: { x: 10, y: 16 } },
       { type: "talk", text: "Return to Sage Wynn at the home tree", npcId: "npc_quest_wynn_hearth", target: { x: -3, y: 4 } }
     ]
   },
@@ -435,7 +435,7 @@ const QUEST_DEFINITIONS = Object.freeze({
     rewardGold: 18,
     rewardXp: 65,
     steps: [
-      { type: "kill", text: "Defeat 3 slimes near the oasis road", count: 3, matchName: "slime", target: { x: 137, y: 113 } },
+      { type: "kill", text: "Defeat 2 slimes near the oasis road", count: 2, matchName: "slime", target: { x: 137, y: 113 } },
       { type: "talk", text: "Return to Elder Elm", npcId: "npc_quest_elm_watch", target: { x: -6, y: 7 } }
     ]
   },
@@ -447,7 +447,7 @@ const QUEST_DEFINITIONS = Object.freeze({
     rewardGold: 24,
     rewardXp: 85,
     steps: [
-      { type: "kill", text: "Defeat 4 enemies around the north post", count: 4, campId: "north_post", target: { x: 12, y: -148 } },
+      { type: "kill", text: "Defeat 3 enemies around the north post", count: 3, campId: "north_post", target: { x: 12, y: -148 } },
       { type: "talk", text: "Report back to Gatewarden Mara", npcId: "npc_quest_mara_gate", target: { x: 11, y: -18 } }
     ]
   },
@@ -471,7 +471,7 @@ const QUEST_DEFINITIONS = Object.freeze({
     rewardGold: 30,
     rewardXp: 105,
     steps: [
-      { type: "kill", text: "Defeat 5 enemies at Hollow Band", count: 5, campId: "hollow_band", target: { x: 150, y: -110 } },
+      { type: "kill", text: "Defeat 3 enemies at Hollow Band", count: 3, campId: "hollow_band", target: { x: 150, y: -110 } },
       { type: "talk", text: "Return to Borin Reed", npcId: "npc_quest_borin_market", target: { x: 24, y: 18 } }
     ]
   },
@@ -483,7 +483,7 @@ const QUEST_DEFINITIONS = Object.freeze({
     rewardGold: 34,
     rewardXp: 120,
     steps: [
-      { type: "kill", text: "Defeat 3 Frost Wisps", count: 3, matchName: "frost wisp", target: { x: -150, y: -122 } },
+      { type: "kill", text: "Defeat 2 Frost Wisps", count: 2, matchName: "frost wisp", target: { x: -150, y: -122 } },
       { type: "talk", text: "Return to Lira Brook", npcId: "npc_quest_lira_brook", target: { x: -27, y: 23 } }
     ]
   },
@@ -495,7 +495,7 @@ const QUEST_DEFINITIONS = Object.freeze({
     rewardGold: 38,
     rewardXp: 135,
     steps: [
-      { type: "kill", text: "Defeat 3 Ember Imps", count: 3, matchName: "ember imp", target: { x: 146, y: -132 } },
+      { type: "kill", text: "Defeat 2 Ember Imps", count: 2, matchName: "ember imp", target: { x: 146, y: -132 } },
       { type: "talk", text: "Return to Tamsin Anvil", npcId: "npc_quest_tamsin_anvil", target: { x: 33, y: -25 } }
     ]
   },
@@ -592,7 +592,7 @@ const QUEST_DEFINITIONS = Object.freeze({
     rewardGold: 52,
     rewardXp: 170,
     steps: [
-      { type: "kill", text: "Defeat 4 swamp creatures near the bog trail", count: 4, biome: "swamp", target: { x: -320, y: 290 } },
+      { type: "kill", text: "Defeat 3 swamp creatures near the bog trail", count: 3, biome: "swamp", target: { x: -320, y: 290 } },
       { type: "location", text: "Inspect the old bog marker", target: { x: -334, y: 304 }, radius: 12 },
       { type: "talk", text: "Report back to Iona Marsh", npcId: "npc_quest_iona_swamp", target: { x: -250, y: 248 } }
     ]
@@ -605,7 +605,7 @@ const QUEST_DEFINITIONS = Object.freeze({
     rewardGold: 58,
     rewardXp: 190,
     steps: [
-      { type: "kill", text: "Defeat 5 desert enemies", count: 5, biome: "desert", target: { x: 450, y: 385 } },
+      { type: "kill", text: "Defeat 3 desert enemies", count: 3, biome: "desert", target: { x: 450, y: 385 } },
       { type: "talk", text: "Return to Orren Sandglass", npcId: "npc_quest_orren_dunes", target: { x: 376, y: 334 } }
     ]
   },
@@ -617,7 +617,7 @@ const QUEST_DEFINITIONS = Object.freeze({
     rewardGold: 62,
     rewardXp: 205,
     steps: [
-      { type: "kill", text: "Defeat 4 frost enemies", count: 4, biome: "frost", target: { x: -450, y: -365 } },
+      { type: "kill", text: "Defeat 3 frost enemies", count: 3, biome: "frost", target: { x: -450, y: -365 } },
       { type: "location", text: "Stand by the buried signal stone", target: { x: -462, y: -352 }, radius: 12 },
       { type: "talk", text: "Return to Vaela Snowmend", npcId: "npc_quest_vaela_frost", target: { x: -366, y: -318 } }
     ]
@@ -11666,6 +11666,12 @@ function createSciFiPirateMobs() {
 
 function createMobs() {
   const fixedMobs = [
+    // Tutorial slimes for q_first_hunt — hand-placed just south of the home tree,
+    // inside the hub mob-clear radius (fixed mobs bypass camp clearing). Kept weak
+    // and slow so brand-new players win their first fight easily.
+    { id: "mob_slime_meadow_1", name: "Meadow Slime", level: 1, homeX: 10, homeY: 16, primary: "#8fd98f", accent: "#e6ffcf", maxHp: 30, attackDamage: 3, speed: 1.0, roamRadius: 3 },
+    { id: "mob_slime_meadow_2", name: "Meadow Slime", level: 1, homeX: 14, homeY: 18, primary: "#8fd98f", accent: "#e6ffcf", maxHp: 30, attackDamage: 3, speed: 1.0, roamRadius: 3 },
+    { id: "mob_slime_meadow_3", name: "Meadow Slime", level: 1, homeX: 8, homeY: 20, primary: "#8fd98f", accent: "#e6ffcf", maxHp: 30, attackDamage: 3, speed: 1.0, roamRadius: 3 },
     { id: "mob_slime_oasis_1", name: "Oasis Slime", level: 5, homeX: 137, homeY: 113, primary: "#56b88f", accent: "#c7f5b0", maxHp: 74, attackDamage: 13 },
     { id: "mob_slime_oasis_2", name: "Oasis Slime", level: 5, homeX: 163, homeY: 126, primary: "#56b88f", accent: "#c7f5b0", maxHp: 74, attackDamage: 13 },
     { id: "mob_wisp_frost_1", name: "Frost Wisp", level: 7, homeX: -139, homeY: -113, primary: "#88d8ff", accent: "#f0fbff", maxHp: 78, attackDamage: 16 },
