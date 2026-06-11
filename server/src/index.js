@@ -63,6 +63,10 @@ const {
   listWorlds,
   listMapCatalog,
   DUNGEON_THEME,
+  isUpperWalkableAt,
+  isUpperStairsAt,
+  isUpperBlockedCircle,
+  getStairTravelAt,
   TILE
 } = require("./world");
 const {
@@ -5204,10 +5208,21 @@ function simulate() {
         const nextY = client.player.y + dy * speed * dt;
 
         const shipMode = Boolean(client.player.ship?.boarded);
-        if (shipMode || (!isBlockedCircle(nextX, client.player.y) && !isDoorLockedForPlayer(nextX, client.player.y, doorAccountKey))) {
+        const onUpperLayer = client.player.layer === 1;
+        if (
+          shipMode ||
+          (onUpperLayer
+            ? !isUpperBlockedCircle(nextX, client.player.y)
+            : !isBlockedCircle(nextX, client.player.y) && !isDoorLockedForPlayer(nextX, client.player.y, doorAccountKey))
+        ) {
           client.player.x = nextX;
         }
-        if (shipMode || (!isBlockedCircle(client.player.x, nextY) && !isDoorLockedForPlayer(client.player.x, nextY, doorAccountKey))) {
+        if (
+          shipMode ||
+          (onUpperLayer
+            ? !isUpperBlockedCircle(client.player.x, nextY)
+            : !isBlockedCircle(client.player.x, nextY) && !isDoorLockedForPlayer(client.player.x, nextY, doorAccountKey))
+        ) {
           client.player.y = nextY;
         }
 
@@ -5232,6 +5247,8 @@ function simulate() {
       maybePlankBoarding(client);
     }
 
+    handleTownLayerTransition(client);
+    handleStairTravel(client);
     handleDoorTravel(client);
     handlePortalTravel(client);
   }
@@ -5336,6 +5353,66 @@ function simulate() {
 
 function handleDoorTravel(client) {
   // Walk-in architecture: players walk through doors naturally, no teleportation
+}
+
+/**
+ * Town sky-promenade layers. layer 0 = ground, layer 1 = bridges/balcony decks.
+ * Stair cells are walkable from both layers; the layer you end up on is decided
+ * by the tile you step OFF the stairs onto (deck cell → 1, anything else → 0).
+ * Ground gameplay is untouched: deck cells exist only as a separate overlay.
+ */
+function handleTownLayerTransition(client) {
+  const p = client.player;
+  if (!p) {
+    return;
+  }
+  const tx = Math.floor(p.x);
+  const ty = Math.floor(p.y);
+  const tileKey = `${tx},${ty}`;
+  if (p._layerTileKey !== tileKey) {
+    const onStairs = isUpperStairsAt(tx, ty);
+    if (p._onUpperStairs && !onStairs) {
+      p.layer = isUpperWalkableAt(tx, ty) ? 1 : 0;
+    }
+    p._onUpperStairs = onStairs;
+    p._layerTileKey = tileKey;
+  }
+  /** Safety net: teleports/portals always land on ground. */
+  if (p.layer === 1 && !isUpperWalkableAt(tx, ty)) {
+    p.layer = 0;
+  }
+}
+
+/** Indoor staircases in two-story houses move players between floors. */
+function handleStairTravel(client) {
+  const p = client.player;
+  if (!p || p.ship?.boarded) {
+    return;
+  }
+  const now = Date.now();
+  if (now < (p._stairLockUntil || 0)) {
+    return;
+  }
+  const dest = getStairTravelAt(p.x, p.y);
+  if (!dest) {
+    return;
+  }
+  p.x = dest.x;
+  p.y = dest.y;
+  p.moving = false;
+  p.layer = 0;
+  p._stairLockUntil = now + 700;
+  client.input = normalizeInput();
+  send(client, {
+    type: "teleport",
+    portalId: dest.dir === "up" ? "stairs_up" : "stairs_down",
+    name: dest.name,
+    color: "#e0b066",
+    theme: getWorldThemeAt(p.x, p.y),
+    x: p.x,
+    y: p.y
+  });
+  streamChunks(client, nearbyChunks(p.x, p.y, 3));
 }
 
 function isDoorLockedForPlayer(x, y, ownerAccountKey) {
@@ -10603,6 +10680,7 @@ function emitSnapshot() {
       facing: Number(p.facing.toFixed(3)),
       moving: p.moving,
       swimming: Boolean(p.swimming),
+      layer: p.layer === 1 ? 1 : 0,
       shipAmenityPose: (p.shipAmenityPose && p.shipAmenityPose.until > Date.now())
         ? {
             kind: p.shipAmenityPose.kind === "sleep" ? "sleep" : "eat",

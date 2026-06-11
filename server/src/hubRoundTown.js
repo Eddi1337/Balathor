@@ -531,9 +531,9 @@ function addGardenPatches(gardenKeys, rects) {
 /**
  * Lawns touching paths: benches & small trees; separate pass for 2×1 upright market stalls + traders.
  */
-function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects, pubRects = []) {
+function buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects, pubRects = [], reservedKeys = null) {
   const list = [];
-  const used = new Set();
+  const used = new Set(reservedKeys ? [...reservedKeys] : []);
   const pathSet = pathKeys;
 
   function nearListedPortal(tx, ty, rSq) {
@@ -863,7 +863,7 @@ const DWELLING_SIZE_VARIANTS = Object.freeze([
 ]);
 
 /** Cute cottage-core wall/roof styles the client knows how to paint. */
-const DWELLING_STYLES = Object.freeze(["timber", "rose", "cream", "sage", "sky", "honey", "stone"]);
+const DWELLING_STYLES = Object.freeze(["timber", "rose", "cream", "sage", "sky", "honey", "lilac", "mint", "stone"]);
 
 const CUTE_HOUSE_FIRSTS = Object.freeze(["Rosehip", "Honeysuckle", "Bluebell", "Foxglove", "Clover", "Daisy", "Lavender", "Primrose", "Buttercup", "Willow", "Bramble", "Poppy"]);
 const CUTE_HOUSE_SECONDS = Object.freeze(["Cottage", "Nook", "Burrow", "Lodge", "Snug", "Roost", "Hollow", "Perch"]);
@@ -925,14 +925,252 @@ function applyDwellingSizeVariety(rects, reserved) {
   }
 }
 
+/**
+ * Minimum clear ring around every dwelling so players can walk all the way
+ * around each house and reach the door (3 tiles ≥ player collision + path).
+ */
+const DWELLING_MIN_GAP = 3;
+
+/** Wall / portal / plaza constraints only (no neighbour-pad test). */
+function rectFitsTownStatic(cand) {
+  for (const [cx, cy] of [
+    [cand.x, cand.y],
+    [cand.x + cand.w, cand.y],
+    [cand.x, cand.y + cand.h],
+    [cand.x + cand.w, cand.y + cand.h]
+  ]) {
+    if (Math.hypot(cx, cy) > HUB_WALL_R_IN_MAIN - 5) return false;
+  }
+  for (const [px, py] of HUB_GATE_PORTAL_TILES) {
+    const nx = Math.max(cand.x, Math.min(px, cand.x + cand.w));
+    const ny = Math.max(cand.y, Math.min(py, cand.y + cand.h));
+    if (Math.hypot(px - nx, py - ny) < PORTAL_COURTYARD_R + 3) return false;
+  }
+  if (Math.hypot(cand.x + cand.w / 2, cand.y + cand.h / 2) < 24) return false;
+  return true;
+}
+
+/**
+ * Deterministic relaxation: push dwellings apart until every pair (and every
+ * fixed civic/reserved footprint) keeps a DWELLING_MIN_GAP clear ring. The
+ * blueprint shipped with touching/overlapping lots; this guarantees walkable
+ * space all the way around each house. Unfixable lots are dropped.
+ */
+function spreadDwellingFootprints(rects, reserved) {
+  const obstaclesFor = (i) => {
+    const out = [];
+    for (let j = 0; j < rects.length; j += 1) {
+      if (j !== i) out.push(rects[j]);
+    }
+    for (const r of reserved) out.push(r);
+    return out;
+  };
+
+  for (let pass = 0; pass < 80; pass += 1) {
+    let moved = false;
+    for (let i = 4; i < rects.length; i += 1) {
+      const r = rects[i];
+      let conflict = null;
+      for (const o of obstaclesFor(i)) {
+        if (rectsOverlapPadded(r, o, DWELLING_MIN_GAP)) {
+          conflict = o;
+          break;
+        }
+      }
+      if (!conflict) continue;
+      const rcx = r.x + r.w / 2;
+      const rcy = r.y + r.h / 2;
+      const ocx = conflict.x + conflict.w / 2;
+      const ocy = conflict.y + conflict.h / 2;
+      const needX = Math.ceil((r.w + conflict.w) / 2 + DWELLING_MIN_GAP - Math.abs(rcx - ocx)) + 0;
+      const needY = Math.ceil((r.h + conflict.h) / 2 + DWELLING_MIN_GAP - Math.abs(rcy - ocy)) + 0;
+      const sx = rcx >= ocx ? 1 : -1;
+      const sy = rcy >= ocy ? 1 : -1;
+      const tries = needX <= needY
+        ? [[sx * needX, 0], [0, sy * needY], [sx * needX, sy * needY]]
+        : [[0, sy * needY], [sx * needX, 0], [sx * needX, sy * needY]];
+      for (const [dx, dy] of tries) {
+        const cand = { x: r.x + dx, y: r.y + dy, w: r.w, h: r.h };
+        if (!rectFitsTownStatic(cand)) continue;
+        r.x = cand.x;
+        r.y = cand.y;
+        moved = true;
+        break;
+      }
+    }
+    if (!moved) break;
+  }
+
+  /** Drop any lot still cramped after relaxation (rare, deterministic). */
+  for (let i = rects.length - 1; i >= 4; i -= 1) {
+    const r = rects[i];
+    let bad = false;
+    for (const o of obstaclesFor(i)) {
+      if (rectsOverlapPadded(r, o, 1)) {
+        bad = true;
+        break;
+      }
+    }
+    if (bad) rects.splice(i, 1);
+  }
+}
+
 function dwellingStyleFor(x, y) {
   return DWELLING_STYLES[Math.floor(hz(x, y, 6161) * DWELLING_STYLES.length)] || "timber";
+}
+
+/** Two-story roll: pubs always; roomy non-buyable cottages often. */
+function dwellingIsTwoStory(bld) {
+  if (bld.isPub) return true;
+  if (bld.forSale) return false;
+  if (bld.type !== "hut" && bld.type !== "house" && bld.type !== "big_house") return false;
+  if (bld.w < 7 || bld.h < 6) return false;
+  return hz(bld.x, bld.y, 6195) > 0.52;
 }
 
 function cuteHouseName(x, y) {
   const first = CUTE_HOUSE_FIRSTS[Math.floor(hz(x, y, 6171) * CUTE_HOUSE_FIRSTS.length)];
   const second = CUTE_HOUSE_SECONDS[Math.floor(hz(x, y, 6172) * CUTE_HOUSE_SECONDS.length)];
   return `${first} ${second}`;
+}
+
+/**
+ * Sky promenade — the town's second level. Walkable plank bridges span the
+ * gaps between paired cottages (with balcony decks resting on each roof),
+ * plus a few free-standing viewing platforms. Exterior stair runs connect
+ * ground (layer 0) to the deck level (layer 1). Ground tiles underneath stay
+ * fully playable; the client renders deck cells above layer-0 entities.
+ *
+ * Cell kinds: "deck" (balcony/platform planks), "bridge" (span planks),
+ * "stairs" (layer-transition steps; dir = compass side holding the deck).
+ * `edges` is a railing bitmask of missing neighbours: N=1 E=2 S=4 W=8.
+ */
+const HUB_MAX_BRIDGES = 8;
+const HUB_MAX_PLATFORMS = 3;
+
+function computeHubUpperDeck(hubBuildings, rects, pathKeys, wallKeys) {
+  const cells = new Map();
+  const key = (x, y) => `${x},${y}`;
+  const buildingAt = (tx, ty, pad = 0) => pointInRects(tx + 0.5, ty + 0.5, rects, pad);
+  const portalNear = (tx, ty, r) => {
+    for (const [px, py] of HUB_GATE_PORTAL_TILES) {
+      if ((tx - px) ** 2 + (ty - py) ** 2 <= r * r) return true;
+    }
+    return false;
+  };
+  const stargateNear = (tx, ty) => Math.hypot(tx - 20, ty) < 8;
+  const cellBad = (tx, ty) =>
+    wallKeys.has(key(tx, ty)) || portalNear(tx, ty, 12) || stargateNear(tx, ty) ||
+    (tx >= -2 && tx <= 2 && ty >= -2 && ty <= 2) ||
+    isTileNearMinigameSite(tx, ty, "fantasy", 2);
+  const stairsBad = (tx, ty) =>
+    cellBad(tx, ty) || buildingAt(tx, ty, 0.05) || pathKeys.has(key(tx, ty)) || cells.has(key(tx, ty));
+
+  const dwellings = hubBuildings
+    .filter((b) => (b.type === "hut" || b.type === "house" || b.type === "big_house") && b.w * b.h <= 110)
+    .sort((a, b) => a.x - b.x || a.y - b.y);
+
+  const accepted = [];
+
+  for (const a of dwellings) {
+    if (accepted.length >= HUB_MAX_BRIDGES) break;
+    for (const b of dwellings) {
+      if (b === a) continue;
+      const gapX = b.x - (a.x + a.w);
+      if (gapX < 3 || gapX > 8) continue;
+      const top = Math.max(a.y, b.y) + 1;
+      const bot = Math.min(a.y + a.h, b.y + b.h) - 2;
+      if (bot - top < 1) continue;
+      const yr = top + Math.floor((bot - top - 1) / 2);
+      const cx = a.x + a.w + gapX / 2;
+      if (accepted.some((s) => Math.hypot(s.cx - cx, s.cy - yr) < 26)) continue;
+
+      const cand = [];
+      let ok = true;
+      for (let yy = yr; yy <= yr + 1 && ok; yy += 1) {
+        for (let xx = a.x + a.w - 2; xx <= b.x + 1; xx += 1) {
+          if (cellBad(xx, yy) || cells.has(key(xx, yy))) { ok = false; break; }
+          const onRoof = xx < a.x + a.w || xx >= b.x;
+          if (!onRoof && buildingAt(xx, yy, 0)) { ok = false; break; }
+          cand.push({ x: xx, y: yy, kind: onRoof ? "deck" : "bridge" });
+        }
+      }
+      if (!ok) continue;
+
+      /** Stair run descending from the bridge into the gap (south preferred). */
+      const gapCols = [];
+      for (let xx = a.x + a.w; xx < b.x; xx += 1) gapCols.push(xx);
+      gapCols.sort((p, q) => Math.abs(p + 0.5 - cx) - Math.abs(q + 0.5 - cx) || p - q);
+      let stair = null;
+      for (const sxx of gapCols) {
+        if (!stairsBad(sxx, yr + 2) && !stairsBad(sxx, yr + 3)) {
+          stair = { x: sxx, rows: [yr + 2, yr + 3], dir: "n" };
+          break;
+        }
+        if (!stairsBad(sxx, yr - 1) && !stairsBad(sxx, yr - 2)) {
+          stair = { x: sxx, rows: [yr - 1, yr - 2], dir: "s" };
+          break;
+        }
+      }
+      if (!stair) continue;
+
+      for (const c of cand) cells.set(key(c.x, c.y), { kind: c.kind });
+      for (const sy of stair.rows) cells.set(key(stair.x, sy), { kind: "stairs", dir: stair.dir });
+      accepted.push({ cx, cy: yr });
+      break;
+    }
+  }
+
+  /** Free-standing viewing platforms (5×4 decks, stairs off the south edge). */
+  const PLATFORM_SEEDS = [
+    { cx: 36, cy: 14 }, { cx: -38, cy: -16 }, { cx: -14, cy: 38 },
+    { cx: 16, cy: -40 }, { cx: 58, cy: 58 }, { cx: -58, cy: -58 }
+  ];
+  let platforms = 0;
+  for (const seed of PLATFORM_SEEDS) {
+    if (platforms >= HUB_MAX_PLATFORMS) break;
+    let placed = false;
+    for (let ring = 0; ring <= 6 && !placed; ring += 1) {
+      for (let oy = -ring; oy <= ring && !placed; oy += 1) {
+        for (let ox = -ring; ox <= ring && !placed; ox += 1) {
+          if (Math.max(Math.abs(ox), Math.abs(oy)) !== ring) continue;
+          const px = seed.cx + ox;
+          const py = seed.cy + oy;
+          if (accepted.some((s) => Math.hypot(s.cx - (px + 2.5), s.cy - (py + 2)) < 24)) continue;
+          let ok = true;
+          for (let yy = py; yy < py + 4 && ok; yy += 1) {
+            for (let xx = px; xx < px + 5; xx += 1) {
+              if (cellBad(xx, yy) || buildingAt(xx, yy, 1) || cells.has(key(xx, yy))) { ok = false; break; }
+            }
+          }
+          if (!ok) continue;
+          const stx = px + 2;
+          if (stairsBad(stx, py + 4) || stairsBad(stx, py + 5)) continue;
+          for (let yy = py; yy < py + 4; yy += 1) {
+            for (let xx = px; xx < px + 5; xx += 1) cells.set(key(xx, yy), { kind: "deck" });
+          }
+          cells.set(key(stx, py + 4), { kind: "stairs", dir: "n" });
+          cells.set(key(stx, py + 5), { kind: "stairs", dir: "n" });
+          accepted.push({ cx: px + 2.5, cy: py + 2 });
+          platforms += 1;
+          placed = true;
+        }
+      }
+    }
+  }
+
+  /** Railing bitmask: edge where no neighbouring upper cell continues. */
+  const out = [];
+  for (const [k, cell] of cells) {
+    const [tx, ty] = k.split(",").map(Number);
+    let edges = 0;
+    if (!cells.has(key(tx, ty - 1))) edges |= 1;
+    if (!cells.has(key(tx + 1, ty))) edges |= 2;
+    if (!cells.has(key(tx, ty + 1))) edges |= 4;
+    if (!cells.has(key(tx - 1, ty))) edges |= 8;
+    out.push({ x: tx, y: ty, kind: cell.kind, dir: cell.dir, edges });
+  }
+  return out;
 }
 
 function computeHubDistrict() {
@@ -955,6 +1193,7 @@ function computeHubDistrict() {
     { x: 30, y: 48, w: 11, h: 8 }
   ];
   applyDwellingSizeVariety(rects, reservedRects);
+  spreadDwellingFootprints(rects, reservedRects);
 
   /** Assign NPC lots by angular sweep from east */
   /** @type {{r:{x:number,y:number,w:number,h:number}, angle:number}[]} */
@@ -1056,7 +1295,8 @@ function computeHubDistrict() {
     name: "Blue Tavern",
     type: "house",
     forSale: false,
-    isPub: true
+    isPub: true,
+    twoStory: true
   });
   hubBuildings.push({
     ...rects[3],
@@ -1107,6 +1347,8 @@ function computeHubDistrict() {
       const tag = `${r.x}_${r.y}`.slice(-12);
       bld.name = buy ? `${cute} #${tag}` : `${cute} (${tag})`;
     }
+
+    if (dwellingIsTwoStory(bld)) bld.twoStory = true;
 
     hubBuildings.push(bld);
   }
@@ -1207,8 +1449,10 @@ function computeHubDistrict() {
   }
 
   const hubNavPathKeys = buildHubNavPathKeys(pathKeys, wallKeys);
+  const hubUpperCells = computeHubUpperDeck(hubBuildings, rects, pathKeys, wallKeys);
+  const upperGroundKeys = new Set(hubUpperCells.map((c) => `${c.x},${c.y}`));
   const pubRects = hubBuildings.filter((b) => b.isPub).map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h }));
-  const hubRoadsides = buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects, pubRects);
+  const hubRoadsides = buildHubRoadsideFeatures(pathKeys, wallKeys, gardenKeys, rects, pubRects, upperGroundKeys);
 
   return {
     hubBuildings,
@@ -1218,6 +1462,7 @@ function computeHubDistrict() {
     gardenTileKeys: gardenKeys,
     hubNavPathKeys,
     hubRoadsides,
+    hubUpperCells,
     hubClearingRadius: HUB_CLEARING_RADIUS,
     hutSlotCount: rects.length - 4
   };

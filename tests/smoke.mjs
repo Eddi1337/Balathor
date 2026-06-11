@@ -116,6 +116,52 @@ assert.equal(world.generateTile(ix + home.w - 2, iy + home.h - 2), world.TILE.CH
 assert.equal(world.generateTile(ix - 1, iy + home.h), world.generateTile(home.x - 1, home.y + home.h));
 assert.equal(Boolean(world.getShopFixtureAt(ix + home.w - 2.5, iy + 2.5)), true);
 
+// ── Starter town layers: sky promenade (bridges/platforms/stairs) ─────────
+const upperCells = [];
+for (let ucy = -9; ucy <= 9; ucy += 1) {
+  for (let ucx = -9; ucx <= 9; ucx += 1) {
+    upperCells.push(...world.getUpperCellsInChunk(ucx, ucy));
+  }
+}
+assert.ok(upperCells.filter((c) => c.kind === "bridge").length >= 6, "town should have walkable bridges");
+assert.ok(upperCells.filter((c) => c.kind === "stairs").length >= 6, "deck level needs stair access");
+for (const cell of upperCells) {
+  assert.equal(world.isUpperWalkableAt(cell.x + 0.5, cell.y + 0.5), true);
+}
+const aStair = upperCells.find((c) => c.kind === "stairs");
+assert.equal(world.isUpperStairsAt(aStair.x, aStair.y), true);
+const aBridge = upperCells.find((c) => c.kind === "bridge");
+// Ground under a bridge stays walkable — layer 0 gameplay is untouched.
+assert.equal(world.isBlocked(aBridge.x + 0.5, aBridge.y + 0.5), false);
+assert.equal(world.isUpperBlockedCircle(aBridge.x + 0.5, aBridge.y + 0.5, 0.1), false);
+
+// ── Two-story homes: indoor stairs link the ground floor and the loft ─────
+const twoStoryHome = world.BUILDINGS.find((b) => b.twoStory && !b.forSale);
+assert.ok(twoStoryHome, "town should have two-story homes");
+const stairGx = twoStoryHome.x + twoStoryHome.w - 2;
+const stairGy = twoStoryHome.y + twoStoryHome.h - 3;
+assert.equal(world.generateTile(stairGx, stairGy), world.TILE.STAIRS);
+const upTravel = world.getStairTravelAt(stairGx + 0.5, stairGy + 0.5);
+assert.equal(upTravel?.dir, "up");
+assert.equal(world.isBlocked(upTravel.x, upTravel.y), false);
+const downGx = Math.floor(upTravel.x) + 1;
+const downGy = Math.floor(upTravel.y);
+assert.equal(world.generateTile(downGx, downGy), world.TILE.STAIRS);
+const downTravel = world.getStairTravelAt(downGx + 0.5, downGy + 0.5);
+assert.equal(downTravel?.dir, "down");
+assert.equal(world.isBlocked(downTravel.x, downTravel.y), false);
+
+// ── Spread pass: every town footprint keeps a ≥3-tile walkable ring ───────
+const hubFootprints = world.BUILDINGS.filter((b) => Math.hypot(b.x, b.y) < 130);
+for (const a of hubFootprints) {
+  for (const b of hubFootprints) {
+    if (a === b) continue;
+    const gapX = Math.max(a.x - (b.x + b.w), b.x - (a.x + a.w));
+    const gapY = Math.max(a.y - (b.y + b.h), b.y - (a.y + a.h));
+    assert.ok(Math.max(gapX, gapY) >= 3, `dwellings too close: ${a.name} / ${b.name}`);
+  }
+}
+
 const basePort = 18000 + (process.pid % 1000);
 const serverPort = basePort;
 const clientPort = basePort + 1000;
@@ -182,6 +228,8 @@ try {
   ))), true);
   assert.equal(messages.some((message) => message.type === "teleport" && message.portalId === "home"), true);
   assert.equal(messages.some((message) => message.type === "chunk"), true);
+  assert.equal(messages.some((message) => message.type === "chunk" && Array.isArray(message.upperCells)), true);
+  assert.equal(resumedMessages.some((message) => message.type === "snapshot" && message.players?.some((player) => player.layer === 0)), true);
   assert.equal(messages.some((message) => message.type === "snapshot" && Array.isArray(message.mobs)), true);
   assert.equal(messages.every((message) => !Array.isArray(message.mobs) || message.mobs.every((mob) => (
     Number.isInteger(mob.level) &&

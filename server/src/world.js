@@ -47,7 +47,9 @@ const TILE = {
   /** Town road tiers — packed dirt lanes, cobbled streets, flagstone avenues. */
   DIRT: 28,
   COBBLE: 29,
-  STONE_ROAD: 30
+  STONE_ROAD: 30,
+  /** Indoor staircase — stepping on it moves players between house floors. */
+  STAIRS: 31
 };
 
 const BLOCKED_TILES = new Set([
@@ -155,6 +157,48 @@ const HUB_GARDEN_TILE_KEYS = _hubDistrict.gardenTileKeys;
 const HUB_ROADSIDE_FEATURES = _hubDistrict.hubRoadsides || [];
 const HUB_NAV_PATH_KEYS =
   _hubDistrict.hubNavPathKeys instanceof Set ? _hubDistrict.hubNavPathKeys : new Set();
+/**
+ * Town second level (sky promenade): bridges, balcony decks, platforms and the
+ * stair cells that move players between layer 0 (ground) and layer 1 (deck).
+ * Stored per tile; collision on layer 1 is "walkable only where a cell exists".
+ */
+const HUB_UPPER_CELLS = new Map(
+  (_hubDistrict.hubUpperCells || []).map((c) => [`${c.x},${c.y}`, c])
+);
+const HUB_UPPER_CELLS_BY_CHUNK = new Map();
+for (const cell of HUB_UPPER_CELLS.values()) {
+  const ck = `${Math.floor(cell.x / CHUNK_SIZE)},${Math.floor(cell.y / CHUNK_SIZE)}`;
+  if (!HUB_UPPER_CELLS_BY_CHUNK.has(ck)) HUB_UPPER_CELLS_BY_CHUNK.set(ck, []);
+  HUB_UPPER_CELLS_BY_CHUNK.get(ck).push(cell);
+}
+
+function getUpperCellAt(tx, ty) {
+  return HUB_UPPER_CELLS.get(`${tx},${ty}`) || null;
+}
+
+function isUpperWalkableAt(x, y) {
+  return HUB_UPPER_CELLS.has(`${Math.floor(x)},${Math.floor(y)}`);
+}
+
+function isUpperStairsAt(x, y) {
+  const cell = HUB_UPPER_CELLS.get(`${Math.floor(x)},${Math.floor(y)}`);
+  return Boolean(cell && cell.kind === "stairs");
+}
+
+/** Layer-1 collision: every sample corner must rest on an upper cell. */
+function isUpperBlockedCircle(x, y, radius = 0.28) {
+  const points = [
+    [x - radius, y - radius],
+    [x + radius, y - radius],
+    [x - radius, y + radius],
+    [x + radius, y + radius]
+  ];
+  return points.some(([px, py]) => !isUpperWalkableAt(px, py));
+}
+
+function getUpperCellsInChunk(cx, cy) {
+  return HUB_UPPER_CELLS_BY_CHUNK.get(`${cx},${cy}`) || [];
+}
 
 function hash2(x, y, seed = 1337) {
   let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ seed;
@@ -1334,6 +1378,107 @@ const ENEMY_CAMPS = [...BASE_ENEMY_CAMPS, ...buildScatterEnemyCamps()];
 const BUILDING_INTERIORS = BUILDINGS.map((building, index) => createInteriorForBuilding(building, index));
 
 // ---------------------------------------------------------------------------
+// Two-story houses — upstairs floors live on the interior plane, one slot per
+// building (same x-spacing as BUILDING_INTERIORS, offset south so the two
+// never overlap). An indoor TILE.STAIRS cell in the ground-floor footprint
+// teleports players up; the matching cell upstairs brings them back down.
+// ---------------------------------------------------------------------------
+const UPSTAIRS_BASE_Y = INTERIOR_BASE_Y + 64;
+
+/** Local stair cell shared by ground floor and upstairs layouts. */
+function twoStoryStairLocal(b) {
+  return { lx: b.w - 2, ly: b.h - 3 };
+}
+
+const UPSTAIRS_AREAS = BUILDINGS.map((building, index) => {
+  if (!building.twoStory) return null;
+  return {
+    index,
+    building,
+    x: INTERIOR_BASE_X + index * INTERIOR_SPACING,
+    y: UPSTAIRS_BASE_Y,
+    w: building.w,
+    h: building.h
+  };
+});
+
+/** key "tx,ty" of a stair tile -> destination + label. */
+const STAIR_TRAVEL = new Map();
+BUILDINGS.forEach((b, index) => {
+  if (!b.twoStory) return;
+  const st = twoStoryStairLocal(b);
+  const ux = INTERIOR_BASE_X + index * INTERIOR_SPACING;
+  STAIR_TRAVEL.set(`${b.x + st.lx},${b.y + st.ly}`, {
+    x: ux + st.lx - 1 + 0.5,
+    y: UPSTAIRS_BASE_Y + st.ly + 0.5,
+    name: `${b.name} — Upstairs`,
+    dir: "up"
+  });
+  STAIR_TRAVEL.set(`${ux + st.lx},${UPSTAIRS_BASE_Y + st.ly}`, {
+    x: b.x + st.lx - 1 + 0.5,
+    y: b.y + st.ly + 0.5,
+    name: b.name,
+    dir: "down"
+  });
+});
+
+function getStairTravelAt(x, y) {
+  return STAIR_TRAVEL.get(`${Math.floor(x)},${Math.floor(y)}`) || null;
+}
+
+function getUpstairsAreaAt(x, y, margin = 0) {
+  const rough = Math.floor((x - INTERIOR_BASE_X) / INTERIOR_SPACING);
+  for (let index = rough - 1; index <= rough + 1; index += 1) {
+    const area = index >= 0 && index < UPSTAIRS_AREAS.length ? UPSTAIRS_AREAS[index] : null;
+    if (!area) continue;
+    if (
+      x >= area.x - margin &&
+      x < area.x + area.w + margin &&
+      y >= area.y - margin &&
+      y < area.y + area.h + margin
+    ) {
+      return area;
+    }
+  }
+  return null;
+}
+
+/** Upstairs floor plan: cosy loft (or pub guest rooms), stairs back down. */
+function getUpstairsTile(x, y) {
+  const area = getUpstairsAreaAt(x, y);
+  if (!area) return null;
+  const lx = x - area.x;
+  const ly = y - area.y;
+  const { w, h } = area;
+  if (lx === 0 || lx === w - 1 || ly === 0 || ly === h - 1) return TILE.WALL;
+  const st = twoStoryStairLocal(area.building);
+  if (lx === st.lx && ly === st.ly) return TILE.STAIRS;
+  if (area.building.isPub) {
+    /** Inn loft: row of guest beds with side tables. */
+    if (ly === 1 && lx >= 1 && lx <= w - 3 && lx % 2 === 1) return TILE.BED;
+    if (ly === 1 && lx >= 2 && lx <= w - 3 && lx % 2 === 0) return TILE.TABLE;
+    if (ly >= 3 && ly <= h - 3 && lx >= 2 && lx <= w - 3) return TILE.CARPET;
+    return TILE.FLOOR;
+  }
+  if ((lx === 1 || lx === 2) && ly === 1) return TILE.BED;
+  if (lx === w - 2 && ly === 1) return TILE.SHELF;
+  if (lx === 1 && ly === h - 3) return TILE.TABLE;
+  if (lx === 1 && ly === h - 2) return TILE.CHAIR;
+  const rugRow = Math.max(2, Math.min(h - 4, 3));
+  if (ly >= rugRow && ly <= rugRow + 1 && lx >= 3 && lx <= w - 4) return TILE.CARPET;
+  return TILE.FLOOR;
+}
+
+function getUpstairsExteriorTile(x, y) {
+  const area = getUpstairsAreaAt(x, y, INTERIOR_EXTERIOR_MARGIN);
+  if (!area || getUpstairsAreaAt(x, y)) return null;
+  /** Looking out of the loft you see the town around the real house. */
+  const sourceX = area.building.x + (x - area.x);
+  const sourceY = area.building.y + (y - area.y);
+  return generateExteriorTile(sourceX, sourceY);
+}
+
+// ---------------------------------------------------------------------------
 // Procedural settlement system
 // ---------------------------------------------------------------------------
 const SETTLE_GRID = 96;
@@ -1729,6 +1874,12 @@ function getBuildingTile(x, y) {
 
     const lx = x - b.x;
     const ly = y - b.y;
+    if (b.twoStory) {
+      const st = twoStoryStairLocal(b);
+      if (lx === st.lx && ly === st.ly) {
+        return TILE.STAIRS;
+      }
+    }
     const seed = hash2(b.x, b.y, 7777);
     return getBuildingInteriorTile(lx, ly, b.w, b.h, b.type || "house", seed, !!b.forSale, !!b.isPub);
   }
@@ -2359,6 +2510,16 @@ function generateExteriorTileCore(x, y) {
     return getDungeonInteriorTile(dungeon, x, y, TILE, hash2);
   }
 
+  const upstairsTile = getUpstairsTile(x, y);
+  if (upstairsTile !== null) {
+    return upstairsTile;
+  }
+
+  const upstairsApron = getUpstairsExteriorTile(x, y);
+  if (upstairsApron !== null) {
+    return upstairsApron;
+  }
+
   const apronTile = getInteriorExteriorTile(x, y);
   if (apronTile !== null) {
     return apronTile;
@@ -2668,6 +2829,7 @@ function generateChunk(cx, cy) {
     portals: getPortalsInChunk(cx, cy),
     buildings: worldId === "oceanus" ? [] : getBuildingsInChunk(cx, cy),
     roadsides: getRoadsideFeaturesInChunk(cx, cy),
+    upperCells: getUpperCellsInChunk(cx, cy),
     minigameSites: getMinigameSitesInChunk(cx, cy),
     caveEntrances: getCaveEntrancesInChunk(cx, cy, CHUNK_SIZE),
     spaceObjects
@@ -2845,6 +3007,7 @@ function getBuildingsInChunk(cx, cy) {
       type: b.type,
       forSale: !!b.forSale,
       isPub: !!b.isPub,
+      twoStory: b.twoStory ? true : undefined,
       style: typeof b.style === "string" ? b.style.slice(0, 16) : undefined,
       residentLabel: typeof b.residentLabel === "string" ? b.residentLabel.slice(0, 48) : undefined,
       residentSign:
@@ -2967,5 +3130,11 @@ module.exports = {
   HUB_TOWN_GRASS_RADIUS,
   SCI_FI_THEME,
   DUNGEON_THEME,
-  getDungeonByInteriorPoint
+  getDungeonByInteriorPoint,
+  getUpperCellAt,
+  isUpperWalkableAt,
+  isUpperStairsAt,
+  isUpperBlockedCircle,
+  getUpperCellsInChunk,
+  getStairTravelAt
 };

@@ -36,6 +36,13 @@ When changing behavior, confine edits to the smallest section possible and avoid
 - `docs/ADDING_MAPS.md`: how to add maps/worlds (for humans and AI agents).
 - `sciFiStationLayout.js`, `hubRoundTown.js`: authored layout data.
 
+### Starter-town layers & two-story houses (fantasy hub)
+
+- `hubRoundTown.js`: `spreadDwellingFootprints` enforces a ≥3-tile walkable ring around every lot; `computeHubUpperDeck` authors the "sky promenade" — per-tile upper cells `{x, y, kind: deck|bridge|stairs, dir, edges}` (edges = railing bitmask N1/E2/S4/W8). Pubs + many cottages get `twoStory: true`.
+- `world.js`: `TILE.STAIRS` (31); upper-cell queries `isUpperWalkableAt` / `isUpperStairsAt` / `isUpperBlockedCircle` / `getUpperCellsInChunk` (chunks carry `upperCells`); two-story upstairs floors live on the interior plane at `UPSTAIRS_BASE_Y` (`getUpstairsTile`, `getStairTravelAt` maps indoor stair tiles to up/down destinations).
+- `index.js`: `player.layer` (0 ground / 1 deck). Movement uses `isUpperBlockedCircle` on layer 1; `handleTownLayerTransition` flips the layer when stepping off a stair cell; `handleStairTravel` teleports between house floors. Player snapshots include `layer`.
+- `client/src/main.js`: `state.upperCells` + `state.predictedLayer`, layer-aware prediction (`predictTownLayer`), deck overlay pass (`drawUpperDeckLayer` draws planks/railings above ground entities, then layer-1 entities above that; `drawUpperDeckShadows` shades the ground beneath). Cute cottage art: `drawCuteCottage` / `drawCuteWindow` (hut/house/big_house all route here).
+
 ### Systems modules
 
 - `npcs.js`: NPC templates/schedules/world-time integration.

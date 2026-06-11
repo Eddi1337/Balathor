@@ -421,7 +421,9 @@ const TILE = {
   /** Town road tiers — packed dirt lanes, cobbled streets, flagstone avenues. */
   DIRT: 28,
   COBBLE: 29,
-  STONE_ROAD: 30
+  STONE_ROAD: 30,
+  /** Indoor staircase — moves players between house floors. */
+  STAIRS: 31
 };
 
 /** Local foot collision: mirrors server blocked tiles except WATER (swimmable). */
@@ -507,6 +509,26 @@ function clientIsBlockedCircle(wx, wy, radius = PLAYER_COLLISION_RADIUS) {
     [wx + radius, wy + radius]
   ];
   return points.some(([px, py]) => CLIENT_BLOCKED_TILES.has(getTile(Math.floor(px), Math.floor(py))));
+}
+
+function upperCellAt(tx, ty) {
+  return state.upperCells.get(`${tx},${ty}`) || null;
+}
+
+function isUpperStairsCell(tx, ty) {
+  const cell = upperCellAt(tx, ty);
+  return Boolean(cell && cell.kind === "stairs");
+}
+
+/** Mirrors server isUpperBlockedCircle: layer 1 walks only on deck cells. */
+function clientIsUpperBlockedCircle(wx, wy, radius = PLAYER_COLLISION_RADIUS) {
+  const points = [
+    [wx - radius, wy - radius],
+    [wx + radius, wy - radius],
+    [wx - radius, wy + radius],
+    [wx + radius, wy + radius]
+  ];
+  return points.some(([px, py]) => !upperCellAt(Math.floor(px), Math.floor(py)));
 }
 
 /** Mirrors server planetShipSpriteRadiusTiles / drawPlanetObject sprite size. */
@@ -602,16 +624,40 @@ function clientTryFootMove(rx, ry, stepX, stepY) {
   const nextY = ry + stepY;
   let x = rx;
   let y = ry;
-  if (!clientIsBlockedCircle(nextX, ry)) {
+  const blocked = state.predictedLayer === 1 ? clientIsUpperBlockedCircle : clientIsBlockedCircle;
+  if (!blocked(nextX, ry)) {
     x = nextX;
   }
-  if (!clientIsBlockedCircle(x, nextY)) {
+  if (!blocked(x, nextY)) {
     y = nextY;
   }
   if (x !== rx || y !== ry) {
     return { x, y, moved: true };
   }
   return { x: rx, y: ry, moved: false };
+}
+
+/**
+ * Mirrors the server's town layer transition: leaving a stair cell decides the
+ * layer from the destination tile (deck cell → 1, anything else → 0).
+ */
+let _predOnUpperStairs = false;
+let _predLayerTileKey = "";
+function predictTownLayer(rx, ry) {
+  const tx = Math.floor(rx);
+  const ty = Math.floor(ry);
+  const key = `${tx},${ty}`;
+  if (_predLayerTileKey !== key) {
+    const onStairs = isUpperStairsCell(tx, ty);
+    if (_predOnUpperStairs && !onStairs) {
+      state.predictedLayer = upperCellAt(tx, ty) ? 1 : 0;
+    }
+    _predOnUpperStairs = onStairs;
+    _predLayerTileKey = key;
+  }
+  if (state.predictedLayer === 1 && !upperCellAt(tx, ty)) {
+    state.predictedLayer = 0;
+  }
 }
 
 /** Mirrors server/src/index.js getBuildingPrice */
@@ -900,6 +946,10 @@ const state = {
   caveEntrances: new Map(),
   buildings: new Map(),
   roadsides: new Map(),
+  /** Town second-level deck cells (bridges/balconies/stairs) keyed "x,y". */
+  upperCells: new Map(),
+  /** Predicted sky-promenade layer for the local player (server-confirmed). */
+  predictedLayer: 0,
   spaceObjects: new Map(),
   asteroidStates: new Map(),
   benchSitUntil: 0,
@@ -1533,6 +1583,10 @@ function handleServerMessage(message) {
     state.camera.x = message.x * TILE_SIZE;
     state.camera.y = message.y * TILE_SIZE;
     state.camera.rotation = 0;
+    // Teleports always land on the ground layer (stairs included).
+    state.predictedLayer = 0;
+    _predOnUpperStairs = false;
+    _predLayerTileKey = "";
     // Block stale pre-teleport snapshots from snapping the player back
     state.teleportGuardUntil = performance.now() + 700;
     state.requestedChunks.clear();
@@ -1577,6 +1631,7 @@ function handleServerMessage(message) {
     indexChunkCaveEntrances(message);
     indexChunkBuildings(message);
     indexChunkRoadsides(message);
+    indexChunkUpperCells(message);
     indexChunkSpaceObjects(message);
     state.requestedChunks.delete(key);
     return;
@@ -2224,9 +2279,28 @@ function applySnapshot(players) {
     Object.assign(player, snapshot, {
       targetX: posGuarded ? player.targetX : snapshot.x,
       targetY: posGuarded ? player.targetY : snapshot.y,
+      layer: snapshot.layer === 1 ? 1 : 0,
       renderMoving: Boolean(snapshot.moving),
       lastSeen: now
     });
+    if (isSelf && !posGuarded) {
+      // Adopt the server's layer except right at a stair cell, where the local
+      // prediction is ahead of the snapshot.
+      const stx = Math.floor(player.renderX);
+      const sty = Math.floor(player.renderY);
+      let nearStairs = false;
+      for (let oy = -1; oy <= 1 && !nearStairs; oy += 1) {
+        for (let ox = -1; ox <= 1; ox += 1) {
+          if (isUpperStairsCell(stx + ox, sty + oy)) {
+            nearStairs = true;
+            break;
+          }
+        }
+      }
+      if (!nearStairs && state.predictedLayer !== player.layer) {
+        state.predictedLayer = player.layer;
+      }
+    }
     // Carry ship render-interpolation state across snapshot replaces so hulls
     // glide instead of stepping at the snapshot rate.
     if (player.ship && prevShip && prevShip.id === player.ship.id) {
@@ -2861,6 +2935,7 @@ function predictLocalPlayer(player, dt) {
   }
   player.renderX = moved.x;
   player.renderY = moved.y;
+  predictTownLayer(player.renderX, player.renderY);
   player.facing = Math.atan2(dy, dx);
   player.renderMoving = true;
   return true;
@@ -6376,6 +6451,8 @@ function clearWorldState() {
   state.caveEntrances.clear();
   state.buildings.clear();
   state.roadsides.clear();
+  state.upperCells.clear();
+  state.predictedLayer = 0;
   state.spaceObjects.clear();
   state.requestedChunks.clear();
   state.population = 0;
@@ -6531,6 +6608,25 @@ function indexChunkRoadsides(chunk) {
   }
   if (globalThis.BalathorMinigames) {
     BalathorMinigames.onChunk(chunk);
+  }
+}
+
+function indexChunkUpperCells(chunk) {
+  const minX = chunk.cx * CHUNK_SIZE;
+  const minY = chunk.cy * CHUNK_SIZE;
+  const maxX = minX + CHUNK_SIZE;
+  const maxY = minY + CHUNK_SIZE;
+
+  for (const [key, cell] of [...state.upperCells.entries()]) {
+    if (cell.x >= minX && cell.x < maxX && cell.y >= minY && cell.y < maxY) {
+      state.upperCells.delete(key);
+    }
+  }
+
+  for (const cell of chunk.upperCells || []) {
+    if (cell && Number.isFinite(cell.x) && Number.isFinite(cell.y)) {
+      state.upperCells.set(`${cell.x},${cell.y}`, cell);
+    }
   }
 }
 
@@ -8479,6 +8575,7 @@ function draw() {
   drawPortals();
   drawCaravans();
   drawPlayers();
+  drawUpperDeckLayer();
   drawFountainTossFx(halfW, halfH);
   drawTreeCanopies();
   drawCombatFx();
@@ -9281,6 +9378,7 @@ function drawWorld() {
   drawWorldLoot();
   drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY);
   drawRoadsideFeatures(minTileX, maxTileX, minTileY, maxTileY);
+  drawUpperDeckShadows(minTileX, maxTileX, minTileY, maxTileY);
   if (globalThis.BalathorMinigames) {
     BalathorMinigames.drawMinigameSites(minTileX, maxTileX, minTileY, maxTileY);
   }
@@ -12369,8 +12467,27 @@ function getPlayerBuilding() {
 }
 
 /** Hide everyone except yourself when they are inside a house you are not in (roof occlusion). */
+/**
+ * Render layer for an entity: 1 = town sky promenade (bridges/balcony decks).
+ * Entities standing on stair cells also render above the deck overlay so the
+ * climb reads correctly.
+ */
+function effEntityLayer(entity) {
+  if (entity.id === state.selfId) {
+    if (state.predictedLayer === 1) return 1;
+  } else if (entity.layer === 1) {
+    return 1;
+  }
+  const wx = Number.isFinite(entity.renderX) ? entity.renderX : entity.x;
+  const wy = Number.isFinite(entity.renderY) ? entity.renderY : entity.y;
+  return isUpperStairsCell(Math.floor(wx), Math.floor(wy)) ? 1 : 0;
+}
+
 function entityHiddenByBuildingRoof(entity, viewerBuilding) {
   if (entity.id === state.selfId) {
+    return false;
+  }
+  if (effEntityLayer(entity) === 1) {
     return false;
   }
   const wx = Number.isFinite(entity.renderX) ? entity.renderX : entity.x;
@@ -12623,7 +12740,8 @@ function isInteriorDrawTile(tile) {
     tile === TILE.FIREPLACE ||
     tile === TILE.CHAIR ||
     tile === TILE.CHEST ||
-    tile === TILE.HOME_TREE;
+    tile === TILE.HOME_TREE ||
+    tile === TILE.STAIRS;
 }
 
 function isNpcRestingOnBench(npc) {
@@ -12846,6 +12964,11 @@ function drawPlayers() {
   const renderedShips = new Set();
 
   for (const { entity, isNpc, isMob } of entities) {
+    if (!isMob && !entity.ship?.boarded && effEntityLayer(entity) === 1) {
+      // Sky-promenade entities draw above the deck overlay, not under it.
+      _upperEntityQueue.push({ entity, isNpc });
+      continue;
+    }
     if (entityHiddenByBuildingRoof(entity, viewerBuilding)) {
       continue;
     }
@@ -16372,6 +16495,25 @@ function drawInteriorTile(tile, sx, sy, tx, ty) {
     return;
   }
 
+  if (tile === TILE.STAIRS) {
+    // Indoor staircase climbing north: light treads at the top, dark below.
+    const steps = 5;
+    for (let i = 0; i < steps; i += 1) {
+      ctx.fillStyle = blend("#5e3a1c", "#e2b378", i / (steps - 1));
+      ctx.fillRect(sx + 4, sy + TILE_SIZE - (i + 1) * (TILE_SIZE / steps), TILE_SIZE - 8, TILE_SIZE / steps - 1);
+    }
+    ctx.fillStyle = "#46280f";
+    ctx.fillRect(sx + 2, sy, 3, TILE_SIZE);
+    ctx.fillRect(sx + TILE_SIZE - 5, sy, 3, TILE_SIZE);
+    // Banister knobs
+    ctx.fillStyle = "#caa05e";
+    ctx.beginPath();
+    ctx.arc(sx + 3.5, sy + TILE_SIZE - 3, 2.5, 0, Math.PI * 2);
+    ctx.arc(sx + TILE_SIZE - 3.5, sy + TILE_SIZE - 3, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+
   if (tile === TILE.BED) {
     drawEllipseShadow(sx + 4, sy + 23, 24, 6, 0.24);
     ctx.fillStyle = "#5e3b28";
@@ -17162,6 +17304,178 @@ function drawOwnedHouseInteriorCompanion(building, roofless, halfW, halfH) {
   drawCharacter(ent, anchor.cx, anchor.groundY + groundBump, true, poseExtras);
 }
 
+/** Entities living on the town's second level this frame (drawn above the deck). */
+let _upperEntityQueue = [];
+
+/** Soft drop-shadows the bridges/platforms cast on the ground below. */
+function drawUpperDeckShadows(minTileX, maxTileX, minTileY, maxTileY) {
+  if (!state.upperCells.size) return;
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  ctx.fillStyle = "rgba(20,26,18,0.22)";
+  for (const cell of state.upperCells.values()) {
+    if (cell.x < minTileX || cell.x > maxTileX || cell.y < minTileY || cell.y > maxTileY) continue;
+    if (cell.kind === "stairs") continue;
+    const sx = Math.floor(cell.x * TILE_SIZE - state.camera.x + halfW);
+    const sy = Math.floor(cell.y * TILE_SIZE - state.camera.y + halfH);
+    ctx.fillRect(sx + 4, sy + 7, TILE_SIZE, TILE_SIZE);
+  }
+}
+
+/**
+ * Town second level: plank decks, bridges, balconies and stairs — drawn above
+ * every ground entity, then the entities standing on the deck above that.
+ * This is what makes the two layers readable: people under a bridge slide
+ * beneath it, people on it walk across the planks.
+ */
+function drawUpperDeckLayer() {
+  const queue = _upperEntityQueue;
+  _upperEntityQueue = [];
+  if (!state.upperCells.size && !queue.length) return;
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const zoom = getEffectiveWorldZoom(state.players.get(state.selfId));
+  const minTileX = Math.floor((state.camera.x - halfW / zoom) / TILE_SIZE) - 2;
+  const maxTileX = Math.ceil((state.camera.x + halfW / zoom) / TILE_SIZE) + 2;
+  const minTileY = Math.floor((state.camera.y - halfH / zoom) / TILE_SIZE) - 2;
+  const maxTileY = Math.ceil((state.camera.y + halfH / zoom) / TILE_SIZE) + 2;
+
+  const visible = [];
+  for (const cell of state.upperCells.values()) {
+    if (cell.x < minTileX || cell.x > maxTileX || cell.y < minTileY || cell.y > maxTileY) continue;
+    visible.push(cell);
+  }
+
+  // Plank bases first, then railings so rails overlap neighbouring planks.
+  for (const cell of visible) {
+    const sx = Math.floor(cell.x * TILE_SIZE - state.camera.x + halfW);
+    const sy = Math.floor(cell.y * TILE_SIZE - state.camera.y + halfH);
+    if (cell.kind === "stairs") {
+      drawUpperStairsCell(cell, sx, sy);
+    } else {
+      drawUpperPlankCell(cell, sx, sy);
+    }
+  }
+  for (const cell of visible) {
+    if (cell.kind === "stairs") continue;
+    const sx = Math.floor(cell.x * TILE_SIZE - state.camera.x + halfW);
+    const sy = Math.floor(cell.y * TILE_SIZE - state.camera.y + halfH);
+    drawUpperRailings(cell, sx, sy);
+  }
+
+  queue.sort((a, b) => a.entity.renderY - b.entity.renderY);
+  for (const { entity, isNpc } of queue) {
+    const sx = Math.floor(entity.renderX * TILE_SIZE - state.camera.x + halfW);
+    const sy = Math.floor(entity.renderY * TILE_SIZE - state.camera.y + halfH);
+    drawCharacter(entity, sx, sy, isNpc);
+    drawShieldBuff(entity, sx, sy);
+  }
+}
+
+function drawUpperPlankCell(cell, sx, sy) {
+  const bridge = cell.kind === "bridge";
+  ctx.fillStyle = bridge ? "#9c6b40" : "#a8754a";
+  ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
+  // Planks: bridges run east-west, decks north-south.
+  ctx.fillStyle = bridge ? "#b8855a" : "#c08a5c";
+  if (bridge) {
+    for (let i = 2; i < TILE_SIZE; i += 7) {
+      ctx.fillRect(sx, sy + i, TILE_SIZE, 4);
+    }
+    ctx.fillStyle = "rgba(60,32,14,0.4)";
+    for (let i = 0; i <= TILE_SIZE; i += 8) {
+      ctx.fillRect(sx + i, sy, 1, TILE_SIZE);
+    }
+  } else {
+    for (let i = 2; i < TILE_SIZE; i += 7) {
+      ctx.fillRect(sx + i, sy, 4, TILE_SIZE);
+    }
+    ctx.fillStyle = "rgba(60,32,14,0.4)";
+    for (let i = 0; i <= TILE_SIZE; i += 8) {
+      ctx.fillRect(sx, sy + i, TILE_SIZE, 1);
+    }
+  }
+  // Worn highlight
+  if (hash2(cell.x, cell.y, 6311) > 0.8) {
+    ctx.fillStyle = "rgba(255,236,200,0.10)";
+    ctx.fillRect(sx + 4, sy + 4, TILE_SIZE - 8, TILE_SIZE - 8);
+  }
+}
+
+function drawUpperRailings(cell, sx, sy) {
+  const edges = Number(cell.edges) || 0;
+  const railCol = "#6e4424";
+  const postCol = "#4e2e16";
+  const railTop = (x0, x1, y0) => {
+    ctx.fillStyle = railCol;
+    ctx.fillRect(x0, y0 - 8, x1 - x0, 3);
+    ctx.fillStyle = postCol;
+    for (let px = x0; px < x1; px += 10) {
+      ctx.fillRect(px, y0 - 8, 2, 9);
+    }
+  };
+  if (edges & 1) railTop(sx, sx + TILE_SIZE, sy + 2);
+  if (edges & 4) {
+    // South rail: posts + a flower box now and then (cute factor).
+    ctx.fillStyle = railCol;
+    ctx.fillRect(sx, sy + TILE_SIZE - 9, TILE_SIZE, 3);
+    ctx.fillStyle = postCol;
+    for (let px = sx; px < sx + TILE_SIZE; px += 10) {
+      ctx.fillRect(px, sy + TILE_SIZE - 9, 2, 9);
+    }
+    if (hash2(cell.x, cell.y, 6313) > 0.62) {
+      ctx.fillStyle = "#5c3c20";
+      ctx.fillRect(sx + 8, sy + TILE_SIZE - 13, 16, 5);
+      const cols = ["#ff8fa3", "#ffd24a", "#9ad0ff"];
+      for (let i = 0; i < 3; i += 1) {
+        ctx.fillStyle = cols[(i + cell.x) % 3 < 0 ? 0 : (i + cell.x) % 3];
+        ctx.beginPath();
+        ctx.arc(sx + 11 + i * 5, sy + TILE_SIZE - 14, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+  if (edges & 2) {
+    ctx.fillStyle = railCol;
+    ctx.fillRect(sx + TILE_SIZE - 3, sy - 6, 3, TILE_SIZE + 6);
+  }
+  if (edges & 8) {
+    ctx.fillStyle = railCol;
+    ctx.fillRect(sx, sy - 6, 3, TILE_SIZE + 6);
+  }
+  // Little lantern at sparse posts
+  if ((edges & 5) && hash2(cell.x, cell.y, 6314) > 0.88) {
+    const lx = sx + TILE_SIZE - 6;
+    const ly = (edges & 1) ? sy - 8 : sy + TILE_SIZE - 12;
+    const grad = ctx.createRadialGradient(lx, ly, 1, lx, ly, 9);
+    grad.addColorStop(0, "rgba(255,214,130,0.55)");
+    grad.addColorStop(1, "rgba(255,214,130,0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(lx - 9, ly - 9, 18, 18);
+    ctx.fillStyle = "#ffd886";
+    ctx.fillRect(lx - 2, ly - 2, 4, 5);
+  }
+}
+
+/** Exterior stair run cell — treads climbing toward cell.dir ("n" or "s"). */
+function drawUpperStairsCell(cell, sx, sy) {
+  const up = cell.dir !== "s"; // deck side is north unless flagged
+  ctx.fillStyle = "#8a5c34";
+  ctx.fillRect(sx + 2, sy, TILE_SIZE - 4, TILE_SIZE);
+  const steps = 5;
+  for (let i = 0; i < steps; i += 1) {
+    const frac = i / (steps - 1);
+    const t = up ? frac : 1 - frac;
+    ctx.fillStyle = blend("#5e3a1c", "#d8a96e", t);
+    const yy = sy + (up ? TILE_SIZE - (i + 1) * (TILE_SIZE / steps) : i * (TILE_SIZE / steps));
+    ctx.fillRect(sx + 3, yy, TILE_SIZE - 6, TILE_SIZE / steps - 1);
+  }
+  // Side stringers
+  ctx.fillStyle = "#46280f";
+  ctx.fillRect(sx, sy, 3, TILE_SIZE);
+  ctx.fillRect(sx + TILE_SIZE - 3, sy, 3, TILE_SIZE);
+}
+
 function drawIntimateBlackoutOverlay() {
   if (!state.joined || !(state.intimateBlackoutUntil > 0)) {
     return;
@@ -17264,12 +17578,12 @@ function drawBuildingSprite(building, sx, sy, roofless) {
   const type = building.type || "house";
   if (!roofless) drawCastShadow(sx + 10, sy + h - 14, w - 6, 18, 0.28);
   if (type === "tower") drawTower(building, sx, sy, w, h);
-  else if (type === "hut") drawHut(building, sx, sy, w, h, variant, roofless);
-  else if (type === "big_house") drawBigHouse(building, sx, sy, w, h, variant, roofless);
+  else if (type === "hut") drawCuteCottage(building, sx, sy, w, h, variant, roofless, "hut");
+  else if (type === "big_house") drawCuteCottage(building, sx, sy, w, h, variant, roofless, "big");
   else if (type === "treehouse") drawTreehouse(building, sx, sy, w, h, variant, roofless);
   else if (type === "castle") drawCastle(building, sx, sy, w, h, variant, roofless);
   else if (type === "fletcher") drawFletcherBuilding(building, sx, sy, w, h, roofless);
-  else drawHouse(building, sx, sy, w, h, variant, roofless);
+  else drawCuteCottage(building, sx, sy, w, h, variant, roofless, "house");
 
   // Owner name or for-sale sign
   const key = `${building.x},${building.y}`;
@@ -17344,8 +17658,13 @@ function getBuildingVariant(building) {
   if (n.includes("Oasis") || n.includes("Sun") || n.includes("Clay") || n.includes("Sand") || n.includes("Palace")) return "desert";
   if (n.includes("Ember") || n.includes("Ash") || n.includes("Forge") || n.includes("Watcher")) return "ember";
   if (n.includes("Forest") || n.includes("Ranger") || n.includes("Woodland") || n.includes("Lodge") || n.includes("Perch")) return "wood";
-  return "timber";
+  // Everything else (procedural settlements included) rolls a pastel cottage
+  // palette by position so the cute look spreads across the fantasy world.
+  const roll = hash2(building.x | 0, building.y | 0, 6161);
+  return COTTAGE_PASTEL_STYLES[Math.floor(roll * COTTAGE_PASTEL_STYLES.length)] || "timber";
 }
+
+const COTTAGE_PASTEL_STYLES = ["rose", "cream", "sage", "sky", "honey", "lilac", "mint", "timber"];
 
 const BUILDING_PALETTES = {
   timber: { roofBase: "#9c4c1a", roofDark: "#6a2e0e", roofMid: "#b86030", roofLight: "#d4884a", roofRidge: "#3c1808", eave: "#3c1808", wall: "#7a4a22", wallLight: "#a06838", wallDark: "#4a2c10", wallLine: "#3a1e0a", win: "#b8deff", door: "#2c1408", doorFrame: "#c07830", ground: "#5a7a44" },
@@ -17359,6 +17678,8 @@ const BUILDING_PALETTES = {
   sage:   { roofBase: "#5e7e54", roofDark: "#3e5a38", roofMid: "#739668", roofLight: "#94b486", roofRidge: "#28401e", eave: "#28401e", wall: "#e8e0c8", wallLight: "#f6f0dc", wallDark: "#b8ac8c", wallLine: "#8a7e60", win: "#cdeffa", door: "#54382a", doorFrame: "#b08c5c", ground: "#5a7a44" },
   sky:    { roofBase: "#5878a0", roofDark: "#3a5276", roofMid: "#7090b4", roofLight: "#94b0d0", roofRidge: "#243650", eave: "#243650", wall: "#eef2f4", wallLight: "#fbfdff", wallDark: "#bcc8d0", wallLine: "#8898a4", win: "#ffe9b8", door: "#4e5a78", doorFrame: "#a8bcd4", ground: "#5a7a44" },
   honey:  { roofBase: "#c08a36", roofDark: "#92621e", roofMid: "#d4a050", roofLight: "#ecc278", roofRidge: "#5c3c10", eave: "#5c3c10", wall: "#f4dcb0", wallLight: "#fdeece", wallDark: "#c8a878", wallLine: "#9a7c4e", win: "#c4ecff", door: "#6a4424", doorFrame: "#dcb068", ground: "#5a7a44" },
+  lilac:  { roofBase: "#8a6aa8", roofDark: "#604880", roofMid: "#a384c0", roofLight: "#c4a8dc", roofRidge: "#42305c", eave: "#42305c", wall: "#f4ecf8", wallLight: "#fdf8ff", wallDark: "#c8b8d8", wallLine: "#94809f", win: "#ffe9b8", door: "#5c4470", doorFrame: "#c0a4d8", ground: "#5a7a44" },
+  mint:   { roofBase: "#4f9678", roofDark: "#356c54", roofMid: "#68ac8c", roofLight: "#8eccac", roofRidge: "#1f4434", eave: "#1f4434", wall: "#ecf6ec", wallLight: "#f9fff8", wallDark: "#b8d0bc", wallLine: "#86a088", win: "#ffe9b8", door: "#3c5c4a", doorFrame: "#9cc8ac", ground: "#5a7a44" },
 };
 
 function getFrontDoorOpenFactor(building, roofless) {
@@ -17408,6 +17729,316 @@ function drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, openT, framePad = 2,
   ctx.fillRect(leftX + 2, doorY + Math.round(doorH / 2) - 1, 3, 3);
   ctx.fillRect(rightX + halfW - 5, doorY + Math.round(doorH / 2) - 1, 3, 3);
   ctx.globalAlpha = 1;
+}
+
+/**
+ * Cute cottage renderer — Pokemon/Fable village vibes. Replaces the old flat
+ * box houses for hut/house/big_house: rounded or swooped roofs with scalloped
+ * shingles, fat chimneys with smoke, warm glowing windows with flower boxes,
+ * arched doors, vines and per-style pastel palettes. Two-story buildings get
+ * a taller façade with an upper window row and a little balcony rail.
+ */
+function drawCuteCottage(building, sx, sy, w, h, variant, roofless, kind) {
+  const p = BUILDING_PALETTES[variant] || BUILDING_PALETTES.timber;
+  const seedA = hash2(building.x | 0, building.y | 0, 4451);
+  const seedB = hash2(building.x | 0, building.y | 0, 4452);
+  /** Roof silhouette: 0 = rounded dome, 1 = swooped gable, 2 = scalloped thatch. */
+  const shape = kind === "hut" ? (seedA > 0.55 ? 2 : 0) : seedA > 0.62 ? 0 : seedA > 0.24 ? 1 : 2;
+  const twoStory = Boolean(building.twoStory);
+
+  const wallH = twoStory
+    ? Math.max(56, Math.min(84, Math.round(h * 0.40)))
+    : Math.max(38, Math.min(58, Math.round(h * (kind === "hut" ? 0.34 : 0.28))));
+  const roofH = h - wallH;
+  const wallY = sy + roofH;
+  const left = sx - 3;
+  const right = sx + w + 3;
+  const fw = right - left;
+
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.30)";
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetX = 4;
+  ctx.shadowOffsetY = 6;
+
+  if (!roofless) {
+    // --- ROOF ---
+    const peakY = sy + 2;
+    const eaveY = wallY + 2;
+    const midX = (left + right) / 2;
+    const traceRoofPath = () => {
+      ctx.beginPath();
+      if (shape === 0 || shape === 2) {
+        // Rounded cap
+        ctx.moveTo(left - 4, eaveY);
+        ctx.quadraticCurveTo(left + fw * 0.04, peakY + roofH * 0.22, midX, peakY);
+        ctx.quadraticCurveTo(right - fw * 0.04, peakY + roofH * 0.22, right + 4, eaveY);
+      } else {
+        // Swooped gable (concave Fable eaves)
+        ctx.moveTo(left - 6, eaveY);
+        ctx.quadraticCurveTo(left + fw * 0.30, eaveY - roofH * 0.52, midX, peakY);
+        ctx.quadraticCurveTo(right - fw * 0.30, eaveY - roofH * 0.52, right + 6, eaveY);
+      }
+      ctx.closePath();
+    };
+    ctx.fillStyle = p.roofBase;
+    traceRoofPath();
+    ctx.fill();
+    ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+
+    // Shingle / thatch texture clipped to the roof shape
+    ctx.save();
+    ctx.clip();
+    if (shape === 2) {
+      // Thatch: chunky soft bands
+      for (let i = 0; i <= 7; i += 1) {
+        const ty2 = peakY + (i / 7) * (eaveY - peakY);
+        ctx.fillStyle = i % 2 === 0 ? p.roofMid : p.roofDark;
+        ctx.beginPath();
+        ctx.moveTo(left - 8, ty2 + 6);
+        ctx.quadraticCurveTo(midX, ty2 - 5, right + 8, ty2 + 6);
+        ctx.lineTo(right + 8, ty2 + 12);
+        ctx.quadraticCurveTo(midX, ty2 + 2, left - 8, ty2 + 12);
+        ctx.closePath();
+        ctx.fill();
+      }
+    } else {
+      // Scalloped shingle rows
+      const rowH = 9;
+      let row = 0;
+      for (let ty2 = peakY + 6; ty2 < eaveY + rowH; ty2 += rowH - 2) {
+        ctx.fillStyle = row % 2 === 0 ? p.roofMid : p.roofBase;
+        const offset = row % 2 === 0 ? 0 : 7;
+        for (let lx = left - 10 + offset; lx < right + 10; lx += 14) {
+          ctx.beginPath();
+          ctx.arc(lx + 7, ty2, 8, 0, Math.PI);
+          ctx.fill();
+        }
+        row += 1;
+      }
+      // Soft top highlight
+      ctx.fillStyle = "rgba(255,255,255,0.16)";
+      ctx.beginPath();
+      ctx.ellipse(midX - fw * 0.16, peakY + roofH * 0.22, fw * 0.22, roofH * 0.14, -0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // Roof outline + eave trim
+    ctx.strokeStyle = p.roofRidge;
+    ctx.lineWidth = 2.5;
+    traceRoofPath();
+    ctx.stroke();
+    ctx.fillStyle = p.eave;
+    ctx.fillRect(left - 5, wallY - 3, fw + 10, 6);
+    ctx.fillStyle = blend(p.eave, "#000000", 0.45);
+    ctx.fillRect(left - 5, wallY + 3, fw + 10, 2);
+
+    // Chimney with cosy smoke
+    const chimneyX = sx + Math.round(w * (0.62 + seedB * 0.14));
+    const chimneyTop = sy + Math.round(roofH * 0.18);
+    ctx.fillStyle = blend(p.wallDark, "#9a8478", 0.4);
+    ctx.fillRect(chimneyX - 5, chimneyTop, 11, Math.round(roofH * 0.4));
+    ctx.fillStyle = blend(p.wallDark, "#6a5448", 0.5);
+    ctx.fillRect(chimneyX - 7, chimneyTop - 4, 15, 6);
+    ctx.fillStyle = "rgba(235,235,235,0.30)";
+    for (let i = 0; i < 3; i += 1) {
+      ctx.beginPath();
+      ctx.arc(chimneyX + i * 3, chimneyTop - 9 - i * 8, 3.5 + i * 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Heart vent in the gable
+    if (shape === 1 && fw > 80) {
+      const hx = midX;
+      const hy = peakY + roofH * 0.30;
+      ctx.fillStyle = p.roofRidge;
+      ctx.beginPath();
+      ctx.arc(hx - 2.4, hy - 1.5, 3, 0, Math.PI * 2);
+      ctx.arc(hx + 2.4, hy - 1.5, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(hx - 5.2, hy - 0.4);
+      ctx.lineTo(hx, hy + 6);
+      ctx.lineTo(hx + 5.2, hy - 0.4);
+      ctx.closePath();
+      ctx.fill();
+    }
+  } else {
+    ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+  }
+
+  const doorOpen = getFrontDoorOpenFactor(building, roofless);
+  const doorW = façadeDoorPxFromBuilding(building, w);
+  const lowerWallH = twoStory ? Math.round(wallH * 0.52) : wallH;
+  const doorH = Math.min(lowerWallH - 2, 30);
+  const doorX = sx + Math.round(w / 2) - Math.round(doorW / 2);
+  const doorY = wallY + wallH - doorH;
+
+  if (!roofless) {
+    // --- WALLS (rounded corners, plaster + timber framing) ---
+    ctx.fillStyle = p.wall;
+    roundedRect(left, wallY, fw, wallH + 2, 5);
+    ctx.fill();
+    // Soft top light + side shade
+    ctx.fillStyle = p.wallLight;
+    ctx.fillRect(left + 2, wallY + 1, fw - 4, 3);
+    ctx.fillStyle = "rgba(0,0,0,0.16)";
+    ctx.fillRect(left, wallY + 4, 4, wallH - 4);
+    ctx.fillRect(right - 4, wallY + 4, 4, wallH - 4);
+
+    if (variant === "stone") {
+      ctx.fillStyle = p.wallDark;
+      for (let ly = 6; ly < wallH; ly += 10) {
+        const offset = Math.floor(ly / 10) % 2 === 0 ? 0 : 13;
+        for (let lx = -13 + offset; lx < fw; lx += 26) {
+          roundedRect(left + lx + 1, wallY + ly, 24, 8, 3);
+          ctx.fill();
+        }
+      }
+    } else if (variant === "timber" || variant === "wood") {
+      // Cottage timber framing
+      ctx.fillStyle = p.wallLine;
+      ctx.fillRect(left + 2, wallY + Math.round(wallH * 0.45), fw - 4, 2);
+      for (let lx = Math.round(fw * 0.18); lx < fw - 8; lx += Math.round(fw * 0.22)) {
+        ctx.fillRect(left + lx, wallY + 4, 2, wallH - 6);
+      }
+    }
+
+    if (twoStory) {
+      // Floor band + balcony rail between storeys
+      const bandY = wallY + Math.round(wallH * 0.48);
+      ctx.fillStyle = p.eave;
+      ctx.fillRect(left - 2, bandY, fw + 4, 4);
+      ctx.fillStyle = blend(p.eave, "#ffffff", 0.25);
+      for (let lx = 4; lx < fw - 2; lx += 8) {
+        ctx.fillRect(left + lx, bandY - 5, 2, 5);
+      }
+      // Upper windows
+      const uwY = wallY + 6;
+      const uwH = Math.max(9, Math.round(wallH * 0.48) - 16);
+      drawCuteWindow(sx + Math.round(w * 0.16), uwY, 11, uwH, p);
+      drawCuteWindow(sx + Math.round(w * 0.70), uwY, 11, uwH, p);
+      if (w >= 9 * TILE_SIZE) drawCuteWindow(sx + Math.round(w * 0.44), uwY, 11, uwH, p);
+    }
+
+    // Ground-floor windows with flower boxes
+    const gwY = twoStory ? wallY + Math.round(wallH * 0.52) + 7 : wallY + 6;
+    const gwH = Math.max(10, lowerWallH - 18);
+    const winXs = w >= 9 * TILE_SIZE ? [0.14, 0.78] : [0.18];
+    for (const fx of winXs) {
+      drawCuteWindow(sx + Math.round(w * fx), gwY, 12, gwH, p);
+    }
+    if (winXs.length === 1) drawCuteWindow(sx + Math.round(w * 0.72), gwY, 12, gwH, p);
+
+    // Arched doorway
+    ctx.fillStyle = p.doorFrame;
+    ctx.beginPath();
+    ctx.moveTo(doorX - 3, doorY + doorH);
+    ctx.lineTo(doorX - 3, doorY + 4);
+    ctx.arc(doorX + doorW / 2, doorY + 4, doorW / 2 + 3, Math.PI, 0);
+    ctx.lineTo(doorX + doorW + 3, doorY + doorH);
+    ctx.closePath();
+    ctx.fill();
+    if (doorOpen > 0.02) {
+      drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, doorOpen, 1, false);
+    } else {
+      ctx.fillStyle = p.door;
+      ctx.beginPath();
+      ctx.moveTo(doorX, doorY + doorH);
+      ctx.lineTo(doorX, doorY + 4);
+      ctx.arc(doorX + doorW / 2, doorY + 4, doorW / 2, Math.PI, 0);
+      ctx.lineTo(doorX + doorW, doorY + doorH);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = blend(p.door, "#ffffff", 0.18);
+      ctx.fillRect(doorX + 2, doorY + 4, Math.max(2, Math.round(doorW / 2) - 3), doorH - 8);
+      ctx.fillStyle = "#e8c040";
+      ctx.beginPath();
+      ctx.arc(doorX + doorW - 5, doorY + Math.round(doorH * 0.55), 1.8, 0, Math.PI * 2);
+      ctx.fill();
+      // Tiny round porch lamp
+      ctx.fillStyle = "rgba(255,214,130,0.85)";
+      ctx.beginPath();
+      ctx.arc(doorX - 7, doorY + 3, 2.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Climbing vine on one corner
+    if (seedB > 0.4) {
+      const vx = seedB > 0.7 ? left + 5 : right - 7;
+      ctx.strokeStyle = "rgba(74,124,58,0.85)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(vx, wallY + wallH);
+      ctx.quadraticCurveTo(vx + 4, wallY + wallH * 0.55, vx - 2, wallY + 6);
+      ctx.stroke();
+      ctx.fillStyle = "#6aa84f";
+      for (let i = 0; i < 4; i += 1) {
+        ctx.beginPath();
+        ctx.arc(vx + (i % 2 === 0 ? 3 : -2), wallY + wallH - 8 - i * (wallH / 5), 2.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  } else {
+    // Cutaway: facade outline only + open door (interior visible)
+    ctx.strokeStyle = blend(p.wallDark, p.wallLine, 0.5);
+    ctx.lineWidth = 2;
+    ctx.strokeRect(left + 0.5, wallY + 0.5, fw - 1, wallH - 1);
+    ctx.strokeStyle = blend(p.wallLight, "#000000", 0.35);
+    ctx.beginPath();
+    ctx.moveTo(left, wallY + 0.5);
+    ctx.lineTo(right, wallY + 0.5);
+    ctx.stroke();
+    drawSplitWoodenDoor(p, doorX, doorY, doorW, doorH, 1, 2, true);
+  }
+
+  ctx.restore();
+
+  // Front garden strip
+  drawBuildingFrontDetail(left, right, sy + h, variant, p);
+}
+
+/** Window with warm glow, round-arched top and a flower box. */
+function drawCuteWindow(x, y, w, h, p) {
+  // Glow halo
+  const grad = ctx.createRadialGradient(x + w / 2, y + h / 2, 1, x + w / 2, y + h / 2, w * 1.6);
+  grad.addColorStop(0, "rgba(255,214,130,0.35)");
+  grad.addColorStop(1, "rgba(255,214,130,0)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(x - w, y - h / 2, w * 3, h * 2);
+  // Frame + arched pane
+  ctx.fillStyle = p.wallDark;
+  ctx.beginPath();
+  ctx.moveTo(x - 1, y + h + 1);
+  ctx.lineTo(x - 1, y + 4);
+  ctx.arc(x + w / 2, y + 4, w / 2 + 1, Math.PI, 0);
+  ctx.lineTo(x + w + 1, y + h + 1);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#ffd886";
+  ctx.beginPath();
+  ctx.moveTo(x, y + h);
+  ctx.lineTo(x, y + 4);
+  ctx.arc(x + w / 2, y + 4, w / 2, Math.PI, 0);
+  ctx.lineTo(x + w, y + h);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.fillRect(x + 1, y + 2, Math.round(w / 2) - 1, Math.max(2, Math.round(h / 2) - 3));
+  ctx.fillStyle = p.wallDark;
+  ctx.fillRect(x + Math.round(w / 2), y, 1, h);
+  ctx.fillRect(x, y + Math.round(h / 2), w, 1);
+  // Flower box
+  ctx.fillStyle = "#6a4a2c";
+  ctx.fillRect(x - 2, y + h, w + 4, 4);
+  const flowerCols = ["#ff8fa3", "#ffd24a", "#9ad0ff", "#ff9d6b"];
+  for (let i = 0; i < 3; i += 1) {
+    ctx.fillStyle = flowerCols[(i + ((x | 0) % 4)) % flowerCols.length];
+    ctx.beginPath();
+    ctx.arc(x + 2 + i * (w / 2.6), y + h - 1, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 function drawHouse(building, sx, sy, w, h, variant, roofless) {
