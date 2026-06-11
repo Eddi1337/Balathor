@@ -50,6 +50,13 @@ When changing behavior, confine edits to the smallest section possible and avoid
 - `npcs.js`: `buildPirateNpcDefinitions()` places 8 pirate crew NPCs (`npc_pirate_*`, `npcTheme: "oceanus"`) around the island centre with shanty dialogue + `aiPersonality`; the runtime spawner snaps any pirate whose home lands on water back toward the island centre.
 - **Interior↔exterior ship mapping** (already in place, used by the ocean overhaul): the server keeps each aboard player's deck-frame position in `shipLocalX/shipLocalY` (axis-aligned to the deck, NOT world). `syncPlayerToShipLocal` sets `player.x = center + local`; passengers are dragged with the hull each tick (`index.js` ~4986). On the client, an exterior viewer draws a boarded nautical ship via `drawRotatedNauticalDeck` + `drawCharacterOnRotatedNauticalDeck`, which translate to ship center and `ctx.rotate(shipRenderFacing(ship))` (`withNauticalDeckRotation`) so deck-local figures appear oriented with the ship's heading — i.e. interior coords → deck-local → heading-rotated figures on the exterior hull.
 
+### Quests (definitions, dialogue, ocean line)
+
+- `index.js` `QUEST_DEFINITIONS`: each quest has `steps[]` of type `kill` (matched by `mobMatchesQuestStep` on `isShipPirate`/`campId`/`faction`/`biome`/`matchName`), `location` (radius trigger via `processQuestLocationObjectives`; uses ship center when boarded), or `talk` (completed by `npcId` in `activeQuestByNpc` — the step `target` is a map marker only). Optional `offer`/`complete` strings are in-character giver lines surfaced as `offerLine` in the `questOffer` payload and `completeLine`/`giverName` in the `quest_completed` message; the client renders the offer quote in the offer panel and the completion quote in chat.
+- **Mob targeting invariants:** `kill` steps only complete against mobs that actually spawn near the target. Tutorial slimes for `q_first_hunt` are hand-placed "Meadow Slime" fixed mobs in `createMobs()` just south of the home tree (fixed mobs bypass the 180-tile `PRIMARY_HUB_MOBS_CLEAR_RADIUS`). When adding kill quests, confirm a matching mob spawns at the target before shipping.
+- **Port Bilgewater pirate quest line** (`q_pirate_*`, givers `npc_pirate_*`): initiation→supplies→gunnery→charting→lost_treasure. Uses sailing location triggers at real islands (Iron Haven, Mariner's Rest, Black Cay), `oceanus_marauder`-faction kills off Storm Atoll, and the Storm Cay "Pirate Captain" boss. `buildPirateNpcDefinitions()` forwards `questIds` onto each giver.
+- `npcAi.js`: quest-giver NPCs with a nearby player get `hasQuestForPlayers` in their perception and a prompt hint to beckon adventurers over (no invented quest specifics).
+
 ### Systems modules
 
 - `npcs.js`: NPC templates/schedules/world-time integration.
