@@ -14013,6 +14013,215 @@ function computeIdleCharacterArms(kind, phase, bx, by, s) {
   }
 }
 
+/**
+ * Maps a fantasy armor torso style to its world-appropriate visual equivalent.
+ * Preserves the tier/richness but swaps the silhouette & palette vocabulary.
+ *
+ * Fantasy → Nautical (pirate/naval):
+ *   Heavy plate → naval greatcoat (cloak)
+ *   Knightplate  → naval coat (rangercloak)
+ *   Chainmail    → leather jerkin (leather)
+ *   Scale        → studded leather (battle)
+ *   Robe/wizardrobe → ship mage coat (robe)
+ *   Ascendant    → legendary naval coat (legendary)
+ *   Rangercloak  → stays as cloak
+ *   Legendary    → stays as legendary (treasure hunter's coat)
+ *   Otherwise    → cloth tunic stays, leather stays
+ *
+ * Fantasy → Sci-fi (orbital sector):
+ *   Knightplate  → sciFi plate (sciFi)
+ *   Plate/battle → sciFi plate (sciFi)
+ *   Robe/wizardrobe/ascendant → sciFi bodysuit (sciFi)
+ *   Chainmail/scale → sciFi (sciFi)
+ *   Legendary/crystal/fire/frost/runic/shadowweave/ascendant → sciFi
+ *   Rangercloak/cloak/leather → leather (scout suit — unchanged, already slim)
+ *   Otherwise    → sciFi
+ */
+function getWorldThemedTorsoStyle(style, classId) {
+  if (isSciFiWorld()) {
+    // Everything reads as sci-fi tech in the orbital sector
+    if (style === "rangercloak" || style === "cloak" || style === "leather") {
+      return style; // lightweight scout gear survives unchanged
+    }
+    return "sciFi";
+  }
+  if (isNauticalWorld()) {
+    // Heavy armor → naval coat silhouette
+    if (style === "knightplate" || style === "plate" || style === "battle" || style === "armor") {
+      return "rangercloak"; // broad navy greatcoat shares the flowing-edge silhouette
+    }
+    if (style === "chainmail" || style === "scale") {
+      return "leather"; // studded leather — practical sailor's vest
+    }
+    if (style === "wizardrobe" || style === "ascendant" || style === "robe") {
+      return "robe"; // ship mage coat — still long but without arcane motifs
+    }
+    if (style === "crystal" || style === "shadowweave" || style === "runic" ||
+        style === "fire" || style === "frost") {
+      return "cloak"; // weathered duster — oceanic practicality
+    }
+    // cloth, tunic, leather, rangercloak, legendary: unchanged
+    return style;
+  }
+  return style; // fantasy world — unchanged
+}
+
+/**
+ * Sci-fi world headgear: visored tech helmet whose silhouette scales with rarity rank.
+ * Mage → sleek psi-helm with antenna; Knight → heavy exo-visor with chin guard;
+ * Ranger → recon visor with side earpiece. No glow — tier shown by panel count + trim.
+ */
+function drawWorldThemedHelmet_SciFi(hx, hy, s, helColor, visorCol, fx, rank, classId) {
+  const vH = Math.round(5 * s);
+  const vW = Math.round(5 * s);
+  const vX = hx - Math.round(0.5 * s);
+  const vY = hy - Math.round(1.5 * s);
+
+  // Base helmet shell
+  ctx.fillStyle = helColor;
+  ctx.fillRect(vX, vY, vW, vH);
+
+  // Visor band
+  const visH = rank >= 3 ? Math.round(s * 1.5) : Math.round(s);
+  ctx.fillStyle = visorCol;
+  ctx.fillRect(vX + Math.round(s * 0.5), vY + Math.round(s * 1.5), vW - s, visH);
+
+  // Trim stripe (silver for common, gold for legendary)
+  ctx.fillStyle = rank >= 4 ? "#ffd700" : blend(helColor, "#ffffff", 0.35);
+  ctx.fillRect(vX, vY, vW, Math.max(2, Math.round(s * 0.5)));
+
+  // Class-specific detail
+  if (classId === "mage") {
+    // Psi antenna — thin rod above helmet
+    ctx.fillStyle = rank >= 4 ? "#ffd700" : visorCol;
+    ctx.fillRect(hx + Math.round(2 * s), vY - Math.round((2 + rank * 0.5) * s), Math.max(2, Math.round(s * 0.6)), Math.round((2 + rank * 0.5) * s));
+    // Antenna tip bulb
+    ctx.beginPath();
+    ctx.arc(hx + Math.round(2.3 * s), vY - Math.round((2 + rank * 0.5) * s), Math.max(2, Math.round(s * 0.7)), 0, Math.PI * 2);
+    ctx.fillStyle = visorCol;
+    ctx.fill();
+  } else if (classId === "knight") {
+    // Chin guard bar
+    ctx.fillStyle = blend(helColor, "#000000", 0.3);
+    ctx.fillRect(vX, vY + vH - s, vW, s);
+    // Faceplate center ridge
+    ctx.fillStyle = blend(helColor, "#ffffff", 0.2);
+    ctx.fillRect(vX + Math.round(vW / 2) - 1, vY, 2, vH - s);
+    // High-rank double pauldron crown
+    if (rank >= 4) {
+      ctx.fillStyle = rank >= 5 ? "#ffd700" : blend(helColor, "#ffffff", 0.3);
+      ctx.fillRect(vX - Math.round(s * 0.7), vY, Math.round(s * 0.7), Math.round(vH * 0.7));
+      ctx.fillRect(vX + vW, vY, Math.round(s * 0.7), Math.round(vH * 0.7));
+    }
+  } else if (classId === "ranger") {
+    // Side earpiece
+    ctx.fillStyle = blend(helColor, "#000000", 0.25);
+    ctx.fillRect(vX + vW, vY + Math.round(s), Math.round(s * 1.2), Math.round(s * 2));
+    // Lens dot
+    ctx.fillStyle = visorCol;
+    ctx.beginPath();
+    ctx.arc(vX + vW + Math.round(s * 0.6), vY + Math.round(s * 2), Math.max(2, Math.round(s * 0.5)), 0, Math.PI * 2);
+    ctx.fill();
+    // Rank stripe
+    if (rank >= 3) {
+      ctx.fillStyle = rank >= 4 ? "#ffd700" : visorCol;
+      ctx.fillRect(vX, vY + vH - Math.round(s * 1.5), vW, Math.max(2, Math.round(s * 0.5)));
+    }
+  }
+}
+
+/**
+ * Nautical/pirate world headgear — replaces fantasy headgear with ocean-themed equivalents.
+ * Mage → tricorne hat (pointed brim, feather plume); Knight → captain's bicorne with epaulette trim;
+ * Ranger → cloth bandana with tied knot. Tier reads through hat decoration richness.
+ */
+function drawWorldThemedHelmet_Nautical(hx, hy, s, helColor, trimColor, fx, rank, classId, torsoColor) {
+  if (classId === "mage") {
+    // Tricorne hat — three-cornered brim + dome
+    const brimW = Math.round(11 * s);
+    const brimH = Math.round(2 * s);
+    const brimX = hx - Math.round(3 * s);
+    const brimY = hy - Math.round(1.5 * s);
+    const domeH = Math.round((3 + rank * 0.8) * s);
+    ctx.fillStyle = blend(torsoColor, "#2a1408", 0.55); // dark navy/charcoal
+    // Brim ellipse
+    ctx.beginPath();
+    ctx.ellipse(hx + Math.round(2.5 * s), brimY + brimH, brimW / 2, brimH, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Dome (trapezoid)
+    ctx.fillStyle = blend(torsoColor, "#2a1408", 0.55);
+    ctx.beginPath();
+    ctx.moveTo(brimX + s, brimY + brimH);
+    ctx.lineTo(brimX + brimW - s, brimY + brimH);
+    ctx.lineTo(hx + Math.round(3.5 * s), brimY - domeH);
+    ctx.lineTo(hx + Math.round(1.5 * s), brimY - domeH);
+    ctx.closePath();
+    ctx.fill();
+    // Trim band
+    ctx.fillStyle = rank >= 4 ? "#ffd700" : trimColor;
+    ctx.fillRect(brimX + s, brimY + brimH - Math.round(2 * s), brimW - 2 * s, Math.max(2, Math.round(s * 0.7)));
+    // Feather plume (taller with rank)
+    const featherH = Math.round((2 + rank) * s);
+    ctx.fillStyle = rank >= 4 ? "#ffd700" : blend(trimColor, "#ffffff", 0.2);
+    ctx.fillRect(hx + Math.round(2 * s), brimY - domeH - featherH, Math.max(2, Math.round(s * 0.7)), featherH);
+    ctx.fillRect(hx + Math.round(s), brimY - domeH - featherH, Math.max(2, Math.round(2.5 * s)), Math.max(2, s));
+  } else if (classId === "knight") {
+    // Captain's bicorne — flat oval brim with front-back peaks
+    const brimW = Math.round(9 * s);
+    const brimH = Math.round(1.8 * s);
+    const brimX = hx - Math.round(2 * s);
+    const brimY = hy - Math.round(s);
+    const domeH = Math.round((2.5 + rank * 0.7) * s);
+    ctx.fillStyle = blend(helColor, "#1a2030", 0.6);
+    ctx.beginPath();
+    ctx.ellipse(hx + Math.round(2.5 * s), brimY + brimH, brimW / 2, brimH, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillRect(brimX + s, brimY - domeH + brimH, brimW - 2 * s, domeH);
+    // Gold trim braid
+    ctx.fillStyle = rank >= 4 ? "#ffd700" : blend(trimColor, "#c8a828", 0.4);
+    ctx.fillRect(brimX + s, brimY + brimH - Math.round(1.5 * s), brimW - 2 * s, Math.max(2, Math.round(s * 0.6)));
+    // Epaulette-style cockade button
+    ctx.fillStyle = rank >= 4 ? "#ffd700" : trimColor;
+    ctx.beginPath();
+    ctx.arc(hx + Math.round(2.5 * s), brimY + brimH - Math.round(1.5 * s), Math.max(2, Math.round(s * 0.8)), 0, Math.PI * 2);
+    ctx.fill();
+    // High-rank: extra cross-anchor emblem on dome
+    if (rank >= 4) {
+      ctx.fillStyle = "#ffd700";
+      ctx.fillRect(hx + Math.round(2 * s), brimY - domeH + brimH + Math.round(s * 0.5), Math.max(2, s), Math.round(domeH * 0.5));
+      ctx.fillRect(hx + Math.round(s), brimY - domeH + brimH + Math.round(domeH * 0.25), Math.round(3 * s), Math.max(2, Math.round(s * 0.5)));
+    }
+  } else if (classId === "ranger") {
+    // Cloth bandana — wrapped over head with tied knot at back
+    const bandH = Math.round(3 * s);
+    const bandY = hy - Math.round(0.5 * s);
+    ctx.fillStyle = blend(torsoColor, "#5a2e10", 0.45);
+    ctx.fillRect(hx - Math.round(s), bandY, Math.round(7 * s), bandH);
+    // Folded top edge
+    ctx.fillStyle = blend(torsoColor, "#3a1e08", 0.55);
+    ctx.fillRect(hx - Math.round(s), bandY, Math.round(7 * s), Math.round(s * 0.7));
+    // Trim stripe
+    ctx.fillStyle = rank >= 4 ? "#ffd700" : trimColor;
+    ctx.fillRect(hx - Math.round(s), bandY + Math.round(s * 0.7), Math.round(7 * s), Math.max(2, Math.round(s * 0.4)));
+    // Knot on back
+    ctx.fillStyle = blend(torsoColor, "#3a1e08", 0.55);
+    ctx.fillRect(hx + Math.round(5 * s), bandY + Math.round(s), Math.round(2.5 * s), Math.round(1.5 * s));
+    // Rank: coin / medallion accent on front
+    if (rank >= 3) {
+      ctx.fillStyle = rank >= 4 ? "#ffd700" : trimColor;
+      ctx.beginPath();
+      ctx.arc(hx + Math.round(s), bandY + Math.round(s * 1.5), Math.max(2, Math.round(s * 0.7)), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else {
+    // Default: simple cloth bandana for unrecognized classes
+    ctx.fillStyle = blend(torsoColor, "#2a1408", 0.5);
+    ctx.fillRect(hx - Math.round(s), hy - Math.round(s), Math.round(7 * s), Math.round(3 * s));
+    ctx.fillStyle = rank >= 4 ? "#ffd700" : trimColor;
+    ctx.fillRect(hx - Math.round(s), hy - Math.round(s), Math.round(7 * s), Math.max(2, Math.round(s * 0.5)));
+  }
+}
+
 function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const isMod = !!entity.isMod;
   // Players appear smaller when walking around inside a ship deck so the interior feels spacious
@@ -14148,8 +14357,9 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
     ctx.fillRect(bx +     s,     by + 5 * s + legWalk,  4 * s, 2 * s);
   }
 
-  // Torso
-  drawTorso2(bx - 4 * s, by - 3 * s, s, torsoStyle, torsoColor, weaponColor, entity.classId, fx, fy);
+  // Torso — apply world-theme visual remapping so armor reads as world-appropriate
+  const themedTorsoStyle = getWorldThemedTorsoStyle(torsoStyle, entity.classId);
+  drawTorso2(bx - 4 * s, by - 3 * s, s, themedTorsoStyle, torsoColor, weaponColor, entity.classId, fx, fy);
 
   if (isNpc && entity.romanceSilhouette === "soft_curves" && !lyingBedPose && !compressLowerBody) {
     const bustTint = blend(torsoColor, "#ffd6e8", 0.42);
@@ -14335,9 +14545,18 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
     ctx.fillStyle = entity.hairColor || weaponColor;
     ctx.fillRect(hx, hy, 5 * s, s + 1);
 
+    // World-theme headgear remapping — same rarity tier reads through material quality, not glow
+    if (isSciFiWorld() && !sciFiNpc && equipRarityRank >= 1) {
+      // Sci-fi visor helmet — replaces all fantasy headgear for players in the orbital sector
+      drawWorldThemedHelmet_SciFi(hx, hy, s, helmetColor, visorColor, fx, equipRarityRank, entity.classId);
+    } else if (isNauticalWorld() && !sciFiNpc && equipRarityRank >= 1) {
+      // Nautical/pirate headgear — tricorne for mages, bandana for rangers, captain hat for knights
+      drawWorldThemedHelmet_Nautical(hx, hy, s, helmetColor, weaponColor, fx, equipRarityRank, entity.classId, torsoColor);
+    } else
+
     // Class-specific headgear — scales in complexity with equipRarityRank (0-5)
     if (entity.classId === "mage" && (entity.torsoStyle === "wizardrobe" || entity.torsoStyle === "robe" || entity.torsoStyle === "ascendant" || equipRarityRank >= 1)) {
-      // Big pointed wizard hat: brim + cone, glow scales with rarity
+      // Big pointed wizard hat: brim + cone; tier shown through hat height, band gems, star decoration
       const hatColor   = entity.torsoColor || weaponColor;
       const hatTrimCol = weaponColor;
       const brimW  = Math.round(9 * s);
@@ -14345,11 +14564,6 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
       const coneH  = Math.round((7 + equipRarityRank * 1.5) * s);
       const brimX  = hx - 2 * s;
       const brimY  = hy - brimH + s;
-      if (equipRarityRank >= 3) {
-        ctx.save();
-        ctx.shadowColor = blend(hatColor, "#fff0cc", 0.5);
-        ctx.shadowBlur  = 6 + equipRarityRank * 3;
-      }
       // Brim
       ctx.fillStyle = hatColor;
       ctx.beginPath();
@@ -14369,15 +14583,19 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
       // Hat band trim
       ctx.fillStyle = hatTrimCol;
       ctx.fillRect(brimX + s, brimY + brimH - Math.round(2.5 * s), brimW - 2 * s, Math.max(2, Math.round(s * 0.9)));
-      // Rarity star / gem on hat band
+      // Rarity gem on hat band — size and color indicates tier, no glow
       if (equipRarityRank >= 2) {
         ctx.fillStyle = equipRarityRank >= 4 ? "#ffd700" : equipRarityRank >= 3 ? "#c4b5fd" : "#67e8f9";
         ctx.beginPath();
         ctx.arc(hx + Math.round(2.5 * s), brimY + brimH - Math.round(2.5 * s), Math.max(2, Math.round(s * 0.9)), 0, Math.PI * 2);
         ctx.fill();
       }
-      if (equipRarityRank >= 3) {
-        ctx.restore();
+      // High-tier extra decoration: second gem + star at cone tip (no glow)
+      if (equipRarityRank >= 4) {
+        ctx.fillStyle = equipRarityRank >= 5 ? "#e879f9" : "#ffd700";
+        ctx.beginPath();
+        ctx.arc(hx + Math.round(2 * s), brimY + brimH - coneH + Math.round(s * 1.5), Math.max(1, Math.round(s * 0.6)), 0, Math.PI * 2);
+        ctx.fill();
       }
     } else if (entity.classId === "mage") {
       // Low-rarity mage: original small pointy hat stub
@@ -14385,18 +14603,13 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
       ctx.fillRect(hx + s,             hy - 2 * s, 3 * s, 2 * s);
       ctx.fillRect(hx + s + (s >> 1), hy - 3 * s, 2 * s, s);
     } else if (entity.classId === "knight" && equipRarityRank >= 2) {
-      // Full knight helmet with visor slot and plume
+      // Full knight helmet with visor slot and plume; tier reads through plume height and trim richness
       const helColor = entity.torsoColor || "#7a8899";
       const plumeCol = weaponColor;
       const vH = Math.round(5 * s);
       const vW = Math.round(5 * s);
       const vX = hx - Math.round(0.5 * s);
       const vY = hy - Math.round(1 * s);
-      if (equipRarityRank >= 4) {
-        ctx.save();
-        ctx.shadowColor = blend(helColor, "#ffffff", 0.4);
-        ctx.shadowBlur  = 8 + (equipRarityRank - 4) * 6;
-      }
       // Helmet body
       ctx.fillStyle = helColor;
       ctx.fillRect(vX, vY, vW, vH);
@@ -14415,25 +14628,23 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
       ctx.fillRect(hx + Math.round(1.5 * s), vY - plumeH, Math.max(2, Math.round(1.5 * s)), plumeH);
       // Plume tip curl
       ctx.fillRect(hx + Math.round(s * 0.5), vY - plumeH, Math.max(2, Math.round(3 * s)), Math.max(2, s));
-      // Trim accent
-      ctx.fillStyle = plumeCol;
+      // Trim accent — gold at rank 4+, silver otherwise
+      ctx.fillStyle = equipRarityRank >= 4 ? "#ffd700" : plumeCol;
       ctx.fillRect(vX, vY, vW, Math.max(2, Math.round(s * 0.7)));
+      // High-tier: second layered pauldron strip above helmet (extra silhouette detail)
       if (equipRarityRank >= 4) {
-        ctx.restore();
+        ctx.fillStyle = blend(helColor, "#ffd700", 0.35);
+        ctx.fillRect(vX - Math.round(s * 0.5), vY, Math.round(s * 0.5), vH);
+        ctx.fillRect(vX + vW, vY, Math.round(s * 0.5), vH);
       }
     } else if (entity.classId === "ranger" && equipRarityRank >= 2) {
-      // Peaked ranger hood
+      // Peaked ranger hood; tier reads through trim color and leaf-pattern detail
       const hoodCol  = entity.torsoColor || "#2d4a32";
       const hoodTrim = weaponColor;
       const hoodW = Math.round(6 * s);
       const hoodH = Math.round(6 * s);
       const hoodX = hx - s;
       const hoodY = hy - Math.round(2 * s);
-      if (equipRarityRank >= 4) {
-        ctx.save();
-        ctx.shadowColor = blend(hoodCol, "#00ff88", 0.5);
-        ctx.shadowBlur  = 6 + (equipRarityRank - 4) * 4;
-      }
       // Hood main shape (rounded top + drape sides)
       ctx.fillStyle = hoodCol;
       ctx.fillRect(hoodX, hoodY, hoodW, hoodH);
@@ -14447,11 +14658,14 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
       ctx.fillStyle = hoodCol;
       ctx.fillRect(hoodX - s, hy, Math.round(2 * s), Math.round(3 * s));
       ctx.fillRect(hoodX + hoodW, hy, Math.round(2 * s), Math.round(3 * s));
-      // Trim edge
-      ctx.fillStyle = hoodTrim;
+      // Trim edge — gold at rank 4+
+      ctx.fillStyle = equipRarityRank >= 4 ? "#c8a828" : hoodTrim;
       ctx.fillRect(hoodX, hoodY, hoodW, Math.max(2, Math.round(s * 0.6)));
+      // High-tier: leaf-stitch detail strip on cowl sides (no glow)
       if (equipRarityRank >= 4) {
-        ctx.restore();
+        ctx.fillStyle = blend(hoodTrim, "#c8a828", 0.5);
+        ctx.fillRect(hoodX - s, hy + Math.round(s * 0.5), Math.round(2 * s), Math.max(2, Math.round(s * 0.6)));
+        ctx.fillRect(hoodX + hoodW, hy + Math.round(s * 0.5), Math.round(2 * s), Math.max(2, Math.round(s * 0.6)));
       }
     } else {
       // Default low-rarity mage stub (no class-specific hat needed for knight/ranger below rank 2)
@@ -14472,36 +14686,6 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
       ctx.fillRect(hx +     s + eo, eyeY, s, s);
       ctx.fillRect(hx + 3 * s + eo, eyeY, s, s);
     }
-  }
-
-  // Rarity shimmer/sparkle aura — drawn around the character for legendary+ gear (rank 4-5)
-  if (!sciFiNpc && !isMod && equipRarityRank >= 4 && !lyingBedPose && !benchSeatPose) {
-    const now = performance.now();
-    const isMythic = equipRarityRank >= 5;
-    const shimmerColor = isMythic ? "#e879f9" : "#ffd166";
-    ctx.save();
-    ctx.globalAlpha = 0.55 + Math.sin(now / 380) * 0.18;
-    ctx.shadowColor = shimmerColor;
-    ctx.shadowBlur  = isMythic ? 22 : 14;
-    ctx.strokeStyle = shimmerColor;
-    ctx.lineWidth   = isMythic ? 2.2 : 1.6;
-    // Subtle outline glow around torso
-    ctx.strokeRect(bx - 5 * s, by - 3 * s, 10 * s, 9 * s);
-    ctx.shadowBlur = 0;
-    // Particle-ish sparks: small dots orbiting character
-    ctx.fillStyle = shimmerColor;
-    const sparkCount = isMythic ? 5 : 3;
-    const sparkR = 13 * s;
-    for (let si = 0; si < sparkCount; si++) {
-      const angle = (now / (isMythic ? 900 : 1400)) + (si / sparkCount) * Math.PI * 2;
-      const sx2 = bx + Math.cos(angle) * sparkR;
-      const sy2 = by - 2 * s + Math.sin(angle) * sparkR * 0.6;
-      const sparkSize = Math.max(1.5, s * 0.9) * (0.7 + 0.3 * Math.sin(now / 200 + si));
-      ctx.beginPath();
-      ctx.arc(sx2, sy2, sparkSize, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.restore();
   }
 
   // Weapon / equipment (stash weapon while channeling home / sitting / swimming)
@@ -14563,33 +14747,38 @@ function drawTorso2(tx, ty, s, style, torsoColor, trimColor, classId, fx, fy) {
   const h = 6 * s;
 
   if (style === "legendary") {
-    ctx.shadowColor = "#ffd166";
-    ctx.shadowBlur = 8;
+    // Rich gold trim top and bottom — no glow
     ctx.fillStyle = torsoColor;
     ctx.fillRect(tx, ty, w, h);
     ctx.fillStyle = "#ffd166";
     ctx.fillRect(tx, ty,         w, s);
     ctx.fillRect(tx, ty + h - s, w, s);
-    ctx.shadowBlur = 0;
-    ctx.shadowColor = "transparent";
+    // Side gold piping
+    ctx.fillRect(tx, ty + s, s, h - 2 * s);
+    ctx.fillRect(tx + w - s, ty + s, s, h - 2 * s);
+    // Center engraving
+    ctx.fillStyle = blend(torsoColor, "#ffffff", 0.18);
+    ctx.fillRect(tx + (w >> 1) - s, ty + s, 2 * s, h - 2 * s);
     return;
   }
 
   if (style === "ascendant") {
-    ctx.shadowColor = "#e879f9";
-    ctx.shadowBlur = 11;
+    // Royal vestment — ornate silhouette with contrasting panel, no glow
     ctx.fillStyle = torsoColor;
     ctx.fillRect(tx, ty, w, h);
-    ctx.shadowBlur = 0;
-    ctx.shadowColor = "transparent";
     ctx.fillStyle = "#fde68a";
     ctx.fillRect(tx, ty, w, s);
     ctx.fillRect(tx, ty + h - s, w, s);
     ctx.fillStyle = "#67e8f9";
     ctx.fillRect(tx, ty + s, s, h - 2 * s);
     ctx.fillRect(tx + w - s, ty + s, s, h - 2 * s);
+    // Center stripe
     ctx.fillStyle = "rgba(255,255,255,0.42)";
     ctx.fillRect(tx + (w >> 1) - Math.max(1, s >> 1), ty + s, Math.max(2, s), h - 2 * s);
+    // Extra decorative cross on chest
+    ctx.fillStyle = "#fde68a";
+    ctx.fillRect(tx + (w >> 1) - 1, ty + Math.round(h * 0.3), Math.max(2, s), Math.round(h * 0.4));
+    ctx.fillRect(tx + (w >> 1) - Math.round(s * 1.2), ty + Math.round(h * 0.47), Math.round(s * 2.4), Math.max(2, s));
     return;
   }
 
@@ -14741,25 +14930,23 @@ function drawTorso2(tx, ty, s, style, torsoColor, trimColor, classId, fx, fy) {
   }
 
   if (style === "shadowweave") {
-    ctx.shadowColor = blend(torsoColor, "#9900ff", 0.6);
-    ctx.shadowBlur = 8;
+    // Dark fabric with contrasting seam lines — no glow
     ctx.fillStyle = blend(torsoColor, "#000000", 0.72);
     ctx.fillRect(tx, ty, w, h);
-    ctx.shadowBlur = 0;
-    ctx.shadowColor = "transparent";
     ctx.fillStyle = blend(torsoColor, "#cc88ff", 0.35);
     ctx.fillRect(tx + s, ty + s, w - 2 * s, s);
     ctx.fillRect(tx + (w >> 1) - s, ty + 2 * s, 2 * s, h - 3 * s);
+    // Subtle purple side hem
+    ctx.fillStyle = blend(torsoColor, "#9900ff", 0.22);
+    ctx.fillRect(tx, ty, s, h);
+    ctx.fillRect(tx + w - s, ty, s, h);
     return;
   }
 
   if (style === "crystal") {
-    ctx.shadowColor = torsoColor;
-    ctx.shadowBlur = 7;
+    // Faceted crystal plate — prismatic panels, no glow
     ctx.fillStyle = blend(torsoColor, "#ffffff", 0.4);
     ctx.fillRect(tx, ty, w, h);
-    ctx.shadowBlur = 0;
-    ctx.shadowColor = "transparent";
     ctx.fillStyle = "rgba(255,255,255,0.45)";
     ctx.fillRect(tx + s, ty, s, h);
     ctx.fillStyle = blend(torsoColor, "#000000", 0.12);
@@ -14767,20 +14954,25 @@ function drawTorso2(tx, ty, s, style, torsoColor, trimColor, classId, fx, fy) {
     ctx.fillStyle = trimColor;
     ctx.fillRect(tx, ty, w, s);
     ctx.fillRect(tx, ty + h - s, w, s);
+    // Extra facet lines
+    ctx.fillStyle = "rgba(255,255,255,0.28)";
+    ctx.fillRect(tx + 5 * s, ty + s, s, h - 2 * s);
     return;
   }
 
   if (style === "fire") {
+    // Flame-motif armor — warm gradient, embered trim, no glow
     ctx.fillStyle = blend(torsoColor, "#cc3300", 0.45);
     ctx.fillRect(tx, ty, w, h);
     ctx.fillStyle = blend(torsoColor, "#ffaa00", 0.35);
     ctx.fillRect(tx + s, ty + s, w - 2 * s, h - 2 * s);
-    ctx.shadowColor = "#ff6600";
-    ctx.shadowBlur = 6;
     ctx.fillStyle = "#ffcc44";
     ctx.fillRect(tx + 2 * s, ty, w - 4 * s, s);
-    ctx.shadowBlur = 0;
-    ctx.shadowColor = "transparent";
+    // Jagged flame teeth at top (pixel art style)
+    ctx.fillStyle = "#ff8800";
+    ctx.fillRect(tx + s, ty - s, Math.max(2, s), s);
+    ctx.fillRect(tx + 3 * s, ty - s, Math.max(2, s), s);
+    ctx.fillRect(tx + 5 * s, ty - s, Math.max(2, s), s);
     ctx.fillStyle = trimColor;
     ctx.fillRect(tx, ty + h - s, w, s);
     return;
@@ -14801,16 +14993,13 @@ function drawTorso2(tx, ty, s, style, torsoColor, trimColor, classId, fx, fy) {
   }
 
   if (style === "runic") {
+    // Dark cloth with etched rune-lines — no glow
     ctx.fillStyle = blend(torsoColor, "#0a0a1e", 0.6);
     ctx.fillRect(tx, ty, w, h);
-    ctx.shadowColor = "#ffdd44";
-    ctx.shadowBlur = 5;
     ctx.fillStyle = "#ffdd44";
     ctx.fillRect(tx + 2 * s, ty + s, w - 4 * s, Math.max(1, s >> 1));
     ctx.fillRect(tx + 2 * s, ty + h - 2 * s, w - 4 * s, Math.max(1, s >> 1));
     ctx.fillRect(tx + (w >> 1) - 1, ty + 2 * s, 2, h - 4 * s);
-    ctx.shadowBlur = 0;
-    ctx.shadowColor = "transparent";
     ctx.fillStyle = trimColor;
     ctx.fillRect(tx, ty, w, s);
     ctx.fillRect(tx, ty + h - s, w, s);
@@ -14818,27 +15007,23 @@ function drawTorso2(tx, ty, s, style, torsoColor, trimColor, classId, fx, fy) {
   }
 
   if (style === "wizardrobe") {
-    // Wide flowing arcane robe with glowing runic trim and star-shot shimmer
-    const glowCol = blend(torsoColor, "#ffffff", 0.25);
-    ctx.shadowColor = blend(torsoColor, "#c4b5fd", 0.6);
-    ctx.shadowBlur = 10;
+    // Wide flowing arcane robe; richer silhouette differentiates from plain robe — no glow
+    const lightCol = blend(torsoColor, "#ffffff", 0.25);
     ctx.fillStyle = torsoColor;
     ctx.fillRect(tx - s, ty, w + 2 * s, h + 3 * s);  // wider/longer robe skirt
-    ctx.shadowBlur = 0;
-    ctx.shadowColor = "transparent";
     // Robe depth shading
     ctx.fillStyle = blend(torsoColor, "#000000", 0.28);
     ctx.fillRect(tx - s, ty + h + s, w + 2 * s, 2 * s);
-    // Star-shot rune stripes
-    ctx.fillStyle = glowCol;
-    ctx.fillRect(tx - s,         ty, s,                        h + 3 * s);
-    ctx.fillRect(tx + w,         ty, s,                        h + 3 * s);
+    // Contrasting side stripe panels (no glow — just lighter fill)
+    ctx.fillStyle = lightCol;
+    ctx.fillRect(tx - s,            ty, s,              h + 3 * s);
+    ctx.fillRect(tx + w,            ty, s,              h + 3 * s);
     ctx.fillRect(tx + (w >> 1) - 1, ty + s, Math.max(2, s), h);
-    // Glowing collar trim
+    // Collar trim
     ctx.fillStyle = trimColor;
     ctx.fillRect(tx, ty, w, s);
     ctx.fillRect(tx, ty + h + s, w, s);
-    // Tiny rune dots on body
+    // Rune dot pattern (physical detail, no glow)
     ctx.fillStyle = blend(trimColor, "#ffffff", 0.3);
     ctx.fillRect(tx + 2 * s, ty + 2 * s, Math.max(2, s >> 1), Math.max(2, s >> 1));
     ctx.fillRect(tx + w - 3 * s, ty + 2 * s, Math.max(2, s >> 1), Math.max(2, s >> 1));
@@ -14847,15 +15032,11 @@ function drawTorso2(tx, ty, s, style, torsoColor, trimColor, classId, fx, fy) {
   }
 
   if (style === "knightplate") {
-    // Broad chunky warplate with wide pauldrons and chest emblem
+    // Broad chunky warplate with wide pauldrons and chest emblem — no glow
     const plateCol = blend(torsoColor, "#708090", 0.42);
     const shineCol = blend(torsoColor, "#e0e8f0", 0.3);
-    ctx.shadowColor = blend(torsoColor, "#ffffff", 0.25);
-    ctx.shadowBlur = 8;
     ctx.fillStyle = plateCol;
     ctx.fillRect(tx, ty, w, h);
-    ctx.shadowBlur = 0;
-    ctx.shadowColor = "transparent";
     // Chest plate inner panel
     ctx.fillStyle = shineCol;
     ctx.fillRect(tx + s, ty + s, w - 2 * s, h - 2 * s);
@@ -15104,28 +15285,9 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
-  if (isLegendary || isAscendant) {
-    ctx.save();
-    ctx.shadowColor = isAscendant ? "#c084fc" : "#ffd166";
-    ctx.shadowBlur = isAscendant ? 17 : 14;
-  } else if (isWizard) {
-    ctx.save(); ctx.shadowColor = accent; ctx.shadowBlur = 12;
-  } else if (isRecurve || isCrossbow) {
-    ctx.save(); ctx.shadowColor = accent; ctx.shadowBlur = 8;
-  } else if (isKnightSword) {
-    ctx.save(); ctx.shadowColor = accent; ctx.shadowBlur = 10;
-  } else if (style === "crystal") {
-    ctx.save(); ctx.shadowColor = "#67e8f9"; ctx.shadowBlur = 10;
-  } else if (style === "dark") {
-    ctx.save(); ctx.shadowColor = "#9900ff"; ctx.shadowBlur = 12;
-  } else if (style === "frost") {
-    ctx.save(); ctx.shadowColor = "#99ddff"; ctx.shadowBlur = 9;
-  } else if (style === "fire") {
-    ctx.save(); ctx.shadowColor = "#ff6600"; ctx.shadowBlur = 12;
-  } else if (style === "runic") {
-    ctx.save(); ctx.shadowColor = "#ffdd44"; ctx.shadowBlur = 8;
-  } else if (style === "spectral") {
-    ctx.save(); ctx.shadowColor = "#88aaff"; ctx.shadowBlur = 10; ctx.globalAlpha = (ctx.globalAlpha || 1) * 0.78;
+  // No character-enveloping weapon glow — spectral still gets transparency for its ethereal look
+  if (style === "spectral") {
+    ctx.save(); ctx.globalAlpha = (ctx.globalAlpha || 1) * 0.78;
   }
 
   const ks = eqS / 3;
@@ -15213,9 +15375,6 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
       ctx.fillRect(Math.round(rHandX + dirX * (22 * ks)), Math.round(rHandY + dirY * (22 * ks) - 4), 6 * ks, 9 * ks);
       ctx.fillStyle = accent;
       ctx.fillRect(Math.round(rHandX + dirX * (28 * ks)), Math.round(rHandY + dirY * (28 * ks) - 3), 3 * ks, 7 * ks);
-      if (isLegendary || isAscendant) {
-        ctx.restore();
-      }
       ctx.restore();
       return;
     }
@@ -15227,9 +15386,6 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
         rHandX, rHandY, dirX, dirY, sideX, sideY,
         ornateWeapon ? accent : "#67f0ff", ks, style === "heavy", saberExtended
       );
-      if (isLegendary || isAscendant) {
-        ctx.restore();
-      }
       ctx.restore();
       return;
     }
@@ -15622,10 +15778,7 @@ function drawClassEquipment(entity, x, y, dirX, dirY, sideX, sideY, accent, rHan
     ctx.stroke();
   }
 
-  const hasGlowSave = isLegendary || isAscendant || isWizard || isRecurve || isCrossbow || isKnightSword ||
-    style === "crystal" || style === "dark" || style === "frost" ||
-    style === "fire" || style === "runic" || style === "spectral";
-  if (hasGlowSave) {
+  if (style === "spectral") {
     ctx.restore();
   }
 
