@@ -1,6 +1,7 @@
 const WORLD = require("./world");
 const { isBlockedCircle, SCI_FI_PLANETS } = WORLD;
 const { HUB_NPC_ORDER } = require("./hubRoundTown.js");
+const npcAi = require("./npcAi");
 const { SCI_FI_STATION_FEATURES, RINGFORGE_CENTER, STATION_INTERIOR_WAYPOINTS, stationInteriorPoint, clampToStationInterior, isInsideStationInterior } = require("./sciFiStationLayout.js");
 
 const NPC_SPEED = 2.0;
@@ -1447,6 +1448,7 @@ const BASE_NPC_DEFINITIONS = [
     questIds: ["q_town_intro_tour"],
     onboardingGuide: true,
     wandersToNewPlayer: true,
+    aiPersonality: "an eager young guide who speaks enthusiastically and a bit nervously about showing newcomers around",
     dialogue: [
       "New here? I can give you a quick tour of the useful places in town.",
       "Press E on me, or tap me, if you want the quick introduction.",
@@ -1464,6 +1466,7 @@ const BASE_NPC_DEFINITIONS = [
     patrolRadius: 2,
     questGiver: true,
     questIds: ["q_first_hunt"],
+    aiPersonality: "a mystical sage who speaks in brief, cryptic proverbs about adventure and the balance of nature",
     dialogue: [
       "Welcome to the home tree, traveler.",
       "Even quiet paths grow restless if no one walks them.",
@@ -1481,6 +1484,7 @@ const BASE_NPC_DEFINITIONS = [
     patrolRadius: 4,
     questGiver: true,
     questIds: ["q_slime_watch"],
+    aiPersonality: "a stern, practical elder who speaks plainly about the land, pests, and the virtue of hard work",
     dialogue: [
       "The pasture paths are restless again.",
       "A steady hand can turn a whole town's luck.",
@@ -1498,6 +1502,7 @@ const BASE_NPC_DEFINITIONS = [
     patrolRadius: 5,
     questGiver: true,
     questIds: ["q_north_watch", "q_road_report"],
+    aiPersonality: "a no-nonsense gate warden who speaks in clipped sentences about duty, threats, and vigilance",
     dialogue: [
       "North gate's quiet, which means trouble is walking around it.",
       "Reports first, heroics second.",
@@ -1515,6 +1520,7 @@ const BASE_NPC_DEFINITIONS = [
     patrolRadius: 5,
     questGiver: true,
     questIds: ["q_briar_errand"],
+    aiPersonality: "an irritable logistics-minded merchant who mutters about missing shipments and bandits making his job harder",
     dialogue: [
       "I've counted the crates twice. The road still owes me three.",
       "Bandits hate paperwork almost as much as I do.",
@@ -1617,6 +1623,7 @@ const BASE_NPC_DEFINITIONS = [
     homeY: 84,
     patrolRadius: 7,
     professionTrainer: "baking",
+    aiPersonality: "a warm, flour-dusted baker who cheerfully talks about bread, ovens, and feeding adventurers",
     dialogue: [
       "Good bread is timing, heat, and not panicking.",
       "I can teach baking if you can keep rhythm.",
@@ -1635,6 +1642,7 @@ const BASE_NPC_DEFINITIONS = [
     homeY: 54,
     patrolRadius: 5,
     professionTrainer: "server_admin",
+    aiPersonality: "a deadpan, meta-humor server admin who speaks about the game world as if it were a production system",
     dialogue: [
       "The server is fine until someone says the word fine.",
       "Staff work is mostly reading logs and making calm decisions.",
@@ -1646,6 +1654,7 @@ const BASE_NPC_DEFINITIONS = [
     id: "npc_mara", name: "Innkeeper Mara",
     classId: "knight", primary: "#8b4513", accent: "#d4a574",
     homeX: 11, homeY: -65, patrolRadius: 7,
+    aiPersonality: "a motherly innkeeper who fusses over travellers and loves sharing local gossip",
     dialogue: [
       "A warm fire and a hot meal await you inside!",
       "The inn is open to all weary travellers.",
@@ -1658,6 +1667,7 @@ const BASE_NPC_DEFINITIONS = [
     id: "npc_thomas", name: "Old Thomas",
     classId: "mage", primary: "#4a3728", accent: "#c8a86b",
     homeX: -10, homeY: -65, patrolRadius: 11,
+    aiPersonality: "a rambling old storyteller who speaks cryptically about the past, stars, and ancient ruins",
     dialogue: [
       "The stars speak of change on the horizon.",
       "I have walked these paths for forty years.",
@@ -1698,6 +1708,7 @@ const BASE_NPC_DEFINITIONS = [
     classId: "knight", primary: "#3a3a3a", accent: "#ff6600",
     homeX: 60, homeY: 10, patrolRadius: 6,
     professionTrainer: "blacksmithing",
+    aiPersonality: "a gruff, proud blacksmith who speaks in short sentences about steel, fire, and honest work",
     dialogue: [
       "Steel and fire — that is all you need in this world.",
       "I forged the eastern gate with my own hands.",
@@ -1750,6 +1761,7 @@ const BASE_NPC_DEFINITIONS = [
     id: "npc_holt", name: "Farmer Holt",
     classId: "ranger", primary: "#8b6914", accent: "#228b22",
     homeX: 8, homeY: 61, patrolRadius: 10,
+    aiPersonality: "an earthy, observant farmer who talks about weather, crops, and the land with quiet wisdom",
     dialogue: [
       "The harvest will be plentiful this year, I can feel it.",
       "Good land needs good care. That is the farmer's way.",
@@ -1803,6 +1815,7 @@ const BASE_NPC_DEFINITIONS = [
     classId: "mage", primary: "#3a2f4a", accent: "#c79cff",
     homeX: -55, homeY: -4, patrolRadius: 6,
     isTrader: true,
+    aiPersonality: "a shady, dramatic relic dealer who speaks in hushed tones about treasures found in dangerous ruins",
     dialogue: [
       "Relics and curiosities, salvaged from the deep halls.",
       "Every item I sell has a story. Most of them tragic.",
@@ -1815,6 +1828,7 @@ const BASE_NPC_DEFINITIONS = [
     id: "npc_mira", name: "Sage Mira",
     classId: "mage", primary: "#2d3a4a", accent: "#9370db",
     homeX: -65, homeY: -9, patrolRadius: 9,
+    aiPersonality: "an intense, academic scholar who speaks passionately about ancient ruins and warns others to be careful with forgotten magic",
     dialogue: [
       "The ancients who built these halls were very powerful.",
       "Do not touch the inscriptions on the walls. Please.",
@@ -1866,6 +1880,7 @@ const BASE_NPC_DEFINITIONS = [
     id: "npc_ebb", name: "Town Crier Ebb",
     classId: "ranger", primary: "#c8001a", accent: "#ffd700",
     homeX: 0, homeY: 3, patrolRadius: 9,
+    aiPersonality: "a booming, theatrical town crier who announces news and welcomes travellers in a formal tone",
     dialogue: [
       "Hear ye! Travellers are welcome in Balathor!",
       "The four villages stand united under one realm!",
@@ -1879,6 +1894,7 @@ const BASE_NPC_DEFINITIONS = [
     id: "npc_ana", name: "Scribe Ana",
     classId: "mage", primary: "#1a1a6e", accent: "#87ceeb",
     homeX: -3, homeY: -3, patrolRadius: 5,
+    aiPersonality: "a precise, scholarly scribe who speaks formally and is intensely curious about everyone's stories",
     dialogue: [
       "I record the history of this realm for posterity.",
       "Every traveller who passes through is noted in my ledger.",
@@ -3513,6 +3529,9 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
   }
   maybeStartNpcMeeting(now, activationBounds, activeNpcs);
 
+  const allPlayers = companionCtx?.allPlayers || null;
+  npcAi.tickAiNpcs(activeNpcs, allPlayers, onChat, now, hubGameHour);
+
   const navSetStatic = WORLD.HUB_NAV_PATH_KEYS instanceof Set ? WORLD.HUB_NAV_PATH_KEYS : null;
   // Snapshot positions before movement for separation (use last-frame positions — stable)
   const npcPosGrid = buildNpcPosGrid(activeNpcs);
@@ -3590,6 +3609,7 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
       continue;
     }
 
+    const aiOverridesGrid = Boolean(npc._aiAction && now < (npc._aiActionUntil || 0));
     const loveSeeking =
       Boolean(npc.courtPlayer) &&
       typeof npc.companionPrice === "number" &&
@@ -3597,12 +3617,13 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
     const socialWalkTowardPeer = npc._meetPeerId && npc._meetPhase === "walk";
     /** Do not yank meet-up approachers / aggressive suitors off their scripted pathing. */
     const skipNavSnap =
-      (npc._meetPeerId && npc._meetPhase === "walk") || courtSteers;
+      (npc._meetPeerId && npc._meetPhase === "walk") || courtSteers || aiOverridesGrid;
     if (!skipNavSnap) {
       snapNpcOntoHubNavIfNeeded(npc, navSetStatic);
     }
 
     const gridPathsOk =
+      !aiOverridesGrid &&
       npc._followHubPaths &&
       navSetStatic &&
       navSetStatic.size > 96 &&
@@ -3614,8 +3635,26 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
     const dy = npc._targetY - npc.y;
     const dist = Math.hypot(dx, dy);
 
+    if (npc._aiAction && now < (npc._aiActionUntil || 0)) {
+      const aiAction = npc._aiAction;
+      if (aiAction === "approach" || aiAction === "return_home") {
+        npc.moving = Math.hypot(npc._targetX - npc.x, npc._targetY - npc.y) > NPC_STOP_DISTANCE;
+      } else {
+        npc.moving = false;
+      }
+    } else if (npc._aiAction && now >= (npc._aiActionUntil || 0)) {
+      npc._aiAction = null;
+      npc._aiActionUntil = 0;
+    }
+
     if (dist < NPC_STOP_DISTANCE) {
       npc.moving = false;
+
+      if (npc._aiAction && now < (npc._aiActionUntil || 0)) {
+        npc._targetX = npc.x;
+        npc._targetY = npc.y;
+        continue;
+      }
 
       const socialWalk = npc._meetPeerId && npc._meetPhase === "walk";
       hubScheduleEnsureInit(npc, now);
@@ -3766,6 +3805,11 @@ function updateNpcs(dt, onChat, activationBounds, companionCtx = null) {
       ) {
         npc._schedLegMoved = true;
       }
+    }
+
+    if (npc._aiNextLine) {
+      onChat({ kind: "npc", fromId: npc.id, name: npc.name, text: npc._aiNextLine, x: npc.x, y: npc.y });
+      npc._aiNextLine = null;
     }
 
     const skipSoloRamble =
