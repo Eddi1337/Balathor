@@ -57,6 +57,12 @@ When changing behavior, confine edits to the smallest section possible and avoid
 - **Port Bilgewater pirate quest line** (`q_pirate_*`, givers `npc_pirate_*`): initiation→supplies→gunnery→charting→lost_treasure. Uses sailing location triggers at real islands (Iron Haven, Mariner's Rest, Black Cay), `oceanus_marauder`-faction kills off Storm Atoll, and the Storm Cay "Pirate Captain" boss. `buildPirateNpcDefinitions()` forwards `questIds` onto each giver.
 - `npcAi.js`: quest-giver NPCs with a nearby player get `hasQuestForPlayers` in their perception and a prompt hint to beckon adventurers over (no invented quest specifics).
 
+### Sword-guard melee system (fantasy hub)
+
+- `npcs.js`: Six guards carry `isSwordGuard: true` and `weaponKind: "sword"` — Guard Aldric, Guard Sera (upgraded from plain NPCs), plus four new perimeter guards (Torin/north, Mira/east, Fen/south, Bren/west). `SWORD_GUARD_IDS` is exported so `index.js` can drive their combat. Guards also carry `isGuard: true`, which excludes them from the hub schedule and pub AI (`hubScheduleEligible`, `isPubHour`).
+- `index.js`: `processSwordGuards(now, dt)` runs each tick after `processGatekeeperArchers`. It scans mobs within `SWORD_GUARD_AGGRO_RANGE` (22 tiles), chases the nearest one (moving `guard.x/y` by `SWORD_GUARD_SPEED * dt` tiles/sec), swings when within `SWORD_GUARD_MELEE_RANGE` (1.6 tiles) on a 1.1 s cooldown (`_lastSwordHitAt`), broadcasts a `combat/melee/sword` event, and returns to `homeX/homeY` when no target is in range. Quest slimes `mob_slime_meadow_1/2/3` are in `SWORD_GUARD_QUEST_MOB_IDS` and skipped unconditionally.
+- `npcAi.js`: already excludes all `isGuard` NPCs from Ollama ambient AI — no change needed.
+
 ### Systems modules
 
 - `npcs.js`: NPC templates/schedules/world-time integration.

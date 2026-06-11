@@ -1699,7 +1699,9 @@ const BASE_NPC_DEFINITIONS = [
   {
     id: "npc_aldric", name: "Guard Aldric",
     classId: "knight", primary: "#6e7a8a", accent: "#c8c8c8",
+    weaponKind: "sword", weaponStyle: "classic",
     homeX: 2, homeY: -54, patrolRadius: 6,
+    isGuard: true, isSwordGuard: true,
     aiPersonality: "a stoic guard who speaks sparingly but with authority, always scanning for threats while pretending to chat",
     dialogue: [
       "The north road is safe under my watch.",
@@ -1707,6 +1709,8 @@ const BASE_NPC_DEFINITIONS = [
       "I have served this village for ten long years.",
       "All is quiet tonight. As it should be.",
       "Keep moving, citizen.",
+      "Stay safe, citizen.",
+      "My blade is always ready.",
     ],
   },
 
@@ -1756,7 +1760,9 @@ const BASE_NPC_DEFINITIONS = [
   {
     id: "npc_sera", name: "Guard Sera",
     classId: "knight", primary: "#6e7a8a", accent: "#ffd700",
+    weaponKind: "sword", weaponStyle: "classic",
     homeX: 50, homeY: 0, patrolRadius: 8,
+    isGuard: true, isSwordGuard: true,
     aiPersonality: "a sharp-eyed guard who speaks crisply about market safety and watches powerful adventurers with professional admiration",
     dialogue: [
       "The east road is under my protection.",
@@ -1764,6 +1770,76 @@ const BASE_NPC_DEFINITIONS = [
       "The market closes at dusk — plan accordingly.",
       "Stay on the lit path and you will be fine.",
       "No trouble here tonight. Move along.",
+      "Stay safe, citizen.",
+      "Trouble won't find you while I'm on duty.",
+    ],
+  },
+
+  // --- Sword Guards (perimeter defenders) ---
+  // Stationed inside the cardinal gates (~70 tiles from town centre).
+  // Aggro range (SWORD_GUARD_AGGRO_RANGE) keeps them far from quest slimes at ~(10,16).
+  {
+    id: "npc_guard_north", name: "Guard Torin",
+    classId: "knight", primary: "#5a6878", accent: "#c0d4e8",
+    weaponKind: "sword", weaponStyle: "classic",
+    homeX: 0, homeY: -70, patrolRadius: 10,
+    isGuard: true, isSwordGuard: true,
+    aiPersonality: "a vigilant northern gate guard who watches the road with hawk-like attention and speaks in clipped, professional tones",
+    dialogue: [
+      "The north gate is secure.",
+      "Nothing comes through here on my watch.",
+      "Stay safe, citizen.",
+      "Keep to the road and you will be fine.",
+      "I have held this post through worse nights than this.",
+      "Eyes on the treeline. Always.",
+    ],
+  },
+  {
+    id: "npc_guard_east", name: "Guard Mira",
+    classId: "knight", primary: "#5a6878", accent: "#e8d4a0",
+    weaponKind: "sword", weaponStyle: "classic",
+    homeX: 70, homeY: 0, patrolRadius: 10,
+    isGuard: true, isSwordGuard: true,
+    aiPersonality: "a disciplined eastern gate guard who greets travellers with brief professionalism and keeps one hand near her hilt at all times",
+    dialogue: [
+      "The east market road is clear.",
+      "Merchants pass freely. Trouble does not.",
+      "Stay safe, citizen.",
+      "Report anything strange to the captain.",
+      "I will hold this post until my relief arrives.",
+      "My blade is always ready.",
+    ],
+  },
+  {
+    id: "npc_guard_south", name: "Guard Fen",
+    classId: "knight", primary: "#5a6878", accent: "#c8e0b0",
+    weaponKind: "sword", weaponStyle: "classic",
+    homeX: 0, homeY: 70, patrolRadius: 10,
+    isGuard: true, isSwordGuard: true,
+    aiPersonality: "a steady southern gate guard who has a quiet rivalry with the north gate guard and takes particular pride in repelling anything from the wilds",
+    dialogue: [
+      "The south path is mine to protect.",
+      "Nothing from the wilds reaches the hamlet on my watch.",
+      "Stay safe, citizen.",
+      "The harvest folk count on this gate staying clear.",
+      "I know every shadow on this road.",
+      "Peaceful tonight. Let us keep it that way.",
+    ],
+  },
+  {
+    id: "npc_guard_west", name: "Guard Bren",
+    classId: "knight", primary: "#5a6878", accent: "#d4b8e0",
+    weaponKind: "sword", weaponStyle: "classic",
+    homeX: -70, homeY: 0, patrolRadius: 10,
+    isGuard: true, isSwordGuard: true,
+    aiPersonality: "a grizzled western gate guard who has seen real combat and speaks plainly about threats, preferring action over talk",
+    dialogue: [
+      "West road leads to the ruins. Watch yourself out there.",
+      "I have seen what crawls out of those ruins. Stay alert.",
+      "Stay safe, citizen.",
+      "This gate has stood for thirty years. So have I.",
+      "Steel first, questions later.",
+      "The ruins are restless tonight.",
     ],
   },
 
@@ -4135,6 +4211,7 @@ function getNpcSnapshot() {
       isTrader: npc.isTrader || false,
       ...(npc.isGateKeeper ? { isGateKeeper: true } : {}),
       ...(npc.isTownArcher ? { isTownArcher: true } : {}),
+      ...(npc.isSwordGuard ? { isSwordGuard: true } : {}),
       ...(npc.isFletcher ? { isFletcher: true } : {}),
       ...(npc.isFletcherWorker ? { isFletcherWorker: true } : {}),
       ...(npc.isArrowCourier ? { isArrowCourier: true } : {}),
@@ -4199,6 +4276,11 @@ function notifyCombatAt(x, y, now) {
   }
 }
 
+/** IDs of all sword-guard NPCs — used by index.js to drive melee combat AI. */
+const SWORD_GUARD_IDS = Object.freeze(
+  DEFINITIONS.filter((d) => d.isSwordGuard).map((d) => d.id)
+);
+
 module.exports = {
   updateNpcs,
   getNpcSnapshot,
@@ -4214,5 +4296,6 @@ module.exports = {
   pickPubDreamGirlfriendNpcId,
   getWorldTimeSnapshot,
   setWorldTimeHour,
-  notifyCombatAt
+  notifyCombatAt,
+  SWORD_GUARD_IDS
 };

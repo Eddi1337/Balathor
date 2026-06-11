@@ -7,7 +7,10 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const world = require("../server/src/world.js");
+const { SWORD_GUARD_IDS } = require("../server/src/npcs.js");
 
+// ── Sword guards: armed, present, away from quest slimes ──────────────────
+assert.ok(SWORD_GUARD_IDS.length >= 6, "at least 6 sword guards should be registered");
 assert.equal(world.CHUNK_SIZE, 16);
 assert.ok(world.ENEMY_CAMPS.length >= 30);
 assert.equal(world.ENEMY_CAMPS.some((camp) => camp.boss), true);

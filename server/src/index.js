@@ -94,7 +94,8 @@ const {
   getWorldTimeSnapshot,
   setWorldTimeHour,
   syncNpcHubHomesFromBuildings,
-  notifyCombatAt
+  notifyCombatAt,
+  SWORD_GUARD_IDS
 } = require("./npcs");
 const {
   openWorldDb,
@@ -315,6 +316,19 @@ const GATEKEEPER_RANGE = 20;
 const GATEKEEPER_NEAR_TOWN_RADIUS = HUB_TOWN_GRASS_RADIUS + 84;
 const GATEKEEPER_ATTACK_COOLDOWN_MS = 1150;
 const GATEKEEPER_ARROW_DAMAGE = 34;
+// Sword guard melee constants
+const SWORD_GUARD_AGGRO_RANGE = 22;   // tiles: guards spot mobs within this radius
+const SWORD_GUARD_MELEE_RANGE = 1.6;  // tiles: melee hit lands when guard is this close
+const SWORD_GUARD_ATTACK_COOLDOWN_MS = 1100; // ms between melee swings
+const SWORD_GUARD_DAMAGE = 30;        // base damage per swing
+const SWORD_GUARD_SPEED = 4.5;        // tiles/sec when chasing
+const SWORD_GUARD_NEAR_TOWN_RADIUS = HUB_TOWN_GRASS_RADIUS + 88; // ignore mobs far outside town
+// Quest slime IDs that sword guards must never attack (q_first_hunt tutorial objectives)
+const SWORD_GUARD_QUEST_MOB_IDS = new Set([
+  "mob_slime_meadow_1",
+  "mob_slime_meadow_2",
+  "mob_slime_meadow_3"
+]);
 const TOWN_ARCHER_AMMO_LOW_WATERMARK = 8;
 const TOWN_COURIER_IDS = Object.freeze(
   Array.from({ length: 50 }, (_, i) => `hub_arrow_courier_${i}`)
@@ -5548,6 +5562,7 @@ function simulate() {
 
     _pt = process.hrtime.bigint();
     processGatekeeperArchers(Date.now());
+    processSwordGuards(Date.now(), aiDt);
     perfAcc.archers += Number(process.hrtime.bigint() - _pt) / 1e3;
 
     _pt = process.hrtime.bigint();
@@ -13180,6 +13195,113 @@ function processGatekeeperArchers(now = Date.now()) {
       targetHp: target.hp,
       endX: Number(target.x.toFixed(3)),
       endY: Number(target.y.toFixed(3))
+    };
+
+    if (target.hp <= 0 && !target.dead) {
+      target.dead = true;
+      target.respawnAt = now + (target.noRespawn ? 9000 : target.isCritter ? 4200 : MOB_RESPAWN_MS);
+      event.defeated = true;
+    }
+
+    broadcastCombat(event);
+  }
+}
+
+/**
+ * Sword-guard melee AI — runs every tick after processGatekeeperArchers.
+ *
+ * Each guard:
+ *   1. Scans for the nearest hostile mob within SWORD_GUARD_AGGRO_RANGE.
+ *   2. Chases that mob (moves _targetX/_targetY toward it each tick).
+ *   3. Swings when within SWORD_GUARD_MELEE_RANGE, applying damage and
+ *      broadcasting a "combat / melee / sword" event the client can render.
+ *   4. Returns to homeX/homeY when no mob is in range.
+ *
+ * Quest-objective slimes (mob_slime_meadow_*) are explicitly excluded so
+ * the first-hunt quest (q_first_hunt) is never blocked.
+ *
+ * Invariant: only mobs within SWORD_GUARD_NEAR_TOWN_RADIUS are engaged
+ * so guards never chase things far out into the open world.
+ */
+function processSwordGuards(now = Date.now(), dt = 0.05) {
+  for (const guardId of SWORD_GUARD_IDS) {
+    const guard = getNpcById(guardId);
+    if (!guard) continue;
+
+    // ── 1. Scan for nearest eligible mob ──────────────────────────────────
+    let target = null;
+    let bestDist = Infinity;
+    forEachMobNear(guard.x, guard.y, SWORD_GUARD_AGGRO_RANGE + 4, (mob) => {
+      if (mob.dead || mob.isCritter) return;
+      if (SWORD_GUARD_QUEST_MOB_IDS.has(mob.id)) return; // never attack quest slimes
+      const townDist = Math.hypot(mob.x, mob.y);
+      if (townDist > SWORD_GUARD_NEAR_TOWN_RADIUS) return;
+      const d = Math.hypot(mob.x - guard.x, mob.y - guard.y);
+      if (d <= SWORD_GUARD_AGGRO_RANGE && d < bestDist) {
+        bestDist = d;
+        target = mob;
+      }
+    });
+
+    if (!target) {
+      // ── 4. Return to post ──────────────────────────────────────────────
+      const homeDx = guard.homeX - guard.x;
+      const homeDy = guard.homeY - guard.y;
+      const homeDist = Math.hypot(homeDx, homeDy);
+      if (homeDist > 0.25) {
+        const step = Math.min(SWORD_GUARD_SPEED * dt, homeDist);
+        guard.x += (homeDx / homeDist) * step;
+        guard.y += (homeDy / homeDist) * step;
+        guard.facing = Math.atan2(homeDy, homeDx);
+        guard.moving = true;
+        guard._targetX = guard.homeX;
+        guard._targetY = guard.homeY;
+      } else {
+        guard.moving = false;
+        guard._targetX = guard.homeX;
+        guard._targetY = guard.homeY;
+      }
+      continue;
+    }
+
+    // ── 2. Chase target ───────────────────────────────────────────────────
+    const dx = target.x - guard.x;
+    const dy = target.y - guard.y;
+    const dist = Math.hypot(dx, dy);
+    guard.facing = Math.atan2(dy, dx);
+    guard._targetX = target.x;
+    guard._targetY = target.y;
+
+    if (dist > SWORD_GUARD_MELEE_RANGE) {
+      const step = Math.min(SWORD_GUARD_SPEED * dt, dist - SWORD_GUARD_MELEE_RANGE);
+      guard.x += (dx / dist) * step;
+      guard.y += (dy / dist) * step;
+      guard.moving = true;
+    } else {
+      guard.moving = false;
+    }
+
+    // ── 3. Melee swing ────────────────────────────────────────────────────
+    if (dist > SWORD_GUARD_MELEE_RANGE) continue;
+    if (now - (guard._lastSwordHitAt || 0) < SWORD_GUARD_ATTACK_COOLDOWN_MS) continue;
+
+    const damage = Math.max(1, Math.round(SWORD_GUARD_DAMAGE + (Number(target.level) || 1) * 2));
+    guard._lastSwordHitAt = now;
+    target.hp = Math.max(0, target.hp - damage);
+
+    const event = {
+      type: "combat",
+      kind: "melee",
+      weapon: "sword",
+      attackerId: guard.id,
+      x: Number(guard.x.toFixed(3)),
+      y: Number(guard.y.toFixed(3)),
+      facing: Number(guard.facing.toFixed(3)),
+      hit: true,
+      targetId: target.id,
+      targetKind: "mob",
+      damage,
+      targetHp: target.hp
     };
 
     if (target.hp <= 0 && !target.dead) {
