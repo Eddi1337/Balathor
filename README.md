@@ -47,6 +47,10 @@ Each class has three talent trees with three tiers of abilities. Spend talent po
 
 **Waypoint obelisks** are placed throughout each world. Walk near one to unlock it; once unlocked, press **E** next to any obelisk to open the travel menu and fast-travel to another unlocked waypoint in the same world for 15 gold. Waypoints are same-world only — cross-world travel still uses portals.
 
+## Home Decoration
+
+House owners can furnish their interior with up to 12 furniture types: bed, table, chair, rug, bookshelf, fireplace, potted plant, wall painting, lantern stand, storage cabinet, weapon rack, and trophy stand. Buy pieces from **Marta's Workshop** (hub town carpenter, near the market at 20,12) then enter your house and press **D** to open the Decorate panel. Select a piece and click a floor tile to place it; click a placed piece in the panel to retrieve it. Furniture persists in `world.sqlite` alongside house deeds. Non-walkable furniture physically blocks movement. Mobile players can view and pick up placed furniture; placement is desktop-only.
+
 ## Progression
 
 Characters gain XP from combat and mini-games. On level-up you receive a talent point; you can also spend stat points on **Speed**, **Strength**, **Armour**, or **Health** via the in-game stat panel. Gold dropped by enemies and earned from activities can be traded with other players or spent at market NPCs.

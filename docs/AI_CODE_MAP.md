@@ -87,6 +87,20 @@ When changing behavior, confine edits to the smallest section possible and avoid
 - **Welcome message**: `waypointNodes` array sent once on join so the client knows positions for rendering.
 - **UI**: Waypoint panel (`#waypointPanel`) in `index.html`; `openWaypointMenu` / `closeWaypointMenu` in `main.js`.
 
+### Furniture system (house interiors)
+
+- **Catalog** (`index.js` Section 1): `FURNITURE_CATALOG` — 12 items with `{templateId, kind, fw, fh, price, walkable}`. `fw`/`fh` are tile footprints; `walkable` items (rug, painting) don't block movement.
+- **Shop NPC**: `npc_furnisher_marta` in `npcs.js` (`isFurnisher: true, shopType: "furniture"`, `homeX: 20, homeY: 12`) near the market. `nearestFurnisherShop()` in `index.js` returns a synthetic shop fixture (same pattern as stable keeper).
+- **Purchase**: `handleShopBuy` `template.type === "furniture"` branch — gold deducted, item pushed to `player.ownedFurniture[]`, persisted via `serializePlayer` in `accounts.json`.
+- **Placement**: client sends `placeFurniture { templateIdx, lx, ly }`. Server validates: player is in own house interior (`getInteriorAreaAt`), footprint is in bounds, no AABB overlap with existing pieces. Placed piece stored in `house_furniture` sqlite table via `worldStore.js`.
+- **Pickup**: client sends `pickupFurniture { pieceId }`. Server removes from DB, returns item to `ownedFurniture`.
+- **Collision**: `isFurnitureBlockedAt(wx,wy)` checked in movement validation alongside `isBlockedCircle`; non-walkable furniture blocks players.
+- **Persistence**: `house_furniture` table in `world.sqlite` (`worldStore.js`). In-memory cache: `houseFurnitureByKey` Map. Owned-but-unplaced furniture in `accounts.json` via `ownedFurniture[]` on player.
+- **Visibility**: `houseFurniture` message sent to all players in the interior on change, and on entering any owned house interior (via `handleDoorTravel` interior-transition detection + `handleStairTravel`). Client stores in `state.houseFurniture`.
+- **Rendering**: `drawHouseFurniturePiece(kind, sx, sy, fw, fh)` in `client/src/main.js` — procedural canvas art per kind. `drawHouseFurniture()` called in main draw loop after `drawBuildingSprites`. Client-side catalog: `CLIENT_FURNITURE_CATALOG`. Placement preview drawn while `state.decorateMode` is active.
+- **UI**: `#decoratePanel` in `index.html`; `openDecoratePanel` / `closeDecoratePanel` / `refreshDecorateOwnedList` / `refreshDecoratePlacedList` in `main.js`. `D` key toggles panel when inside owned house. Canvas click in decorate mode places selected piece.
+- **Mobile**: `decorate` chip added in `mobileUi.js` when `self.x > 9000` (interior proxy) and `homeBuildingKey` set. Chip opens decorate panel; placement is desktop-only (mobile gets view + pickup only).
+
 ### Systems modules
 
 - `npcs.js`: NPC templates/schedules/world-time integration.

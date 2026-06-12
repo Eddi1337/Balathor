@@ -111,6 +111,12 @@ const interactButton = document.querySelector("#interactButton");
 const goldText = document.querySelector("#goldText");
 const shopPanel = document.querySelector("#shopPanel");
 const shopTitle = document.querySelector("#shopTitle");
+const decoratePanel = document.querySelector("#decoratePanel");
+const decorateClose = document.querySelector("#decorateClose");
+const decorateStatus = document.querySelector("#decorateStatus");
+const decorateOwnedList = document.querySelector("#decorateOwnedList");
+const decoratePlacedList = document.querySelector("#decoratePlacedList");
+const decoratePlaceHint = document.querySelector("#decoratePlaceHint");
 const shopClose = document.querySelector("#shopClose");
 const shopGold = document.querySelector("#shopGold");
 const shopBuyList = document.querySelector("#shopBuyList");
@@ -895,6 +901,25 @@ function displayTalentTreeName(classId, treeName) {
   return map[classId]?.[treeName] || treeName;
 }
 
+// Client-side furniture catalog (mirrors server FURNITURE_CATALOG — fw/fh needed for rendering).
+const CLIENT_FURNITURE_CATALOG = [
+  { kind: "bed",         fw: 2, fh: 1, walkable: false },
+  { kind: "table",       fw: 2, fh: 1, walkable: false },
+  { kind: "chair",       fw: 1, fh: 1, walkable: false },
+  { kind: "rug",         fw: 2, fh: 2, walkable: true  },
+  { kind: "bookshelf",   fw: 1, fh: 1, walkable: false },
+  { kind: "fireplace",   fw: 2, fh: 1, walkable: false },
+  { kind: "plant",       fw: 1, fh: 1, walkable: false },
+  { kind: "painting",    fw: 1, fh: 1, walkable: true  },
+  { kind: "lantern",     fw: 1, fh: 1, walkable: false },
+  { kind: "cabinet",     fw: 1, fh: 1, walkable: false },
+  { kind: "weapon_rack", fw: 1, fh: 1, walkable: false },
+  { kind: "trophy",      fw: 1, fh: 1, walkable: false },
+];
+function getFurnitureDef(kind) {
+  return CLIENT_FURNITURE_CATALOG.find((c) => c.kind === kind) || { fw: 1, fh: 1, walkable: false };
+}
+
 const kenneyRpgBase = new Image();
 kenneyRpgBase.src = "./assets/kenney-rpg-base.png";
 const KENNEY_TILE_SIZE = 64;
@@ -1020,7 +1045,13 @@ const state = {
   /** After waking, keep the companion posed in bed for a short beat */
   morningAfterCompanionBedUntil: 0,
   /** @type {{ sessionId: string, totalShafts: number, beatIntervalMs: number, windowMs: number, shaft: number, beatStartedAt: number, done: boolean, lastQuality: string|null, lastGold: number } | null} */
-  fletchingGame: null
+  fletchingGame: null,
+  /** Placed furniture for the current interior (array of {id,kind,lx,ly}). */
+  houseFurniture: [],
+  /** Owned-but-unplaced furniture pieces from the self snapshot. */
+  ownedFurniture: [],
+  /** While placing furniture: { piece, templateIdx } or null. */
+  decorateMode: null
 };
 
 function syncMobileControlsVisibility() {
@@ -2142,6 +2173,24 @@ function handleServerMessage(message) {
         name: "Realm",
         text: "That brew only lets you stagger home — you still need your own doorway first."
       });
+    } else if (message.message === "furniture_no_house") {
+      appendChat({ kind: "system", name: "Realm", text: "You need to own a house first." });
+    } else if (message.message === "furniture_not_owner") {
+      appendChat({ kind: "system", name: "Realm", text: "You don't own this building." });
+    } else if (message.message === "furniture_not_inside") {
+      appendChat({ kind: "system", name: "Realm", text: "You must be inside your house to place furniture." });
+    } else if (message.message === "furniture_invalid") {
+      appendChat({ kind: "system", name: "Realm", text: "Invalid furniture selection." });
+    } else if (message.message === "furniture_out_of_bounds") {
+      appendChat({ kind: "system", name: "Realm", text: "Can't place furniture there — too close to the wall." });
+    } else if (message.message === "furniture_tile_blocked") {
+      appendChat({ kind: "system", name: "Realm", text: "Something is already placed there." });
+    } else if (message.message === "furniture_not_found") {
+      appendChat({ kind: "system", name: "Realm", text: "Couldn't find that furniture piece." });
+    } else if (typeof message.message === "string" && message.message.startsWith("bought_furniture:")) {
+      const fname = message.message.slice("bought_furniture:".length);
+      appendChat({ kind: "system", name: "Realm", text: `Bought ${fname}. Open your house and press D to decorate!` });
+      if (state.activeWindow === "decorate") refreshDecorateOwnedList();
     } else if (message.itemName) {
       appendChat({ kind: "system", name: "Realm", text: `${message.itemName}` });
     }
@@ -2153,6 +2202,12 @@ function handleServerMessage(message) {
     if (self && Array.isArray(message.unlockedWaypoints)) {
       self.unlockedWaypoints = message.unlockedWaypoints;
     }
+    return;
+  }
+
+  if (message.type === "houseFurniture") {
+    state.houseFurniture = Array.isArray(message.furniture) ? message.furniture : [];
+    refreshDecoratePlacedList();
     return;
   }
 
@@ -2378,6 +2433,9 @@ function updateSelfInventory() {
   state.ships = Array.isArray(self.ships) ? self.ships : (self.ship ? [self.ship] : []);
   state.quests = Array.isArray(self.quests) ? self.quests : [];
   state.gold = Number.isFinite(self.gold) ? self.gold : state.gold;
+  if (Array.isArray(self.ownedFurniture)) {
+    state.ownedFurniture = self.ownedFurniture;
+  }
   if (self.minigameStats && globalThis.BalathorMinigames) {
     BalathorMinigames.state.stats = self.minigameStats;
   }
@@ -3913,6 +3971,11 @@ function wireUi() {
     closeWaypointMenu();
   });
 
+  // Decorate panel close
+  decorateClose?.addEventListener("click", () => {
+    closeDecoratePanel();
+  });
+
   initDraggablePanels();
 
   // Delegated dragstart for ability slots (avoids listener accumulation across renders)
@@ -4183,6 +4246,38 @@ function wireUi() {
     if (tryDockPortClickInteract(event)) {
       return;
     }
+    // Furniture placement: if in decorate mode, click-to-place
+    if (state.decorateMode && isInsideOwnedHouseInterior()) {
+      const INTERIOR_BASE_X = 10000;
+      const INTERIOR_SPACING = 40;
+      // Find which interior we're in by finding a building near the camera position
+      // We use world coordinates: interior x starts at INTERIOR_BASE_X + index*INTERIOR_SPACING
+      // lx = floor(world.x - interior.x), ly = floor(world.y - interior.y)
+      // We send the world tile coords; server computes local offsets from the interior
+      // Actually server expects lx,ly directly (local to interior).
+      // Client must compute: find interior area. We do a simplified lookup:
+      // The self player's world pos tells us which interior we're in.
+      const self = state.players.get(state.selfId);
+      if (self) {
+        // Find building key from self position
+        // Interior start = nearest multiple: iX = floor((self.x - INTERIOR_BASE_X) / INTERIOR_SPACING)
+        const iIdx = Math.round((self.x - INTERIOR_BASE_X) / INTERIOR_SPACING);
+        const interiorStartX = INTERIOR_BASE_X + iIdx * INTERIOR_SPACING;
+        const lx = Math.floor(world.x - interiorStartX);
+        const ly = Math.floor(world.y - 10000);
+        send({
+          type: "placeFurniture",
+          templateIdx: state.decorateMode.templateIdx,
+          lx,
+          ly
+        });
+        state.decorateMode = null;
+        if (decoratePlaceHint) decoratePlaceHint.classList.add("hidden");
+        if (decorateStatus) decorateStatus.textContent = "";
+        return;
+      }
+    }
+
     if (tryOpenBuyHouseAtClick(world.x, world.y)) {
       return;
     }
@@ -4302,6 +4397,16 @@ function wireUi() {
       event.preventDefault();
       hidePlayerContextMenu();
       hideNpcContextMenu();
+      if (state.joined && state.decorateMode) {
+        state.decorateMode = null;
+        if (decoratePlaceHint) decoratePlaceHint.classList.add("hidden");
+        if (decorateStatus) decorateStatus.textContent = "";
+        return;
+      }
+      if (state.joined && state.activeWindow === "decorate") {
+        closeDecoratePanel();
+        return;
+      }
       if (state.joined && state.pendingCompanionInvite) {
         closeCompanionInvitePanel();
         return;
@@ -4447,6 +4552,19 @@ function wireUi() {
       event.preventDefault();
       toggleFriendsWindow();
       return;
+    }
+
+    // D — toggle decorate panel when inside owned house
+    if (event.key.toLowerCase() === "d" && state.joined && !isTextEntryTarget(event.target)) {
+      if (isInsideOwnedHouseInterior()) {
+        event.preventDefault();
+        if (state.activeWindow === "decorate") {
+          closeDecoratePanel();
+        } else {
+          openDecoratePanel();
+        }
+        return;
+      }
     }
 
     updateInput(event, true);
@@ -5161,6 +5279,72 @@ function closeWaypointMenu() {
   if (!waypointPanel) return;
   waypointPanel.classList.add("hidden");
   state.waypointMenu = null;
+}
+
+// ── Decorate panel (house furniture UI) ──────────────────────────────────────
+
+function isInsideOwnedHouseInterior() {
+  const self = state.players.get(state.selfId);
+  if (!self?.homeBuildingKey) return false;
+  // We use world coords > 9000 as a proxy for interior coordinate (client doesn't
+  // import the server world module — use the same threshold as INTERIOR_BASE_X=10000).
+  return self.x > 9000 && self.y > 9000;
+}
+
+function openDecoratePanel() {
+  refreshDecorateOwnedList();
+  refreshDecoratePlacedList();
+  decoratePanel?.classList.remove("hidden");
+  state.activeWindow = "decorate";
+}
+
+function closeDecoratePanel() {
+  decoratePanel?.classList.add("hidden");
+  state.decorateMode = null;
+  if (decoratePlaceHint) decoratePlaceHint.classList.add("hidden");
+  if (state.activeWindow === "decorate") state.activeWindow = null;
+}
+
+function refreshDecorateOwnedList() {
+  if (!decorateOwnedList) return;
+  const owned = state.ownedFurniture || [];
+  if (!owned.length) {
+    decorateOwnedList.innerHTML = '<p class="decorate-empty">No furniture owned. Buy from Marta\'s Workshop!</p>';
+    return;
+  }
+  decorateOwnedList.innerHTML = owned.map((f, i) =>
+    `<button class="decorate-item-btn" data-idx="${i}">${f.kind.replace(/_/g, " ")}${f.fw > 1 || f.fh > 1 ? ` (${f.fw}×${f.fh})` : ""}</button>`
+  ).join("");
+  decorateOwnedList.querySelectorAll(".decorate-item-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = Number(btn.dataset.idx);
+      const piece = (state.ownedFurniture || [])[idx];
+      if (!piece) return;
+      state.decorateMode = { piece, templateIdx: idx };
+      if (decoratePlaceHint) decoratePlaceHint.classList.remove("hidden");
+      if (decorateStatus) decorateStatus.textContent = `Placing: ${piece.kind.replace(/_/g, " ")} — click a floor tile`;
+      // Highlight selected
+      decorateOwnedList.querySelectorAll(".decorate-item-btn").forEach((b) => b.classList.remove("selected"));
+      btn.classList.add("selected");
+    });
+  });
+}
+
+function refreshDecoratePlacedList() {
+  if (!decoratePlacedList) return;
+  const placed = state.houseFurniture || [];
+  if (!placed.length) {
+    decoratePlacedList.innerHTML = '<p class="decorate-empty">Nothing placed yet.</p>';
+    return;
+  }
+  decoratePlacedList.innerHTML = placed.map((f) =>
+    `<button class="decorate-item-btn decorate-placed-btn" data-id="${f.id}">${f.kind.replace(/_/g, " ")} (${f.lx},${f.ly})</button>`
+  ).join("");
+  decoratePlacedList.querySelectorAll(".decorate-placed-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      send({ type: "pickupFurniture", pieceId: btn.dataset.id });
+    });
+  });
 }
 
 function syncHomeTeleportSlot(self) {
@@ -7852,6 +8036,8 @@ function renderShop() {
         ? `${state.shop.buildingName || state.shop.name} — Clinic`
       : state.shop.shopType === "parts"
         ? `${state.shop.buildingName || state.shop.name} — Parts`
+      : state.shop.shopType === "furniture"
+        ? `${state.shop.buildingName || state.shop.name} — Workshop`
       : state.shop.shopType === "trade"
         ? `${state.shop.buildingName || state.shop.name} — Bazaar`
         : state.shop.shopType === "pub"
@@ -9422,6 +9608,257 @@ function roundRect(ctx2, x, y, w, h, r) {
   ctx2.closePath();
 }
 
+// ── House furniture rendering ─────────────────────────────────────────────────
+
+/**
+ * Draw a single furniture piece at screen pixel position (sx, sy).
+ * fw/fh are tile footprint dimensions; tw/th are pixel sizes.
+ */
+function drawHouseFurniturePiece(kind, sx, sy, fw, fh) {
+  const tw = fw * TILE_SIZE;
+  const th = fh * TILE_SIZE;
+  const cx = sx + tw / 2;
+  const cy = sy + th / 2;
+  ctx.save();
+  switch (kind) {
+    case "rug": {
+      ctx.fillStyle = "#c8503a";
+      ctx.fillRect(sx + 2, sy + 2, tw - 4, th - 4);
+      ctx.strokeStyle = "#e8a878";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(sx + 4, sy + 4, tw - 8, th - 8);
+      ctx.strokeStyle = "#e8c098";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(sx + 7, sy + 7, tw - 14, th - 14);
+      break;
+    }
+    case "painting": {
+      ctx.fillStyle = "#3a2a1a";
+      ctx.fillRect(sx + 4, sy + 4, tw - 8, th - 8);
+      ctx.fillStyle = "#6a9ad0";
+      ctx.fillRect(sx + 7, sy + 7, tw - 14, th - 14);
+      ctx.fillStyle = "#d8c050";
+      ctx.fillRect(cx - 4, sy + 10, 8, 5);
+      ctx.fillStyle = "#50a050";
+      ctx.fillRect(cx - 6, sy + 14, 12, 6);
+      break;
+    }
+    case "bed": {
+      ctx.fillStyle = "#6a3820";
+      ctx.fillRect(sx + 2, sy + 2, tw - 4, th - 4);
+      ctx.fillStyle = "#d0c8a0";
+      ctx.fillRect(sx + 4, sy + 6, tw - 8, th - 10);
+      ctx.fillStyle = "#e8d8b0";
+      ctx.fillRect(sx + 5, sy + 7, tw - 10, 6);
+      ctx.fillStyle = "#c0a890";
+      ctx.fillRect(sx + 5, sy + 15, tw - 10, th - 20);
+      ctx.fillStyle = "#4a2810";
+      ctx.fillRect(sx + 2, sy + 2, tw - 4, 5);
+      break;
+    }
+    case "table": {
+      ctx.fillStyle = "#7a4a1e";
+      ctx.fillRect(sx + 3, sy + 4, tw - 6, th - 8);
+      ctx.fillStyle = "#a06030";
+      ctx.fillRect(sx + 4, sy + 4, tw - 8, 4);
+      ctx.fillStyle = "#5a3410";
+      ctx.fillRect(sx + 3, sy + th - 8, 4, 6);
+      ctx.fillRect(sx + tw - 7, sy + th - 8, 4, 6);
+      break;
+    }
+    case "chair": {
+      ctx.fillStyle = "#6a3818";
+      ctx.fillRect(sx + 6, sy + 6, tw - 12, th - 10);
+      ctx.fillStyle = "#8a5030";
+      ctx.fillRect(sx + 7, sy + 7, tw - 14, th - 18);
+      ctx.fillStyle = "#4a2810";
+      ctx.fillRect(sx + 6, sy + 6, tw - 12, 4);
+      ctx.fillRect(sx + 6, sy + th - 8, 3, 6);
+      ctx.fillRect(sx + tw - 9, sy + th - 8, 3, 6);
+      break;
+    }
+    case "bookshelf": {
+      ctx.fillStyle = "#5a3818";
+      ctx.fillRect(sx + 3, sy + 3, tw - 6, th - 6);
+      ctx.fillStyle = "#7a5030";
+      ctx.fillRect(sx + 4, sy + 4, tw - 8, th - 8);
+      const shelfColors = ["#c04040", "#4080c0", "#40a040", "#c09030", "#8040a0", "#c06030"];
+      const spineW = 4;
+      let bx = sx + 5;
+      for (let bi = 0; bi < 5 && bx + spineW < sx + tw - 4; bi++) {
+        ctx.fillStyle = shelfColors[bi % shelfColors.length];
+        ctx.fillRect(bx, sy + 7, spineW, th - 18);
+        bx += spineW + 1;
+      }
+      ctx.fillStyle = "#4a2810";
+      ctx.fillRect(sx + 3, sy + Math.floor(th / 2) - 1, tw - 6, 2);
+      break;
+    }
+    case "fireplace": {
+      ctx.fillStyle = "#888078";
+      ctx.fillRect(sx + 2, sy + 2, tw - 4, th - 4);
+      ctx.fillStyle = "#2a1a0a";
+      ctx.fillRect(sx + 6, sy + 6, tw - 12, th - 8);
+      ctx.fillStyle = "#e84010";
+      ctx.globalAlpha = 0.7 + Math.sin(performance.now() * 0.008) * 0.2;
+      ctx.fillRect(sx + 8, sy + 10, tw - 16, th - 14);
+      ctx.fillStyle = "#f8c000";
+      ctx.globalAlpha = 0.5 + Math.sin(performance.now() * 0.012) * 0.3;
+      ctx.fillRect(cx - 4, sy + 12, 8, th - 18);
+      ctx.globalAlpha = 1;
+      break;
+    }
+    case "plant": {
+      ctx.fillStyle = "#6a4820";
+      ctx.fillRect(cx - 6, sy + th - 10, 12, 8);
+      ctx.fillStyle = "#2a7020";
+      ctx.beginPath();
+      ctx.ellipse(cx, sy + th - 12, 10, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#38a030";
+      ctx.beginPath();
+      ctx.ellipse(cx - 6, sy + th - 15, 6, 5, -0.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(cx + 6, sy + th - 15, 6, 5, 0.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(cx, sy + th - 18, 7, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case "lantern": {
+      ctx.strokeStyle = "#8a7040";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx, sy + th - 5);
+      ctx.lineTo(cx, sy + th - 16);
+      ctx.stroke();
+      ctx.fillStyle = "#a08040";
+      ctx.fillRect(cx - 5, sy + 6, 10, 14);
+      const glow = ctx.createRadialGradient(cx, sy + 13, 2, cx, sy + 13, 10);
+      glow.addColorStop(0, "rgba(255,220,80,0.85)");
+      glow.addColorStop(1, "rgba(255,160,20,0)");
+      ctx.fillStyle = glow;
+      ctx.fillRect(cx - 12, sy + 2, 24, 22);
+      ctx.fillStyle = "#f8e060";
+      ctx.globalAlpha = 0.7 + Math.sin(performance.now() * 0.009) * 0.2;
+      ctx.fillRect(cx - 3, sy + 8, 6, 10);
+      ctx.globalAlpha = 1;
+      break;
+    }
+    case "cabinet": {
+      ctx.fillStyle = "#5a3818";
+      ctx.fillRect(sx + 3, sy + 3, tw - 6, th - 6);
+      ctx.fillStyle = "#7a5030";
+      ctx.fillRect(sx + 4, sy + 4, tw - 8, th - 8);
+      ctx.fillStyle = "#5a3818";
+      ctx.fillRect(sx + 3, sy + Math.floor(th / 2) - 1, tw - 6, 2);
+      ctx.fillStyle = "#c09850";
+      ctx.fillRect(cx - 2, sy + Math.floor(th * 0.28), 4, 4);
+      ctx.fillRect(cx - 2, sy + Math.floor(th * 0.68), 4, 4);
+      break;
+    }
+    case "weapon_rack": {
+      ctx.fillStyle = "#5a3818";
+      ctx.fillRect(cx - 2, sy + 3, 4, th - 6);
+      ctx.fillRect(sx + 4, sy + 6, tw - 8, 3);
+      ctx.fillRect(sx + 4, sy + th - 10, tw - 8, 3);
+      ctx.strokeStyle = "#b0b8c0";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(sx + 5, sy + 5);
+      ctx.lineTo(sx + tw - 6, sy + th - 6);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(sx + tw - 6, sy + 5);
+      ctx.lineTo(sx + 5, sy + th - 6);
+      ctx.stroke();
+      break;
+    }
+    case "trophy": {
+      ctx.fillStyle = "#8a7040";
+      ctx.fillRect(cx - 4, sy + th - 8, 8, 6);
+      ctx.fillRect(cx - 7, sy + th - 10, 14, 3);
+      ctx.fillStyle = "#d4a830";
+      ctx.fillRect(cx - 2, sy + 10, 4, th - 18);
+      ctx.beginPath();
+      ctx.arc(cx, sy + 8, 7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#f0c840";
+      ctx.beginPath();
+      ctx.arc(cx, sy + 7, 5, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    default: {
+      ctx.fillStyle = "#888";
+      ctx.fillRect(sx + 2, sy + 2, tw - 4, th - 4);
+      ctx.fillStyle = "#fff";
+      ctx.font = "9px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(kind.slice(0, 4), cx, cy);
+    }
+  }
+  ctx.restore();
+}
+
+/**
+ * Draw all placed furniture pieces for the current interior.
+ * Called after the tile pass so furniture sits on top of the floor.
+ */
+function drawHouseFurniture() {
+  const furniture = state.houseFurniture;
+  if (!furniture || !furniture.length) return;
+  const self = state.players.get(state.selfId);
+  if (!self || self.x < 9000) return; // not in interior
+
+  const INTERIOR_BASE_X = 10000;
+  const INTERIOR_SPACING = 40;
+  const INTERIOR_BASE_Y = 10000;
+  const iIdx = Math.round((self.x - INTERIOR_BASE_X) / INTERIOR_SPACING);
+  const interiorStartX = INTERIOR_BASE_X + iIdx * INTERIOR_SPACING;
+  const interiorStartY = INTERIOR_BASE_Y;
+
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+
+  for (const f of furniture) {
+    const worldX = interiorStartX + f.lx;
+    const worldY = interiorStartY + f.ly;
+    const sx = Math.floor(worldX * TILE_SIZE - state.camera.x + halfW);
+    const sy = Math.floor(worldY * TILE_SIZE - state.camera.y + halfH);
+    // Find fw/fh from client-side catalog
+    const fdef = getFurnitureDef(f.kind);
+    const fw = fdef.fw || 1;
+    const fh = fdef.fh || 1;
+    drawHouseFurniturePiece(f.kind, sx, sy, fw, fh);
+  }
+
+  // Draw placement preview if in decorate mode
+  if (state.decorateMode) {
+    const piece = state.decorateMode.piece;
+    const fw = piece.fw || 1;
+    const fh = piece.fh || 1;
+    // Use last pointer position
+    const iIdx2 = Math.round((self.x - INTERIOR_BASE_X) / INTERIOR_SPACING);
+    const intX2 = INTERIOR_BASE_X + iIdx2 * INTERIOR_SPACING;
+    const lx = Math.floor(state.lastPointerWorldX - intX2);
+    const ly = Math.floor(state.lastPointerWorldY - INTERIOR_BASE_Y);
+    const px = Math.floor((intX2 + lx) * TILE_SIZE - state.camera.x + halfW);
+    const py = Math.floor((INTERIOR_BASE_Y + ly) * TILE_SIZE - state.camera.y + halfH);
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    drawHouseFurniturePiece(piece.kind, px, py, fw, fh);
+    ctx.strokeStyle = "#e0d060";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(px, py, fw * TILE_SIZE, fh * TILE_SIZE);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+}
+
 function drawTraderCaravans(minTileX, maxTileX, minTileY, maxTileY) {
   const halfW = canvas.width / 2;
   const halfH = canvas.height / 2;
@@ -9517,6 +9954,7 @@ function drawWorld() {
   drawSpaceObjects();
   drawWorldLoot();
   drawBuildingSprites(minTileX, maxTileX, minTileY, maxTileY);
+  drawHouseFurniture();
   drawRoadsideFeatures(minTileX, maxTileX, minTileY, maxTileY);
   drawUpperDeckShadows(minTileX, maxTileX, minTileY, maxTileY);
   if (globalThis.BalathorMinigames) {

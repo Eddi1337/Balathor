@@ -67,7 +67,9 @@ const {
   isUpperStairsAt,
   isUpperBlockedCircle,
   getStairTravelAt,
-  TILE
+  TILE,
+  getInteriorAreaAt,
+  getInteriorTile
 } = require("./world");
 const {
   DUNGEON_DEFINITIONS,
@@ -108,7 +110,11 @@ const {
   HOUSE_CHEST_SLOTS,
   loadHouseChestSlots,
   saveHouseChestSlots,
-  getWorldDatabasePath
+  getWorldDatabasePath,
+  loadHouseFurniture,
+  upsertHouseFurniturePiece,
+  deleteHouseFurniturePiece,
+  clearHouseFurniture
 } = require("./worldStore");
 const { createSocialSystem } = require("./social.js");
 const { createMinigameSystem } = require("./minigames.js");
@@ -393,6 +399,21 @@ const WAYPOINT_TRAVEL_RADIUS = 6.0;
 const WAYPOINT_TRAVEL_COST = 15;
 /** Worlds where mounting is disabled (Oceanus — players use ships). */
 const MOUNT_FORBIDDEN_WORLDS = new Set(["oceanus"]);
+// ── Furniture system ──────────────────────────────────────────────────────────
+const FURNITURE_CATALOG = [
+  { templateId: "furn_bed",         name: "Bed",              type: "furniture", kind: "bed",         fw: 2, fh: 1, price: 80,  walkable: false, icon: "bed" },
+  { templateId: "furn_table",       name: "Table",            type: "furniture", kind: "table",       fw: 2, fh: 1, price: 60,  walkable: false, icon: "table" },
+  { templateId: "furn_chair",       name: "Chair",            type: "furniture", kind: "chair",       fw: 1, fh: 1, price: 30,  walkable: false, icon: "chair" },
+  { templateId: "furn_rug",         name: "Rug",              type: "furniture", kind: "rug",         fw: 2, fh: 2, price: 50,  walkable: true,  icon: "rug" },
+  { templateId: "furn_bookshelf",   name: "Bookshelf",        type: "furniture", kind: "bookshelf",   fw: 1, fh: 1, price: 100, walkable: false, icon: "bookshelf" },
+  { templateId: "furn_fireplace",   name: "Fireplace",        type: "furniture", kind: "fireplace",   fw: 2, fh: 1, price: 150, walkable: false, icon: "fireplace" },
+  { templateId: "furn_plant",       name: "Potted Plant",     type: "furniture", kind: "plant",       fw: 1, fh: 1, price: 40,  walkable: false, icon: "plant" },
+  { templateId: "furn_painting",    name: "Wall Painting",    type: "furniture", kind: "painting",    fw: 1, fh: 1, price: 70,  walkable: true,  icon: "painting" },
+  { templateId: "furn_lantern",     name: "Lantern Stand",    type: "furniture", kind: "lantern",     fw: 1, fh: 1, price: 45,  walkable: false, icon: "lantern" },
+  { templateId: "furn_cabinet",     name: "Storage Cabinet",  type: "furniture", kind: "cabinet",     fw: 1, fh: 1, price: 120, walkable: false, icon: "cabinet" },
+  { templateId: "furn_weapon_rack", name: "Weapon Rack",      type: "furniture", kind: "weapon_rack", fw: 1, fh: 1, price: 90,  walkable: false, icon: "weapon_rack" },
+  { templateId: "furn_trophy",      name: "Trophy Stand",     type: "furniture", kind: "trophy",      fw: 1, fh: 1, price: 110, walkable: false, icon: "trophy" },
+];
 /**
  * Waypoint obelisk network — same-world fast travel.
  * Waypoints in different worldId values are intentionally NOT cross-linked here;
@@ -1815,6 +1836,16 @@ function persistOwnedHouseChest(buildingKey) {
   saveHouseChestSlots(worldDb, buildingKey, slots);
 }
 
+// Map<buildingKey, Array<{id,kind,lx,ly}>>
+const houseFurnitureByKey = new Map();
+
+function touchHouseFurnitureCache(buildingKey) {
+  if (!houseFurnitureByKey.has(buildingKey)) {
+    houseFurnitureByKey.set(buildingKey, loadHouseFurniture(worldDb, buildingKey));
+  }
+  return houseFurnitureByKey.get(buildingKey);
+}
+
 let nextAssaultMobId = 1;
 let nextFantasyAssaultAt = Date.now() + 22000;
 let nextSciFiAssaultAt = Date.now() + 30000;
@@ -2426,6 +2457,7 @@ function serializePlayer(player) {
     hasMount: Boolean(player.hasMount),
     mounted: Boolean(player.mounted),
     unlockedWaypoints: sanitizeWaypointSet(player.unlockedWaypoints),
+    ownedFurniture: Array.isArray(player.ownedFurniture) ? player.ownedFurniture : [],
     x: Number(player.x.toFixed(3)),
     y: Number(player.y.toFixed(3)),
     facing: Number(player.facing.toFixed(3)),
@@ -5541,7 +5573,7 @@ function simulate() {
           shipMode ||
           (onUpperLayer
             ? !isUpperBlockedCircle(nextX, client.player.y)
-            : !isBlockedCircle(nextX, client.player.y) && !isDoorLockedForPlayer(nextX, client.player.y, doorAccountKey))
+            : !isBlockedCircle(nextX, client.player.y) && !isDoorLockedForPlayer(nextX, client.player.y, doorAccountKey) && !isFurnitureBlockedAt(nextX, client.player.y))
         ) {
           client.player.x = nextX;
         }
@@ -5549,7 +5581,7 @@ function simulate() {
           shipMode ||
           (onUpperLayer
             ? !isUpperBlockedCircle(client.player.x, nextY)
-            : !isBlockedCircle(client.player.x, nextY) && !isDoorLockedForPlayer(client.player.x, nextY, doorAccountKey))
+            : !isBlockedCircle(client.player.x, nextY) && !isDoorLockedForPlayer(client.player.x, nextY, doorAccountKey) && !isFurnitureBlockedAt(client.player.x, nextY))
         ) {
           client.player.y = nextY;
         }
@@ -5683,7 +5715,23 @@ function simulate() {
 }
 
 function handleDoorTravel(client) {
-  // Walk-in architecture: players walk through doors naturally, no teleportation
+  // Walk-in architecture: players walk through doors naturally, no teleportation.
+  // Detect interior-entry transitions so we can push furniture state to the player.
+  const p = client.player;
+  if (!p) return;
+  const interior = getInteriorAreaAt(p.x, p.y);
+  const nowKey = interior ? (interior.building.x + "," + interior.building.y) : null;
+  if (nowKey !== (p._lastInteriorKey || null)) {
+    p._lastInteriorKey = nowKey;
+    if (nowKey) {
+      // Entered a building interior — send furniture if this is an owned house
+      const ownership = ownedBuildings.get(nowKey);
+      if (ownership) {
+        const furniture = touchHouseFurnitureCache(nowKey);
+        send(client, { type: "houseFurniture", buildingKey: nowKey, furniture });
+      }
+    }
+  }
 }
 
 /**
@@ -5754,6 +5802,7 @@ function handleStairTravel(client) {
     y: p.y
   });
   streamChunks(client, nearbyChunks(p.x, p.y, 3));
+  sendHouseFurnitureIfInside(client);
 }
 
 function isDoorLockedForPlayer(x, y, ownerAccountKey) {
@@ -6709,6 +6758,16 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "placeFurniture") {
+    handlePlaceFurniture(client, message);
+    return;
+  }
+
+  if (message.type === "pickupFurniture") {
+    handlePickupFurniture(client, message);
+    return;
+  }
+
   if (message.type === "shopSell") {
     handleShopSell(client, message);
     return;
@@ -7133,6 +7192,7 @@ function joinWorld(client, message, savedCharacter = null) {
   client.player.unlockedWaypoints = sanitizeWaypointSet(
     Array.isArray(savedCharacter?.unlockedWaypoints) ? savedCharacter.unlockedWaypoints : []
   );
+  client.player.ownedFurniture = Array.isArray(savedCharacter?.ownedFurniture) ? savedCharacter.ownedFurniture : [];
   validatePassengerLink(client.player);
   const rescuedFromSpace = rescueStrandedSciFiPlayer(client.player);
   const repairedOceanusLanding = repairOceanusFootLanding(client);
@@ -9723,6 +9783,13 @@ function handleInteract(client, message = {}) {
     return;
   }
 
+  // Furniture shop: furnisher NPC acts as a shop
+  const furnisherShop = nearestFurnisherShop(client.player);
+  if (furnisherShop) {
+    sendShopWindow(client, furnisherShop);
+    return;
+  }
+
   const shop = nearestShopFixture(client.player, message);
   if (shop) {
     sendShopWindow(client, shop);
@@ -11315,7 +11382,8 @@ function emitSnapshot() {
         abilityBar: p.abilityBar || [null, null, null, null, null],
         moveSpeed: Number(getPlayerSpeed(p).toFixed(2)),
         hasMount: Boolean(p.hasMount),
-        unlockedWaypoints: sanitizeWaypointSet(p.unlockedWaypoints)
+        unlockedWaypoints: sanitizeWaypointSet(p.unlockedWaypoints),
+        ownedFurniture: Array.isArray(p.ownedFurniture) ? p.ownedFurniture : []
       });
     }
     if (
@@ -11895,6 +11963,29 @@ function nearestStableShop(player) {
   return null;
 }
 
+/**
+ * Returns a synthetic shop object if the player is near an NPC with isFurnisher / shopType.
+ * Furnisher NPCs are treated as first-class shop fixtures without needing a tile-based shelf.
+ */
+function nearestFurnisherShop(player) {
+  const allNpcs = getNpcSnapshot();
+  for (const n of allNpcs) {
+    if (!n.isFurnisher) continue;
+    const dist = Math.hypot(n.x - player.x, n.y - player.y);
+    if (dist > SHOP_INTERACT_RADIUS + 1) continue;
+    return {
+      id: `furnisher_${n.id}`,
+      name: n.shopName || "Marta's Workshop",
+      buildingName: n.shopName || "Marta's Workshop",
+      isPub: false,
+      shopType: n.shopType || "furniture",
+      x: n.x,
+      y: n.y
+    };
+  }
+  return null;
+}
+
 function nearestShopFixture(player, message = {}) {
   const targetX = Number(message.x);
   const targetY = Number(message.y);
@@ -11938,6 +12029,9 @@ function getShopStock(shop) {
   }
   if (shop?.shopType === "mount") {
     return getMountCatalog();
+  }
+  if (shop?.shopType === "furniture") {
+    return FURNITURE_CATALOG;
   }
   if (shop?.shopType === "stims") {
     const pots = itemDatabase.filter((it) => it && it.type === "potion");
@@ -11985,6 +12079,20 @@ function publicShopItem(template) {
       price: Number(template.price) || 0,
       rarity: template.rarity || "uncommon",
       upgrade: template.upgrade || "speed"
+    };
+  }
+  if (template?.type === "furniture") {
+    return {
+      templateId: template.templateId,
+      type: "furniture",
+      name: template.name,
+      icon: template.icon,
+      kind: template.kind,
+      fw: template.fw,
+      fh: template.fh,
+      price: template.price,
+      value: template.price,
+      walkable: template.walkable
     };
   }
   if (template?.type === "ship") {
@@ -12036,12 +12144,134 @@ function sendShopWindow(client, shop) {
   });
 }
 
+// ── Furniture collision helper (hot path — only reads from in-memory cache) ──
+function isFurnitureBlockedAt(wx, wy) {
+  const interior = getInteriorAreaAt(wx, wy);
+  if (!interior) return false;
+  const buildingKey = interior.building.x + "," + interior.building.y;
+  const existing = houseFurnitureByKey.get(buildingKey);
+  if (!existing || !existing.length) return false;
+  const lx = Math.floor(wx - interior.x);
+  const ly = Math.floor(wy - interior.y);
+  for (const f of existing) {
+    const template = FURNITURE_CATALOG.find((c) => c.kind === f.kind);
+    if (template?.walkable) continue;
+    const fw = template?.fw || 1;
+    const fh = template?.fh || 1;
+    if (lx >= f.lx && lx < f.lx + fw && ly >= f.ly && ly < f.ly + fh) return true;
+  }
+  return false;
+}
+
+// Send current furniture state to all players inside a given building interior.
+function broadcastFurnitureState(buildingKey) {
+  const furniture = touchHouseFurnitureCache(buildingKey);
+  for (const c of clients.values()) {
+    if (!c.player) continue;
+    const interior = getInteriorAreaAt(c.player.x, c.player.y);
+    if (!interior) continue;
+    if (interior.building.x + "," + interior.building.y !== buildingKey) continue;
+    send(c, { type: "houseFurniture", buildingKey, furniture });
+  }
+}
+
+// Send furniture if the player just entered an owned house interior.
+function sendHouseFurnitureIfInside(client) {
+  const p = client.player;
+  if (!p) return;
+  const interior = getInteriorAreaAt(p.x, p.y);
+  if (!interior) return;
+  const buildingKey = interior.building.x + "," + interior.building.y;
+  const ownership = ownedBuildings.get(buildingKey);
+  if (!ownership) return; // only owned houses have furniture
+  const furniture = touchHouseFurnitureCache(buildingKey);
+  send(client, { type: "houseFurniture", buildingKey, furniture });
+}
+
+function handlePlaceFurniture(client, message) {
+  const p = client.player;
+  if (!p) return;
+  const buildingKey = p.homeBuildingKey;
+  if (!buildingKey) { send(client, { type: "serverMessage", message: "furniture_no_house" }); return; }
+  const own = ownedBuildings.get(buildingKey);
+  if (!own || own.ownerAccountKey !== client.account?.key) {
+    send(client, { type: "serverMessage", message: "furniture_not_owner" }); return;
+  }
+  const interior = getInteriorAreaAt(p.x, p.y);
+  if (!interior || interior.building.x + "," + interior.building.y !== buildingKey) {
+    send(client, { type: "serverMessage", message: "furniture_not_inside" }); return;
+  }
+  const idx = Number(message.templateIdx);
+  if (!Array.isArray(p.ownedFurniture) || idx < 0 || idx >= p.ownedFurniture.length) {
+    send(client, { type: "serverMessage", message: "furniture_invalid" }); return;
+  }
+  const piece = p.ownedFurniture[idx];
+  const lx = Math.floor(Number(message.lx));
+  const ly = Math.floor(Number(message.ly));
+  const fw = piece.fw || 1;
+  const fh = piece.fh || 1;
+  const { w, h } = interior;
+  // Bounds check — keep 1 tile margin from walls
+  if (lx < 1 || ly < 1 || lx + fw > w - 1 || ly + fh > h - 1) {
+    send(client, { type: "serverMessage", message: "furniture_out_of_bounds" }); return;
+  }
+  // Check no footprint overlap with existing furniture (AABB)
+  const existing = touchHouseFurnitureCache(buildingKey);
+  for (const f of existing) {
+    const fdef = FURNITURE_CATALOG.find((c) => c.kind === f.kind);
+    const efw = fdef?.fw || 1;
+    const efh = fdef?.fh || 1;
+    if (!(lx + fw <= f.lx || f.lx + efw <= lx || ly + fh <= f.ly || f.ly + efh <= ly)) {
+      send(client, { type: "serverMessage", message: "furniture_tile_blocked" }); return;
+    }
+  }
+  const id = `furn_${buildingKey.replace(/,/g, "_")}_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+  const placed = { id, kind: piece.kind, lx, ly };
+  existing.push(placed);
+  upsertHouseFurniturePiece(worldDb, buildingKey, placed);
+  // Remove from ownedFurniture
+  p.ownedFurniture.splice(idx, 1);
+  saveClientCharacter(client);
+  broadcastFurnitureState(buildingKey);
+  broadcastSnapshot();
+}
+
+function handlePickupFurniture(client, message) {
+  const p = client.player;
+  if (!p) return;
+  const buildingKey = p.homeBuildingKey;
+  if (!buildingKey) return;
+  const own = ownedBuildings.get(buildingKey);
+  if (!own || own.ownerAccountKey !== client.account?.key) return;
+  const interior = getInteriorAreaAt(p.x, p.y);
+  if (!interior || interior.building.x + "," + interior.building.y !== buildingKey) return;
+  const pieceId = String(message.pieceId || "").slice(0, 128);
+  const existing = touchHouseFurnitureCache(buildingKey);
+  const idx = existing.findIndex((f) => f.id === pieceId);
+  if (idx === -1) { send(client, { type: "serverMessage", message: "furniture_not_found" }); return; }
+  const piece = existing[idx];
+  const template = FURNITURE_CATALOG.find((c) => c.kind === piece.kind);
+  existing.splice(idx, 1);
+  deleteHouseFurniturePiece(worldDb, buildingKey, pieceId);
+  if (!Array.isArray(p.ownedFurniture)) p.ownedFurniture = [];
+  p.ownedFurniture.push({
+    templateId: template?.templateId || `furn_${piece.kind}`,
+    kind: piece.kind,
+    fw: template?.fw || 1,
+    fh: template?.fh || 1,
+    walkable: template?.walkable || false
+  });
+  saveClientCharacter(client);
+  broadcastFurnitureState(buildingKey);
+  broadcastSnapshot();
+}
+
 function handleShopBuy(client, message) {
   if (!client.player) {
     return;
   }
 
-  const shop = nearestShopFixture(client.player, message) || nearestStableShop(client.player);
+  const shop = nearestShopFixture(client.player, message) || nearestStableShop(client.player) || nearestFurnisherShop(client.player);
   if (!shop) {
     send(client, { type: "serverMessage", message: "shop_not_nearby" });
     return;
@@ -12051,6 +12281,29 @@ function handleShopBuy(client, message) {
   const template = getShopStock(shop).find((item) => item.templateId === templateId);
   if (!template) {
     send(client, { type: "serverMessage", message: "shop_item_missing" });
+    return;
+  }
+
+  if (template.type === "furniture") {
+    const price = Number(template.price) || 0;
+    if ((client.player.gold || 0) < price) {
+      send(client, { type: "serverMessage", message: "not_enough_gold" });
+      sendShopWindow(client, shop);
+      return;
+    }
+    client.player.gold -= price;
+    if (!Array.isArray(client.player.ownedFurniture)) client.player.ownedFurniture = [];
+    client.player.ownedFurniture.push({
+      templateId: template.templateId,
+      kind: template.kind,
+      fw: template.fw,
+      fh: template.fh,
+      walkable: template.walkable
+    });
+    saveClientCharacter(client);
+    sendShopWindow(client, shop);
+    send(client, { type: "serverMessage", message: `bought_furniture:${template.name}` });
+    broadcastSnapshot();
     return;
   }
 

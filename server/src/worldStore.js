@@ -53,6 +53,14 @@ function openWorldDb(dbPath = process.env.WORLD_DB_PATH || DEFAULT_DB_PATH) {
       building_key TEXT PRIMARY KEY NOT NULL,
       slots_json TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS house_furniture (
+      building_key TEXT NOT NULL,
+      id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      lx INTEGER NOT NULL,
+      ly INTEGER NOT NULL,
+      PRIMARY KEY (building_key, id)
+    );
   `);
   return db;
 }
@@ -173,6 +181,38 @@ function loadHouseChestSlots(db, buildingKey, parseItem) {
   return normalizeChestSlotArray(rawArr, parseItem);
 }
 
+function loadHouseFurniture(db, buildingKey) {
+  const stmt = db.prepare("SELECT id, kind, lx, ly FROM house_furniture WHERE building_key = ?");
+  return stmt.all(buildingKey).map((row) => ({
+    id: String(row.id),
+    kind: String(row.kind),
+    lx: Number(row.lx),
+    ly: Number(row.ly)
+  }));
+}
+
+function upsertHouseFurniturePiece(db, buildingKey, piece) {
+  db.prepare(`
+    INSERT INTO house_furniture (building_key, id, kind, lx, ly)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(building_key, id) DO UPDATE SET
+      kind = excluded.kind,
+      lx = excluded.lx,
+      ly = excluded.ly
+  `).run(buildingKey, String(piece.id), String(piece.kind), Math.round(piece.lx), Math.round(piece.ly));
+  checkpointWorldDb(db);
+}
+
+function deleteHouseFurniturePiece(db, buildingKey, pieceId) {
+  db.prepare("DELETE FROM house_furniture WHERE building_key = ? AND id = ?").run(buildingKey, String(pieceId));
+  checkpointWorldDb(db);
+}
+
+function clearHouseFurniture(db, buildingKey) {
+  db.prepare("DELETE FROM house_furniture WHERE building_key = ?").run(buildingKey);
+  checkpointWorldDb(db);
+}
+
 function saveHouseChestSlots(db, buildingKey, slots) {
   const json = JSON.stringify(Array.from({ length: HOUSE_CHEST_SLOTS }, (_, i) => slots[i] || null));
   db.prepare(`
@@ -195,5 +235,9 @@ module.exports = {
   closeWorldDb,
   HOUSE_CHEST_SLOTS,
   loadHouseChestSlots,
-  saveHouseChestSlots
+  saveHouseChestSlots,
+  loadHouseFurniture,
+  upsertHouseFurniturePiece,
+  deleteHouseFurniturePiece,
+  clearHouseFurniture
 };

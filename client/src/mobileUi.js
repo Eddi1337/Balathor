@@ -27,7 +27,8 @@
     document.querySelector("#shipTerminalPanel"),
     document.querySelector("#tradePanel"),
     document.querySelector("#friendsWindow"),
-    document.querySelector("#waypointPanel")
+    document.querySelector("#waypointPanel"),
+    document.querySelector("#decoratePanel")
   ].filter(Boolean);
 
   if (!mobileContextDock || !mobilePrimaryAction) {
@@ -263,6 +264,10 @@
     if (state.shop?.open) {
       chips.push({ id: "shop", label: "Shop", title: "Trader shelf", selected: true });
     }
+    // Decorate chip — show when player is inside their own house interior
+    if (self?.homeBuildingKey && self.x > 9000 && self.y > 9000) {
+      chips.push({ id: "decorate", label: "Decorate", title: "Decorate home", selected: state.activeWindow === "decorate" });
+    }
     chips.push(
       { id: "character", label: "Char", title: "Character", selected: state.activeWindow === "equipment" },
       { id: "bags", label: "Bags", title: "Inventory", selected: state.activeWindow === "bags" },
@@ -309,6 +314,10 @@
       case "quests":
         toggleGameWindow("quests");
         break;
+      case "decorate":
+        if (typeof openDecoratePanel === "function") openDecoratePanel();
+        syncMobileGameWindowLayer();
+        break;
       case "toggle-hotbar":
         setMobileHotbarExpanded(!state.mobileHotbarExpanded);
         break;
@@ -329,6 +338,7 @@
     document.querySelector("#shipTerminalPanel")?.classList.add("hidden");
     document.querySelector("#tradePanel")?.classList.add("hidden");
     document.querySelector("#friendsWindow")?.classList.add("hidden");
+    document.querySelector("#decoratePanel")?.classList.add("hidden");
     syncMobileGameWindowLayer();
     renderMobileContextDock();
   }

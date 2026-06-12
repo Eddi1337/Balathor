@@ -3171,5 +3171,7 @@ module.exports = {
   isUpperBlockedCircle,
   getUpperCellsInChunk,
   getStairTravelAt,
-  getUpstairsTile
+  getUpstairsTile,
+  getInteriorAreaAt,
+  getInteriorTile
 };

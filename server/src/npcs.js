@@ -2448,6 +2448,27 @@ const BASE_NPC_DEFINITIONS = [
       "Dock traffic is currently within acceptable chaos limits.",
     ]
   },
+  // ── Carpenter / furnisher (Fantasy hub) ──────────────────────────────────
+  {
+    id: "npc_furnisher_marta",
+    name: "Marta the Carpenter",
+    classId: "ranger",
+    primary: "#7a5c38",
+    accent: "#c8a86a",
+    homeX: 20,
+    homeY: 12,
+    patrolRadius: 4,
+    isFurnisher: true,
+    shopType: "furniture",
+    shopName: "Marta's Workshop",
+    aiPersonality: "a cheerful, sawdust-dusted carpenter who takes enormous pride in crafting cozy furniture and loves hearing how customers have decorated their homes",
+    dialogue: [
+      "A home isn't a home without a proper bed to sleep in!",
+      "Press D inside your house to arrange your furniture.",
+      "I've got beds, rugs, bookshelves — everything to make your place feel lived-in.",
+      "Nothing beats a good fireplace on a cold night. I sell those too!",
+    ],
+  },
   // ── Stable / mount vendor (Fantasy hub) ──────────────────────────────────
   {
     id: "npc_stable_keeper",
@@ -4246,7 +4267,8 @@ function getNpcSnapshot() {
       ...(npc.wandersToPlayer ? { wandersToPlayer: true } : {}),
       ...(npc.wandersToNewPlayer ? { wandersToNewPlayer: true } : {}),
       ...(npc.wandersToFlirt ? { wandersToFlirt: true } : {}),
-      ...(npc.isStableKeeper ? { isStableKeeper: true, shopName: npc.shopName || "Stable", shopType: npc.shopType || "mount" } : {})
+      ...(npc.isStableKeeper ? { isStableKeeper: true, shopName: npc.shopName || "Stable", shopType: npc.shopType || "mount" } : {}),
+      ...(npc.isFurnisher ? { isFurnisher: true, shopName: npc.shopName || "Marta's Workshop", shopType: npc.shopType || "furniture" } : {})
     }));
 }
 
