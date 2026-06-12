@@ -181,6 +181,7 @@ let safeZoneTooltipPinTimer = null;
 const TILE_SIZE = 32;
 const SCI_FI_THEME = "sci-fi";
 const NAUTICAL_THEME = "nautical";
+const PIRATE_THEME = "pirate";
 const ALIEN_THEME = "alien";
 const DUNGEON_THEME = "dungeon";
 /** Hub landmark tree trunk — same origin as server/src/world.js START_SPAWN. */
@@ -686,7 +687,7 @@ function isSciFiWorld() {
 }
 
 function isNauticalWorld() {
-  return state.worldTheme === NAUTICAL_THEME;
+  return state.worldTheme === NAUTICAL_THEME || state.worldTheme === PIRATE_THEME;
 }
 
 function isShipNavWorld() {
@@ -14039,28 +14040,37 @@ function computeIdleCharacterArms(kind, phase, bx, by, s) {
  */
 function getWorldThemedTorsoStyle(style, classId) {
   if (isSciFiWorld()) {
-    // Everything reads as sci-fi tech in the orbital sector
+    // Everything reads as sci-fi tech in the orbital sector.
+    // Scout/ranger classes keep their slim silhouette as a scout jumpsuit.
     if (style === "rangercloak" || style === "cloak" || style === "leather") {
       return style; // lightweight scout gear survives unchanged
     }
+    // Base unarmored cloth → jumpsuit (sciFi style)
     return "sciFi";
   }
   if (isNauticalWorld()) {
-    // Heavy armor → naval coat silhouette
+    // Heavy plate → flowing naval greatcoat (cloak silhouette)
     if (style === "knightplate" || style === "plate" || style === "battle" || style === "armor") {
-      return "rangercloak"; // broad navy greatcoat shares the flowing-edge silhouette
+      return "cloak"; // naval greatcoat — wide flowing shoulders
     }
     if (style === "chainmail" || style === "scale") {
-      return "leather"; // studded leather — practical sailor's vest
+      return "leather"; // studded leather vest — practical sailor's kit
     }
     if (style === "wizardrobe" || style === "ascendant" || style === "robe") {
-      return "robe"; // ship mage coat — still long but without arcane motifs
+      return "robe"; // sea-witch/navigator coat — long but with maritime trim
     }
     if (style === "crystal" || style === "shadowweave" || style === "runic" ||
         style === "fire" || style === "frost") {
-      return "cloak"; // weathered duster — oceanic practicality
+      return "rangercloak"; // weathered corsair duster
     }
-    // cloth, tunic, leather, rangercloak, legendary: unchanged
+    if (style === "legendary") {
+      return "legendary"; // ornate captain's coat — gold-trimmed, high-tier
+    }
+    // Base cloth / tunic → striped sailor shirt
+    if (style === "cloth" || style === "tunic") {
+      return "cloth"; // keep cloth style but colour will be set to nautical palette
+    }
+    // rangercloak, leather, cloak, legendary: unchanged
     return style;
   }
   return style; // fantasy world — unchanged
@@ -14068,8 +14078,10 @@ function getWorldThemedTorsoStyle(style, classId) {
 
 /**
  * Sci-fi world headgear: visored tech helmet whose silhouette scales with rarity rank.
- * Mage → sleek psi-helm with antenna; Knight → heavy exo-visor with chin guard;
- * Ranger → recon visor with side earpiece. No glow — tier shown by panel count + trim.
+ * Mage  → glowing psi-visor (wizard hat becomes a flat glowing visor band with antenna);
+ * Knight → glasses-with-wires (lens frames + trailing wire cables);
+ * Ranger → recon visor with side earpiece.
+ * Glow (shadowBlur) is intentional sci-fi design — not a rarity aura.
  */
 function drawWorldThemedHelmet_SciFi(hx, hy, s, helColor, visorCol, fx, rank, classId) {
   const vH = Math.round(5 * s);
@@ -14077,57 +14089,235 @@ function drawWorldThemedHelmet_SciFi(hx, hy, s, helColor, visorCol, fx, rank, cl
   const vX = hx - Math.round(0.5 * s);
   const vY = hy - Math.round(1.5 * s);
 
+  if (classId === "mage") {
+    // Glowing psi-visor: flat forehead band with a wide glowing lens strip.
+    // Higher rank → wider/brighter visor + taller antenna array.
+    const bandH = Math.round(s * 1.8);
+    const bandY = hy - Math.round(0.5 * s);
+    // Dark headband base
+    ctx.fillStyle = blend(helColor, "#050810", 0.7);
+    ctx.fillRect(hx - Math.round(s), bandY, Math.round(7 * s), bandH);
+    // Glowing visor lens (full-width glow bar)
+    ctx.save();
+    ctx.shadowColor = visorCol;
+    ctx.shadowBlur = rank >= 3 ? 10 : 6;
+    ctx.fillStyle = rank >= 4 ? blend(visorCol, "#ffffff", 0.3) : visorCol;
+    ctx.fillRect(hx - Math.round(s * 0.5), bandY + Math.round(s * 0.3), Math.round(6 * s), Math.round(s * 1.2));
+    ctx.shadowBlur = 0;
+    ctx.restore();
+    // Trim stripe
+    ctx.fillStyle = rank >= 4 ? "#ffd700" : blend(helColor, "#aaccff", 0.4);
+    ctx.fillRect(hx - Math.round(s), bandY, Math.round(7 * s), Math.max(2, Math.round(s * 0.4)));
+    // Psi antenna above headband
+    const antH = Math.round((2 + rank * 0.7) * s);
+    const antX = hx + Math.round(2.5 * s);
+    ctx.fillStyle = rank >= 4 ? "#ffd700" : blend(helColor, "#aaccff", 0.5);
+    ctx.fillRect(antX, bandY - antH, Math.max(2, Math.round(s * 0.6)), antH);
+    // Antenna tip glow bulb
+    ctx.save();
+    ctx.shadowColor = visorCol;
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = visorCol;
+    ctx.beginPath();
+    ctx.arc(antX + Math.round(s * 0.3), bandY - antH, Math.max(2, Math.round(s * 0.8)), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+    // High-rank: second side antenna
+    if (rank >= 4) {
+      const ant2X = hx + Math.round(s);
+      const ant2H = Math.round((1.5 + rank * 0.4) * s);
+      ctx.fillStyle = "#ffd700";
+      ctx.fillRect(ant2X, bandY - ant2H, Math.max(2, Math.round(s * 0.5)), ant2H);
+      ctx.save();
+      ctx.shadowColor = "#ffd700";
+      ctx.shadowBlur = 7;
+      ctx.fillStyle = "#ffd700";
+      ctx.beginPath();
+      ctx.arc(ant2X + Math.round(s * 0.25), bandY - ant2H, Math.max(2, Math.round(s * 0.6)), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
+    return;
+  }
+
+  if (classId === "knight") {
+    // Glasses-with-wires: dual lens frames + wire cables trailing to sides.
+    // Higher rank → thicker frames, more wires, gold accent.
+    const glassY = hy + Math.round(s * 1.5); // eye level
+    const lensR = Math.max(3, Math.round(s * 1.1));
+    const lLensX = hx + Math.round(s);
+    const rLensX = hx + Math.round(3.2 * s);
+    const frameCol = rank >= 4 ? "#ffd700" : blend(helColor, "#888888", 0.3);
+
+    // Lens rims (left)
+    ctx.strokeStyle = frameCol;
+    ctx.lineWidth = Math.max(2, Math.round(s * 0.7));
+    ctx.beginPath();
+    ctx.arc(lLensX, glassY, lensR, 0, Math.PI * 2);
+    ctx.stroke();
+    // Lens rims (right)
+    ctx.beginPath();
+    ctx.arc(rLensX, glassY, lensR, 0, Math.PI * 2);
+    ctx.stroke();
+    // Bridge between lenses
+    ctx.beginPath();
+    ctx.moveTo(lLensX + lensR, glassY);
+    ctx.lineTo(rLensX - lensR, glassY);
+    ctx.stroke();
+    // Glowing lens fill
+    ctx.save();
+    ctx.shadowColor = visorCol;
+    ctx.shadowBlur = rank >= 3 ? 8 : 4;
+    ctx.fillStyle = `rgba(${hexToRgb(visorCol)},${rank >= 3 ? "0.55" : "0.35"})`;
+    ctx.beginPath();
+    ctx.arc(lLensX, glassY, lensR - Math.max(1, Math.round(s * 0.3)), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(rLensX, glassY, lensR - Math.max(1, Math.round(s * 0.3)), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+    // Wire cables trailing from sides of glasses
+    const wireCol = blend(helColor, "#333333", 0.55);
+    ctx.strokeStyle = wireCol;
+    ctx.lineWidth = Math.max(1, Math.round(s * 0.5));
+    // Left wire — curves down to shoulder
+    ctx.beginPath();
+    ctx.moveTo(lLensX - lensR, glassY);
+    ctx.bezierCurveTo(
+      lLensX - lensR - Math.round(3 * s), glassY,
+      lLensX - lensR - Math.round(4 * s), glassY + Math.round(3 * s),
+      lLensX - lensR - Math.round(5 * s), glassY + Math.round(5 * s)
+    );
+    ctx.stroke();
+    // Right wire — curves down to right shoulder
+    ctx.beginPath();
+    ctx.moveTo(rLensX + lensR, glassY);
+    ctx.bezierCurveTo(
+      rLensX + lensR + Math.round(2 * s), glassY,
+      rLensX + lensR + Math.round(3 * s), glassY + Math.round(3 * s),
+      rLensX + lensR + Math.round(4 * s), glassY + Math.round(5 * s)
+    );
+    ctx.stroke();
+    // Glowing wire tips
+    ctx.save();
+    ctx.shadowColor = visorCol;
+    ctx.shadowBlur = 5;
+    ctx.fillStyle = rank >= 4 ? "#ffd700" : visorCol;
+    ctx.beginPath();
+    ctx.arc(lLensX - lensR - Math.round(5 * s), glassY + Math.round(5 * s), Math.max(2, Math.round(s * 0.6)), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(rLensX + lensR + Math.round(4 * s), glassY + Math.round(5 * s), Math.max(2, Math.round(s * 0.6)), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+    // High-rank: additional wire across forehead
+    if (rank >= 4) {
+      ctx.strokeStyle = rank >= 5 ? "#ffd700" : wireCol;
+      ctx.lineWidth = Math.max(1, Math.round(s * 0.4));
+      ctx.beginPath();
+      ctx.moveTo(hx, hy);
+      ctx.lineTo(hx + Math.round(5 * s), hy);
+      ctx.stroke();
+      ctx.save();
+      ctx.shadowColor = visorCol;
+      ctx.shadowBlur = 6;
+      ctx.fillStyle = visorCol;
+      ctx.fillRect(hx + Math.round(2 * s), hy - Math.round(s * 0.5), Math.max(2, Math.round(s * 0.8)), Math.max(2, Math.round(s * 0.8)));
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
+    return;
+  }
+
+  // Ranger — recon visor with side earpiece (and improved glowing lens)
   // Base helmet shell
   ctx.fillStyle = helColor;
   ctx.fillRect(vX, vY, vW, vH);
-
   // Visor band
   const visH = rank >= 3 ? Math.round(s * 1.5) : Math.round(s);
+  ctx.save();
+  ctx.shadowColor = visorCol;
+  ctx.shadowBlur = rank >= 3 ? 7 : 4;
   ctx.fillStyle = visorCol;
   ctx.fillRect(vX + Math.round(s * 0.5), vY + Math.round(s * 1.5), vW - s, visH);
-
-  // Trim stripe (silver for common, gold for legendary)
+  ctx.shadowBlur = 0;
+  ctx.restore();
+  // Trim stripe
   ctx.fillStyle = rank >= 4 ? "#ffd700" : blend(helColor, "#ffffff", 0.35);
   ctx.fillRect(vX, vY, vW, Math.max(2, Math.round(s * 0.5)));
-
-  // Class-specific detail
-  if (classId === "mage") {
-    // Psi antenna — thin rod above helmet
+  // Side earpiece
+  ctx.fillStyle = blend(helColor, "#000000", 0.25);
+  ctx.fillRect(vX + vW, vY + Math.round(s), Math.round(s * 1.2), Math.round(s * 2));
+  // Earpiece lens dot (glowing)
+  ctx.save();
+  ctx.shadowColor = visorCol;
+  ctx.shadowBlur = 5;
+  ctx.fillStyle = visorCol;
+  ctx.beginPath();
+  ctx.arc(vX + vW + Math.round(s * 0.6), vY + Math.round(s * 2), Math.max(2, Math.round(s * 0.5)), 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.restore();
+  // Rank stripe
+  if (rank >= 3) {
     ctx.fillStyle = rank >= 4 ? "#ffd700" : visorCol;
-    ctx.fillRect(hx + Math.round(2 * s), vY - Math.round((2 + rank * 0.5) * s), Math.max(2, Math.round(s * 0.6)), Math.round((2 + rank * 0.5) * s));
-    // Antenna tip bulb
-    ctx.beginPath();
-    ctx.arc(hx + Math.round(2.3 * s), vY - Math.round((2 + rank * 0.5) * s), Math.max(2, Math.round(s * 0.7)), 0, Math.PI * 2);
-    ctx.fillStyle = visorCol;
-    ctx.fill();
-  } else if (classId === "knight") {
-    // Chin guard bar
-    ctx.fillStyle = blend(helColor, "#000000", 0.3);
-    ctx.fillRect(vX, vY + vH - s, vW, s);
-    // Faceplate center ridge
-    ctx.fillStyle = blend(helColor, "#ffffff", 0.2);
-    ctx.fillRect(vX + Math.round(vW / 2) - 1, vY, 2, vH - s);
-    // High-rank double pauldron crown
-    if (rank >= 4) {
-      ctx.fillStyle = rank >= 5 ? "#ffd700" : blend(helColor, "#ffffff", 0.3);
-      ctx.fillRect(vX - Math.round(s * 0.7), vY, Math.round(s * 0.7), Math.round(vH * 0.7));
-      ctx.fillRect(vX + vW, vY, Math.round(s * 0.7), Math.round(vH * 0.7));
-    }
-  } else if (classId === "ranger") {
-    // Side earpiece
-    ctx.fillStyle = blend(helColor, "#000000", 0.25);
-    ctx.fillRect(vX + vW, vY + Math.round(s), Math.round(s * 1.2), Math.round(s * 2));
-    // Lens dot
-    ctx.fillStyle = visorCol;
-    ctx.beginPath();
-    ctx.arc(vX + vW + Math.round(s * 0.6), vY + Math.round(s * 2), Math.max(2, Math.round(s * 0.5)), 0, Math.PI * 2);
-    ctx.fill();
-    // Rank stripe
-    if (rank >= 3) {
-      ctx.fillStyle = rank >= 4 ? "#ffd700" : visorCol;
-      ctx.fillRect(vX, vY + vH - Math.round(s * 1.5), vW, Math.max(2, Math.round(s * 0.5)));
-    }
+    ctx.fillRect(vX, vY + vH - Math.round(s * 1.5), vW, Math.max(2, Math.round(s * 0.5)));
   }
+}
+
+/**
+ * Draws a cybernetic robot arm overlay on one arm for sci-fi world players.
+ * Called after the base arm rect is drawn. Overlays segmented metal panels + glowing joint.
+ * ax/ay is the top-left of the arm rect (2s wide × 4s tall).
+ */
+function drawSciFiRobotArm(ax, ay, s, torsoColor, visorCol, rank) {
+  const aw = Math.round(2 * s);
+  const ah = Math.round(4 * s);
+  const metalCol = blend(torsoColor, "#1a2030", 0.55);
+  const shineCol = blend(torsoColor, "#aaccdd", 0.45);
+
+  // Upper segment
+  ctx.fillStyle = metalCol;
+  ctx.fillRect(ax, ay, aw, Math.round(ah * 0.45));
+  ctx.fillStyle = shineCol;
+  ctx.fillRect(ax, ay, aw, Math.max(2, Math.round(s * 0.4)));
+
+  // Elbow joint glow
+  const jy = ay + Math.round(ah * 0.45);
+  ctx.save();
+  ctx.shadowColor = visorCol;
+  ctx.shadowBlur = rank >= 3 ? 8 : 5;
+  ctx.fillStyle = rank >= 4 ? "#ffd700" : visorCol;
+  ctx.fillRect(ax, jy, aw, Math.max(2, Math.round(s * 0.55)));
+  ctx.shadowBlur = 0;
+  ctx.restore();
+
+  // Lower segment
+  ctx.fillStyle = metalCol;
+  ctx.fillRect(ax, jy + Math.round(s * 0.55), aw, Math.round(ah * 0.45));
+  ctx.fillStyle = shineCol;
+  ctx.fillRect(ax, jy + Math.round(s * 0.55), aw, Math.max(2, Math.round(s * 0.4)));
+
+  // Visible wire along outer edge
+  ctx.strokeStyle = rank >= 4 ? "#ffd700" : blend(visorCol, "#000000", 0.2);
+  ctx.lineWidth = Math.max(1, Math.round(s * 0.35));
+  ctx.beginPath();
+  ctx.moveTo(ax + aw - 1, ay + Math.max(2, Math.round(s * 0.5)));
+  ctx.lineTo(ax + aw - 1, ay + ah - Math.max(2, Math.round(s * 0.5)));
+  ctx.stroke();
+}
+
+/** Helper: parse a hex color "#rrggbb" into "r,g,b" string for rgba(). */
+function hexToRgb(hex) {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return `${r},${g},${b}`;
 }
 
 /**
@@ -14294,8 +14484,17 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const torsoStyle  = isMod ? "robe" : sciFiNpc ? "sciFi" : (entity.torsoStyle || "tunic");
   const skinColor   = sciFiNpc ? "#bfd8ea" : (entity.skinColor || "#f0c9a2");
   const skinShadow  = sciFiNpc ? "#6f91a7" : blend(skinColor, "#000000", 0.2);
-  const pantColor   = isMod ? "#454e5c" : sciFiNpc ? blend(torsoColor, "#000000", 0.22) : "#2a3044";
-  const bootColor   = isMod ? "#2f3641" : sciFiNpc ? blend(torsoColor, "#000000", 0.38) : "#1a1e2c";
+  // World-appropriate leg/boot colours for player characters
+  const pantColor = isMod ? "#454e5c"
+    : sciFiNpc ? blend(torsoColor, "#000000", 0.22)
+    : (!isNpc && isSciFiWorld()) ? blend(torsoColor, "#0a1020", 0.38)
+    : (!isNpc && isNauticalWorld()) ? "#3a2010"   // dark breeches
+    : "#2a3044";
+  const bootColor = isMod ? "#2f3641"
+    : sciFiNpc ? blend(torsoColor, "#000000", 0.38)
+    : (!isNpc && isSciFiWorld()) ? blend(torsoColor, "#000020", 0.55)
+    : (!isNpc && isNauticalWorld()) ? "#1a0e08"   // tall dark leather boots
+    : "#1a1e2c";
   const helmetColor = entity.helmetColor || blend(torsoColor, "#ffffff", 0.08);
   const visorColor = entity.visorColor || "#67f0ff";
 
@@ -14489,6 +14688,12 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
     ctx.fillRect(rAX, rAY, 2 * s, 4 * s);
   }
 
+  // Sci-fi world: overlay one cybernetic robot arm on top of the drawn skin arm.
+  // Applied to players only (sciFiNpc already has a full sci-fi look authored).
+  if (isSciFiWorld() && !sciFiNpc && !isMod && !lyingBedPose && !swimming) {
+    drawSciFiRobotArm(rAX, rAY, s, torsoColor, visorColor, equipRarityRank);
+  }
+
   // Held arrow bundle for player carrying arrows
   if (!isNpc && Number(entity.carryingArrows) > 0) {
     const bundleCount = Math.min(7, Math.max(1, Math.ceil(Number(entity.carryingArrows) / 2)));
@@ -14545,11 +14750,12 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
     ctx.fillStyle = entity.hairColor || weaponColor;
     ctx.fillRect(hx, hy, 5 * s, s + 1);
 
-    // World-theme headgear remapping — same rarity tier reads through material quality, not glow
-    if (isSciFiWorld() && !sciFiNpc && equipRarityRank >= 1) {
+    // World-theme headgear remapping — same rarity tier reads through material quality, not glow.
+    // Applied at rank 0+ so even unarmored players look world-appropriate.
+    if (isSciFiWorld() && !sciFiNpc) {
       // Sci-fi visor helmet — replaces all fantasy headgear for players in the orbital sector
       drawWorldThemedHelmet_SciFi(hx, hy, s, helmetColor, visorColor, fx, equipRarityRank, entity.classId);
-    } else if (isNauticalWorld() && !sciFiNpc && equipRarityRank >= 1) {
+    } else if (isNauticalWorld() && !sciFiNpc) {
       // Nautical/pirate headgear — tricorne for mages, bandana for rangers, captain hat for knights
       drawWorldThemedHelmet_Nautical(hx, hy, s, helmetColor, weaponColor, fx, equipRarityRank, entity.classId, torsoColor);
     } else
@@ -14811,17 +15017,36 @@ function drawTorso2(tx, ty, s, style, torsoColor, trimColor, classId, fx, fy) {
   }
 
   if (style === "sciFi") {
+    // Jumpsuit / exo-plate base
     ctx.fillStyle = blend(torsoColor, "#0a1018", 0.08);
     ctx.fillRect(tx, ty, w, h);
     ctx.fillStyle = blend(torsoColor, "#000000", 0.18);
     ctx.fillRect(tx + s, ty + s, w - 2 * s, h - 2 * s);
+    // Top/bottom trim bars
     ctx.fillStyle = trimColor;
     ctx.fillRect(tx + s, ty, w - 2 * s, s);
     ctx.fillRect(tx + s, ty + h - s, w - 2 * s, s);
+    // Central glowing power conduit
+    ctx.save();
+    ctx.shadowColor = "rgba(103,240,255,0.9)";
+    ctx.shadowBlur = 5;
     ctx.fillStyle = "rgba(103,240,255,0.92)";
     ctx.fillRect(tx + (w >> 1) - Math.max(1, s >> 1), ty + s, Math.max(2, s), h - 2 * s);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+    // Chest panel highlight
     ctx.fillStyle = "rgba(255,255,255,0.28)";
     ctx.fillRect(tx + s, ty + s, w - 2 * s, s);
+    // Side wire/cable lines running vertically on the suit flanks
+    ctx.save();
+    ctx.shadowColor = "rgba(103,240,255,0.6)";
+    ctx.shadowBlur = 4;
+    ctx.fillStyle = "rgba(103,240,255,0.60)";
+    ctx.fillRect(tx + Math.round(s * 1.5), ty + Math.round(s * 1.5), Math.max(1, Math.round(s * 0.5)), h - Math.round(s * 2));
+    ctx.fillRect(tx + w - Math.round(s * 2), ty + Math.round(s * 1.5), Math.max(1, Math.round(s * 0.5)), h - Math.round(s * 2));
+    ctx.shadowBlur = 0;
+    ctx.restore();
+    // Tech panel squares (shoulder modules)
     ctx.fillStyle = "rgba(255,255,255,0.16)";
     ctx.fillRect(tx + 2 * s, ty + 2 * s, 2 * s, 2 * s);
     ctx.fillRect(tx + w - 4 * s, ty + 2 * s, 2 * s, 2 * s);
@@ -20750,17 +20975,20 @@ function setWorldTheme(theme) {
     ? SCI_FI_THEME
     : theme === NAUTICAL_THEME
       ? NAUTICAL_THEME
-      : theme === ALIEN_THEME
-        ? ALIEN_THEME
-        : theme === DUNGEON_THEME
-          ? DUNGEON_THEME
-          : "fantasy";
+      : theme === PIRATE_THEME
+        ? PIRATE_THEME
+        : theme === ALIEN_THEME
+          ? ALIEN_THEME
+          : theme === DUNGEON_THEME
+            ? DUNGEON_THEME
+            : "fantasy";
   if (state.worldTheme === next) {
     return;
   }
   state.worldTheme = next;
   document.body.classList.toggle("theme-sci-fi", next === SCI_FI_THEME);
   document.body.classList.toggle("theme-nautical", next === NAUTICAL_THEME);
+  document.body.classList.toggle("theme-pirate", next === PIRATE_THEME);
   document.body.classList.toggle("theme-alien", next === ALIEN_THEME);
   document.body.classList.toggle("theme-dungeon", next === DUNGEON_THEME);
   if (next === SCI_FI_THEME) {
@@ -20768,27 +20996,38 @@ function setWorldTheme(theme) {
     document.body.classList.remove("theme-alien");
     document.body.classList.remove("theme-dungeon");
     document.body.classList.remove("theme-nautical");
+    document.body.classList.remove("theme-pirate");
   } else if (next === NAUTICAL_THEME) {
     document.body.classList.remove("theme-fantasy");
     document.body.classList.remove("theme-sci-fi");
     document.body.classList.remove("theme-alien");
     document.body.classList.remove("theme-dungeon");
+    document.body.classList.remove("theme-pirate");
+  } else if (next === PIRATE_THEME) {
+    document.body.classList.remove("theme-fantasy");
+    document.body.classList.remove("theme-sci-fi");
+    document.body.classList.remove("theme-alien");
+    document.body.classList.remove("theme-dungeon");
+    document.body.classList.remove("theme-nautical");
   } else if (next === ALIEN_THEME) {
     document.body.classList.remove("theme-fantasy");
     document.body.classList.remove("theme-sci-fi");
     document.body.classList.remove("theme-dungeon");
     document.body.classList.remove("theme-nautical");
+    document.body.classList.remove("theme-pirate");
   } else if (next === DUNGEON_THEME) {
     document.body.classList.remove("theme-fantasy");
     document.body.classList.remove("theme-sci-fi");
     document.body.classList.remove("theme-alien");
     document.body.classList.remove("theme-nautical");
+    document.body.classList.remove("theme-pirate");
   } else {
     document.body.classList.add("theme-fantasy");
     document.body.classList.remove("theme-alien");
     document.body.classList.remove("theme-sci-fi");
     document.body.classList.remove("theme-dungeon");
     document.body.classList.remove("theme-nautical");
+    document.body.classList.remove("theme-pirate");
   }
   chunkCanvasCache.clear();
 }
