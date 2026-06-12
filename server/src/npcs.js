@@ -2469,6 +2469,27 @@ const BASE_NPC_DEFINITIONS = [
       "Nothing beats a good fireplace on a cold night. I sell those too!",
     ],
   },
+  // ── Gathering tool vendor / Fisherman (Fantasy hub, near river) ─────────
+  {
+    id: "npc_fisherman_bram",
+    name: "Fisherman Bram",
+    classId: "ranger",
+    primary: "#3a6080",
+    accent: "#8ec6e0",
+    homeX: -8,
+    homeY: 50,
+    patrolRadius: 4,
+    isGatherVendor: true,
+    shopType: "tools",
+    shopName: "Bram's Tackle & Tools",
+    aiPersonality: "a weathered fisherman who loves tall tales about the ones that got away and is always happy to sell a good fishing rod or hatchet",
+    dialogue: [
+      "The river's full of silver trout this time of year — if you know where to look.",
+      "A fishing rod is your best friend near water. I sell the finest ones in the realm.",
+      "Woodcutting, fishing, mining — good honest work. I sell the tools for all of it.",
+      "The Golden Carp is out there. Nobody's caught one yet. Could be you!",
+    ],
+  },
   // ── Stable / mount vendor (Fantasy hub) ──────────────────────────────────
   {
     id: "npc_stable_keeper",
@@ -4268,7 +4289,8 @@ function getNpcSnapshot() {
       ...(npc.wandersToNewPlayer ? { wandersToNewPlayer: true } : {}),
       ...(npc.wandersToFlirt ? { wandersToFlirt: true } : {}),
       ...(npc.isStableKeeper ? { isStableKeeper: true, shopName: npc.shopName || "Stable", shopType: npc.shopType || "mount" } : {}),
-      ...(npc.isFurnisher ? { isFurnisher: true, shopName: npc.shopName || "Marta's Workshop", shopType: npc.shopType || "furniture" } : {})
+      ...(npc.isFurnisher ? { isFurnisher: true, shopName: npc.shopName || "Marta's Workshop", shopType: npc.shopType || "furniture" } : {}),
+      ...(npc.isGatherVendor ? { isGatherVendor: true, shopName: npc.shopName || "Tool Vendor", shopType: "tools" } : {})
     }));
 }
 

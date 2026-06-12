@@ -190,6 +190,18 @@ const tradeTheirReady = document.querySelector("#tradeTheirReady");
 const tradeConfirmBtn = document.querySelector("#tradeConfirmBtn");
 const tradeCancelBtn = document.querySelector("#tradeCancelBtn");
 const chatFriendsPane = document.querySelector("#chatFriendsPane");
+const professionsPanel = document.querySelector("#professionsPanel");
+const professionsClose = document.querySelector("#professionsClose");
+const professionsList = document.querySelector("#professionsList");
+const craftPanel = document.querySelector("#craftPanel");
+const craftClose = document.querySelector("#craftClose");
+const craftTitle = document.querySelector("#craftTitle");
+const craftGold = document.querySelector("#craftGold");
+const craftRecipeList = document.querySelector("#craftRecipeList");
+const fishingPanel = document.querySelector("#fishingPanel");
+const fishingClose = document.querySelector("#fishingClose");
+const fishingStatus = document.querySelector("#fishingStatus");
+const fishingCatchBtn = document.querySelector("#fishingCatchBtn");
 let safeZoneTooltipPinTimer = null;
 
 const TILE_SIZE = 32;
@@ -1051,7 +1063,21 @@ const state = {
   /** Owned-but-unplaced furniture pieces from the self snapshot. */
   ownedFurniture: [],
   /** While placing furniture: { piece, templateIdx } or null. */
-  decorateMode: null
+  decorateMode: null,
+  /** Resource nodes from server: Map<nodeId, {id,defId,name,x,y,depleted,professionId,toolKind,tier}> */
+  resourceNodes: new Map(),
+  /** Crafting stations (from welcome message) */
+  craftStations: [],
+  /** Current craft station session { stationId, stationName, kind, recipes } or null */
+  craftSession: null,
+  /** Fishing state: null | { phase: "cast"|"bite"|"catch", biteAt: number, windowUntil: number } */
+  fishingState: null,
+  /** Gathering progress: null | { nodeId, nodeName, startAt, durationMs } */
+  gatherProgress: null,
+  /** Profession data from server { [id]: { id, level, xp, xpToNext, maxLevel } } */
+  professions: {},
+  /** Active food buffs: [{ stat, amount, expiresAt }] */
+  foodBuffs: []
 };
 
 function syncMobileControlsVisibility() {
@@ -1584,6 +1610,10 @@ function handleServerMessage(message) {
     // Store waypoint node map for rendering and UI
     if (Array.isArray(message.waypointNodes)) {
       state.waypointNodes = message.waypointNodes;
+    }
+    // Store craft stations
+    if (Array.isArray(message.craftStations)) {
+      state.craftStations = message.craftStations;
     }
     bootPanel.classList.add("hidden");
     accountForm.classList.add("hidden");
@@ -2214,6 +2244,140 @@ function handleServerMessage(message) {
   if (message.type === "waypointMenu") {
     openWaypointMenu(message);
     return;
+  }
+
+  // ── Gathering / fishing / crafting protocol handlers ─────────────────────
+  if (message.type === "resourceNodes") {
+    if (Array.isArray(message.nodes)) {
+      state.resourceNodes.clear();
+      for (const n of message.nodes) {
+        state.resourceNodes.set(n.id, n);
+      }
+    }
+    return;
+  }
+
+  if (message.type === "nodeUpdate") {
+    const node = state.resourceNodes.get(message.nodeId);
+    if (node) node.depleted = Boolean(message.depleted);
+    return;
+  }
+
+  if (message.type === "gatherStart") {
+    state.gatherProgress = {
+      nodeId: message.nodeId,
+      nodeName: message.nodeName || "Resource",
+      startAt: performance.now(),
+      durationMs: message.durationMs || 4000
+    };
+    return;
+  }
+
+  if (message.type === "gatherComplete") {
+    state.gatherProgress = null;
+    appendChat({ kind: "system", name: "Gather", text: `You gathered: ${message.itemName} (+${message.xpGained} XP)` });
+    if (message.profession) updateProfessionState(message.profession);
+    return;
+  }
+
+  if (message.type === "fishingCast") {
+    openFishingPanel();
+    state.fishingState = { phase: "cast", biteAt: performance.now() + (message.biteDelayMs || 5000), windowUntil: 0 };
+    if (fishingStatus) fishingStatus.textContent = "Line is in the water... waiting for a bite.";
+    if (fishingCatchBtn) fishingCatchBtn.classList.add("hidden");
+    return;
+  }
+
+  if (message.type === "fishingBite") {
+    if (state.fishingState) {
+      state.fishingState.phase = "bite";
+      state.fishingState.windowUntil = performance.now() + (message.windowMs || 2500);
+    }
+    if (fishingStatus) fishingStatus.textContent = "A bite! Press Catch!";
+    if (fishingCatchBtn) fishingCatchBtn.classList.remove("hidden");
+    appendChat({ kind: "system", name: "Fishing", text: "You feel a tug on the line!" });
+    return;
+  }
+
+  if (message.type === "fishingEscape") {
+    if (fishingStatus) fishingStatus.textContent = "The fish got away!";
+    if (fishingCatchBtn) fishingCatchBtn.classList.add("hidden");
+    state.fishingState = null;
+    setTimeout(() => closeFishingPanel(), 1400);
+    return;
+  }
+
+  if (message.type === "fishingCaught") {
+    state.fishingState = null;
+    if (fishingStatus) fishingStatus.textContent = `Caught: ${message.fishName}!`;
+    if (fishingCatchBtn) fishingCatchBtn.classList.add("hidden");
+    appendChat({ kind: "system", name: "Fishing", text: `You caught a ${message.fishName}! (+${message.xpGained} XP)` });
+    if (message.profession) updateProfessionState(message.profession);
+    setTimeout(() => closeFishingPanel(), 1600);
+    return;
+  }
+
+  if (message.type === "craftStation") {
+    state.craftSession = {
+      stationId: message.stationId,
+      stationName: message.stationName,
+      kind: message.kind,
+      recipes: message.recipes || []
+    };
+    openCraftPanel();
+    return;
+  }
+
+  if (message.type === "craftComplete") {
+    appendChat({ kind: "system", name: "Craft", text: `Crafted: ${message.outputName} (+${message.xpGained} XP)` });
+    if (message.profession) updateProfessionState(message.profession);
+    // Refresh craft panel
+    if (craftPanel && !craftPanel.classList.contains("hidden") && state.craftSession) {
+      send({ type: "interact" }); // re-open station
+    }
+    return;
+  }
+
+  if (message.type === "professionsData") {
+    if (message.professions && typeof message.professions === "object") {
+      Object.assign(state.professions, message.professions);
+    }
+    refreshProfessionsPanel();
+    return;
+  }
+
+  if (message.type === "foodBuff") {
+    const existing = state.foodBuffs.findIndex((b) => b.stat === message.stat);
+    const entry = { stat: message.stat, amount: message.amount, expiresAt: Date.now() + (message.durationMs || 180000) };
+    if (existing >= 0) state.foodBuffs[existing] = entry;
+    else state.foodBuffs.push(entry);
+    appendChat({ kind: "system", name: "Food", text: `Buff active: +${message.amount} ${message.stat} for ${Math.round(message.durationMs / 60000)} min` });
+    return;
+  }
+
+  if (message.type === "serverMessage") {
+    // Handle gather-specific messages
+    if (typeof message.message === "string") {
+      if (message.message.startsWith("need_tool:")) {
+        const toolKind = message.message.replace("need_tool:", "");
+        const names = { fishing_rod: "a Fishing Rod", hatchet: "a Hatchet", sickle: "a Sickle", pickaxe: "a Pickaxe" };
+        appendChat({ kind: "system", name: "Gather", text: `You need ${names[toolKind] || toolKind} for this. Buy one from a vendor.` });
+        return;
+      }
+      if (message.message.startsWith("level_too_low:")) {
+        const [, profId, tier] = message.message.split(":");
+        appendChat({ kind: "system", name: "Gather", text: `You need ${profId} level ${tier} for this.` });
+        return;
+      }
+      if (message.message === "node_depleted") {
+        appendChat({ kind: "system", name: "Gather", text: "This node has been depleted. Check back soon." });
+        return;
+      }
+      if (message.message === "food_eaten") {
+        appendChat({ kind: "system", name: "Food", text: `Ate ${message.itemName}.` });
+        return;
+      }
+    }
   }
 
   if (message.type === "arrowPickup") {
@@ -3976,6 +4140,27 @@ function wireUi() {
     closeDecoratePanel();
   });
 
+  // Professions panel close
+  professionsClose?.addEventListener("click", () => {
+    closeProfessionsPanel();
+  });
+
+  // Craft panel close
+  craftClose?.addEventListener("click", () => {
+    closeCraftPanel();
+  });
+
+  // Fishing panel close + catch button
+  fishingClose?.addEventListener("click", () => {
+    closeFishingPanel();
+  });
+  fishingCatchBtn?.addEventListener("click", () => {
+    if (state.fishingState?.phase === "bite") {
+      send({ type: "fishingCatch" });
+      if (fishingCatchBtn) fishingCatchBtn.classList.add("hidden");
+    }
+  });
+
   initDraggablePanels();
 
   // Delegated dragstart for ability slots (avoids listener accumulation across renders)
@@ -4488,6 +4673,25 @@ function wireUi() {
     if (event.key.toLowerCase() === "m" && state.joined && !isTextEntryTarget(event.target)) {
       event.preventDefault();
       send({ type: "toggleMount" });
+      return;
+    }
+
+    // Professions panel — P
+    if (event.key.toLowerCase() === "p" && state.joined && !isTextEntryTarget(event.target)) {
+      event.preventDefault();
+      if (professionsPanel && !professionsPanel.classList.contains("hidden")) {
+        closeProfessionsPanel();
+      } else {
+        openProfessionsPanel();
+      }
+      return;
+    }
+
+    // Fishing catch — Space (during bite window)
+    if (event.key === " " && state.fishingState?.phase === "bite" && state.joined && !isTextEntryTarget(event.target)) {
+      event.preventDefault();
+      send({ type: "fishingCatch" });
+      if (fishingCatchBtn) fishingCatchBtn.classList.add("hidden");
       return;
     }
 
@@ -5303,6 +5507,111 @@ function closeDecoratePanel() {
   state.decorateMode = null;
   if (decoratePlaceHint) decoratePlaceHint.classList.add("hidden");
   if (state.activeWindow === "decorate") state.activeWindow = null;
+}
+
+// ── Professions panel ────────────────────────────────────────────────────────
+
+const GATHER_PROFESSION_LABELS = {
+  fishing:     "Fishing",
+  woodcutting: "Woodcutting",
+  herbalism:   "Herbalism",
+  mining:      "Mining",
+  cooking:     "Cooking",
+  smithing:    "Smithing"
+};
+
+function openProfessionsPanel() {
+  if (!professionsPanel) return;
+  professionsPanel.classList.remove("hidden");
+  state.activeWindow = "professions";
+  send({ type: "professionsOpen" });
+}
+
+function closeProfessionsPanel() {
+  professionsPanel?.classList.add("hidden");
+  if (state.activeWindow === "professions") state.activeWindow = null;
+}
+
+function updateProfessionState(prof) {
+  if (!prof || !prof.id) return;
+  state.professions[prof.id] = { ...prof };
+}
+
+function refreshProfessionsPanel() {
+  if (!professionsList) return;
+  const ids = ["fishing", "woodcutting", "herbalism", "mining", "cooking", "smithing"];
+  let html = "";
+  for (const id of ids) {
+    const p = state.professions[id] || { level: 1, xp: 0, xpToNext: 60, maxLevel: 30 };
+    const pct = p.xpToNext > 0 ? Math.round((p.xp / p.xpToNext) * 100) : 100;
+    const label = GATHER_PROFESSION_LABELS[id] || id;
+    const maxed = p.level >= p.maxLevel;
+    html += `<div class="prof-row">
+      <div class="prof-name">${label}</div>
+      <div class="prof-level">Lv ${p.level}${maxed ? " (MAX)" : ""}</div>
+      <div class="prof-bar-wrap"><div class="prof-bar-fill" style="width:${pct}%"></div></div>
+      <div class="prof-xp">${maxed ? "" : `${p.xp} / ${p.xpToNext} XP`}</div>
+    </div>`;
+  }
+  professionsList.innerHTML = html;
+}
+
+// ── Crafting panel ───────────────────────────────────────────────────────────
+
+function openCraftPanel() {
+  if (!craftPanel || !state.craftSession) return;
+  if (craftTitle) craftTitle.textContent = state.craftSession.stationName || "Crafting";
+  craftPanel.classList.remove("hidden");
+  state.activeWindow = "craft";
+  refreshCraftRecipeList();
+}
+
+function closeCraftPanel() {
+  craftPanel?.classList.add("hidden");
+  state.craftSession = null;
+  if (state.activeWindow === "craft") state.activeWindow = null;
+}
+
+function refreshCraftRecipeList() {
+  if (!craftRecipeList || !state.craftSession) return;
+  if (craftGold) craftGold.textContent = `${state.gold} gold`;
+  const recipes = state.craftSession.recipes || [];
+  if (!recipes.length) {
+    craftRecipeList.innerHTML = "<p>No recipes available.</p>";
+    return;
+  }
+  craftRecipeList.innerHTML = recipes.map((r) => {
+    const canCraft = r.canCraft;
+    const ing = (r.ingredients || []).map((i) => `${i.qty}x ${i.templateId.replace(/_/g, " ")}`).join(", ");
+    return `<div class="craft-recipe ${canCraft ? "" : "craft-locked"}">
+      <div class="craft-recipe-head">
+        <span class="craft-recipe-name">${r.name}</span>
+        <span class="craft-recipe-level">Lv ${r.minLevel} ${r.professionId}</span>
+      </div>
+      <div class="craft-recipe-ing">${ing}</div>
+      <button class="craft-recipe-btn" data-id="${r.id}" ${canCraft ? "" : "disabled"}>Craft (+${r.xpReward} XP)</button>
+    </div>`;
+  }).join("");
+  craftRecipeList.querySelectorAll(".craft-recipe-btn").forEach((btn) => {
+    if (btn.disabled) return;
+    btn.addEventListener("click", () => {
+      send({ type: "craftRecipe", stationId: state.craftSession.stationId, recipeId: btn.dataset.id });
+    });
+  });
+}
+
+// ── Fishing panel ────────────────────────────────────────────────────────────
+
+function openFishingPanel() {
+  if (!fishingPanel) return;
+  fishingPanel.classList.remove("hidden");
+  state.activeWindow = "fishing";
+}
+
+function closeFishingPanel() {
+  fishingPanel?.classList.add("hidden");
+  state.fishingState = null;
+  if (state.activeWindow === "fishing") state.activeWindow = null;
 }
 
 function refreshDecorateOwnedList() {
@@ -8899,6 +9208,8 @@ function draw() {
   drawWorld();
   drawPortals();
   drawWaypointObelisks();
+  drawResourceNodes();
+  drawCraftStations();
   drawCaravans();
   drawPlayers();
   drawUpperDeckLayer();
@@ -8914,6 +9225,7 @@ function draw() {
   drawLighting();
   drawQuestHelperArrow();
   drawFletchingMinigameOverlay();
+  drawGatherProgressOverlay();
   drawArrowCarryHud();
   drawPortalTransitionOverlay();
   drawPubPassoutOverlay();
@@ -13547,6 +13859,212 @@ function drawWaypointObelisks() {
     }
     ctx.restore();
   }
+}
+
+// ── Resource node rendering ──────────────────────────────────────────────────
+
+const RESOURCE_NODE_COLORS = {
+  oak_tree:    { trunk: "#6b3f1a", canopy: "#2e7d32" },
+  birch_tree:  { trunk: "#9e9e9e", canopy: "#66bb6a" },
+  yew_tree:    { trunk: "#4a2c0a", canopy: "#1b5e20" },
+  fern_clump:  { trunk: "#388e3c", canopy: "#81c784" },
+  swamp_moss:  { trunk: "#4e6b3a", canopy: "#7cb342" },
+  frost_herb:  { trunk: "#b3d9e8", canopy: "#e3f2fd" },
+  oasis_bloom: { trunk: "#f48fb1", canopy: "#fce4ec" },
+  copper_rock: { trunk: "#b87333", canopy: "#d4883a" },
+  iron_rock:   { trunk: "#78909c", canopy: "#b0bec5" },
+  ember_ore:   { trunk: "#bf360c", canopy: "#ff7043" },
+  frost_ore:   { trunk: "#80d8ff", canopy: "#e1f5fe" },
+};
+
+function drawResourceNodes() {
+  if (!state.resourceNodes || !state.resourceNodes.size) return;
+  const now = performance.now();
+  const camX = state.camera.x;
+  const camY = state.camera.y;
+  const zoom = state.zoom || 1;
+  const hw = canvas.width / 2;
+  const hh = canvas.height / 2;
+
+  for (const node of state.resourceNodes.values()) {
+    const sx = (node.x * TILE_SIZE - camX) * zoom + hw;
+    const sy = (node.y * TILE_SIZE - camY) * zoom + hh;
+    // Cull if off screen
+    if (sx < -TILE_SIZE * 2 || sx > canvas.width + TILE_SIZE * 2) continue;
+    if (sy < -TILE_SIZE * 2 || sy > canvas.height + TILE_SIZE * 2) continue;
+
+    const colors = RESOURCE_NODE_COLORS[node.defId] || { trunk: "#888", canopy: "#4caf50" };
+    const depleted = node.depleted;
+    const ts = TILE_SIZE * zoom;
+
+    ctx.save();
+    ctx.globalAlpha = depleted ? 0.35 : 0.9;
+
+    // Draw node based on type
+    const isMining = node.defId.includes("rock") || node.defId.includes("ore");
+    const isHerb = node.defId.includes("herb") || node.defId.includes("fern") || node.defId.includes("moss") || node.defId.includes("bloom");
+
+    if (isMining) {
+      // Rock / ore: chunky boulder silhouette
+      ctx.fillStyle = colors.trunk;
+      ctx.beginPath();
+      ctx.ellipse(sx, sy - ts * 0.2, ts * 0.5, ts * 0.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = colors.canopy;
+      ctx.beginPath();
+      ctx.ellipse(sx - ts * 0.1, sy - ts * 0.45, ts * 0.28, ts * 0.22, -0.3, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (isHerb) {
+      // Herb: small leafy clump
+      ctx.fillStyle = colors.trunk;
+      ctx.fillRect(sx - ts * 0.06, sy - ts * 0.25, ts * 0.12, ts * 0.25);
+      ctx.fillStyle = colors.canopy;
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        ctx.ellipse(sx + i * ts * 0.2, sy - ts * 0.35, ts * 0.18, ts * 0.14, i * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else {
+      // Tree: trunk + canopy
+      ctx.fillStyle = colors.trunk;
+      ctx.fillRect(sx - ts * 0.1, sy - ts * 0.7, ts * 0.2, ts * 0.7);
+      ctx.fillStyle = colors.canopy;
+      ctx.beginPath();
+      ctx.arc(sx, sy - ts * 0.75, ts * 0.38, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Gather prompt when nearby
+    const self = state.players.get(state.selfId);
+    if (self && !depleted && Math.hypot(node.x - self.x, node.y - self.y) <= 2.5) {
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = "#fff";
+      ctx.font = `${Math.round(9 * zoom)}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.fillText("E to gather", sx, sy - ts * 1.1);
+    }
+
+    ctx.restore();
+  }
+}
+
+/** Draw craft stations (campfire / forge) on the world map. */
+function drawCraftStations() {
+  if (!state.craftStations || !state.craftStations.length) return;
+  const camX = state.camera.x;
+  const camY = state.camera.y;
+  const zoom = state.zoom || 1;
+  const hw = canvas.width / 2;
+  const hh = canvas.height / 2;
+
+  for (const station of state.craftStations) {
+    const sx = (station.x * TILE_SIZE - camX) * zoom + hw;
+    const sy = (station.y * TILE_SIZE - camY) * zoom + hh;
+    if (sx < -TILE_SIZE * 2 || sx > canvas.width + TILE_SIZE * 2) continue;
+    if (sy < -TILE_SIZE * 2 || sy > canvas.height + TILE_SIZE * 2) continue;
+
+    const ts = TILE_SIZE * zoom;
+    ctx.save();
+
+    if (station.kind === "campfire") {
+      // Campfire: log circle + flame
+      ctx.fillStyle = "#5d3a1a";
+      ctx.beginPath();
+      ctx.ellipse(sx, sy, ts * 0.3, ts * 0.18, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Flame
+      const flicker = 1 + Math.sin(performance.now() / 200) * 0.15;
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = "#ff7f00";
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - ts * 0.42 * flicker);
+      ctx.lineTo(sx - ts * 0.15, sy - ts * 0.1);
+      ctx.lineTo(sx + ts * 0.15, sy - ts * 0.1);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#ffff00";
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - ts * 0.28 * flicker);
+      ctx.lineTo(sx - ts * 0.08, sy - ts * 0.08);
+      ctx.lineTo(sx + ts * 0.08, sy - ts * 0.08);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      // Forge: dark anvil shape
+      ctx.fillStyle = "#1a1a1a";
+      ctx.fillRect(sx - ts * 0.28, sy - ts * 0.35, ts * 0.56, ts * 0.35);
+      ctx.fillStyle = "#555";
+      ctx.fillRect(sx - ts * 0.38, sy - ts * 0.18, ts * 0.76, ts * 0.18);
+      // Embers glow
+      ctx.globalAlpha = 0.6 + Math.sin(performance.now() / 300) * 0.2;
+      ctx.fillStyle = "#ff4500";
+      ctx.beginPath();
+      ctx.arc(sx, sy - ts * 0.12, ts * 0.1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Label
+    const self = state.players.get(state.selfId);
+    const nearby = self && Math.hypot(station.x - self.x, station.y - self.y) <= 3.5;
+    ctx.globalAlpha = nearby ? 0.95 : 0.6;
+    ctx.fillStyle = "#ffe082";
+    ctx.font = `${Math.round(9 * zoom)}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.fillText(station.name, sx, sy - ts * 0.65);
+    if (nearby) {
+      ctx.fillStyle = "#fff";
+      ctx.fillText("E to craft", sx, sy - ts * 0.8);
+    }
+
+    ctx.restore();
+  }
+}
+
+/** Draw gathering progress bar centered on screen. */
+function drawGatherProgressOverlay() {
+  if (!state.gatherProgress) return;
+  const now = performance.now();
+  const { nodeName, startAt, durationMs } = state.gatherProgress;
+  const pct = Math.min(1, (now - startAt) / durationMs);
+
+  // Clear progress if done (server will have sent gatherComplete)
+  if (pct >= 1) {
+    state.gatherProgress = null;
+    return;
+  }
+
+  const cw = canvas.width;
+  const ch = canvas.height;
+  const barW = Math.min(260, cw * 0.4);
+  const barH = 18;
+  const bx = (cw - barW) / 2;
+  const by = ch * 0.72;
+
+  ctx.save();
+  ctx.globalAlpha = 0.85;
+  ctx.fillStyle = "#1a1a1a";
+  ctx.beginPath();
+  ctx.roundRect(bx - 4, by - 20, barW + 8, barH + 28, 6);
+  ctx.fill();
+
+  ctx.fillStyle = "#4ade80";
+  ctx.beginPath();
+  ctx.roundRect(bx, by, barW * pct, barH, 4);
+  ctx.fill();
+
+  ctx.fillStyle = "#444";
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "#555";
+  ctx.beginPath();
+  ctx.roundRect(bx, by, barW, barH, 4);
+  ctx.stroke();
+
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = "#fff";
+  ctx.font = "11px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(`Gathering: ${nodeName}`, cw / 2, by - 6);
+  ctx.restore();
 }
 
 /** Returns the current planet id string for world matching (best-effort from camera position). */

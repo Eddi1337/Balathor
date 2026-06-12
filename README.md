@@ -51,6 +51,29 @@ Each class has three talent trees with three tiers of abilities. Spend talent po
 
 House owners can furnish their interior with up to 12 furniture types: bed, table, chair, rug, bookshelf, fireplace, potted plant, wall painting, lantern stand, storage cabinet, weapon rack, and trophy stand. Buy pieces from **Marta's Workshop** (hub town carpenter, near the market at 20,12) then enter your house and press **D** to open the Decorate panel. Select a piece and click a floor tile to place it; click a placed piece in the panel to retrieve it. Furniture persists in `world.sqlite` alongside house deeds. Non-walkable furniture physically blocks movement. Mobile players can view and pick up placed furniture; placement is desktop-only.
 
+## Professions
+
+Six gathering and crafting skills — each with levels 1–30 and XP — let you harvest resources, catch fish, and craft consumables.
+
+| Profession | How to level | Tool required |
+|---|---|---|
+| **Fishing** | Catch fish near water | Fishing Rod |
+| **Woodcutting** | Chop trees in forest/savanna biomes | Hatchet |
+| **Herbalism** | Harvest plants in swamp/oasis/frost biomes | Sickle |
+| **Mining** | Mine ore rocks in badlands/ember/frost biomes | Pickaxe |
+| **Cooking** | Cook at campfires (hub or biome camps) | — |
+| **Smithing** | Forge ore into bars and goods at the forge | — |
+
+Buy tools from **Fisherman Bram** (hub river, near -8, 50). Walk near any resource node and press **E** to gather; a progress bar shows while you work. Depleted nodes respawn after 90 seconds.
+
+**Fishing** works anywhere near water in the fantasy realm and throughout Oceanus. Cast with **E**, wait for the bite prompt, then press **Catch** (or **Space**) before the window closes. Higher fishing level unlocks rarer catches.
+
+**Cooking** recipes are available at the campfire (hub square, ~-5, 28). **Smithing** recipes are at Tamsin's Forge (~54, 42). Cooked food and smith tonics grant temporary stat buffs (speed, strength, armour, or health regen) lasting 3 minutes. Consume food from your inventory bag.
+
+Press **P** to open the Professions panel and track your levels and XP.
+
+*Scope note: Smithing produces bars, sellable blades/fittings, and stat tonics. Full weapon/armour gear crafting (integrating with the rarity system) is deferred to a future milestone.*
+
 ## Progression
 
 Characters gain XP from combat and mini-games. On level-up you receive a talent point; you can also spend stat points on **Speed**, **Strength**, **Armour**, or **Health** via the in-game stat panel. Gold dropped by enemies and earned from activities can be traded with other players or spent at market NPCs.

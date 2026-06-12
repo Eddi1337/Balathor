@@ -101,6 +101,23 @@ When changing behavior, confine edits to the smallest section possible and avoid
 - **UI**: `#decoratePanel` in `index.html`; `openDecoratePanel` / `closeDecoratePanel` / `refreshDecorateOwnedList` / `refreshDecoratePlacedList` in `main.js`. `D` key toggles panel when inside owned house. Canvas click in decorate mode places selected piece.
 - **Mobile**: `decorate` chip added in `mobileUi.js` when `self.x > 9000` (interior proxy) and `homeBuildingKey` set. Chip opens decorate panel; placement is desktop-only (mobile gets view + pickup only).
 
+### Gathering, Fishing & Crafting professions system
+
+Six gathering/crafting professions (fishing, woodcutting, herbalism, mining, cooking, smithing) with levels 1–30 and XP, persisted per character in `accounts.json` alongside combat professions.
+
+- **Constants** (`index.js` Section 1): `GATHER_PROF_MAX_LEVEL` (30), `GATHER_XP_PER_LEVEL` (60), `GATHER_NODE_RESPAWN_MS` (90 s), `FISH_BITE_MIN_MS`/`FISH_BITE_MAX_MS`/`FISH_CATCH_WINDOW_MS`, `CRAFT_STATION_INTERACT_RADIUS`, `FOOD_BUFF_DURATION_MS` (3 min). Tool catalog: `GATHER_TOOL_CATALOG` (4 tools). Node definitions: `RESOURCE_NODE_DEFS` (11 node types). Spawn positions: `RESOURCE_NODE_SPAWNS` (30 fixed fantasy-world nodes). Fish tables: `FISH_TABLE_FANTASY` / `FISH_TABLE_OCEANUS`. Cooking recipes: `COOKING_RECIPES` (6). Smithing recipes: `SMITHING_RECIPES` (6). Station locations: `CRAFT_STATIONS` (campfire at hub, forge near Tamsin).
+- **Runtime state** (`index.js` Section 2, after houseFurnitureByKey): `resourceNodes` Map (depleted flag + respawnAt), `activeGatherSessions` / `activeFishingSessions` / `activeCraftSessions` Maps, `playerFoodBuffs` Map.
+- **Persistence**: gathering profession levels saved in `accounts.json` via extended `sanitizeProfessions` (now covers both minigame and gather profession IDs). XP awarded via `awardGatherProfXp`.
+- **Gathering flow**: `handleGatherNodeInteract` checks tool + tier, starts session; `processGatheringSessions` ticks each frame, delivers material item + XP on completion, marks node depleted, respawns after timer. Nodes sent to client on join via `sendResourceNodesNear`; updates pushed as `nodeUpdate` messages.
+- **Fishing flow**: `handleFishingInteract` checks proximity to water (`isNearWater`), requires fishing rod, starts `activeFishingSessions` entry with random bite delay; `processFishingSessions` fires `fishingBite` event; client sends `fishingCatch`; `handleFishingCatch` does weighted roll from `FISH_TABLE_FANTASY` / `FISH_TABLE_OCEANUS` filtered by fishing level, awards fish item + XP.
+- **Crafting**: `handleCraftStationInteract` finds nearby station (campfire/forge), sends recipe list with ingredient check; client sends `craftRecipe`; `handleCraftRecipe` validates ingredients, consumes them, creates output, awards XP. Food items carry a `buff` property consumed via `handleUseItem` (extended to handle `material` items with buff). `applyFoodBuff` / `expireFoodBuffs` manage the `playerFoodBuffs` table (server-authoritative; client receives `foodBuff` message).
+- **NPC vendor**: `npc_fisherman_bram` (`homeX: -8, homeY: 50`) sells all four tools; `isGatherVendor: true, shopType: "tools"`. `nearestGatherShop` resolves the synthetic shop; `getShopStock` returns `GATHER_TOOL_CATALOG` for `shopType === "tools"`. Tool purchase adds a `{ type: "tool", toolKind }` item to inventory.
+- **Scope cut**: smithing produces bars and sellable goods/buff tonics, not full gear items, to avoid entangling the existing loot/rarity system. Full gear crafting is deferred.
+- **Professions panel**: `#professionsPanel` in `index.html`; `openProfessionsPanel` / `closeProfessionsPanel` / `refreshProfessionsPanel` in `main.js`. `P` key toggles panel. Server sends `professionsData` in response to `professionsOpen` message.
+- **Rendering**: `drawResourceNodes()` — procedural canvas sprites (tree/herb/rock silhouettes, greyed-out when depleted). `drawCraftStations()` — animated campfire/forge. `drawGatherProgressOverlay()` — centred progress bar during gather. All called from main draw loop.
+- **Craft/fishing panels**: `#craftPanel` and `#fishingPanel` in `index.html`; opened server-push (`craftStation`, `fishingCast` messages). Catch button and Space bar trigger `fishingCatch` message.
+- **Crafting XP note**: two crafting skills (cooking, smithing) are separate from the four gathering skills — 6 skills total. All use the same level/XP structure.
+
 ### Systems modules
 
 - `npcs.js`: NPC templates/schedules/world-time integration.

@@ -455,6 +455,265 @@ const PROFESSION_DEFINITIONS = Object.freeze({
   salvaging: { id: "salvaging", name: "Salvaging", label: "Salvage", product: "usable scrap", rewardGold: 18, xp: 14 },
   server_admin: { id: "server_admin", name: "Server Admin", label: "Admin Debug", product: "clean logs", rewardGold: 22, xp: 16 }
 });
+// ── Gathering & crafting professions ─────────────────────────────────────────
+/** Max level for gathering/crafting professions. */
+const GATHER_PROF_MAX_LEVEL = 30;
+/** XP required per level: level * GATHER_XP_PER_LEVEL */
+const GATHER_XP_PER_LEVEL = 60;
+/** Interact radius for resource nodes (tiles). */
+const GATHER_NODE_INTERACT_RADIUS = 2.2;
+/** How long a depleted node takes to respawn (ms). */
+const GATHER_NODE_RESPAWN_MS = 90000; // 90 s
+/** Progress time for gathering (ms) — reduced by higher level. */
+const GATHER_BASE_DURATION_MS = 4000;
+/** Fishing: how many seconds until a bite (randomized around this). */
+const FISH_BITE_MIN_MS = 3000;
+const FISH_BITE_MAX_MS = 8000;
+/** Window to tap/click after a bite before the fish escapes (ms). */
+const FISH_CATCH_WINDOW_MS = 2500;
+/** Radius from a water tile edge within which fishing is allowed. */
+const FISH_WATER_PROXIMITY = 2.0;
+/** Radius for crafting station interaction. */
+const CRAFT_STATION_INTERACT_RADIUS = 2.8;
+/** Temporary food buff duration (ms). */
+const FOOD_BUFF_DURATION_MS = 180000; // 3 minutes
+
+/** Fishing rod / tool items sold by vendor NPCs. */
+const GATHER_TOOL_CATALOG = Object.freeze([
+  { templateId: "tool_fishing_rod",  name: "Fishing Rod",    type: "tool", toolKind: "fishing_rod",  price: 25,  icon: "fishing_rod",  description: "Required to fish near water." },
+  { templateId: "tool_hatchet",      name: "Hatchet",        type: "tool", toolKind: "hatchet",      price: 30,  icon: "hatchet",      description: "Required to chop trees." },
+  { templateId: "tool_sickle",       name: "Sickle",         type: "tool", toolKind: "sickle",       price: 28,  icon: "sickle",       description: "Required to harvest herbs." },
+  { templateId: "tool_pickaxe",      name: "Pickaxe",        type: "tool", toolKind: "pickaxe",      price: 35,  icon: "pickaxe",      description: "Required to mine ore." },
+]);
+
+/**
+ * Resource node definitions.  Each entry describes a class of spawnable node.
+ * Actual world positions are in RESOURCE_NODE_SPAWNS.
+ * tier: minimum gathering profession level to harvest.
+ * professionId: which gathering skill is used.
+ * toolKind: required tool.
+ * items: array of { templateId, name, weight, xpReward } — weight used for random pick.
+ */
+const RESOURCE_NODE_DEFS = Object.freeze({
+  // Woodcutting
+  oak_tree:     { id: "oak_tree",     name: "Oak Tree",       professionId: "woodcutting", toolKind: "hatchet", tier: 1,  durationMs: 4000, items: [{ templateId: "mat_oak_log",    name: "Oak Log",     weight: 1.0, xpReward: 12 }] },
+  birch_tree:   { id: "birch_tree",   name: "Birch Tree",     professionId: "woodcutting", toolKind: "hatchet", tier: 5,  durationMs: 4500, items: [{ templateId: "mat_birch_log",  name: "Birch Log",   weight: 1.0, xpReward: 20 }] },
+  yew_tree:     { id: "yew_tree",     name: "Yew Tree",       professionId: "woodcutting", toolKind: "hatchet", tier: 15, durationMs: 6000, items: [{ templateId: "mat_yew_log",    name: "Yew Log",     weight: 0.8, xpReward: 45 }, { templateId: "mat_ancient_sap", name: "Ancient Sap", weight: 0.2, xpReward: 55 }] },
+  // Herbalism
+  fern_clump:   { id: "fern_clump",   name: "Fern Clump",     professionId: "herbalism",   toolKind: "sickle",  tier: 1,  durationMs: 3500, items: [{ templateId: "mat_fern",       name: "Fern",        weight: 1.0, xpReward: 10 }] },
+  swamp_moss:   { id: "swamp_moss",   name: "Swamp Moss",     professionId: "herbalism",   toolKind: "sickle",  tier: 4,  durationMs: 3500, items: [{ templateId: "mat_swamp_moss", name: "Swamp Moss",  weight: 1.0, xpReward: 18 }] },
+  frost_herb:   { id: "frost_herb",   name: "Frost Herb",     professionId: "herbalism",   toolKind: "sickle",  tier: 10, durationMs: 4000, items: [{ templateId: "mat_frost_herb", name: "Frost Herb",  weight: 0.8, xpReward: 35 }, { templateId: "mat_chill_extract", name: "Chill Extract", weight: 0.2, xpReward: 42 }] },
+  oasis_bloom:  { id: "oasis_bloom",  name: "Oasis Bloom",    professionId: "herbalism",   toolKind: "sickle",  tier: 6,  durationMs: 4000, items: [{ templateId: "mat_oasis_bloom", name: "Oasis Bloom", weight: 1.0, xpReward: 24 }] },
+  // Mining
+  copper_rock:  { id: "copper_rock",  name: "Copper Rock",    professionId: "mining",      toolKind: "pickaxe", tier: 1,  durationMs: 5000, items: [{ templateId: "mat_copper_ore",  name: "Copper Ore",  weight: 1.0, xpReward: 15 }] },
+  iron_rock:    { id: "iron_rock",    name: "Iron Rock",      professionId: "mining",      toolKind: "pickaxe", tier: 5,  durationMs: 5500, items: [{ templateId: "mat_iron_ore",    name: "Iron Ore",    weight: 1.0, xpReward: 25 }] },
+  ember_ore:    { id: "ember_ore",    name: "Ember Ore Vein", professionId: "mining",      toolKind: "pickaxe", tier: 12, durationMs: 7000, items: [{ templateId: "mat_ember_ore",   name: "Ember Ore",   weight: 0.7, xpReward: 50 }, { templateId: "mat_fire_crystal", name: "Fire Crystal", weight: 0.3, xpReward: 65 }] },
+  frost_ore:    { id: "frost_ore",    name: "Frost Ore Vein", professionId: "mining",      toolKind: "pickaxe", tier: 10, durationMs: 6500, items: [{ templateId: "mat_frost_ore",   name: "Frost Ore",   weight: 0.8, xpReward: 42 }] },
+});
+
+/**
+ * Static resource node spawn points scattered through fantasy biomes.
+ * Each entry: { id, defId, x, y }
+ * Nodes are server-managed runtime objects; positions are fixed but state (depleted/respawn) is ephemeral.
+ */
+const RESOURCE_NODE_SPAWNS = Object.freeze([
+  // Woodcutting — forest biome (north of hub)
+  { id: "rn_oak_1",     defId: "oak_tree",    x:  30, y: -80  },
+  { id: "rn_oak_2",     defId: "oak_tree",    x:  42, y: -90  },
+  { id: "rn_oak_3",     defId: "oak_tree",    x:  18, y: -110 },
+  { id: "rn_oak_4",     defId: "oak_tree",    x:  55, y: -100 },
+  { id: "rn_oak_5",     defId: "oak_tree",    x:  65, y: -85  },
+  { id: "rn_birch_1",   defId: "birch_tree",  x:  75, y: -120 },
+  { id: "rn_birch_2",   defId: "birch_tree",  x:  88, y: -105 },
+  { id: "rn_yew_1",     defId: "yew_tree",    x:  60, y: -155 },
+  { id: "rn_yew_2",     defId: "yew_tree",    x:  72, y: -148 },
+  // Herbalism — swamp (SW), oasis (SE), frost (NW)
+  { id: "rn_fern_1",    defId: "fern_clump",  x: -85, y:  85  },
+  { id: "rn_fern_2",    defId: "fern_clump",  x: -95, y:  95  },
+  { id: "rn_fern_3",    defId: "fern_clump",  x: -75, y: 110  },
+  { id: "rn_moss_1",    defId: "swamp_moss",  x:-140, y: 140  },
+  { id: "rn_moss_2",    defId: "swamp_moss",  x:-155, y: 125  },
+  { id: "rn_moss_3",    defId: "swamp_moss",  x:-120, y: 155  },
+  { id: "rn_frost_h_1", defId: "frost_herb",  x: -95, y:-220  },
+  { id: "rn_frost_h_2", defId: "frost_herb",  x:-108, y:-235  },
+  { id: "rn_oasis_1",   defId: "oasis_bloom", x: 165, y: 195  },
+  { id: "rn_oasis_2",   defId: "oasis_bloom", x: 180, y: 215  },
+  // Mining — badlands (SE), ember coast (E), frost tundra (NW)
+  { id: "rn_copper_1",  defId: "copper_rock", x: 155, y: -95  },
+  { id: "rn_copper_2",  defId: "copper_rock", x: 165, y: -80  },
+  { id: "rn_copper_3",  defId: "copper_rock", x: 180, y: -110 },
+  { id: "rn_iron_1",    defId: "iron_rock",   x: 260, y: 150  },
+  { id: "rn_iron_2",    defId: "iron_rock",   x: 275, y: 135  },
+  { id: "rn_iron_3",    defId: "iron_rock",   x: 250, y: 165  },
+  { id: "rn_ember_1",   defId: "ember_ore",   x: 320, y: -160 },
+  { id: "rn_ember_2",   defId: "ember_ore",   x: 340, y: -148 },
+  { id: "rn_frost_o_1", defId: "frost_ore",   x:-130, y:-260  },
+  { id: "rn_frost_o_2", defId: "frost_ore",   x:-115, y:-275  },
+]);
+
+/**
+ * Fish catch tables by biome/area.
+ * Each entry: { templateId, name, weight, xpReward, minLevel }
+ */
+const FISH_TABLE_FANTASY = Object.freeze([
+  { templateId: "fish_minnow",      name: "River Minnow",     weight: 0.40, xpReward: 8,  minLevel: 1  },
+  { templateId: "fish_perch",       name: "Thornback Perch",  weight: 0.30, xpReward: 14, minLevel: 1  },
+  { templateId: "fish_trout",       name: "Silver Trout",     weight: 0.18, xpReward: 22, minLevel: 5  },
+  { templateId: "fish_pike",        name: "River Pike",       weight: 0.08, xpReward: 35, minLevel: 10 },
+  { templateId: "fish_golden_carp", name: "Golden Carp",      weight: 0.04, xpReward: 60, minLevel: 18 },
+]);
+const FISH_TABLE_OCEANUS = Object.freeze([
+  { templateId: "fish_sardine",     name: "Blue Sardine",     weight: 0.35, xpReward: 10, minLevel: 1  },
+  { templateId: "fish_tuna",        name: "Coral Tuna",       weight: 0.28, xpReward: 18, minLevel: 3  },
+  { templateId: "fish_swordfish",   name: "Swordfish",        weight: 0.20, xpReward: 30, minLevel: 8  },
+  { templateId: "fish_kraken_fry",  name: "Kraken Fry",       weight: 0.12, xpReward: 50, minLevel: 15 },
+  { templateId: "fish_starfish",    name: "Shimmering Starfish", weight: 0.05, xpReward: 80, minLevel: 22 },
+]);
+
+/**
+ * Cooking recipes (at a campfire or kitchen).
+ * ingredients: array of templateId strings.
+ * output: { templateId, name }.
+ * buff: { stat, amount, durationMs } — applied server-side.
+ */
+const COOKING_RECIPES = Object.freeze([
+  {
+    id: "recipe_cooked_fish",
+    name: "Cooked Fish",
+    professionId: "cooking",
+    minLevel: 1,
+    ingredients: [{ templateId: "fish_minnow",   qty: 1 }],
+    output: { templateId: "food_cooked_fish",   name: "Cooked Fish",    icon: "cooked_fish",   stackable: true },
+    buff: { stat: "regen", amount: 2, durationMs: FOOD_BUFF_DURATION_MS },
+    xpReward: 12
+  },
+  {
+    id: "recipe_fish_stew",
+    name: "Fish Stew",
+    professionId: "cooking",
+    minLevel: 5,
+    ingredients: [{ templateId: "fish_perch",    qty: 1 }, { templateId: "mat_fern",        qty: 1 }],
+    output: { templateId: "food_fish_stew",     name: "Fish Stew",      icon: "fish_stew",     stackable: true },
+    buff: { stat: "strength", amount: 4, durationMs: FOOD_BUFF_DURATION_MS },
+    xpReward: 22
+  },
+  {
+    id: "recipe_herb_broth",
+    name: "Herb Broth",
+    professionId: "cooking",
+    minLevel: 3,
+    ingredients: [{ templateId: "mat_fern",       qty: 2 }],
+    output: { templateId: "food_herb_broth",    name: "Herb Broth",     icon: "herb_broth",    stackable: true },
+    buff: { stat: "speed", amount: 0.5, durationMs: FOOD_BUFF_DURATION_MS },
+    xpReward: 16
+  },
+  {
+    id: "recipe_swamp_stew",
+    name: "Swamp Stew",
+    professionId: "cooking",
+    minLevel: 8,
+    ingredients: [{ templateId: "mat_swamp_moss", qty: 2 }, { templateId: "fish_trout",    qty: 1 }],
+    output: { templateId: "food_swamp_stew",    name: "Swamp Stew",     icon: "swamp_stew",    stackable: true },
+    buff: { stat: "armour", amount: 3, durationMs: FOOD_BUFF_DURATION_MS },
+    xpReward: 30
+  },
+  {
+    id: "recipe_frost_tea",
+    name: "Frost Tea",
+    professionId: "cooking",
+    minLevel: 12,
+    ingredients: [{ templateId: "mat_frost_herb", qty: 1 }],
+    output: { templateId: "food_frost_tea",     name: "Frost Tea",      icon: "frost_tea",     stackable: true },
+    buff: { stat: "speed", amount: 1.0, durationMs: FOOD_BUFF_DURATION_MS },
+    xpReward: 38
+  },
+  {
+    id: "recipe_ocean_chowder",
+    name: "Ocean Chowder",
+    professionId: "cooking",
+    minLevel: 10,
+    ingredients: [{ templateId: "fish_tuna",      qty: 1 }, { templateId: "fish_sardine",  qty: 1 }],
+    output: { templateId: "food_ocean_chowder", name: "Ocean Chowder",  icon: "ocean_chowder", stackable: true },
+    buff: { stat: "health", amount: 30, durationMs: FOOD_BUFF_DURATION_MS },
+    xpReward: 35
+  },
+]);
+
+/**
+ * Smithing recipes (at the forge).
+ * Scope: ore→bar and bar→sellable goods / consumable buffs.
+ * Full gear crafting is deferred to avoid entangling with the loot rarity system.
+ */
+const SMITHING_RECIPES = Object.freeze([
+  {
+    id: "recipe_copper_bar",
+    name: "Copper Bar",
+    professionId: "smithing",
+    minLevel: 1,
+    ingredients: [{ templateId: "mat_copper_ore",  qty: 3 }],
+    output: { templateId: "mat_copper_bar",  name: "Copper Bar",   icon: "copper_bar",  stackable: true },
+    xpReward: 18
+  },
+  {
+    id: "recipe_iron_bar",
+    name: "Iron Bar",
+    professionId: "smithing",
+    minLevel: 5,
+    ingredients: [{ templateId: "mat_iron_ore",    qty: 3 }],
+    output: { templateId: "mat_iron_bar",    name: "Iron Bar",     icon: "iron_bar",    stackable: true },
+    xpReward: 30
+  },
+  {
+    id: "recipe_ember_bar",
+    name: "Ember Bar",
+    professionId: "smithing",
+    minLevel: 14,
+    ingredients: [{ templateId: "mat_ember_ore",   qty: 3 }],
+    output: { templateId: "mat_ember_bar",   name: "Ember Bar",    icon: "ember_bar",   stackable: true },
+    xpReward: 55
+  },
+  {
+    id: "recipe_copper_blade",
+    name: "Copper Blade",
+    professionId: "smithing",
+    minLevel: 3,
+    ingredients: [{ templateId: "mat_copper_bar",  qty: 2 }],
+    output: { templateId: "mat_copper_blade", name: "Copper Blade", icon: "copper_blade", stackable: true, sellValue: 40 },
+    xpReward: 25
+  },
+  {
+    id: "recipe_iron_fitting",
+    name: "Iron Fitting",
+    professionId: "smithing",
+    minLevel: 8,
+    ingredients: [{ templateId: "mat_iron_bar",    qty: 2 }],
+    output: { templateId: "mat_iron_fitting", name: "Iron Fitting", icon: "iron_fitting", stackable: true, sellValue: 70 },
+    xpReward: 42
+  },
+  {
+    id: "recipe_strength_tonic",
+    name: "Strength Tonic",
+    professionId: "smithing",
+    minLevel: 10,
+    ingredients: [{ templateId: "mat_iron_bar", qty: 1 }, { templateId: "mat_fire_crystal", qty: 1 }],
+    output: { templateId: "food_strength_tonic", name: "Strength Tonic", icon: "strength_tonic", stackable: true },
+    buff: { stat: "strength", amount: 8, durationMs: FOOD_BUFF_DURATION_MS },
+    xpReward: 50
+  },
+]);
+
+/**
+ * Crafting station locations (fantasy hub).
+ * kind: "campfire" | "forge"
+ */
+const CRAFT_STATIONS = Object.freeze([
+  { id: "cs_hub_campfire", kind: "campfire", name: "Campfire",     x:  -5, y:  28, worldId: "fantasy" },
+  { id: "cs_hub_forge",    kind: "forge",    name: "Tamsin's Forge", x:  54, y:  42, worldId: "fantasy" },
+]);
+
+// ── Gathering profession ID registry (these are persisted in accounts.json like existing professions) ──
+const GATHER_PROFESSION_IDS = Object.freeze(["fishing", "woodcutting", "herbalism", "mining", "cooking", "smithing"]);
+
 const SPACE_JOB_FREIGHT_ORIGIN = Object.freeze({ x: SCI_FI_STATION_CENTER.x - 29, y: SCI_FI_STATION_CENTER.y + 21, radius: 18, name: "Ringforge Freight Deck" });
 const SPACE_JOB_FREIGHT_DESTINATION = Object.freeze(sciFiStationById("station_proc_3_-2") || { id: "station_proc_3_-2", name: "Kestrel Harbor 155", x: 2750, y: -1192, radius: 34 });
 const SPACE_JOB_SURVEY_DESTINATION = Object.freeze(getPlanetById("planet_proc_2_1") || { id: "planet_proc_2_1", name: "Zorara-45 Desert", x: 2383, y: 1641, radius: 58 });
@@ -1846,6 +2105,52 @@ function touchHouseFurnitureCache(buildingKey) {
   return houseFurnitureByKey.get(buildingKey);
 }
 
+// ── Gathering resource node runtime state ────────────────────────────────────
+/**
+ * resourceNodes: Map<nodeId, { id, defId, x, y, depleted: bool, respawnAt: number }>
+ * Active gather sessions: Map<playerId, { nodeId, professionId, startAt, durationMs, item }>
+ * Active fishing sessions: Map<playerId, { phase: "cast"|"bite"|"catch", startAt, biteAt, biteWindowUntil, table }>
+ * Active crafting sessions: Map<playerId, { stationId, recipeId }>
+ */
+const resourceNodes = new Map();
+(function initResourceNodes() {
+  for (const spawn of RESOURCE_NODE_SPAWNS) {
+    resourceNodes.set(spawn.id, { id: spawn.id, defId: spawn.defId, x: spawn.x, y: spawn.y, depleted: false, respawnAt: 0 });
+  }
+})();
+
+const activeGatherSessions = new Map();  // playerId → gather session
+const activeFishingSessions = new Map(); // playerId → fishing session
+const activeCraftSessions = new Map();   // playerId → craft session
+
+/** Player food buffs: Map<playerId, Array<{ stat, amount, expiresAt }>> */
+const playerFoodBuffs = new Map();
+
+function getPlayerFoodBuffs(playerId) {
+  if (!playerFoodBuffs.has(playerId)) {
+    playerFoodBuffs.set(playerId, []);
+  }
+  return playerFoodBuffs.get(playerId);
+}
+
+function applyFoodBuff(playerId, buff) {
+  const now = Date.now();
+  const list = getPlayerFoodBuffs(playerId);
+  // Remove existing buff of same stat (new replaces old)
+  const filtered = list.filter((b) => b.stat !== buff.stat);
+  filtered.push({ stat: buff.stat, amount: buff.amount, expiresAt: now + (buff.durationMs || FOOD_BUFF_DURATION_MS) });
+  playerFoodBuffs.set(playerId, filtered);
+}
+
+function expireFoodBuffs(now) {
+  for (const [pid, buffs] of playerFoodBuffs) {
+    const alive = buffs.filter((b) => b.expiresAt > now);
+    if (alive.length !== buffs.length) {
+      playerFoodBuffs.set(pid, alive);
+    }
+  }
+}
+
 let nextAssaultMobId = 1;
 let nextFantasyAssaultAt = Date.now() + 22000;
 let nextSciFiAssaultAt = Date.now() + 30000;
@@ -2371,6 +2676,7 @@ function sanitizeProfessions(raw) {
   if (!raw || typeof raw !== "object") {
     return out;
   }
+  // Legacy minigame professions
   for (const id of Object.keys(PROFESSION_DEFINITIONS)) {
     const entry = raw[id];
     if (!entry || typeof entry !== "object") continue;
@@ -2380,7 +2686,31 @@ function sanitizeProfessions(raw) {
       xp: clampInteger(entry.xp ?? 0, 0, 1000000)
     };
   }
+  // Gathering / crafting professions (fishing, woodcutting, herbalism, mining, cooking, smithing)
+  for (const id of GATHER_PROFESSION_IDS) {
+    const entry = raw[id];
+    if (!entry || typeof entry !== "object") continue;
+    out[id] = {
+      id,
+      level: clampInteger(entry.level ?? 1, 1, GATHER_PROF_MAX_LEVEL),
+      xp: clampInteger(entry.xp ?? 0, 0, 1000000)
+    };
+  }
   return out;
+}
+
+/** Award gathering/crafting profession XP; handles level-ups up to GATHER_PROF_MAX_LEVEL. */
+function awardGatherProfXp(player, professionId, xpAmount) {
+  if (!player) return null;
+  if (!player.professions) player.professions = {};
+  const current = player.professions[professionId] || { id: professionId, level: 1, xp: 0 };
+  current.xp = (current.xp || 0) + Math.max(0, Math.round(Number(xpAmount) || 0));
+  while (current.level < GATHER_PROF_MAX_LEVEL && current.xp >= current.level * GATHER_XP_PER_LEVEL) {
+    current.xp -= current.level * GATHER_XP_PER_LEVEL;
+    current.level += 1;
+  }
+  player.professions[professionId] = current;
+  return current;
 }
 
 function awardProfessionXp(player, professionId, xp) {
@@ -5690,8 +6020,17 @@ function simulate() {
     processCompanionAiAgents(Date.now());
   }
 
+  // Gathering/fishing/crafting tick
+  processGatheringSessions(Date.now());
+  processFishingSessions(Date.now());
+
   if (minigames) {
     minigames.tick(Date.now());
+  }
+
+  // Expire food buffs periodically (every 4 seconds)
+  if (tick % (TICK_RATE * 4) === 0) {
+    expireFoodBuffs(Date.now());
   }
 
   snapshotAccumulator += SNAPSHOT_RATE;
@@ -6758,6 +7097,21 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "fishingCatch") {
+    handleFishingCatch(client, message);
+    return;
+  }
+
+  if (message.type === "craftRecipe") {
+    handleCraftRecipe(client, message);
+    return;
+  }
+
+  if (message.type === "professionsOpen") {
+    handleProfessionsOpen(client);
+    return;
+  }
+
   if (message.type === "placeFurniture") {
     handlePlaceFurniture(client, message);
     return;
@@ -7224,8 +7578,12 @@ function joinWorld(client, message, savedCharacter = null) {
     theme: getWorldThemeAt(client.player.x, client.player.y),
     worldTime: getWorldTimeSnapshot(),
     spawn: { x: client.player.x, y: client.player.y },
-    waypointNodes: WAYPOINT_NODES
+    waypointNodes: WAYPOINT_NODES,
+    craftStations: CRAFT_STATIONS.map((s) => ({ id: s.id, kind: s.kind, name: s.name, x: s.x, y: s.y }))
   });
+
+  // Send initial resource nodes near spawn
+  sendResourceNodesNear(client);
 
   if (ownedBuildings.size > 0) {
     const ownership = {};
@@ -9818,6 +10176,28 @@ function handleInteract(client, message = {}) {
     return;
   }
 
+  // Gathering tool NPC shop (fisherman, etc.)
+  const gatherShop = nearestGatherShop(client.player);
+  if (gatherShop) {
+    sendShopWindow(client, gatherShop);
+    return;
+  }
+
+  // Crafting stations (campfire / forge)
+  if (handleCraftStationInteract(client, message)) {
+    return;
+  }
+
+  // Resource node gathering
+  if (handleGatherNodeInteract(client, message)) {
+    return;
+  }
+
+  // Fishing — near water with a fishing rod
+  if (handleFishingInteract(client, message)) {
+    return;
+  }
+
   // Waypoint obelisk — check before roadside features so E key opens travel menu
   {
     const worldId = worldForPosition(client.player.x, client.player.y);
@@ -10238,7 +10618,21 @@ function handleUseItem(client, message) {
 
   const slot = clampInteger(message.slot, 0, INVENTORY_SIZE - 1);
   const item = client.player.inventory[slot];
-  if (!item || item.type !== "potion") {
+  if (!item) {
+    return;
+  }
+
+  // Food/crafted items with buffs (material type with a buff property)
+  if (item.type === "material" && item.buff && typeof item.buff === "object") {
+    handleUseFoodItem(client.player, item);
+    client.player.inventory[slot] = null;
+    send(client, { type: "serverMessage", message: "food_eaten", itemName: item.name, buff: item.buff });
+    send(client, { type: "foodBuff", stat: item.buff.stat, amount: item.buff.amount, durationMs: item.buff.durationMs });
+    broadcastSnapshot();
+    return;
+  }
+
+  if (item.type !== "potion") {
     return;
   }
 
@@ -11986,6 +12380,29 @@ function nearestFurnisherShop(player) {
   return null;
 }
 
+/**
+ * Returns a synthetic shop object if the player is near an NPC with isGatherVendor / shopType "tools".
+ * Tool vendors (Fisherman Bram, etc.) sell gathering tools.
+ */
+function nearestGatherShop(player) {
+  const allNpcs = getNpcSnapshot();
+  for (const n of allNpcs) {
+    if (!n.isGatherVendor) continue;
+    const dist = Math.hypot(n.x - player.x, n.y - player.y);
+    if (dist > SHOP_INTERACT_RADIUS + 1) continue;
+    return {
+      id: `gather_vendor_${n.id}`,
+      name: n.shopName || "Tool Vendor",
+      buildingName: n.shopName || "Tool Vendor",
+      isPub: false,
+      shopType: "tools",
+      x: n.x,
+      y: n.y
+    };
+  }
+  return null;
+}
+
 function nearestShopFixture(player, message = {}) {
   const targetX = Number(message.x);
   const targetY = Number(message.y);
@@ -12033,6 +12450,9 @@ function getShopStock(shop) {
   if (shop?.shopType === "furniture") {
     return FURNITURE_CATALOG;
   }
+  if (shop?.shopType === "tools") {
+    return [...GATHER_TOOL_CATALOG];
+  }
   if (shop?.shopType === "stims") {
     const pots = itemDatabase.filter((it) => it && it.type === "potion");
     return pots.slice(0, 16);
@@ -12058,6 +12478,18 @@ function getShopStock(shop) {
 }
 
 function publicShopItem(template) {
+  if (template?.type === "tool") {
+    return {
+      templateId: template.templateId,
+      type: "tool",
+      toolKind: template.toolKind,
+      name: template.name,
+      icon: template.icon || "hatchet",
+      description: template.description || "",
+      price: Number(template.price) || 25,
+      value: Number(template.price) || 25
+    };
+  }
   if (template?.type === "mount") {
     return {
       templateId: template.templateId,
@@ -12266,12 +12698,516 @@ function handlePickupFurniture(client, message) {
   broadcastSnapshot();
 }
 
+// ============================================================================
+// GATHERING, FISHING AND CRAFTING SYSTEM
+// ============================================================================
+
+/** Returns true if the player has the given toolKind in their inventory. */
+function playerHasTool(player, toolKind) {
+  if (!player?.inventory) return false;
+  return player.inventory.some((slot) => slot && slot.type === "tool" && slot.toolKind === toolKind);
+}
+
+/** Send the resource node snapshot visible to a player (nodes near them). */
+function sendResourceNodesNear(client) {
+  const p = client.player;
+  if (!p) return;
+  const VIEW_RADIUS = 80;
+  const visible = [];
+  for (const node of resourceNodes.values()) {
+    if (Math.hypot(node.x - p.x, node.y - p.y) > VIEW_RADIUS) continue;
+    const def = RESOURCE_NODE_DEFS[node.defId];
+    if (!def) continue;
+    visible.push({
+      id: node.id,
+      defId: node.defId,
+      name: def.name,
+      x: node.x,
+      y: node.y,
+      depleted: node.depleted,
+      professionId: def.professionId,
+      toolKind: def.toolKind,
+      tier: def.tier
+    });
+  }
+  send(client, { type: "resourceNodes", nodes: visible });
+}
+
+/** Find a resource node near the player that they can interact with. */
+function findNearbyResourceNode(player) {
+  let best = null;
+  let bestDist = GATHER_NODE_INTERACT_RADIUS;
+  for (const node of resourceNodes.values()) {
+    const d = Math.hypot(node.x - player.x, node.y - player.y);
+    if (d <= bestDist) {
+      bestDist = d;
+      best = node;
+    }
+  }
+  return best;
+}
+
+/** Handle player interacting with a resource node. */
+function handleGatherNodeInteract(client, message) {
+  const p = client.player;
+  if (!p) return false;
+
+  const node = findNearbyResourceNode(p);
+  if (!node) return false;
+
+  const def = RESOURCE_NODE_DEFS[node.defId];
+  if (!def) return false;
+
+  if (node.depleted) {
+    send(client, { type: "serverMessage", message: "node_depleted" });
+    return true;
+  }
+
+  // Check tool
+  if (!playerHasTool(p, def.toolKind)) {
+    send(client, { type: "serverMessage", message: `need_tool:${def.toolKind}` });
+    return true;
+  }
+
+  // Check level
+  const profState = (p.professions || {})[def.professionId] || { level: 1 };
+  if (profState.level < def.tier) {
+    send(client, { type: "serverMessage", message: `level_too_low:${def.professionId}:${def.tier}` });
+    return true;
+  }
+
+  // Cancel existing gather session for this player
+  const existing = activeGatherSessions.get(p.id);
+  if (existing && existing.nodeId === node.id) {
+    // Already gathering this node — do nothing (client shows progress)
+    return true;
+  }
+
+  // Start gather session
+  const speedFactor = 1 - Math.min(0.5, (profState.level - 1) * 0.02); // up to 50% faster at level 26+
+  const duration = Math.round(def.durationMs * speedFactor);
+  activeGatherSessions.set(p.id, {
+    nodeId: node.id,
+    professionId: def.professionId,
+    startAt: Date.now(),
+    durationMs: duration,
+    defId: def.id
+  });
+
+  send(client, {
+    type: "gatherStart",
+    nodeId: node.id,
+    nodeName: def.name,
+    professionId: def.professionId,
+    durationMs: duration
+  });
+  return true;
+}
+
+/** Tick gathering sessions — complete when timer elapses. */
+function processGatheringSessions(now) {
+  for (const [playerId, session] of activeGatherSessions) {
+    if (now < session.startAt + session.durationMs) continue;
+
+    activeGatherSessions.delete(playerId);
+
+    const client = [...clients.values()].find((c) => c.player?.id === playerId);
+    if (!client?.player) continue;
+
+    const node = resourceNodes.get(session.nodeId);
+    if (!node) continue;
+
+    if (node.depleted) {
+      send(client, { type: "serverMessage", message: "node_depleted" });
+      continue;
+    }
+
+    const def = RESOURCE_NODE_DEFS[node.defId];
+    if (!def) continue;
+
+    // Pick item from loot table using weighted random
+    const item = pickWeightedItem(def.items);
+    if (!item) continue;
+
+    const matItem = {
+      id: `mat_${Date.now()}_${Math.floor(Math.random() * 9999)}`,
+      templateId: item.templateId,
+      type: "material",
+      name: item.name,
+      icon: item.templateId,
+      rarity: "common",
+      color: "#c8a86a",
+      stats: {},
+      visual: {},
+      qty: 1,
+      stackable: true
+    };
+
+    if (!addItemToInventory(client.player, matItem)) {
+      send(client, { type: "serverMessage", message: "inventory_full" });
+    } else {
+      // Award profession XP
+      const updated = awardGatherProfXp(client.player, def.professionId, item.xpReward);
+      send(client, {
+        type: "gatherComplete",
+        nodeId: node.id,
+        itemName: item.name,
+        xpGained: item.xpReward,
+        profession: updated
+      });
+      saveClientCharacter(client);
+      broadcastSnapshot();
+    }
+
+    // Deplete node
+    node.depleted = true;
+    node.respawnAt = Date.now() + GATHER_NODE_RESPAWN_MS;
+
+    // Notify nearby players of depletion
+    for (const c of clients.values()) {
+      if (!c.player) continue;
+      if (Math.hypot(node.x - c.player.x, node.y - c.player.y) <= 80) {
+        send(c, { type: "nodeUpdate", nodeId: node.id, depleted: true });
+      }
+    }
+  }
+
+  // Respawn depleted nodes
+  const now2 = Date.now();
+  for (const node of resourceNodes.values()) {
+    if (node.depleted && now2 >= node.respawnAt) {
+      node.depleted = false;
+      // Notify nearby players
+      for (const c of clients.values()) {
+        if (!c.player) continue;
+        if (Math.hypot(node.x - c.player.x, node.y - c.player.y) <= 80) {
+          send(c, { type: "nodeUpdate", nodeId: node.id, depleted: false });
+        }
+      }
+    }
+  }
+}
+
+/** Pick a random item from a weighted table. */
+function pickWeightedItem(items) {
+  if (!items || items.length === 0) return null;
+  const total = items.reduce((s, it) => s + (it.weight || 1), 0);
+  let roll = Math.random() * total;
+  for (const it of items) {
+    roll -= (it.weight || 1);
+    if (roll <= 0) return it;
+  }
+  return items[items.length - 1];
+}
+
+// ── Fishing ─────────────────────────────────────────────────────────────────
+
+/** Returns true if there is a water tile within FISH_WATER_PROXIMITY of the player. */
+function isNearWater(player) {
+  const r = Math.ceil(FISH_WATER_PROXIMITY);
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      if (Math.hypot(dx, dy) > FISH_WATER_PROXIMITY) continue;
+      const tx = Math.floor(player.x) + dx;
+      const ty = Math.floor(player.y) + dy;
+      if (isSwimmingAt(tx + 0.5, ty + 0.5)) return true;
+    }
+  }
+  return false;
+}
+
+/** Get the fish table for the current position. */
+function getFishTableForPlayer(player) {
+  const world = worldForPosition(player.x, player.y);
+  if (world === "oceanus") return FISH_TABLE_OCEANUS;
+  return FISH_TABLE_FANTASY;
+}
+
+/** Handle player pressing E near water with a rod. */
+function handleFishingInteract(client, message) {
+  const p = client.player;
+  if (!p) return false;
+
+  // Only on land/water edge, not in ship
+  if (p.ship?.boarded) return false;
+
+  if (!isNearWater(p)) return false;
+  if (!playerHasTool(p, "fishing_rod")) {
+    send(client, { type: "serverMessage", message: "need_tool:fishing_rod" });
+    return true;
+  }
+
+  // Cancel existing fishing if any
+  if (activeFishingSessions.has(p.id)) {
+    activeFishingSessions.delete(p.id);
+  }
+
+  const table = getFishTableForPlayer(p);
+  const biteDelay = FISH_BITE_MIN_MS + Math.random() * (FISH_BITE_MAX_MS - FISH_BITE_MIN_MS);
+  const now = Date.now();
+
+  activeFishingSessions.set(p.id, {
+    phase: "cast",
+    startAt: now,
+    biteAt: now + biteDelay,
+    biteWindowUntil: 0,
+    table
+  });
+
+  send(client, { type: "fishingCast", biteDelayMs: Math.round(biteDelay) });
+  return true;
+}
+
+/** Tick fishing sessions — trigger bite events. */
+function processFishingSessions(now) {
+  for (const [playerId, session] of activeFishingSessions) {
+    const client = [...clients.values()].find((c) => c.player?.id === playerId);
+    if (!client?.player) {
+      activeFishingSessions.delete(playerId);
+      continue;
+    }
+
+    if (session.phase === "cast" && now >= session.biteAt) {
+      session.phase = "bite";
+      session.biteWindowUntil = now + FISH_CATCH_WINDOW_MS;
+      send(client, { type: "fishingBite", windowMs: FISH_CATCH_WINDOW_MS });
+      continue;
+    }
+
+    if (session.phase === "bite" && now > session.biteWindowUntil) {
+      // Fish escaped
+      activeFishingSessions.delete(playerId);
+      send(client, { type: "fishingEscape" });
+    }
+  }
+}
+
+/** Client taps/clicks to catch during bite window. */
+function handleFishingCatch(client, message) {
+  const p = client.player;
+  if (!p) return;
+
+  const session = activeFishingSessions.get(p.id);
+  if (!session || session.phase !== "bite") {
+    send(client, { type: "serverMessage", message: "no_fishing_session" });
+    return;
+  }
+
+  const now = Date.now();
+  if (now > session.biteWindowUntil) {
+    activeFishingSessions.delete(p.id);
+    send(client, { type: "fishingEscape" });
+    return;
+  }
+
+  activeFishingSessions.delete(p.id);
+
+  // Pick fish from table (filter by level)
+  const profState = (p.professions || {}).fishing || { level: 1 };
+  const eligible = session.table.filter((f) => profState.level >= (f.minLevel || 1));
+  const fishDef = pickWeightedItem(eligible.length ? eligible : session.table);
+  if (!fishDef) return;
+
+  const fishItem = {
+    id: `fish_${Date.now()}_${Math.floor(Math.random() * 9999)}`,
+    templateId: fishDef.templateId,
+    type: "material",
+    name: fishDef.name,
+    icon: fishDef.templateId,
+    rarity: "common",
+    color: "#5a9fdf",
+    stats: {},
+    visual: {},
+    qty: 1,
+    stackable: true
+  };
+
+  if (!addItemToInventory(p, fishItem)) {
+    send(client, { type: "serverMessage", message: "inventory_full" });
+    return;
+  }
+
+  const updated = awardGatherProfXp(p, "fishing", fishDef.xpReward);
+  send(client, {
+    type: "fishingCaught",
+    fishName: fishDef.name,
+    templateId: fishDef.templateId,
+    xpGained: fishDef.xpReward,
+    profession: updated
+  });
+  saveClientCharacter(client);
+  broadcastSnapshot();
+}
+
+// ── Crafting stations ────────────────────────────────────────────────────────
+
+/** Handle player interacting with a crafting station. */
+function handleCraftStationInteract(client, message) {
+  const p = client.player;
+  if (!p) return false;
+
+  const station = CRAFT_STATIONS.find((s) => {
+    const worldOk = worldForPosition(p.x, p.y) === s.worldId;
+    const nearOk = Math.hypot(s.x - p.x, s.y - p.y) <= CRAFT_STATION_INTERACT_RADIUS;
+    return worldOk && nearOk;
+  });
+  if (!station) return false;
+
+  const recipes = station.kind === "forge"
+    ? SMITHING_RECIPES
+    : COOKING_RECIPES;
+
+  const profState = p.professions || {};
+  const recipeList = recipes.map((r) => {
+    const prof = profState[r.professionId] || { level: 1 };
+    return {
+      id: r.id,
+      name: r.name,
+      professionId: r.professionId,
+      minLevel: r.minLevel,
+      currentLevel: prof.level,
+      canCraft: prof.level >= r.minLevel,
+      ingredients: r.ingredients,
+      outputName: r.output.name,
+      outputIcon: r.output.icon,
+      xpReward: r.xpReward
+    };
+  });
+
+  send(client, {
+    type: "craftStation",
+    stationId: station.id,
+    stationName: station.name,
+    kind: station.kind,
+    recipes: recipeList
+  });
+  return true;
+}
+
+/** Handle player choosing a recipe to craft. */
+function handleCraftRecipe(client, message) {
+  const p = client.player;
+  if (!p) return;
+
+  const stationId = String(message.stationId || "");
+  const recipeId = String(message.recipeId || "");
+
+  const station = CRAFT_STATIONS.find((s) => s.id === stationId);
+  if (!station) {
+    send(client, { type: "serverMessage", message: "station_not_found" });
+    return;
+  }
+  if (Math.hypot(station.x - p.x, station.y - p.y) > CRAFT_STATION_INTERACT_RADIUS + 1) {
+    send(client, { type: "serverMessage", message: "station_too_far" });
+    return;
+  }
+
+  const allRecipes = station.kind === "forge" ? SMITHING_RECIPES : COOKING_RECIPES;
+  const recipe = allRecipes.find((r) => r.id === recipeId);
+  if (!recipe) {
+    send(client, { type: "serverMessage", message: "recipe_unknown" });
+    return;
+  }
+
+  const profState = (p.professions || {})[recipe.professionId] || { level: 1 };
+  if (profState.level < recipe.minLevel) {
+    send(client, { type: "serverMessage", message: `level_too_low:${recipe.professionId}:${recipe.minLevel}` });
+    return;
+  }
+
+  // Check and consume ingredients
+  for (const ing of recipe.ingredients) {
+    const slots = (p.inventory || []).filter((s) => s && s.templateId === ing.templateId);
+    const totalQty = slots.reduce((acc, s) => acc + (s.qty || 1), 0);
+    if (totalQty < (ing.qty || 1)) {
+      send(client, { type: "serverMessage", message: `missing_ingredient:${ing.templateId}` });
+      return;
+    }
+  }
+
+  // Consume ingredients from inventory
+  for (const ing of recipe.ingredients) {
+    let needed = ing.qty || 1;
+    for (let i = 0; i < p.inventory.length && needed > 0; i++) {
+      const slot = p.inventory[i];
+      if (!slot || slot.templateId !== ing.templateId) continue;
+      const take = Math.min(needed, slot.qty || 1);
+      slot.qty = (slot.qty || 1) - take;
+      needed -= take;
+      if (slot.qty <= 0) p.inventory[i] = null;
+    }
+  }
+
+  // Create output item
+  const output = recipe.output;
+  const outItem = {
+    id: `craft_${Date.now()}_${Math.floor(Math.random() * 9999)}`,
+    templateId: output.templateId,
+    type: output.stackable ? "material" : "potion",
+    name: output.name,
+    icon: output.icon || output.templateId,
+    rarity: "common",
+    color: "#e0d080",
+    stats: {},
+    visual: {},
+    qty: 1,
+    stackable: Boolean(output.stackable),
+    ...(recipe.buff ? { buff: recipe.buff } : {}),
+    ...(output.sellValue ? { value: output.sellValue } : {})
+  };
+
+  if (!addItemToInventory(p, outItem)) {
+    // Restore consumed ingredients on failure (simplified: just notify)
+    send(client, { type: "serverMessage", message: "inventory_full" });
+    return;
+  }
+
+  // Apply buff if this is a food item being consumed immediately (let client decide)
+  // Food buffs are applied when the player "uses" the item via useItem
+
+  const updated = awardGatherProfXp(p, recipe.professionId, recipe.xpReward);
+  send(client, {
+    type: "craftComplete",
+    recipeId: recipe.id,
+    outputName: output.name,
+    xpGained: recipe.xpReward,
+    profession: updated
+  });
+  saveClientCharacter(client);
+  broadcastSnapshot();
+}
+
+/** Handle player using a food item from inventory (apply buff). */
+function handleUseFoodItem(player, item) {
+  if (!item?.buff || typeof item.buff !== "object") return false;
+  applyFoodBuff(player.id, item.buff);
+  return true;
+}
+
+/** Send professions panel data to the client. */
+function handleProfessionsOpen(client) {
+  const p = client.player;
+  if (!p) return;
+  const profs = {};
+  for (const id of GATHER_PROFESSION_IDS) {
+    const state = (p.professions || {})[id] || { level: 1, xp: 0 };
+    profs[id] = {
+      id,
+      level: state.level,
+      xp: state.xp,
+      xpToNext: state.level >= GATHER_PROF_MAX_LEVEL ? 0 : state.level * GATHER_XP_PER_LEVEL,
+      maxLevel: GATHER_PROF_MAX_LEVEL
+    };
+  }
+  send(client, { type: "professionsData", professions: profs });
+}
+
 function handleShopBuy(client, message) {
   if (!client.player) {
     return;
   }
 
-  const shop = nearestShopFixture(client.player, message) || nearestStableShop(client.player) || nearestFurnisherShop(client.player);
+  const shop = nearestShopFixture(client.player, message) || nearestStableShop(client.player) || nearestFurnisherShop(client.player) || nearestGatherShop(client.player);
   if (!shop) {
     send(client, { type: "serverMessage", message: "shop_not_nearby" });
     return;
@@ -12281,6 +13217,40 @@ function handleShopBuy(client, message) {
   const template = getShopStock(shop).find((item) => item.templateId === templateId);
   if (!template) {
     send(client, { type: "serverMessage", message: "shop_item_missing" });
+    return;
+  }
+
+  if (template.type === "tool") {
+    const price = Number(template.price) || 25;
+    if ((client.player.gold || 0) < price) {
+      send(client, { type: "serverMessage", message: "not_enough_gold" });
+      sendShopWindow(client, shop);
+      return;
+    }
+    // Tools are stackable in inventory as items with type "tool"
+    const toolItem = {
+      id: `tool_${Date.now()}_${Math.floor(Math.random() * 9999)}`,
+      templateId: template.templateId,
+      type: "tool",
+      toolKind: template.toolKind,
+      name: template.name,
+      icon: template.icon || "hatchet",
+      rarity: "common",
+      color: "#c8a86a",
+      stats: {},
+      visual: {},
+      qty: 1
+    };
+    if (!addItemToInventory(client.player, toolItem)) {
+      send(client, { type: "serverMessage", message: "inventory_full" });
+      sendShopWindow(client, shop);
+      return;
+    }
+    client.player.gold -= price;
+    saveClientCharacter(client);
+    sendShopWindow(client, shop);
+    send(client, { type: "serverMessage", message: `item_bought`, itemName: template.name });
+    broadcastSnapshot();
     return;
   }
 
