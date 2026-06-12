@@ -18405,6 +18405,9 @@ function drawTower(building, sx, sy, w, h) {
   ctx.shadowOffsetX = 5;
   ctx.shadowOffsetY = 9;
 
+  // Opaque footprint cover so the baked interior never shows through.
+  paintBuildingFootprintBase(sx, sy, w, h, "#3e4444");
+
   // Main stone column
   ctx.fillStyle = "#646b6b";
   ctx.fillRect(col, wallY, colW, wallH);
@@ -18581,6 +18584,25 @@ const BUILDING_PALETTES = {
   lilac:  { roofBase: "#8a6aa8", roofDark: "#604880", roofMid: "#a384c0", roofLight: "#c4a8dc", roofRidge: "#42305c", eave: "#42305c", wall: "#f4ecf8", wallLight: "#fdf8ff", wallDark: "#c8b8d8", wallLine: "#94809f", win: "#ffe9b8", door: "#5c4470", doorFrame: "#c0a4d8", ground: "#5a7a44" },
   mint:   { roofBase: "#4f9678", roofDark: "#356c54", roofMid: "#68ac8c", roofLight: "#8eccac", roofRidge: "#1f4434", eave: "#1f4434", wall: "#ecf6ec", wallLight: "#f9fff8", wallDark: "#b8d0bc", wallLine: "#86a088", win: "#ffe9b8", door: "#3c5c4a", doorFrame: "#9cc8ac", ground: "#5a7a44" },
 };
+
+/**
+ * Roof-occlusion guarantee. The server bakes interior FLOOR/WALL/furniture
+ * tiles across a building's ENTIRE footprint (see getBuildingTile in
+ * server/src/world.js) into the chunk canvas drawn underneath. Every building
+ * renderer must paint an opaque cover over that whole footprint before its
+ * detailed art so none of the baked interior bleeds through the roof from an
+ * outside vantage point. drawCuteCottage rolls its own (shaped) base; the other
+ * renderers call this so towers, treehouses, castles and the fletcher can't be
+ * seen through. The slight overscan (2px) hides sub-pixel seams at the edges.
+ */
+function paintBuildingFootprintBase(sx, sy, w, h, color) {
+  ctx.save();
+  ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = color;
+  ctx.fillRect(sx - 2, sy - 2, w + 4, h + 4);
+  ctx.restore();
+}
 
 function getFrontDoorOpenFactor(building, roofless) {
   if (roofless) return 1;
@@ -19242,6 +19264,8 @@ function drawFletcherBuilding(building, sx, sy, w, h, roofless) {
   ctx.shadowOffsetY = 6;
 
   if (!roofless) {
+    // Opaque footprint cover so the baked interior never shows through.
+    paintBuildingFootprintBase(sx, sy, w, h, roofRidge);
     // Pitched roof — warm dark brown
     const ridgeY = sy + Math.round(roofH * 0.28);
     ctx.fillStyle = roofRidge;
@@ -19486,6 +19510,12 @@ function drawTreehouse(building, sx, sy, w, h, variant, roofless) {
   ctx.shadowOffsetX = 4;
   ctx.shadowOffsetY = 6;
 
+  // Opaque footprint cover (the server bakes interior tiles across the whole
+  // treehouse footprint, including under the stilts). Only when not cut away.
+  if (!roofless) {
+    paintBuildingFootprintBase(sx, sy, w, h, "#341e0c");
+  }
+
   // Stilts / support posts
   ctx.fillStyle = "#2a1a0a";
   const numStilts = Math.max(3, Math.floor(w / 24));
@@ -19617,6 +19647,9 @@ function drawCastle(building, sx, sy, w, h, variant, roofless) {
   ctx.shadowOffsetY = 10;
 
   if (!roofless) {
+    // Opaque footprint cover so the baked keep interior never shows through
+    // the roof, corner towers or the strips beside them.
+    paintBuildingFootprintBase(sx, sy, w, h, p.roofDark);
     // Roof / upper keep — full-width two-tone pitched
     const ridgeY = sy + Math.round(roofH * 0.30);
     ctx.fillStyle = p.roofDark;
