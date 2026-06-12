@@ -2448,6 +2448,27 @@ const BASE_NPC_DEFINITIONS = [
       "Dock traffic is currently within acceptable chaos limits.",
     ]
   },
+  // ── Stable / mount vendor (Fantasy hub) ──────────────────────────────────
+  {
+    id: "npc_stable_keeper",
+    name: "Stable Keeper Holt",
+    classId: "ranger",
+    primary: "#5a3e1e",
+    accent: "#d4a56a",
+    homeX: 36,
+    homeY: 12,
+    patrolRadius: 4,
+    isStableKeeper: true,
+    shopType: "mount",
+    shopName: "Holt's Stable",
+    aiPersonality: "a weathered, quiet stable hand who speaks fondly of horses and practical travel, and gets annoyed by people who ride recklessly",
+    dialogue: [
+      "A good horse is worth more than a chest of gold on the road.",
+      "Press M to mount or dismount once you own a horse.",
+      "I'll sell you a riding horse — finest in the realm, and no questions asked.",
+      "Mind you don't gallop through town. The cobbles aren't kind to hooves.",
+    ],
+  },
 ];
 
 function buildPlanetAlienNpcDefinitions() {
@@ -4224,7 +4245,8 @@ function getNpcSnapshot() {
       ...(npc.romanceSilhouette ? { romanceSilhouette: npc.romanceSilhouette } : {}),
       ...(npc.wandersToPlayer ? { wandersToPlayer: true } : {}),
       ...(npc.wandersToNewPlayer ? { wandersToNewPlayer: true } : {}),
-      ...(npc.wandersToFlirt ? { wandersToFlirt: true } : {})
+      ...(npc.wandersToFlirt ? { wandersToFlirt: true } : {}),
+      ...(npc.isStableKeeper ? { isStableKeeper: true, shopName: npc.shopName || "Stable", shopType: npc.shopType || "mount" } : {})
     }));
 }
 

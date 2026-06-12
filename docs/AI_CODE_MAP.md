@@ -63,6 +63,30 @@ When changing behavior, confine edits to the smallest section possible and avoid
 - `index.js`: `processSwordGuards(now, dt)` runs each tick after `processGatekeeperArchers`. It scans mobs within `SWORD_GUARD_AGGRO_RANGE` (22 tiles), chases the nearest one (moving `guard.x/y` by `SWORD_GUARD_SPEED * dt` tiles/sec), swings when within `SWORD_GUARD_MELEE_RANGE` (1.6 tiles) on a 1.1 s cooldown (`_lastSwordHitAt`), broadcasts a `combat/melee/sword` event, and returns to `homeX/homeY` when no target is in range. Quest slimes `mob_slime_meadow_1/2/3` are in `SWORD_GUARD_QUEST_MOB_IDS` and skipped unconditionally.
 - `npcAi.js`: already excludes all `isGuard` NPCs from Ollama ambient AI — no change needed.
 
+### Mount system
+
+- **Constants** (`index.js` Section 1): `MOUNT_SPEED_MULTIPLIER` (1.7×), `MOUNT_BUY_PRICE` (350g), `MOUNT_FORBIDDEN_WORLDS` (`oceanus`).
+- **Server state**: `player.hasMount` (boolean, persisted in `accounts.json` via `serializePlayer`), `player.mounted` (boolean, runtime only — always `false` on login).
+- **Speed**: `getPlayerSpeed` multiplies by `MOUNT_SPEED_MULTIPLIER` when `player.mounted && !ship.boarded`.
+- **Toggle**: `handleToggleMount` (server) — validates world + layer; client sends `toggleMount` message. Keybind `M` in `main.js`.
+- **Auto-dismount**: `dismountPlayer(player)` called in `handleAttack`, mob damage handler, `handlePortalTravel`, `handleTownLayerTransition` (when layer becomes 1), `boardPlayerOntoCurrentShip`, and waypoint teleport.
+- **Shop**: `Stable Keeper Holt` NPC (`npc_stable_keeper`, `homeX: 36, homeY: 12` in fantasy hub). `nearestStableShop()` in `index.js` returns a synthetic shop fixture; `getShopStock("mount")` → `getMountCatalog()`. `handleShopBuy` handles `template.type === "mount"` by setting `player.hasMount = true`.
+- **Rendering**: `drawMount(x, y, s, facing, moving, phase, isSciFi)` in `main.js` draws a horse (fantasy) or hoverboard (sci-fi/planet) under the character sprite. Called at the top of `drawCharacter` when `entity.mounted`.
+- **Snapshot**: `mounted` included in all player snapshots; `hasMount` + `unlockedWaypoints` in self-only block.
+- **Per-world theme**: Horse in fantasy/oceanus (oceanus disallows mounting); hoverboard on sci-fi station and planet surfaces.
+
+### Waypoint fast-travel system
+
+- **Constants** (`index.js` Section 1): `WAYPOINT_NODES` (9 obelisks across fantasy, sci-fi, planet:rust), `WAYPOINT_DISCOVER_RADIUS` (4.5 tiles), `WAYPOINT_TRAVEL_RADIUS` (6.0 tiles), `WAYPOINT_TRAVEL_COST` (15g).
+- **Scope**: same-world travel only. Cross-world travel still uses portals (bridging world coordinates is out of scope here; noted in the travel refusal message `waypoint_cross_world`).
+- **Persistence**: `player.unlockedWaypoints` (string array of node IDs) saved in `accounts.json` via `serializePlayer`.
+- **Discovery**: `discoverWaypointsNear(client)` runs every simulation tick — passive discovery by proximity.
+- **Interaction**: Walking near an obelisk and pressing E triggers `handleWaypointOpen` (via `handleInteract`). Client sends `waypointOpen` (explicit) or it falls through `handleInteract`. Server sends `waypointMenu` payload.
+- **Travel**: Client sends `waypointTravel { targetId }`. Server validates same-world, unlocked, gold; teleports player and sends `teleport` message with style `"waypoint"`.
+- **Rendering**: `drawWaypointObelisks()` in `main.js` (called in main draw loop after portals) draws obelisk sprites; unlocked ones glow purple, locked ones are grey.
+- **Welcome message**: `waypointNodes` array sent once on join so the client knows positions for rendering.
+- **UI**: Waypoint panel (`#waypointPanel`) in `index.html`; `openWaypointMenu` / `closeWaypointMenu` in `main.js`.
+
 ### Systems modules
 
 - `npcs.js`: NPC templates/schedules/world-time integration.

@@ -26,7 +26,8 @@
     document.querySelector("#questOfferPanel"),
     document.querySelector("#shipTerminalPanel"),
     document.querySelector("#tradePanel"),
-    document.querySelector("#friendsWindow")
+    document.querySelector("#friendsWindow"),
+    document.querySelector("#waypointPanel")
   ].filter(Boolean);
 
   if (!mobileContextDock || !mobilePrimaryAction) {
@@ -246,6 +247,15 @@
     if (self?.homeBuildingKey) {
       chips.push({ id: "home", label: "Home", title: "Teleport home" });
     }
+    // Mount chip: show when player owns a mount and is not on a ship/ocean
+    if (self?.hasMount && !isSelfOnShip()) {
+      chips.push({
+        id: "mount",
+        label: self.mounted ? "Dismount" : "Mount",
+        title: self.mounted ? "Dismount (M)" : "Mount (M)",
+        selected: Boolean(self.mounted)
+      });
+    }
     const interact = getMobileInteractContext();
     if (interact && primary.action !== "interact") {
       chips.push({ id: "interact", label: interact.label, title: "Interact nearby" });
@@ -277,6 +287,9 @@
         break;
       case "home":
         sendHome();
+        break;
+      case "mount":
+        send({ type: "toggleMount" });
         break;
       case "interact": {
         const self = state.players.get(state.selfId);

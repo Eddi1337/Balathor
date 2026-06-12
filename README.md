@@ -41,6 +41,12 @@ Each class has three talent trees with three tiers of abilities. Spend talent po
 
 **Knight:** Shield Bash → Divine Shield → Fortify · Holy Strike → Consecration → Divine Wrath · Healing Aura → Lay on Hands → Battle Cry
 
+## Mounts & Fast Travel
+
+**Mounts** can be purchased from Stable Keeper Holt (hub town, near the market) for 350 gold. Once owned, press **M** (or the Mount button on mobile) to toggle riding. Mounts increase movement speed by 70 %. Riding is disabled in the Boundless Ocean, on ship decks, and on upper-story balconies. Entering a portal, boarding a ship, taking damage, or attacking automatically dismounts you. The mount sprite changes with the world theme: a horse in the Fantasy realm, a hoverboard on the sci-fi station and planet surfaces.
+
+**Waypoint obelisks** are placed throughout each world. Walk near one to unlock it; once unlocked, press **E** next to any obelisk to open the travel menu and fast-travel to another unlocked waypoint in the same world for 15 gold. Waypoints are same-world only — cross-world travel still uses portals.
+
 ## Progression
 
 Characters gain XP from combat and mini-games. On level-up you receive a talent point; you can also spend stat points on **Speed**, **Strength**, **Armour**, or **Health** via the in-game stat panel. Gold dropped by enemies and earned from activities can be traded with other players or spent at market NPCs.

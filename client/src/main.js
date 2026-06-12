@@ -96,7 +96,15 @@ const potionSlotEl = document.querySelector("#potionSlot");
 const potionCountEl = document.querySelector("#potionCount");
 const potionKeyEl = potionSlotEl?.querySelector(".potion-key");
 const potionSlotIconCanvas = document.querySelector("#potionSlotIcon");
+const mountSlotEl = document.querySelector("#mountSlot");
+const mountLabelEl = document.querySelector("#mountLabel");
 const homeTeleportSlotEl = document.querySelector("#homeTeleportSlot");
+const waypointPanel = document.querySelector("#waypointPanel");
+const waypointClose = document.querySelector("#waypointClose");
+const waypointTitle = document.querySelector("#waypointTitle");
+const waypointFrom = document.querySelector("#waypointFrom");
+const waypointGold = document.querySelector("#waypointGold");
+const waypointList = document.querySelector("#waypointList");
 const homeTeleportIconCanvas = document.querySelector("#homeTeleportIcon");
 const nearbyLoot = document.querySelector("#nearbyLoot");
 const interactButton = document.querySelector("#interactButton");
@@ -1542,6 +1550,10 @@ function handleServerMessage(message) {
       state.debugSnapshotRate = message.snapshotRate;
     }
     applyWorldTime(message.worldTime);
+    // Store waypoint node map for rendering and UI
+    if (Array.isArray(message.waypointNodes)) {
+      state.waypointNodes = message.waypointNodes;
+    }
     bootPanel.classList.add("hidden");
     accountForm.classList.add("hidden");
     form.classList.add("hidden");
@@ -2110,6 +2122,20 @@ function handleServerMessage(message) {
       appendChat({ kind: "system", name: "Realm", text: "You must be swimming to tag a buoy." });
     } else if (message.message === "fountain_no_gold") {
       appendChat({ kind: "system", name: "Realm", text: "You need at least 1 gold to toss into the fountain." });
+    } else if (message.message === "no_mount") {
+      appendChat({ kind: "system", name: "Realm", text: "You don't own a mount. Visit the stable in town." });
+    } else if (message.message === "already_have_mount") {
+      appendChat({ kind: "system", name: "Realm", text: "You already own a mount." });
+    } else if (message.message === "mount_bought") {
+      appendChat({ kind: "system", name: "Realm", text: `Bought ${message.itemName}. Press M to mount!` });
+    } else if (message.message === "mount_forbidden") {
+      appendChat({ kind: "system", name: "Realm", text: "You can't mount here." });
+    } else if (message.message === "no_waypoint_nearby") {
+      appendChat({ kind: "system", name: "Realm", text: "No waypoint obelisk nearby." });
+    } else if (message.message === "waypoint_invalid" || message.message === "waypoint_locked") {
+      appendChat({ kind: "system", name: "Realm", text: "That waypoint is not unlocked yet." });
+    } else if (message.message === "waypoint_cross_world") {
+      appendChat({ kind: "system", name: "Realm", text: "Waypoints only travel within the same world. Use a portal for cross-world travel." });
     } else if (message.message === "pub_need_house") {
       appendChat({
         kind: "system",
@@ -2119,6 +2145,20 @@ function handleServerMessage(message) {
     } else if (message.itemName) {
       appendChat({ kind: "system", name: "Realm", text: `${message.itemName}` });
     }
+  }
+
+  if (message.type === "waypointUpdate") {
+    // Server confirmed a new waypoint was discovered or set changed.
+    const self = state.players.get(state.selfId);
+    if (self && Array.isArray(message.unlockedWaypoints)) {
+      self.unlockedWaypoints = message.unlockedWaypoints;
+    }
+    return;
+  }
+
+  if (message.type === "waypointMenu") {
+    openWaypointMenu(message);
+    return;
   }
 
   if (message.type === "arrowPickup") {
@@ -3712,6 +3752,7 @@ function wireUi() {
     const selfMid = state.players.get(state.selfId);
     syncSafeZoneIndicator(selfMid);
     syncHomeTeleportSlot(selfMid);
+    syncMountSlot(selfMid);
   });
   abilityBarToggle.addEventListener(
     "pointerdown",
@@ -3723,6 +3764,7 @@ function wireUi() {
       const selfMid = state.players.get(state.selfId);
       syncSafeZoneIndicator(selfMid);
       syncHomeTeleportSlot(selfMid);
+      syncMountSlot(selfMid);
     },
     { passive: false }
   );
@@ -3853,6 +3895,22 @@ function wireUi() {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
     homeTeleportSlotEl.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+
+  // Mount slot button
+  mountSlotEl?.addEventListener("click", () => {
+    if (!state.joined || state.menuOpen) return;
+    send({ type: "toggleMount" });
+  });
+  mountSlotEl?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    mountSlotEl.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+
+  // Waypoint panel close
+  waypointClose?.addEventListener("click", () => {
+    closeWaypointMenu();
   });
 
   initDraggablePanels();
@@ -4318,6 +4376,13 @@ function wireUi() {
     if (event.key.toLowerCase() === "h" && state.joined && !isTextEntryTarget(event.target)) {
       event.preventDefault();
       sendHome();
+      return;
+    }
+
+    // Mount / dismount keybind — M
+    if (event.key.toLowerCase() === "m" && state.joined && !isTextEntryTarget(event.target)) {
+      event.preventDefault();
+      send({ type: "toggleMount" });
       return;
     }
 
@@ -4874,6 +4939,7 @@ function renderAbilityBar() {
   updateAbilityCooldowns();
   syncSafeZoneIndicator(self);
   syncHomeTeleportSlot(self);
+  syncMountSlot(self);
 }
 
 function updateAbilityCooldowns() {
@@ -5045,6 +5111,58 @@ function renderHomeTeleportIconOnce() {
 }
 
 /** Hotbar “home” glyph — mirrors H key teleport; hidden until the player owns a house. */
+function syncMountSlot(self) {
+  if (!mountSlotEl || !abilityBar) return;
+  const hasMount = Boolean(self?.hasMount);
+  const mounted = Boolean(self?.mounted);
+  const show = state.joined && hasMount && !abilityBar.classList.contains("minimized");
+  mountSlotEl.classList.toggle("hidden", !show);
+  mountSlotEl.classList.toggle("mount-active", mounted);
+  if (mountLabelEl) mountLabelEl.textContent = mounted ? "Dismount" : "Mount";
+  mountSlotEl.title = mounted ? "Dismount (M)" : "Mount (M)";
+}
+
+// ── Waypoint menu ────────────────────────────────────────────────────────────
+
+function openWaypointMenu(msg) {
+  if (!waypointPanel) return;
+  state.waypointMenu = { open: true, fromId: msg.fromId };
+  if (waypointTitle) waypointTitle.textContent = `Obelisk: ${msg.fromName || "Waypoint"}`;
+  if (waypointFrom) waypointFrom.textContent = `Traveling from: ${msg.fromName || "here"}`;
+  if (waypointGold) {
+    const self = state.players.get(state.selfId);
+    waypointGold.textContent = `Your gold: ${self?.gold ?? 0}g  |  Cost per hop: ${msg.choices?.[0]?.cost ?? 15}g`;
+  }
+  if (waypointList) {
+    waypointList.replaceChildren();
+    if (!msg.choices || msg.choices.length === 0) {
+      const p = document.createElement("p");
+      p.textContent = "No other unlocked waypoints in this world.";
+      waypointList.append(p);
+    } else {
+      for (const choice of msg.choices) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "waypoint-choice-btn";
+        btn.textContent = `${choice.name} (${choice.cost}g)`;
+        btn.dataset.targetId = choice.id;
+        btn.addEventListener("click", () => {
+          send({ type: "waypointTravel", targetId: choice.id });
+          closeWaypointMenu();
+        });
+        waypointList.append(btn);
+      }
+    }
+  }
+  waypointPanel.classList.remove("hidden");
+}
+
+function closeWaypointMenu() {
+  if (!waypointPanel) return;
+  waypointPanel.classList.add("hidden");
+  state.waypointMenu = null;
+}
+
 function syncHomeTeleportSlot(self) {
   renderHomeTeleportIconOnce();
   if (!homeTeleportSlotEl || !abilityBar) return;
@@ -6912,6 +7030,7 @@ function renderProgression(self) {
   }
   syncSafeZoneIndicator(self);
   syncHomeTeleportSlot(self);
+  syncMountSlot(self);
 }
 
 function makeEquipSlotEl(slot, label) {
@@ -8593,6 +8712,7 @@ function draw() {
 
   drawWorld();
   drawPortals();
+  drawWaypointObelisks();
   drawCaravans();
   drawPlayers();
   drawUpperDeckLayer();
@@ -10290,6 +10410,109 @@ function tryTravelToPlanetAtClick(wx, wy) {
   });
   appendChat({ kind: "system", name: "Realm", text: `Setting course for ${planet.name || "planet"}…` });
   return true;
+}
+
+/**
+ * Draw a mount sprite (horse or hoverboard) centred at (x, y), oriented by facing.
+ * Called from drawCharacter before the character body so the mount appears beneath.
+ * Uses the same procedural pixel-art style as the rest of the codebase.
+ */
+function drawMount(x, y, s, facing, moving, phase, isSciFi) {
+  const t = performance.now() / 1000;
+  // Facing buckets: right ≈ 0, down ≈ π/2, left ≈ π, up ≈ -π/2
+  const fx = Math.cos(facing);
+  const fy = Math.sin(facing);
+  const facingRight = fx > 0.4;
+  const facingLeft  = fx < -0.4;
+  // Vertical offset: mount sits below the rider
+  const mountY = y + Math.round(s * 1.55);
+
+  ctx.save();
+  if (isSciFi) {
+    // ── Hoverboard: a glowing flat board ──────────────────────────────────
+    const bw = Math.round(s * 4.2);
+    const bh = Math.round(s * 0.9);
+    const bx = x - bw / 2;
+    const by = mountY - bh;
+    // Repulsor glow
+    ctx.globalAlpha = 0.35 + Math.sin(t * 4.1) * 0.1;
+    ctx.fillStyle = "#67f0ff";
+    ctx.beginPath();
+    ctx.ellipse(x, mountY + 2, bw * 0.55, bh * 1.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    // Board body
+    ctx.fillStyle = "#1a2a3a";
+    ctx.fillRect(bx, by, bw, bh);
+    // Top strip
+    ctx.fillStyle = "#67f0ff";
+    ctx.fillRect(bx + 2, by, bw - 4, Math.round(bh * 0.35));
+    // Side detail
+    ctx.fillStyle = "#4ad8f0";
+    ctx.fillRect(bx, by + Math.round(bh * 0.35), 3, Math.round(bh * 0.4));
+    ctx.fillRect(bx + bw - 3, by + Math.round(bh * 0.35), 3, Math.round(bh * 0.4));
+    // Bounce hover animation
+    const hoverBob = Math.round(Math.sin(t * 5.5) * 1.2);
+    ctx.fillStyle = "rgba(103,240,255,0.18)";
+    ctx.fillRect(bx + 4, mountY + 3 + hoverBob, bw - 8, 2);
+  } else {
+    // ── Horse: procedural pixel-art quadruped ─────────────────────────────
+    const hs = Math.round(s * 1.0); // base scale unit
+    const bodyW = hs * 5;
+    const bodyH = hs * 2;
+    const headW = hs * 2;
+    const headH = hs * 2;
+    const legH  = hs * 2;
+    const walkBob = moving ? Math.round(Math.sin(phase * 5.2) * hs * 0.4) : 0;
+    const bodyTop = mountY - bodyH - legH + walkBob;
+    const bodyLeft = x - bodyW / 2 - (facingLeft ? hs : 0);
+
+    // Shadow
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = "#000";
+    ctx.beginPath();
+    ctx.ellipse(x, mountY + 2, bodyW * 0.7, hs * 0.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Tail
+    const tailX = facingLeft ? bodyLeft + bodyW + hs : bodyLeft - hs;
+    ctx.fillStyle = "#5a3a1a";
+    ctx.fillRect(tailX, bodyTop + hs, hs, hs * 2);
+
+    // Legs (4 simple rectangles, animated with alternating phase)
+    const legW = Math.max(2, hs);
+    const legPositions = [0.5, 1.3, 2.2, 3.5];
+    const legPhases = [0, Math.PI, Math.PI * 0.5, Math.PI * 1.5];
+    ctx.fillStyle = "#5c3c1a";
+    for (let i = 0; i < 4; i++) {
+      const lx = bodyLeft + legPositions[i] * hs;
+      const legOffset = moving ? Math.round(Math.sin(phase * 5.2 + legPhases[i]) * hs * 0.5) : 0;
+      ctx.fillRect(Math.round(lx), bodyTop + bodyH + legOffset, legW, legH - legOffset);
+    }
+
+    // Body
+    ctx.fillStyle = "#8B5E3C";
+    ctx.fillRect(bodyLeft, bodyTop, bodyW, bodyH);
+    // Body highlight
+    ctx.fillStyle = "#a87050";
+    ctx.fillRect(bodyLeft + 1, bodyTop + 1, bodyW - 2, 2);
+
+    // Neck and head
+    const neckX = facingLeft ? bodyLeft + bodyW - hs * 1.5 : bodyLeft;
+    ctx.fillStyle = "#8B5E3C";
+    ctx.fillRect(Math.round(neckX), bodyTop - hs, hs * 2, hs + 1);
+    const headX = facingLeft ? neckX - hs : neckX - hs * 0.5;
+    ctx.fillStyle = "#7a5030";
+    ctx.fillRect(Math.round(headX), bodyTop - hs * 2, headW, headH);
+    // Eye
+    ctx.fillStyle = "#1a0a00";
+    ctx.fillRect(Math.round(headX + (facingLeft ? hs * 0.3 : hs * 1.2)), bodyTop - hs * 1.5, 2, 2);
+    // Mane
+    ctx.fillStyle = "#3a2010";
+    ctx.fillRect(Math.round(neckX + (facingLeft ? hs * 0.3 : hs * 0.3)), bodyTop - hs, hs * 1.4, hs * 0.5);
+  }
+  ctx.restore();
 }
 
 function drawShieldBuff(player, sx, sy) {
@@ -12807,6 +13030,102 @@ function drawPortals() {
   }
 }
 
+/**
+ * Draw waypoint obelisks at their world positions.
+ * Unlocked obelisks glow purple; locked ones are dim grey.
+ * Visibility check: only draw if on-screen.
+ */
+function drawWaypointObelisks() {
+  if (!state.waypointNodes || !state.waypointNodes.length) return;
+  const halfW = canvas.width / 2;
+  const halfH = canvas.height / 2;
+  const worldTheme = state.worldTheme || "fantasy";
+  const self = state.players.get(state.selfId);
+  const unlocked = new Set(Array.isArray(self?.unlockedWaypoints) ? self.unlockedWaypoints : []);
+  const t = performance.now() / 1000;
+
+  for (const node of state.waypointNodes) {
+    // Only draw in matching world
+    const nodeWorld = node.worldId || "fantasy";
+    const selfWorld = isSciFiWorld() ? "scifi" : isPlanetSurfaceWorld() ? `planet:${currentPlanetId()}` : "fantasy";
+    if (!nodeWorld.startsWith(selfWorld.split(":")[0]) && nodeWorld !== selfWorld) continue;
+
+    const sx = Math.floor(node.x * TILE_SIZE - state.camera.x + halfW);
+    const sy = Math.floor(node.y * TILE_SIZE - state.camera.y + halfH);
+
+    // Cull off-screen
+    if (sx < -80 || sx > canvas.width + 80 || sy < -80 || sy > canvas.height + 80) continue;
+
+    const isUnlocked = unlocked.has(node.id);
+    const pulse = 0.55 + Math.sin(t * 2.8 + node.x * 0.31) * 0.2;
+    const color = isUnlocked ? "#a855f7" : "#6b7280";
+    const glowColor = isUnlocked ? "rgba(168,85,247,0.35)" : "rgba(107,114,128,0.2)";
+
+    ctx.save();
+
+    // Glow halo
+    if (isUnlocked) {
+      ctx.globalAlpha = pulse * 0.6;
+      ctx.beginPath();
+      ctx.arc(sx, sy - TILE_SIZE * 0.9, TILE_SIZE * 0.7, 0, Math.PI * 2);
+      ctx.fillStyle = glowColor;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    // Base platform
+    ctx.fillStyle = isUnlocked ? "#3b1a5c" : "#2a2a2a";
+    ctx.fillRect(sx - 8, sy - 2, 16, 5);
+
+    // Obelisk shaft
+    ctx.fillStyle = isUnlocked ? "#5b2d8c" : "#3a3a3a";
+    ctx.fillRect(sx - 4, sy - TILE_SIZE * 1.4, 8, TILE_SIZE * 1.4);
+
+    // Obelisk cap / tip
+    ctx.fillStyle = color;
+    ctx.fillRect(sx - 3, sy - TILE_SIZE * 1.6, 6, TILE_SIZE * 0.2);
+    ctx.fillRect(sx - 2, sy - TILE_SIZE * 1.75, 4, TILE_SIZE * 0.15);
+    ctx.fillRect(sx - 1, sy - TILE_SIZE * 1.85, 2, TILE_SIZE * 0.12);
+
+    // Rune glow on shaft
+    if (isUnlocked) {
+      ctx.globalAlpha = pulse * 0.8;
+      ctx.fillStyle = "#d8b4fe";
+      ctx.fillRect(sx - 2, sy - TILE_SIZE * 1.1, 4, 3);
+      ctx.fillRect(sx - 2, sy - TILE_SIZE * 0.7, 4, 3);
+      ctx.globalAlpha = 1;
+    }
+
+    // Name label
+    ctx.globalAlpha = isUnlocked ? 0.92 : 0.5;
+    ctx.fillStyle = isUnlocked ? "#e9d5ff" : "#9ca3af";
+    ctx.font = "10px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(node.name, sx, sy - TILE_SIZE * 1.95);
+    if (isUnlocked) {
+      ctx.fillStyle = "rgba(216,180,254,0.65)";
+      ctx.font = "9px sans-serif";
+      ctx.fillText("E to travel", sx, sy - TILE_SIZE * 2.1);
+    }
+    ctx.restore();
+  }
+}
+
+/** Returns the current planet id string for world matching (best-effort from camera position). */
+function currentPlanetId() {
+  // Use the player's world position to identify the planet
+  const self = state.players.get(state.selfId);
+  if (!self) return "planet_rust";
+  // Match against known planet surface coords
+  if (state.waypointNodes) {
+    for (const node of state.waypointNodes) {
+      if (!node.worldId.startsWith("planet:")) continue;
+      if (Math.hypot(self.x - node.x, self.y - node.y) < 200) return node.worldId.slice("planet:".length);
+    }
+  }
+  return "planet_rust";
+}
+
 function drawCaveEntrances(minTileX, maxTileX, minTileY, maxTileY) {
   if (state.worldTheme !== "fantasy") return;
   const halfW = canvas.width / 2;
@@ -14505,6 +14824,12 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const swimSink = swimming ? Math.round(2.1 * s) : 0;
   const bx = x;
   const by = y + bob + sitBumpPx + swimSink;
+
+  // Draw mount below the character (horse in fantasy/oceanus/default, hoverboard in sci-fi/planet)
+  const entityMounted = Boolean(entity.mounted) && !swimming && !benchSeatPose && !lyingBedPose;
+  if (entityMounted) {
+    drawMount(x, y, s, facing, moving, phase, isSciFiWorld() || isPlanetSurfaceWorld());
+  }
 
   if (!lyingBedPose) {
     if (isMod) {

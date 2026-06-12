@@ -2880,6 +2880,95 @@ body.theme-sci-fi .ship-engage button.pressed {
   color: #4a9944;
 }
 
+/* ── Mount slot ──────────────────────────────────────────────────────────── */
+.mount-slot {
+  position: relative;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  min-height: 48px;
+  height: 48px;
+  padding: 0 2px;
+  flex-shrink: 0;
+  cursor: pointer;
+  border-color: #5a3e1e;
+  gap: 1px;
+}
+
+.mount-slot:hover {
+  border-color: #a87050;
+  background: linear-gradient(180deg, #1a0e06 0%, #110a04 100%);
+}
+
+.mount-slot.mount-active {
+  border-color: #d4a56a;
+  background: radial-gradient(circle at 50% 35%, rgba(212, 165, 106, 0.18), #1a0c06 68%);
+  box-shadow: 0 0 10px rgba(212, 165, 106, 0.25);
+}
+
+.mount-key {
+  position: absolute;
+  right: 3px;
+  bottom: 2px;
+  font-size: 9px;
+  color: #a87050;
+  line-height: 1;
+}
+
+.mount-label {
+  font-size: 9px;
+  color: #d4a56a;
+  text-align: center;
+  line-height: 1.2;
+  padding-top: 4px;
+}
+
+/* ── Waypoint panel ──────────────────────────────────────────────────────── */
+.waypoint-window {
+  min-width: 240px;
+  max-width: 320px;
+}
+
+.waypoint-from {
+  font-size: 12px;
+  color: #c4b5fd;
+  padding: 6px 10px 2px;
+  border-bottom: 1px solid #2a1a4a;
+}
+
+.waypoint-gold {
+  font-size: 11px;
+  color: #a78bfa;
+  padding: 4px 10px 6px;
+}
+
+.waypoint-list {
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.waypoint-choice-btn {
+  display: block;
+  width: 100%;
+  padding: 7px 10px;
+  background: #1e1040;
+  border: 1px solid #5b21b6;
+  border-radius: 4px;
+  color: #e9d5ff;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.waypoint-choice-btn:hover {
+  background: #2d1a5c;
+  border-color: #a855f7;
+}
+
 .potion-count {
   position: absolute;
   bottom: 2px;

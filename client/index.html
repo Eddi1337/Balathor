@@ -224,6 +224,16 @@
       <div id="teleportMenuList" class="teleport-menu-list"></div>
     </aside>
 
+    <aside id="waypointPanel" class="game-window waypoint-window hidden" aria-label="Waypoint travel">
+      <div class="window-head">
+        <strong id="waypointTitle">Waypoint Obelisk</strong>
+        <button id="waypointClose" class="window-close" type="button" aria-label="Close waypoint">Close</button>
+      </div>
+      <div id="waypointFrom" class="waypoint-from"></div>
+      <div id="waypointGold" class="waypoint-gold"></div>
+      <div id="waypointList" class="waypoint-list"></div>
+    </aside>
+
     <aside id="questOfferPanel" class="game-window quest-offer-window hidden" aria-label="Quest offer">
       <div class="window-head">
         <strong id="questOfferTitle">Quest Offer</strong>
@@ -266,6 +276,11 @@
         <canvas id="homeTeleportIcon" width="32" height="32"
           style="position:absolute;top:4px;left:50%;transform:translateX(-50%);image-rendering:pixelated;"></canvas>
         <span class="ability-key home-teleport-key">H</span>
+      </div>
+      <div id="mountSlot" class="ability-slot mount-slot hidden" role="button" tabindex="0"
+        aria-label="Toggle mount" title="Toggle mount (M)">
+        <span class="ability-key mount-key">M</span>
+        <span id="mountLabel" class="mount-label">Mount</span>
       </div>
       <div id="potionSlot" class="ability-slot potion-slot" title="Health Potion (Q)">
         <canvas id="potionSlotIcon" width="32" height="32" style="position:absolute;top:4px;left:50%;transform:translateX(-50%);image-rendering:pixelated;"></canvas>

@@ -381,6 +381,38 @@ const SCI_FI_ENCOUNTER_EVENTS = Object.freeze([
   }
 ]);
 const ZERO_G_DRIFT_SPEED_MULTIPLIER = 0.74;
+// ── Mount system ──────────────────────────────────────────────────────────────
+/** Speed multiplier applied while the player has a mount active (on foot only). */
+const MOUNT_SPEED_MULTIPLIER = 1.7;
+/** Gold cost to buy a mount from the stable. */
+const MOUNT_BUY_PRICE = 350;
+/** Radius within which a waypoint obelisk can be interacted with / auto-discovered. */
+const WAYPOINT_DISCOVER_RADIUS = 4.5;
+const WAYPOINT_TRAVEL_RADIUS = 6.0;
+/** Gold fee per waypoint fast-travel hop. */
+const WAYPOINT_TRAVEL_COST = 15;
+/** Worlds where mounting is disabled (Oceanus — players use ships). */
+const MOUNT_FORBIDDEN_WORLDS = new Set(["oceanus"]);
+/**
+ * Waypoint obelisk network — same-world fast travel.
+ * Waypoints in different worldId values are intentionally NOT cross-linked here;
+ * cross-world travel still uses portals.  (Cross-world waypoint travel would require
+ * the same inter-world coordinate bridging that portals do — scope deferred.)
+ */
+const WAYPOINT_NODES = Object.freeze([
+  // Fantasy realm
+  { id: "wp_fantasy_hub",       worldId: "fantasy", name: "Hub Town Square",    x:   0,    y:   0 },
+  { id: "wp_fantasy_forest",    worldId: "fantasy", name: "Bracken Post Camp",  x:  28,    y: -148 },
+  { id: "wp_fantasy_swamp",     worldId: "fantasy", name: "Muddy Bank Camp",    x: -200,   y: 180 },
+  { id: "wp_fantasy_oasis",     worldId: "fantasy", name: "Oasis Crossing",     x: 180,    y: 210 },
+  { id: "wp_fantasy_frost",     worldId: "fantasy", name: "Frost Tundra Gate",  x: -120,   y: -280 },
+  { id: "wp_fantasy_ember",     worldId: "fantasy", name: "Ember Coast Rise",   x: 340,    y: -180 },
+  // Sci-Fi orbital station
+  { id: "wp_scifi_plaza",       worldId: "scifi",   name: "Ringforge Plaza",    x: 1920,   y:  -46 },
+  { id: "wp_scifi_freight",     worldId: "scifi",   name: "Freight Deck",       x: 1891,   y:  -25 },
+  // Planet Rust surface
+  { id: "wp_planet_rust_rig",   worldId: "planet:planet_rust", name: "Rust Mining Rig", x: 9600, y: -2600 }
+]);
 const XP_BASE_TO_LEVEL = 100;
 const XP_LEVEL_STEP = 55;
 const STARTING_TALENT_POINTS = 1;
@@ -2391,6 +2423,9 @@ function serializePlayer(player) {
     equipment: player.equipment,
     quests: serializeQuestLog(player.quests),
     professions: sanitizeProfessions(player.professions),
+    hasMount: Boolean(player.hasMount),
+    mounted: Boolean(player.mounted),
+    unlockedWaypoints: sanitizeWaypointSet(player.unlockedWaypoints),
     x: Number(player.x.toFixed(3)),
     y: Number(player.y.toFixed(3)),
     facing: Number(player.facing.toFixed(3)),
@@ -3884,6 +3919,38 @@ function getPlayerDockPort(player) {
     harbourId: port.harbourId || null,
     harbourName: port.harbourName || null
   };
+}
+
+/**
+ * Mount shop catalog — world-neutral: the NPC dialogue and shop name handle the theme,
+ * but a single item type is offered (one per world theme).
+ * The "mount" item type is handled in handleShopBuy by setting player.hasMount = true.
+ */
+function getMountCatalog() {
+  return [
+    {
+      templateId: "mount_horse",
+      type: "mount",
+      name: "Riding Horse",
+      icon: "horse",
+      rarity: "uncommon",
+      color: "#8B5E3C",
+      description: "A sure-footed horse. Increases travel speed by 70%.",
+      price: MOUNT_BUY_PRICE,
+      value: MOUNT_BUY_PRICE
+    },
+    {
+      templateId: "mount_hoverboard",
+      type: "mount",
+      name: "Hoverboard Mk-II",
+      icon: "hoverboard",
+      rarity: "uncommon",
+      color: "#67f0ff",
+      description: "A repulsor-lift board. Increases travel speed by 70%.",
+      price: MOUNT_BUY_PRICE,
+      value: MOUNT_BUY_PRICE
+    }
+  ];
 }
 
 function getPartsCatalog() {
@@ -5512,6 +5579,8 @@ function simulate() {
     handleStairTravel(client);
     handleDoorTravel(client);
     handlePortalTravel(client);
+    // Passive waypoint discovery — walk near an obelisk to unlock it.
+    discoverWaypointsNear(client);
   }
 
   perfAcc.players += Number(process.hrtime.bigint() - _perfT0) / 1e3;
@@ -5642,6 +5711,10 @@ function handleTownLayerTransition(client) {
   /** Safety net: teleports/portals always land on ground. */
   if (p.layer === 1 && !isUpperWalkableAt(tx, ty)) {
     p.layer = 0;
+  }
+  // Dismount when stepping onto upper deck
+  if (p.layer === 1) {
+    dismountPlayer(p);
   }
 }
 
@@ -6326,6 +6399,7 @@ function handlePortalTravel(client) {
   client.player.x = portal.targetX;
   client.player.y = portal.targetY + 3.2;
   client.player.moving = false;
+  dismountPlayer(client.player);
   if (client.player.ship && !isShipNavTheme(getWorldThemeAt(client.player.x, client.player.y))) {
     clearPlayerBoardedShips(client.player);
   }
@@ -6486,6 +6560,21 @@ function handleMessage(client, raw) {
 
   if (message.type === "home") {
     handleHomeTeleport(client);
+    return;
+  }
+
+  if (message.type === "toggleMount") {
+    handleToggleMount(client);
+    return;
+  }
+
+  if (message.type === "waypointOpen") {
+    handleWaypointOpen(client);
+    return;
+  }
+
+  if (message.type === "waypointTravel") {
+    handleWaypointTravel(client, message);
     return;
   }
 
@@ -7039,6 +7128,11 @@ function joinWorld(client, message, savedCharacter = null) {
   client.player.aboardShipId = typeof savedCharacter?.aboardShipId === "string"
     ? savedCharacter.aboardShipId
     : null;
+  client.player.hasMount = Boolean(savedCharacter?.hasMount);
+  client.player.mounted = false; // Always start dismounted on login
+  client.player.unlockedWaypoints = sanitizeWaypointSet(
+    Array.isArray(savedCharacter?.unlockedWaypoints) ? savedCharacter.unlockedWaypoints : []
+  );
   validatePassengerLink(client.player);
   const rescuedFromSpace = rescueStrandedSciFiPlayer(client.player);
   const repairedOceanusLanding = repairOceanusFootLanding(client);
@@ -7069,7 +7163,8 @@ function joinWorld(client, message, savedCharacter = null) {
     chunkSize: CHUNK_SIZE,
     theme: getWorldThemeAt(client.player.x, client.player.y),
     worldTime: getWorldTimeSnapshot(),
-    spawn: { x: client.player.x, y: client.player.y }
+    spawn: { x: client.player.x, y: client.player.y },
+    waypointNodes: WAYPOINT_NODES
   });
 
   if (ownedBuildings.size > 0) {
@@ -7119,6 +7214,8 @@ function handleAttack(client, message = {}) {
   }
 
   client.lastAttackAt = now;
+  // Attacking while mounted dismounts the player.
+  dismountPlayer(client.player);
 
   if (!canAttackAt(client.player.x, client.player.y)) {
     send(client, { type: "serverMessage", message: "combat_protected" });
@@ -7177,6 +7274,10 @@ function handleAttack(client, message = {}) {
     }
 
     hit.hp = Math.max(0, hit.hp - damage);
+    // Taking damage dismounts the target (if it's a player).
+    if (hitKind === "player") {
+      dismountPlayer(hit);
+    }
     event.hit = true;
     event.targetId = hit.id;
     event.targetKind = hitKind;
@@ -8807,6 +8908,7 @@ function handleReturnToShip(client) {
 function boardPlayerOntoCurrentShip(player) {
   const ship = player?.ship;
   if (!ship) return false;
+  dismountPlayer(player);
   ensureShipCrew(ship);
   const center = shipCenter(ship, player);
   ship.boarded = true;
@@ -9614,6 +9716,13 @@ function handleInteract(client, message = {}) {
     return;
   }
 
+  // Mount shop: stable keeper NPC acts as a shop
+  const stableShop = nearestStableShop(client.player, message);
+  if (stableShop) {
+    sendShopWindow(client, stableShop);
+    return;
+  }
+
   const shop = nearestShopFixture(client.player, message);
   if (shop) {
     sendShopWindow(client, shop);
@@ -9640,6 +9749,18 @@ function handleInteract(client, message = {}) {
   const minigameSite = minigames?.findSiteNear(client.player, message);
   if (minigameSite && minigames.handleInteract(client, minigameSite)) {
     return;
+  }
+
+  // Waypoint obelisk — check before roadside features so E key opens travel menu
+  {
+    const worldId = worldForPosition(client.player.x, client.player.y);
+    const nearbyWaypoint = WAYPOINT_NODES.find(
+      (n) => n.worldId === worldId && Math.hypot(client.player.x - n.x, client.player.y - n.y) <= WAYPOINT_TRAVEL_RADIUS
+    );
+    if (nearbyWaypoint) {
+      handleWaypointOpen(client);
+      return;
+    }
   }
 
   const roadside = resolveInteractRoadside(client.player, message);
@@ -10260,6 +10381,161 @@ function applyDerivedPlayerStats(player) {
   player.hp = Math.min(player.hp, player.maxHp);
 }
 
+/** Normalise the set of unlocked waypoint IDs stored on a player. */
+function sanitizeWaypointSet(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((id) => typeof id === "string" && WAYPOINT_NODES.some((n) => n.id === id));
+}
+
+/**
+ * Dismount the player immediately (server-authoritative).
+ * Called on: portal travel, damage taken, attack fired, interior entry, Oceanus.
+ */
+function dismountPlayer(player) {
+  if (!player || !player.mounted) return;
+  player.mounted = false;
+}
+
+/**
+ * Toggle mount on/off for the client.
+ * Forbidden in: Oceanus world, while boarded on a ship, while on upper layer (deck).
+ */
+function handleToggleMount(client) {
+  const p = client.player;
+  if (!p) return;
+  if (!p.hasMount) {
+    send(client, { type: "serverMessage", message: "no_mount" });
+    return;
+  }
+  const worldId = worldForPosition(p.x, p.y);
+  if (MOUNT_FORBIDDEN_WORLDS.has(worldId)) {
+    send(client, { type: "serverMessage", message: "mount_forbidden" });
+    return;
+  }
+  if (p.ship?.boarded) {
+    send(client, { type: "serverMessage", message: "mount_forbidden" });
+    return;
+  }
+  if (p.layer === 1) {
+    send(client, { type: "serverMessage", message: "mount_forbidden" });
+    return;
+  }
+  p.mounted = !p.mounted;
+  broadcastSnapshot();
+}
+
+/**
+ * Discover any waypoint the player is standing near.
+ * Returns true if a new waypoint was discovered (triggers save + chat).
+ */
+function discoverWaypointsNear(client) {
+  const p = client.player;
+  if (!p) return false;
+  p.unlockedWaypoints = sanitizeWaypointSet(p.unlockedWaypoints);
+  const worldId = worldForPosition(p.x, p.y);
+  let discovered = false;
+  for (const node of WAYPOINT_NODES) {
+    if (node.worldId !== worldId) continue;
+    if (p.unlockedWaypoints.includes(node.id)) continue;
+    const dist = Math.hypot(p.x - node.x, p.y - node.y);
+    if (dist <= WAYPOINT_DISCOVER_RADIUS) {
+      p.unlockedWaypoints.push(node.id);
+      pushChat({ kind: "system", name: "Realm", text: `Waypoint discovered: ${node.name}!` });
+      discovered = true;
+    }
+  }
+  if (discovered) {
+    saveClientCharacter(client);
+    send(client, { type: "waypointUpdate", unlockedWaypoints: p.unlockedWaypoints });
+  }
+  return discovered;
+}
+
+/**
+ * Handle waypointOpen — player interacts with a nearby obelisk.
+ */
+function handleWaypointOpen(client) {
+  const p = client.player;
+  if (!p) return;
+  p.unlockedWaypoints = sanitizeWaypointSet(p.unlockedWaypoints);
+  const worldId = worldForPosition(p.x, p.y);
+  // First discover/update obelisks nearby
+  for (const node of WAYPOINT_NODES) {
+    if (node.worldId !== worldId) continue;
+    const dist = Math.hypot(p.x - node.x, p.y - node.y);
+    if (dist <= WAYPOINT_TRAVEL_RADIUS && !p.unlockedWaypoints.includes(node.id)) {
+      p.unlockedWaypoints.push(node.id);
+      pushChat({ kind: "system", name: "Realm", text: `Waypoint discovered: ${node.name}!` });
+      saveClientCharacter(client);
+    }
+  }
+  const nearby = WAYPOINT_NODES.find(
+    (n) => n.worldId === worldId && Math.hypot(p.x - n.x, p.y - n.y) <= WAYPOINT_TRAVEL_RADIUS
+  );
+  if (!nearby) {
+    send(client, { type: "serverMessage", message: "no_waypoint_nearby" });
+    return;
+  }
+  // Send the player the travel menu: all unlocked nodes on this world
+  const choices = WAYPOINT_NODES.filter(
+    (n) => n.worldId === worldId && p.unlockedWaypoints.includes(n.id) && n.id !== nearby.id
+  );
+  send(client, {
+    type: "waypointMenu",
+    fromId: nearby.id,
+    fromName: nearby.name,
+    choices: choices.map((n) => ({ id: n.id, name: n.name, cost: WAYPOINT_TRAVEL_COST })),
+    gold: p.gold
+  });
+}
+
+/**
+ * Handle waypointTravel — player confirms a fast-travel destination.
+ */
+function handleWaypointTravel(client, message) {
+  const p = client.player;
+  if (!p) return;
+  const targetId = String(message.targetId || "");
+  const target = WAYPOINT_NODES.find((n) => n.id === targetId);
+  if (!target) {
+    send(client, { type: "serverMessage", message: "waypoint_invalid" });
+    return;
+  }
+  p.unlockedWaypoints = sanitizeWaypointSet(p.unlockedWaypoints);
+  if (!p.unlockedWaypoints.includes(targetId)) {
+    send(client, { type: "serverMessage", message: "waypoint_locked" });
+    return;
+  }
+  const worldId = worldForPosition(p.x, p.y);
+  if (target.worldId !== worldId) {
+    // Same-world travel only; cross-world goes through portals.
+    send(client, { type: "serverMessage", message: "waypoint_cross_world" });
+    return;
+  }
+  if ((p.gold || 0) < WAYPOINT_TRAVEL_COST) {
+    send(client, { type: "serverMessage", message: "not_enough_gold" });
+    return;
+  }
+  p.gold = Math.max(0, (p.gold || 0) - WAYPOINT_TRAVEL_COST);
+  p.x = target.x;
+  p.y = target.y;
+  p.moving = false;
+  dismountPlayer(p);
+  saveClientCharacter(client);
+  send(client, {
+    type: "teleport",
+    portalId: target.id,
+    name: target.name,
+    color: "#a855f7",
+    style: "waypoint",
+    theme: getWorldThemeAt(p.x, p.y),
+    x: p.x,
+    y: p.y
+  });
+  streamChunks(client, nearbyChunks(p.x, p.y, 3));
+  broadcastSnapshot();
+}
+
 function getPlayerSpeed(player) {
   if (player.ship?.boarded) {
     const base = Number(player.ship.speed) || SHIP_SPEED;
@@ -10269,7 +10545,9 @@ function getPlayerSpeed(player) {
       ? upgradeSpeed * nauticalWindSpeedFactor(player.ship)
       : upgradeSpeed;
   }
-  return PLAYER_SPEED + player.stats.speed * STAT_POINT_SPEED + getEquipmentStats(player).speed;
+  const baseSpeed = PLAYER_SPEED + player.stats.speed * STAT_POINT_SPEED + getEquipmentStats(player).speed;
+  const mountBonus = player.mounted ? MOUNT_SPEED_MULTIPLIER : 1;
+  return baseSpeed * mountBonus;
 }
 
 function getAttackDamage(player, loadout) {
@@ -10996,6 +11274,7 @@ function emitSnapshot() {
       moving: p.moving,
       swimming: Boolean(p.swimming),
       layer: p.layer === 1 ? 1 : 0,
+      mounted: Boolean(p.mounted),
       shipAmenityPose: (p.shipAmenityPose && p.shipAmenityPose.until > Date.now())
         ? {
             kind: p.shipAmenityPose.kind === "sleep" ? "sleep" : "eat",
@@ -11034,7 +11313,9 @@ function emitSnapshot() {
         talentPoints: p.talentPoints || 0,
         talents: p.talents || {},
         abilityBar: p.abilityBar || [null, null, null, null, null],
-        moveSpeed: Number(getPlayerSpeed(p).toFixed(2))
+        moveSpeed: Number(getPlayerSpeed(p).toFixed(2)),
+        hasMount: Boolean(p.hasMount),
+        unlockedWaypoints: sanitizeWaypointSet(p.unlockedWaypoints)
       });
     }
     if (
@@ -11591,6 +11872,29 @@ function nearestGroundItem(player) {
     .sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0] || null;
 }
 
+/**
+ * Returns a synthetic shop object if the player is near an NPC with isStableKeeper / shopType.
+ * Stable keepers are treated as first-class shop fixtures without needing a tile-based shelf.
+ */
+function nearestStableShop(player) {
+  const allNpcs = getNpcSnapshot();
+  for (const n of allNpcs) {
+    if (!n.isStableKeeper) continue;
+    const dist = Math.hypot(n.x - player.x, n.y - player.y);
+    if (dist > SHOP_INTERACT_RADIUS + 1) continue;
+    return {
+      id: `stable_${n.id}`,
+      name: n.shopName || "Stable",
+      buildingName: n.shopName || "Stable",
+      isPub: false,
+      shopType: n.shopType || "mount",
+      x: n.x,
+      y: n.y
+    };
+  }
+  return null;
+}
+
 function nearestShopFixture(player, message = {}) {
   const targetX = Number(message.x);
   const targetY = Number(message.y);
@@ -11632,6 +11936,9 @@ function getShopStock(shop) {
     }
     return picks.length ? picks : arms.slice(0, 20);
   }
+  if (shop?.shopType === "mount") {
+    return getMountCatalog();
+  }
   if (shop?.shopType === "stims") {
     const pots = itemDatabase.filter((it) => it && it.type === "potion");
     return pots.slice(0, 16);
@@ -11657,6 +11964,19 @@ function getShopStock(shop) {
 }
 
 function publicShopItem(template) {
+  if (template?.type === "mount") {
+    return {
+      templateId: template.templateId,
+      type: "mount",
+      name: template.name,
+      icon: template.icon || "horse",
+      rarity: template.rarity || "uncommon",
+      color: template.color || "#8B5E3C",
+      description: template.description || "",
+      price: Number(template.price) || MOUNT_BUY_PRICE,
+      value: Number(template.value) || MOUNT_BUY_PRICE
+    };
+  }
   if (template?.type === "ship_upgrade") {
     return {
       templateId: template.templateId,
@@ -11721,7 +12041,7 @@ function handleShopBuy(client, message) {
     return;
   }
 
-  const shop = nearestShopFixture(client.player, message);
+  const shop = nearestShopFixture(client.player, message) || nearestStableShop(client.player);
   if (!shop) {
     send(client, { type: "serverMessage", message: "shop_not_nearby" });
     return;
@@ -11767,6 +12087,27 @@ function handleShopBuy(client, message) {
     }
     saveClientCharacter(client);
     send(client, { type: "serverMessage", message: "item_bought", itemName: template.name });
+    sendShopWindow(client, shop);
+    broadcastSnapshot();
+    return;
+  }
+
+  if (template.type === "mount") {
+    if (client.player.hasMount) {
+      send(client, { type: "serverMessage", message: "already_have_mount" });
+      sendShopWindow(client, shop);
+      return;
+    }
+    const mountPrice = Number(template.price || MOUNT_BUY_PRICE);
+    if ((client.player.gold || 0) < mountPrice) {
+      send(client, { type: "serverMessage", message: "not_enough_gold" });
+      sendShopWindow(client, shop);
+      return;
+    }
+    client.player.gold = Math.max(0, (client.player.gold || 0) - mountPrice);
+    client.player.hasMount = true;
+    saveClientCharacter(client);
+    send(client, { type: "serverMessage", message: "mount_bought", itemName: template.name });
     sendShopWindow(client, shop);
     broadcastSnapshot();
     return;
@@ -13772,6 +14113,8 @@ function attackPlayerWithMob(mob, player, now) {
   }
 
   player.hp = Math.max(0, player.hp - damage);
+  // Taking damage dismounts the player.
+  dismountPlayer(player);
 
   const event = {
     type: "combat",
