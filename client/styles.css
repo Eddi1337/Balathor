@@ -3516,7 +3516,7 @@ body.mobile.mobile-hotbar-expanded .ability-bar {
 body.mobile .progression {
   top: max(8px, env(safe-area-inset-top));
   right: max(8px, env(safe-area-inset-right));
-  width: min(168px, calc(100vw - 150px));
+  width: min(210px, calc(100vw - 96px));
   font-size: 11px;
 }
 
@@ -3531,6 +3531,26 @@ body.mobile .progression.minimized .progression-head {
 
 body.mobile .progression.minimized .progression-head strong {
   font-size: 11px;
+}
+
+/* Level panel action buttons (Character/Bags/Quests): stack them so the
+   full label is always readable on the narrow mobile panel. */
+body.mobile .progression .window-actions {
+  grid-template-columns: 1fr 1fr;
+}
+
+body.mobile .progression .window-actions button {
+  min-height: 40px;
+  padding: 0 8px;
+  font-size: 12px;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.1;
+}
+
+body.mobile .progression .window-actions button:first-child {
+  grid-column: 1 / -1;
 }
 
 body.mobile .window-actions button {
@@ -3670,38 +3690,38 @@ body.mobile.in-game .mobile-controls:not(.hidden) {
 }
 
 body.mobile.in-game .mobile-context-dock {
-  right: max(14px, env(safe-area-inset-right));
-  bottom: max(18px, calc(env(safe-area-inset-bottom) + 12px));
+  right: max(10px, env(safe-area-inset-right));
+  bottom: max(14px, calc(env(safe-area-inset-bottom) + 10px));
   left: auto;
-  width: min(228px, calc(100vw - 204px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+  width: min(180px, calc(100vw - 168px - env(safe-area-inset-left) - env(safe-area-inset-right)));
   max-width: none;
   display: grid;
   justify-items: end;
-  gap: 10px;
+  gap: 7px;
 }
 
 .mobile-action-utility {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 7px;
+  gap: 5px;
 }
 
 body.mobile .mobile-context-actions {
-  max-width: 228px;
-  gap: 7px;
+  max-width: 180px;
+  gap: 5px;
 }
 
 body.mobile .mobile-context-chip {
-  min-width: 54px;
-  min-height: 48px;
-  padding: 0 12px;
+  min-width: 42px;
+  min-height: 36px;
+  padding: 0 9px;
   border: 1px solid rgba(255, 224, 159, 0.26);
-  border-radius: 14px;
+  border-radius: 11px;
   background: linear-gradient(180deg, rgba(33, 40, 51, 0.96), rgba(9, 13, 20, 0.96));
-  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.36), 0 1px 0 rgba(255,255,255,0.08) inset;
+  box-shadow: 0 4px 11px rgba(0, 0, 0, 0.36), 0 1px 0 rgba(255,255,255,0.08) inset;
   color: #f7e8c1;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 850;
 }
 
@@ -3714,22 +3734,21 @@ body.mobile .mobile-hotbar-toggle[aria-expanded="true"] {
 
 body.mobile .mobile-context-primary {
   position: relative;
-  width: 104px;
-  height: 104px;
+  width: 72px;
+  height: 72px;
   display: grid;
   place-items: center;
   align-content: center;
-  gap: 2px;
-  padding: 9px;
+  gap: 1px;
+  padding: 6px;
   border: 2px solid rgba(255, 218, 128, 0.92);
-  border-radius: 50%;
+  border-radius: 16px;
   background:
     radial-gradient(circle at 38% 28%, rgba(177, 87, 41, 0.98), rgba(100, 34, 18, 0.98) 56%, rgba(42, 14, 10, 0.98));
   box-shadow:
-    0 0 0 7px rgba(8, 10, 15, 0.65),
-    0 0 0 9px rgba(255, 209, 102, 0.18),
-    0 10px 24px rgba(0, 0, 0, 0.55),
-    0 0 18px rgba(255, 160, 75, 0.3) inset;
+    0 0 0 3px rgba(8, 10, 15, 0.6),
+    0 6px 16px rgba(0, 0, 0, 0.5),
+    0 0 14px rgba(255, 160, 75, 0.28) inset;
   color: #fff0be;
   text-align: center;
 }
@@ -3741,21 +3760,21 @@ body.mobile .mobile-context-primary:active {
 
 .mobile-primary-kicker {
   color: rgba(255, 227, 164, 0.72);
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 900;
-  letter-spacing: 0.17em;
+  letter-spacing: 0.14em;
   line-height: 1;
   text-transform: uppercase;
 }
 
 .mobile-primary-label {
-  max-width: 86px;
+  max-width: 60px;
   overflow: hidden;
   color: #fff3cc;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 950;
-  letter-spacing: 0.025em;
-  line-height: 1.08;
+  letter-spacing: 0.02em;
+  line-height: 1.05;
   text-overflow: ellipsis;
   text-shadow: 0 2px 3px rgba(0, 0, 0, 0.7);
 }
@@ -3834,19 +3853,19 @@ body.mobile .chat-send {
 
 @media (max-width: 430px) {
   body.mobile.in-game .mobile-context-dock {
-    width: min(190px, calc(100vw - 196px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+    width: min(168px, calc(100vw - 160px - env(safe-area-inset-left) - env(safe-area-inset-right)));
   }
 
-  body.mobile .mobile-context-actions { max-width: 190px; }
-  body.mobile .mobile-context-chip { min-width: 50px; min-height: 46px; padding: 0 9px; }
-  body.mobile .mobile-context-primary { width: 96px; height: 96px; }
+  body.mobile .mobile-context-actions { max-width: 168px; }
+  body.mobile .mobile-context-chip { min-width: 40px; min-height: 34px; padding: 0 8px; }
+  body.mobile .mobile-context-primary { width: 66px; height: 66px; }
 }
 
 @media (max-height: 520px) and (orientation: landscape) {
   body.mobile.in-game .mobile-controls:not(.hidden) { bottom: max(8px, env(safe-area-inset-bottom)); }
-  body.mobile.in-game .mobile-context-dock { bottom: max(10px, env(safe-area-inset-bottom)); width: min(330px, calc(100vw - 188px)); }
-  body.mobile .mobile-context-actions { max-width: 330px; }
-  body.mobile .mobile-context-primary { width: 90px; height: 90px; }
+  body.mobile.in-game .mobile-context-dock { bottom: max(10px, env(safe-area-inset-bottom)); width: min(300px, calc(100vw - 160px)); }
+  body.mobile .mobile-context-actions { max-width: 300px; }
+  body.mobile .mobile-context-primary { width: 64px; height: 64px; }
 }
 
 /* ── Decorate / furniture panel ────────────────────────────────────────────── */

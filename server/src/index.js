@@ -753,7 +753,7 @@ const QUEST_DEFINITIONS = Object.freeze({
     rewardGold: 12,
     rewardXp: 40,
     steps: [
-      { type: "kill", text: "Defeat 2 meadow slimes just south of the home tree", count: 2, matchName: "slime", target: { x: 10, y: 16 } },
+      { type: "kill", text: "Defeat 2 meadow slimes in the south pasture, just outside the south gate", count: 2, matchName: "slime", target: { x: 0, y: 127 } },
       { type: "talk", text: "Return to Sage Wynn at the home tree", npcId: "npc_quest_wynn_hearth", target: { x: -3, y: 4 } }
     ]
   },
@@ -8353,11 +8353,25 @@ function handleDirectShipBoarding(client, message = {}) {
   }
 
   if (hasTarget) {
+    // Click-to-board: only honour a tap that actually lands on/near the mooring.
     const clickDist = Math.hypot(tx - port.x, ty - port.y);
     const terminalDist = Number.isFinite(port.terminalX) && Number.isFinite(port.terminalY)
       ? Math.hypot(tx - port.terminalX, ty - port.terminalY)
       : Infinity;
     if (Math.min(clickDist, terminalDist) > 8.5) {
+      return false;
+    }
+  } else {
+    // Keyboard E with no target: only board when the player is genuinely standing
+    // at the mooring. Without this, pressing E to talk to an NPC / read a quest /
+    // pick something up while merely *within sight* of a dock port (resolveShipLaunchPort
+    // accepts up to SHIP_DOCK_RADIUS + 10 tiles) would silently board the player and
+    // teleport them onto the ship out on the ocean. Boarding must be deliberate.
+    const portDist = Math.hypot(player.x - port.x, player.y - port.y);
+    const terminalDist = Number.isFinite(port.terminalX) && Number.isFinite(port.terminalY)
+      ? Math.hypot(player.x - port.terminalX, player.y - port.terminalY)
+      : Infinity;
+    if (Math.min(portDist, terminalDist) > SHIP_DOCK_RADIUS) {
       return false;
     }
   }
@@ -13519,12 +13533,14 @@ function createSciFiPirateMobs() {
 
 function createMobs() {
   const fixedMobs = [
-    // Tutorial slimes for q_first_hunt — hand-placed just south of the home tree,
-    // inside the hub mob-clear radius (fixed mobs bypass camp clearing). Kept weak
-    // and slow so brand-new players win their first fight easily.
-    { id: "mob_slime_meadow_1", name: "Meadow Slime", level: 1, homeX: 10, homeY: 16, primary: "#8fd98f", accent: "#e6ffcf", maxHp: 30, attackDamage: 3, speed: 1.0, roamRadius: 3 },
-    { id: "mob_slime_meadow_2", name: "Meadow Slime", level: 1, homeX: 14, homeY: 18, primary: "#8fd98f", accent: "#e6ffcf", maxHp: 30, attackDamage: 3, speed: 1.0, roamRadius: 3 },
-    { id: "mob_slime_meadow_3", name: "Meadow Slime", level: 1, homeX: 8, homeY: 20, primary: "#8fd98f", accent: "#e6ffcf", maxHp: 30, attackDamage: 3, speed: 1.0, roamRadius: 3 },
+    // Tutorial slimes for q_first_hunt — hand-placed in the south pasture just
+    // OUTSIDE the town wall (radius ~120), reached through the south gate. They must
+    // stay outside the walled town interior so the starting town is enemy-free, but
+    // close enough that new players can reach them for their first fight. (Fixed mobs
+    // bypass camp clearing, so their positions are the only guard against in-town spawns.)
+    { id: "mob_slime_meadow_1", name: "Meadow Slime", level: 1, homeX: 0, homeY: 126, primary: "#8fd98f", accent: "#e6ffcf", maxHp: 30, attackDamage: 3, speed: 1.0, roamRadius: 3 },
+    { id: "mob_slime_meadow_2", name: "Meadow Slime", level: 1, homeX: 4, homeY: 129, primary: "#8fd98f", accent: "#e6ffcf", maxHp: 30, attackDamage: 3, speed: 1.0, roamRadius: 3 },
+    { id: "mob_slime_meadow_3", name: "Meadow Slime", level: 1, homeX: -4, homeY: 129, primary: "#8fd98f", accent: "#e6ffcf", maxHp: 30, attackDamage: 3, speed: 1.0, roamRadius: 3 },
     { id: "mob_slime_oasis_1", name: "Oasis Slime", level: 5, homeX: 137, homeY: 113, primary: "#56b88f", accent: "#c7f5b0", maxHp: 74, attackDamage: 13 },
     { id: "mob_slime_oasis_2", name: "Oasis Slime", level: 5, homeX: 163, homeY: 126, primary: "#56b88f", accent: "#c7f5b0", maxHp: 74, attackDamage: 13 },
     { id: "mob_wisp_frost_1", name: "Frost Wisp", level: 7, homeX: -139, homeY: -113, primary: "#88d8ff", accent: "#f0fbff", maxHp: 78, attackDamage: 16 },

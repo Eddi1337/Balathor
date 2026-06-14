@@ -2779,6 +2779,21 @@ function updateSmoothPlayers(dt) {
     // - When local player stops, ease toward server position slowly to avoid bouncing from network jitter.
     const slowBase = 0.01; // gentle correction when stopping
     let follow;
+    // Boarded deck passengers: the server position is the authoritative deck-local
+    // anchor (already re-anchored to the hull on snapshot). Easing it slowly fights
+    // the per-snapshot hull step and reads as jitter while sailing, so converge
+    // tightly here and let the hull's own interpolation provide the visual glide.
+    const onMovingDeck = Boolean(player.ship?.boarded && player.ship?.deckMode && isNauticalHull(player.ship?.hullClass));
+    if (onMovingDeck && !(player.id === state.selfId && (
+      state.input.up || state.input.down || state.input.left || state.input.right ||
+      state.input.engage || state.input.fire || state.input.repair
+    ))) {
+      follow = 1 - Math.pow(0.00005, dt);
+      player.renderX += (player.targetX - player.renderX) * follow;
+      player.renderY += (player.targetY - player.renderY) * follow;
+      player.renderMoving = Math.hypot(player.targetX - player.renderX, player.targetY - player.renderY) > 0.01;
+      // Fall through to the shared ship/anim block below.
+    } else
     if (player.id === state.selfId) {
       const localInputActive = Boolean(
         state.input.up ||
@@ -2982,11 +2997,15 @@ function getInteriorShipView(player = state.players.get(state.selfId)) {
   if (!hostShip) return null;
   const center = shipCenter(hostShip, player);
   const facing = Number.isFinite(Number(hostShip.facing)) ? Number(hostShip.facing) : Number(player?.facing) || 0;
+  // Ocean (nautical) ships read better with the view rotated 90° clockwise:
+  // the deck + crew are drawn counter-rotated (withCameraUnrotated) so only the
+  // ocean background spins, keeping deck controls consistent.
+  const oceanTurn = isNauticalHull(hostShip.hullClass) ? Math.PI / 2 : 0;
   return {
     ship: hostShip,
     center,
     rotateDeck: true,
-    rotation: normalizeAngle(-facing)
+    rotation: normalizeAngle(-facing + oceanTurn)
   };
 }
 
@@ -9259,19 +9278,66 @@ function worldToScreenPoint(worldX, worldY) {
   };
 }
 
+// Beyond this player->objective distance (tiles) the objective is treated as
+// belonging to another world (worlds live in disjoint coordinate ranges), so
+// the arrow is hidden rather than pointing in a meaningless direction.
+const QUEST_ARROW_MAX_WORLD_DISTANCE = 1400;
+
+// Resolve the world-space destination for a quest's active step. Talk steps
+// prefer the live NPC position (givers can move) and fall back to the step's
+// map marker; kill/location steps use the marker. Returns null when the step
+// genuinely has no location (so the arrow can hide gracefully).
+function questObjectiveDestination(quest) {
+  const obj = quest?.objective;
+  if (!obj) return null;
+  if (obj.type === "talk" && obj.npcId) {
+    const npc = state.npcs.get(obj.npcId);
+    if (npc) {
+      const nx = Number.isFinite(npc.renderX) ? npc.renderX : npc.x;
+      const ny = Number.isFinite(npc.renderY) ? npc.renderY : npc.y;
+      if (Number.isFinite(nx) && Number.isFinite(ny)) return { x: nx, y: ny };
+    }
+  }
+  const target = obj.target;
+  if (target && Number.isFinite(Number(target.x)) && Number.isFinite(Number(target.y))) {
+    return { x: Number(target.x), y: Number(target.y) };
+  }
+  return null;
+}
+
+// Pick the nearest in-world quest objective with a usable destination. Picking
+// the closest (instead of the first in the list) keeps the arrow pointed at the
+// objective the player can actually reach in the current world, and the
+// distance filter drops objectives that live in another world.
 function getTrackedQuestObjective() {
   const quests = Array.isArray(state.quests) ? state.quests : [];
-  return quests.find((quest) => !quest.completed && quest.objective?.target) || null;
+  const self = state.players.get(state.selfId);
+  const px = self ? (Number.isFinite(self.renderX) ? self.renderX : self.x) : 0;
+  const py = self ? (Number.isFinite(self.renderY) ? self.renderY : self.y) : 0;
+  let best = null;
+  let bestDist = Infinity;
+  for (const quest of quests) {
+    if (quest.completed) continue;
+    const dest = questObjectiveDestination(quest);
+    if (!dest) continue;
+    const dist = Math.hypot(dest.x - px, dest.y - py);
+    if (dist > QUEST_ARROW_MAX_WORLD_DISTANCE) continue;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = { quest, dest };
+    }
+  }
+  return best;
 }
 
 function drawQuestHelperArrow() {
   if (!state.joined || state.menuOpen) return;
-  const quest = getTrackedQuestObjective();
-  const target = quest?.objective?.target;
-  if (!target || !Number.isFinite(Number(target.x)) || !Number.isFinite(Number(target.y))) return;
+  const tracked = getTrackedQuestObjective();
+  if (!tracked) return;
+  const { quest, dest } = tracked;
 
-  const sx = Number(target.x);
-  const sy = Number(target.y);
+  const sx = Number(dest.x);
+  const sy = Number(dest.y);
   const screen = worldToScreenPoint(sx, sy);
   const margin = 44;
   const inside =
@@ -16051,22 +16117,47 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
       const coneH  = Math.round((7 + equipRarityRank * 1.5) * s);
       const brimX  = hx - 2 * s;
       const brimY  = hy - brimH + s;
-      // Brim
+      const hatLite = blend(hatColor, "#ffffff", 0.22);
+      const hatDark = blend(hatColor, "#000000", 0.3);
+      // Brim (with a darker underside lip for depth)
+      ctx.fillStyle = hatDark;
+      ctx.beginPath();
+      ctx.ellipse(hx + 2.5 * s, brimY + brimH + Math.max(1, Math.round(s * 0.4)), brimW / 2, brimH, 0, 0, Math.PI * 2);
+      ctx.fill();
       ctx.fillStyle = hatColor;
       ctx.beginPath();
       ctx.ellipse(hx + 2.5 * s, brimY + brimH, brimW / 2, brimH, 0, 0, Math.PI * 2);
       ctx.fill();
-      // Cone body (trapezoid)
+      // Cone body — gently bent tip for a characterful wizard hat.
+      const baseL = brimX + 1 * s;
+      const baseR = brimX + brimW - s;
+      const tipX  = hx + Math.round(2.5 * s) - Math.round(coneH * 0.16); // lean tip to the side
+      const tipY  = brimY + brimH - coneH;
       ctx.fillStyle = hatColor;
       ctx.beginPath();
-      ctx.moveTo(brimX + 1 * s,      brimY + brimH);
-      ctx.lineTo(brimX + brimW - s,  brimY + brimH);
-      ctx.lineTo(hx + Math.round(2.5 * s) + Math.round(s * 0.5), brimY + brimH - coneH + 3);
-      ctx.lineTo(hx + Math.round(2.5 * s) - Math.round(s * 0.5), brimY + brimH - coneH + 3);
+      ctx.moveTo(baseL, brimY + brimH);
+      ctx.lineTo(baseR, brimY + brimH);
+      ctx.quadraticCurveTo(hx + Math.round(3 * s), brimY + brimH - coneH * 0.5, tipX + Math.round(s * 0.6), tipY + 3);
+      ctx.lineTo(tipX - Math.round(s * 0.6), tipY + 3);
+      ctx.quadraticCurveTo(hx + Math.round(2 * s), brimY + brimH - coneH * 0.5, baseL, brimY + brimH);
       ctx.closePath();
       ctx.fill();
-      // Tip pixel
-      ctx.fillRect(hx + Math.round(2 * s), brimY + brimH - coneH, Math.max(2, s), Math.max(3, s));
+      // Shaded right flank of the cone for volume.
+      ctx.fillStyle = hatDark;
+      ctx.beginPath();
+      ctx.moveTo(baseR, brimY + brimH);
+      ctx.quadraticCurveTo(hx + Math.round(3 * s), brimY + brimH - coneH * 0.5, tipX + Math.round(s * 0.6), tipY + 3);
+      ctx.lineTo(tipX, tipY + 3);
+      ctx.lineTo(hx + Math.round(3 * s), brimY + brimH - coneH * 0.5);
+      ctx.lineTo(hx + Math.round(2 * s), brimY + brimH);
+      ctx.closePath();
+      ctx.fill();
+      // Lit left edge.
+      ctx.fillStyle = hatLite;
+      ctx.fillRect(baseL, brimY + brimH - Math.round(s * 1.4), Math.max(1, Math.round(s * 0.7)), Math.round(s * 1.2));
+      // Bent tip cap.
+      ctx.fillStyle = hatColor;
+      ctx.fillRect(tipX - Math.round(s * 0.5), tipY, Math.max(2, s), Math.max(3, s));
       // Hat band trim
       ctx.fillStyle = hatTrimCol;
       ctx.fillRect(brimX + s, brimY + brimH - Math.round(2.5 * s), brimW - 2 * s, Math.max(2, Math.round(s * 0.9)));
@@ -16085,44 +16176,113 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
         ctx.fill();
       }
     } else if (entity.classId === "mage") {
-      // Low-rarity mage: original small pointy hat stub
-      ctx.fillStyle = entity.hairColor || weaponColor;
-      ctx.fillRect(hx + s,             hy - 2 * s, 3 * s, 2 * s);
-      ctx.fillRect(hx + s + (s >> 1), hy - 3 * s, 2 * s, s);
+      // Low-rarity mage: small pointed cap with a stubby brim.
+      const capCol = entity.torsoColor || entity.hairColor || weaponColor;
+      ctx.fillStyle = blend(capCol, "#000000", 0.25);
+      ctx.fillRect(hx - Math.round(s * 0.5), hy - Math.round(s * 0.5), 6 * s, Math.max(2, Math.round(s * 0.9)));
+      ctx.fillStyle = capCol;
+      ctx.beginPath();
+      ctx.moveTo(hx + Math.round(0.5 * s), hy);
+      ctx.lineTo(hx + Math.round(4.5 * s), hy);
+      ctx.lineTo(hx + Math.round(2.2 * s), hy - Math.round(3.5 * s));
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = weaponColor;
+      ctx.fillRect(hx + Math.round(0.5 * s), hy - Math.round(s * 0.4), 4 * s, Math.max(1, Math.round(s * 0.5)));
     } else if (entity.classId === "knight" && equipRarityRank >= 2) {
-      // Full knight helmet with visor slot and plume; tier reads through plume height and trim richness
-      const helColor = entity.torsoColor || "#7a8899";
-      const plumeCol = weaponColor;
-      const vH = Math.round(5 * s);
-      const vW = Math.round(5 * s);
-      const vX = hx - Math.round(0.5 * s);
-      const vY = hy - Math.round(1 * s);
-      // Helmet body
+      // Full knight great-helm: domed steel skull, crested ridge, hinged visor with
+      // breathing slots, riveted cheek guards and gorget. Tier reads through plume
+      // height, crest ridge and trim richness.
+      const helColor  = entity.torsoColor || "#7a8899";
+      const plumeCol  = weaponColor;
+      const steelLite = blend(helColor, "#ffffff", 0.32);
+      const steelDark = blend(helColor, "#0a0e16", 0.4);
+      const steelMid  = blend(helColor, "#000000", 0.16);
+      const trimCol   = equipRarityRank >= 4 ? "#ffd700" : equipRarityRank >= 3 ? "#d9dde6" : blend(helColor, "#ffffff", 0.2);
+      const vW = Math.round(6 * s);
+      const vH = Math.round(6 * s);
+      const vX = hx - Math.round(s);
+      const vY = hy - Math.round(1.6 * s);
+      const cx = vX + vW / 2;
+
+      // Domed skull (rounded top) so the helm doesn't read as a flat box.
       ctx.fillStyle = helColor;
-      ctx.fillRect(vX, vY, vW, vH);
-      // Visor slit (dark slot)
-      ctx.fillStyle = "rgba(0,0,0,0.72)";
-      ctx.fillRect(vX + Math.round(s * 0.5), vY + Math.round(1.8 * s), vW - s, Math.max(2, Math.round(s * 0.9)));
-      // Cheekguard / chin
-      ctx.fillStyle = blend(helColor, "#000000", 0.22);
-      ctx.fillRect(vX, vY + vH - s, vW, s);
-      // Metal sheen strip
-      ctx.fillStyle = blend(helColor, "#ffffff", 0.25);
-      ctx.fillRect(vX + Math.round(s * 0.5), vY, s, vH - s);
-      // Plume (taller/more prominent with rarity)
-      const plumeH = Math.round((3 + equipRarityRank) * s);
+      ctx.beginPath();
+      ctx.moveTo(vX, vY + Math.round(2 * s));
+      ctx.quadraticCurveTo(vX, vY - Math.round(0.6 * s), cx, vY - Math.round(0.6 * s));
+      ctx.quadraticCurveTo(vX + vW, vY - Math.round(0.6 * s), vX + vW, vY + Math.round(2 * s));
+      ctx.lineTo(vX + vW, vY + vH - Math.round(1.4 * s));
+      ctx.lineTo(vX, vY + vH - Math.round(1.4 * s));
+      ctx.closePath();
+      ctx.fill();
+      // Shaded right side for volume + lit left highlight.
+      ctx.fillStyle = steelDark;
+      ctx.fillRect(vX + vW - Math.round(1.2 * s), vY, Math.round(1.2 * s), vH - Math.round(1.4 * s));
+      ctx.fillStyle = steelLite;
+      ctx.fillRect(vX + Math.round(0.6 * s), vY, Math.max(1, Math.round(s * 0.7)), vH - Math.round(2.2 * s));
+
+      // Visor band (raised brow guard) above the eye slit.
+      ctx.fillStyle = steelMid;
+      ctx.fillRect(vX, vY + Math.round(1.5 * s), vW, Math.round(1.1 * s));
+      // Eye slit (dark) with a thin riser between the two eye openings.
+      ctx.fillStyle = "rgba(4,6,10,0.82)";
+      ctx.fillRect(vX + Math.round(0.6 * s), vY + Math.round(2.4 * s), vW - Math.round(1.2 * s), Math.max(2, Math.round(s * 1.0)));
+      ctx.fillStyle = steelLite;
+      ctx.fillRect(cx - Math.max(1, Math.round(s * 0.3)), vY + Math.round(2.4 * s), Math.max(1, Math.round(s * 0.6)), Math.max(2, Math.round(s * 1.0)));
+      // Breathing slots on the lower visor (vertical vents).
+      ctx.fillStyle = "rgba(4,6,10,0.6)";
+      for (let i = -1; i <= 1; i += 1) {
+        ctx.fillRect(cx + i * Math.round(1.2 * s) - Math.max(1, Math.round(s * 0.2)), vY + Math.round(3.9 * s), Math.max(1, Math.round(s * 0.45)), Math.max(2, Math.round(s * 0.9)));
+      }
+
+      // Cheek/jaw guards angle inward toward the chin.
+      ctx.fillStyle = steelMid;
+      ctx.beginPath();
+      ctx.moveTo(vX, vY + Math.round(3 * s));
+      ctx.lineTo(vX + Math.round(1.4 * s), vY + Math.round(3 * s));
+      ctx.lineTo(cx - Math.round(0.4 * s), vY + vH);
+      ctx.lineTo(cx - Math.round(1.6 * s), vY + vH);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(vX + vW, vY + Math.round(3 * s));
+      ctx.lineTo(vX + vW - Math.round(1.4 * s), vY + Math.round(3 * s));
+      ctx.lineTo(cx + Math.round(0.4 * s), vY + vH);
+      ctx.lineTo(cx + Math.round(1.6 * s), vY + vH);
+      ctx.closePath();
+      ctx.fill();
+
+      // Riveted brow trim (gold/silver per tier).
+      ctx.fillStyle = trimCol;
+      ctx.fillRect(vX, vY + Math.round(1.5 * s), vW, Math.max(2, Math.round(s * 0.55)));
+      ctx.fillStyle = blend(trimCol, "#000000", 0.25);
+      for (let i = 0; i < 3; i += 1) {
+        ctx.fillRect(vX + Math.round((1 + i * 2) * s), vY + Math.round(1.6 * s), Math.max(1, Math.round(s * 0.4)), Math.max(1, Math.round(s * 0.4)));
+      }
+
+      // Crest ridge running over the dome (grows with tier).
+      const ridgeH = Math.round((0.8 + equipRarityRank * 0.25) * s);
+      ctx.fillStyle = blend(helColor, "#ffffff", 0.18);
+      ctx.fillRect(cx - Math.max(1, Math.round(s * 0.4)), vY - Math.round(0.4 * s), Math.max(2, Math.round(s * 0.8)), ridgeH + Math.round(1.2 * s));
+
+      // Plume mounted on the crest, sweeping back.
+      const plumeH = Math.round((3.5 + equipRarityRank) * s);
+      const plumeX = cx - Math.max(1, Math.round(s * 0.7));
       ctx.fillStyle = plumeCol;
-      ctx.fillRect(hx + Math.round(1.5 * s), vY - plumeH, Math.max(2, Math.round(1.5 * s)), plumeH);
-      // Plume tip curl
-      ctx.fillRect(hx + Math.round(s * 0.5), vY - plumeH, Math.max(2, Math.round(3 * s)), Math.max(2, s));
-      // Trim accent — gold at rank 4+, silver otherwise
-      ctx.fillStyle = equipRarityRank >= 4 ? "#ffd700" : plumeCol;
-      ctx.fillRect(vX, vY, vW, Math.max(2, Math.round(s * 0.7)));
-      // High-tier: second layered pauldron strip above helmet (extra silhouette detail)
+      ctx.fillRect(plumeX, vY - plumeH, Math.max(2, Math.round(1.4 * s)), plumeH);
+      ctx.fillStyle = blend(plumeCol, "#ffffff", 0.28);
+      ctx.fillRect(plumeX, vY - plumeH, Math.max(1, Math.round(s * 0.6)), plumeH);
+      // Plume crown curl.
+      ctx.fillStyle = plumeCol;
+      ctx.fillRect(plumeX - Math.round(1.4 * s), vY - plumeH, Math.max(2, Math.round(3.2 * s)), Math.max(2, Math.round(1.2 * s)));
+
+      // High-tier: layered cheek plates + gorget rim for extra silhouette.
       if (equipRarityRank >= 4) {
-        ctx.fillStyle = blend(helColor, "#ffd700", 0.35);
-        ctx.fillRect(vX - Math.round(s * 0.5), vY, Math.round(s * 0.5), vH);
-        ctx.fillRect(vX + vW, vY, Math.round(s * 0.5), vH);
+        ctx.fillStyle = blend(helColor, "#ffd700", 0.3);
+        ctx.fillRect(vX - Math.round(s * 0.5), vY + Math.round(2 * s), Math.round(s * 0.5), Math.round(3 * s));
+        ctx.fillRect(vX + vW, vY + Math.round(2 * s), Math.round(s * 0.5), Math.round(3 * s));
+        ctx.fillStyle = trimCol;
+        ctx.fillRect(vX - Math.round(0.5 * s), vY + vH - Math.round(0.4 * s), vW + s, Math.max(2, Math.round(s * 0.6)));
       }
     } else if (entity.classId === "ranger" && equipRarityRank >= 2) {
       // Peaked ranger hood; tier reads through trim color and leaf-pattern detail
@@ -16132,13 +16292,28 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
       const hoodH = Math.round(6 * s);
       const hoodX = hx - s;
       const hoodY = hy - Math.round(2 * s);
-      // Hood main shape (rounded top + drape sides)
+      // Hood main shape — rounded crown that wraps over the head.
+      const hoodMid = hx + hoodW / 2 - s;
       ctx.fillStyle = hoodCol;
-      ctx.fillRect(hoodX, hoodY, hoodW, hoodH);
-      // Peaked tip
-      ctx.fillRect(hx + Math.round(s), hoodY - Math.round(3 * s), Math.max(2, Math.round(2.5 * s)), Math.round(3 * s));
-      ctx.fillRect(hx + Math.round(1.5 * s), hoodY - Math.round(4.5 * s), Math.max(2, Math.round(1.5 * s)), Math.round(2 * s));
-      // Shadow / depth on hood
+      ctx.beginPath();
+      ctx.moveTo(hoodX, hoodY + hoodH);
+      ctx.lineTo(hoodX, hoodY + Math.round(1.5 * s));
+      ctx.quadraticCurveTo(hoodX, hoodY - Math.round(1.2 * s), hoodMid, hoodY - Math.round(1.2 * s));
+      ctx.quadraticCurveTo(hoodX + hoodW, hoodY - Math.round(1.2 * s), hoodX + hoodW, hoodY + Math.round(1.5 * s));
+      ctx.lineTo(hoodX + hoodW, hoodY + hoodH);
+      ctx.closePath();
+      ctx.fill();
+      // Curved peak sweeping forward.
+      ctx.beginPath();
+      ctx.moveTo(hoodMid - Math.round(0.6 * s), hoodY - Math.round(0.6 * s));
+      ctx.quadraticCurveTo(hoodMid + Math.round(2.5 * s), hoodY - Math.round(4 * s), hoodMid + Math.round(4 * s), hoodY - Math.round(2.4 * s));
+      ctx.quadraticCurveTo(hoodMid + Math.round(2 * s), hoodY - Math.round(1.4 * s), hoodMid + Math.round(1.2 * s), hoodY - Math.round(0.6 * s));
+      ctx.closePath();
+      ctx.fill();
+      // Inner face shadow — the face recedes into the cowl.
+      ctx.fillStyle = blend(skinColor, "#0a0e10", 0.55);
+      ctx.fillRect(hoodX + Math.round(s), hy + Math.round(0.6 * s), hoodW - Math.round(2 * s), Math.round(2.6 * s));
+      // Shadow / depth on the right side of the hood.
       ctx.fillStyle = blend(hoodCol, "#000000", 0.3);
       ctx.fillRect(hoodX + hoodW - s, hoodY, s, hoodH);
       // Cowl drape at shoulders
@@ -16165,8 +16340,14 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
       ctx.fillRect(hx + s, hy - 4 * s, 3 * s, 2 * s);
       ctx.fillRect(hx + 2 * s, hy - 5 * s, 2 * s, 2 * s);
     }
-    // Eyes (skip if full helmet equipped)
-    if (!(entity.classId === "knight" && equipRarityRank >= 4)) {
+    // Eyes (skip when the full-face fantasy knight great-helm covers them — the
+    // nautical bicorne / sci-fi glasses leave the face open, so eyes still show).
+    const fantasyFullHelm =
+      entity.classId === "knight" &&
+      equipRarityRank >= 2 &&
+      !(isSciFiWorld() && !sciFiNpc) &&
+      !(isNauticalWorld() && !sciFiNpc);
+    if (!fantasyFullHelm) {
       ctx.fillStyle = "#1d2430";
       const eyeY = hy + 2 * s;
       const eo   = Math.max(0, fx) * s;

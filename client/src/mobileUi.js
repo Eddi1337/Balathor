@@ -538,6 +538,18 @@
     }
   };
 
+  // Party window should only appear when grouped with at least one OTHER
+  // player (group size >= 2). A solo "party" (just yourself) stays hidden.
+  const _renderPartyPanel = renderPartyPanel;
+  renderPartyPanel = function renderPartyPanelMobile() {
+    const members = state.party?.members;
+    if (!Array.isArray(members) || members.length < 2) {
+      partyPanel?.classList.add("hidden");
+      return;
+    }
+    _renderPartyPanel();
+  };
+
   const _makeDraggable = makeDraggable;
   makeDraggable = function makeDraggableMobile(panel) {
     if (panel?.id === "partyPanel") {
