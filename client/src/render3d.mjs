@@ -42,14 +42,22 @@ import * as THREE from "three";
   const _c = T ? new T.Color() : null;
   const _c2 = T ? new T.Color() : null;
 
+  // Memoised: a WebGL probe must NOT run per frame — each call spins up a real
+  // GL context and browsers cap how many can be live (~16), so repeated probes
+  // intermittently fail and the caller flips back to 2D (a 2D/3D flicker).
+  let _supported = null;
   function isSupported() {
-    if (!T) return false;
+    if (_supported !== null) return _supported;
+    if (!T) { _supported = false; return false; }
     try {
       const c = document.createElement("canvas");
-      return !!(c.getContext("webgl2") || c.getContext("webgl"));
+      const gl = c.getContext("webgl2") || c.getContext("webgl");
+      _supported = !!gl;
+      if (gl && gl.getExtension) gl.getExtension("WEBGL_lose_context")?.loseContext();
     } catch {
-      return false;
+      _supported = false;
     }
+    return _supported;
   }
 
   // ── geometry helpers: append flat-shaded primitives into shared arrays ──────

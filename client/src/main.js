@@ -7783,12 +7783,18 @@ function frame(now) {
   updateCamera(dt);
   checkWindowAutoClose();
   tickNpcContextMenuPosition();
-  if (state.render3D && render3DSupported() && Render3D.isReady()) {
+  if (is3DActive()) {
     try {
       render3DFrame();
+      state._render3DErrors = 0;
     } catch (err) {
-      console.error("3D render failed, falling back to 2D", err);
-      set3DMode(false);
+      // Tolerate a transient hiccup; only give up on 3D after several in a row.
+      state._render3DErrors = (state._render3DErrors || 0) + 1;
+      console.error("3D render error", state._render3DErrors, err);
+      if (state._render3DErrors >= 4) {
+        console.error("3D render failing repeatedly — falling back to 2D");
+        set3DMode(false);
+      }
       draw();
     }
   } else {
