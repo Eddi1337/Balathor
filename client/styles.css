@@ -103,6 +103,45 @@ input {
   touch-action: none;
 }
 
+/* 3D view overlay — sits over the 2D canvas (which stays underneath to keep
+   handling pointer input) and is shown only while 3D mode is active. */
+#game3d {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #9fd3ff;
+  pointer-events: none;
+}
+#game3d.hidden { display: none; }
+
+#view3dToggle {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  min-width: 46px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(18, 26, 30, 0.72);
+  color: #eaf3ff;
+  font: 600 13px/1 system-ui, sans-serif;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+}
+#view3dToggle:hover { background: rgba(36, 50, 58, 0.85); }
+#view3dToggle.active {
+  background: rgba(103, 240, 255, 0.22);
+  border-color: rgba(103, 240, 255, 0.6);
+  color: #d8fbff;
+}
+#view3dToggle.hidden { display: none; }
+
 body.theme-sci-fi .panel,
 body.theme-sci-fi .game-window,
 body.theme-sci-fi .chat,
@@ -935,6 +974,101 @@ button:focus-visible {
 .trader-stock {
   display: grid;
   gap: 6px;
+}
+
+/* ── Group Dungeon UI ──────────────────────────────────────────────────────── */
+
+.group-dungeon-offer-window {
+  width: min(360px, calc(100vw - 32px));
+  max-height: none;
+}
+
+.group-dungeon-offer-body {
+  display: grid;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.group-dungeon-lore {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.45;
+  font-style: italic;
+}
+
+.group-dungeon-rec {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.group-dungeon-members {
+  font-size: 12px;
+  color: rgba(248, 250, 255, 0.65);
+}
+
+/* In-dungeon HUD strip */
+.group-dungeon-hud {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(10, 10, 24, 0.82);
+  border: 1px solid rgba(200, 180, 120, 0.38);
+  border-radius: 8px;
+  padding: 6px 16px;
+  text-align: center;
+  pointer-events: none;
+  z-index: 80;
+  min-width: 180px;
+}
+
+.gd-hud-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f0e6d0;
+  letter-spacing: 0.04em;
+}
+
+.gd-hud-boss {
+  font-size: 11px;
+  color: rgba(240, 100, 60, 0.9);
+  margin-top: 2px;
+}
+
+/* Completion banner */
+.group-dungeon-complete {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(10, 10, 24, 0.92);
+  border: 2px solid rgba(200, 180, 60, 0.7);
+  border-radius: 12px;
+  padding: 20px 32px;
+  text-align: center;
+  pointer-events: none;
+  z-index: 120;
+  animation: gdFadeOut 5s forwards;
+}
+
+@keyframes gdFadeOut {
+  0%   { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.gd-complete-line {
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffd166;
+  letter-spacing: 0.06em;
+}
+
+.gd-complete-reward {
+  font-size: 14px;
+  color: #f0e6d0;
+  margin-top: 8px;
 }
 
 .trader-item {

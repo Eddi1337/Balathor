@@ -8,6 +8,8 @@
   </head>
   <body>
     <canvas id="game" width="1280" height="720" aria-label="Balathor game world"></canvas>
+    <canvas id="game3d" width="1280" height="720" class="hidden" aria-hidden="true"></canvas>
+    <button id="view3dToggle" type="button" class="hidden" title="Toggle 2D / 3D view (V)">3D</button>
 
     <section id="boot" class="panel">
       <div class="brand">
@@ -417,6 +419,35 @@
       </div>
     </aside>
 
+    <!-- Group Dungeon: entrance confirm panel -->
+    <aside id="groupDungeonOfferPanel" class="game-window group-dungeon-offer-window hidden" aria-label="Group dungeon entry">
+      <div class="window-head">
+        <strong id="groupDungeonOfferTitle">Dungeon Entrance</strong>
+        <button id="groupDungeonOfferClose" type="button" class="window-close" aria-label="Close">Close</button>
+      </div>
+      <div class="group-dungeon-offer-body">
+        <div id="groupDungeonOfferLore" class="group-dungeon-lore"></div>
+        <div id="groupDungeonOfferRec" class="group-dungeon-rec"></div>
+        <div id="groupDungeonOfferMembers" class="group-dungeon-members"></div>
+        <div class="buy-house-actions">
+          <button id="groupDungeonOfferEnter" type="button">Enter</button>
+          <button id="groupDungeonOfferCancel" type="button" class="segment">Not now</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Group Dungeon: HUD overlay (shows inside the dungeon) -->
+    <div id="groupDungeonHud" class="group-dungeon-hud hidden" aria-live="polite">
+      <div id="groupDungeonHudName" class="gd-hud-name"></div>
+      <div id="groupDungeonHudBoss" class="gd-hud-boss"></div>
+    </div>
+
+    <!-- Group Dungeon: completion banner -->
+    <div id="groupDungeonComplete" class="group-dungeon-complete hidden" aria-live="assertive">
+      <div id="groupDungeonCompleteLine" class="gd-complete-line"></div>
+      <div id="groupDungeonCompleteReward" class="gd-complete-reward"></div>
+    </div>
+
     <aside id="partyPanel" class="party-panel hidden" aria-label="Party">
       <div class="party-panel-head">
         <strong>Party</strong>
@@ -570,6 +601,8 @@
       <div id="cast-bar-track"><div id="cast-bar-fill"></div></div>
     </div>
 
+    <script src="./vendor/three.min.js"></script>
+    <script src="./src/render3d.js"></script>
     <script src="./src/techDungeonSprites.js"></script>
     <script src="./src/minigames.js"></script>
     <script src="./src/mobileTouch.js"></script>

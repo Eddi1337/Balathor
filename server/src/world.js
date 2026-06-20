@@ -107,6 +107,11 @@ const {
   getCaveEntrancesInChunk
 } = require("./worlds/dungeonWorlds.js");
 const {
+  pointInsideGroupDungeon,
+  getGroupDungeonTileAt,
+  GROUP_DUNGEON_ENTRANCES
+} = require("./groupDungeons.js");
+const {
   NAUTICAL_THEME,
   getOceanusAtPoint,
   getOceanusTile,
@@ -2542,6 +2547,13 @@ function generateExteriorTileCore(x, y) {
     return getDungeonInteriorTile(dungeon, x, y, TILE, hash2);
   }
 
+  const gdKind = getGroupDungeonTileAt(x, y);
+  if (gdKind !== null) {
+    if (gdKind === "floor") return TILE.FLOOR;
+    if (gdKind === "wall") return TILE.WALL;
+    return TILE.VOID;
+  }
+
   const upstairsTile = getUpstairsTile(x, y);
   if (upstairsTile !== null) {
     return upstairsTile;
@@ -2830,6 +2842,29 @@ function generateExteriorTile(x, y) {
   return applyHandmadeOverlay(x, y, generateExteriorTileCore(x, y));
 }
 
+function getGroupDungeonEntrancesInChunk(cx, cy, chunkSize) {
+  const startX = cx * chunkSize;
+  const startY = cy * chunkSize;
+  const endX = startX + chunkSize;
+  const endY = startY + chunkSize;
+  const out = [];
+  for (const entrance of GROUP_DUNGEON_ENTRANCES) {
+    if (entrance.x >= startX && entrance.x < endX && entrance.y >= startY && entrance.y < endY) {
+      out.push({
+        id:       entrance.id,
+        dungeonId: entrance.dungeonId,
+        name:     entrance.name,
+        x:        entrance.x,
+        y:        entrance.y,
+        color:    entrance.color,
+        recLevel: entrance.recLevel,
+        isGroupDungeon: true
+      });
+    }
+  }
+  return out;
+}
+
 function generateChunk(cx, cy) {
   const tiles = [];
   const startX = cx * CHUNK_SIZE;
@@ -2863,7 +2898,10 @@ function generateChunk(cx, cy) {
     roadsides: getRoadsideFeaturesInChunk(cx, cy),
     upperCells: getUpperCellsInChunk(cx, cy),
     minigameSites: getMinigameSitesInChunk(cx, cy),
-    caveEntrances: getCaveEntrancesInChunk(cx, cy, CHUNK_SIZE),
+    caveEntrances: [
+      ...getCaveEntrancesInChunk(cx, cy, CHUNK_SIZE),
+      ...getGroupDungeonEntrancesInChunk(cx, cy, CHUNK_SIZE)
+    ],
     spaceObjects
   };
 }

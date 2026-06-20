@@ -11,6 +11,7 @@ const { getPlanetBySurfacePoint } = require("./planetWorlds.js");
 const { getDungeonByInteriorPoint } = require("./dungeonWorlds.js");
 const { isInsidePirateBounds, getPirateWorldTheme } = require("./pirateWorld.js");
 const { getOceanusAtPoint } = require("./oceanusWorld.js");
+const { pointInsideGroupDungeon } = require("../groupDungeons.js");
 const { readJson } = require("./contentLoader.js");
 const {
   GAME_MODE_BALATHOR,
@@ -40,6 +41,9 @@ function isFantasyBounds(x, y) {
 
 function isInteriorPlane(x, y) {
   if (getDungeonByInteriorPoint(x, y)) {
+    return false;
+  }
+  if (pointInsideGroupDungeon(x, y)) {
     return false;
   }
   return (
@@ -182,10 +186,30 @@ function resolvePlanetWorld(x, y) {
 }
 
 /**
+ * Group dungeon instances — `groupdungeon:<defId>` world id.
+ */
+function resolveGroupDungeonWorld(x, y) {
+  if (!pointInsideGroupDungeon(x, y)) return null;
+  return {
+    id: "groupdungeon",
+    gameMode: GAME_MODE_BALATHOR,
+    label: "Group Dungeon Instance",
+    coordSpace: COORD_SPACE_SHARED,
+    generation: GEN_PROCEDURAL,
+    theme: THEME_DUNGEON
+  };
+}
+
+/**
  * Resolve the logical world at world-space tile coordinates.
  * @returns {{ id: string, theme: string, gameMode: string } | null}
  */
 function resolveWorldAt(x, y) {
+  const groupDungeonWorld = resolveGroupDungeonWorld(x, y);
+  if (groupDungeonWorld) {
+    return groupDungeonWorld;
+  }
+
   const dungeonWorld = resolveDungeonWorld(x, y);
   if (dungeonWorld) {
     return dungeonWorld;
@@ -219,7 +243,7 @@ function getWorldDefinition(id) {
   if (id.startsWith("planet:")) {
     return { id, gameMode: GAME_MODE_BALATHOR, theme: THEME_ALIEN, generation: GEN_PROCEDURAL };
   }
-  if (id.startsWith("dungeon:")) {
+  if (id.startsWith("dungeon:") || id === "groupdungeon") {
     return { id, gameMode: GAME_MODE_BALATHOR, theme: THEME_DUNGEON, generation: GEN_PROCEDURAL };
   }
   if (id === "oceanus") {

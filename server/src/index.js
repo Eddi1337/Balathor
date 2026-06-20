@@ -118,6 +118,7 @@ const {
 } = require("./worldStore");
 const { createSocialSystem } = require("./social.js");
 const { createMinigameSystem } = require("./minigames.js");
+const { createGroupDungeonSystem } = require("./groupDungeons.js");
 const { postAuthEventToDiscord, isAllowedDiscordWebhookUrl, resolveDiscordAuthWebhookUrl } = require("./discordWebhook");
 const companionAi = require("./companionAi.js");
 
@@ -297,6 +298,7 @@ const MOB_SPATIAL_QUERY_PAD = 96;
 const WORLD_IDS_WITH_MOBS = [
   "fantasy",
   "scifi",
+  "groupdungeon",
   ...SCI_FI_PLANETS.map((planet) => `planet:${planet.id}`),
   ...DUNGEON_DEFINITIONS.map((dungeon) => `dungeon:${dungeon.id}`)
 ];
@@ -329,6 +331,16 @@ const SWORD_GUARD_ATTACK_COOLDOWN_MS = 1100; // ms between melee swings
 const SWORD_GUARD_DAMAGE = 30;        // base damage per swing
 const SWORD_GUARD_SPEED = 4.5;        // tiles/sec when chasing
 const SWORD_GUARD_NEAR_TOWN_RADIUS = HUB_TOWN_GRASS_RADIUS + 88; // ignore mobs far outside town
+// Hostile mobs may besiege the wall but must never walk inside the fantasy town.
+// The stone wall ring sits at ~117-121 tiles from origin; keep enemies just outside it
+// so the walled town interior stays enemy-free (tutorial slimes live outside the gate).
+const TOWN_NO_ENEMY_RADIUS = 123;
+// Wall defense: guards treat any hostile within this radius of town centre as an intruder
+// and the nearest free guard rushes out to meet it (so besiegers at the wall get hunted,
+// not ignored because they sit beyond a guard's small local aggro bubble).
+const SWORD_GUARD_DEFEND_RADIUS = HUB_TOWN_GRASS_RADIUS + 16;
+const SWORD_GUARD_RESPONSE_RANGE = 64; // how far a guard will sprint from its post to engage
+const SWORD_GUARD_PATROL_SPEED_MULT = 0.42; // idle stroll is slower than a combat charge
 // Quest slime IDs that sword guards must never attack (q_first_hunt tutorial objectives)
 const SWORD_GUARD_QUEST_MOB_IDS = new Set([
   "mob_slime_meadow_1",
@@ -2029,6 +2041,8 @@ const clients = new Map();
 /** @type {ReturnType<typeof createSocialSystem> | null} */
 let social = null;
 let minigames = null;
+/** @type {ReturnType<typeof createGroupDungeonSystem> | null} */
+let groupDungeons = null;
 const chunkCache = new Map();
 const chatHistory = [];
 const itemDatabase = createItemDatabase();
@@ -2530,6 +2544,65 @@ function initMinigameModule() {
   });
 }
 initMinigameModule();
+
+function getPartyIdForClient(client) {
+  const view = social?.getPartyView(client);
+  return view?.id || null;
+}
+
+function registerInstanceMobs(mobList) {
+  for (const mob of mobList) {
+    const initialized = {
+      ...mob,
+      dead: mob.dead ?? false,
+      respawnAt: mob.respawnAt ?? 0,
+      lastAttackAt: mob.lastAttackAt ?? 0,
+      facing: mob.facing ?? (Math.random() * Math.PI * 2),
+      _targetX: mob._targetX ?? mob.homeX,
+      _targetY: mob._targetY ?? mob.homeY,
+      _nextMoveAt: mob._nextMoveAt ?? (Date.now() + Math.random() * 3000),
+      roamRadius: mob.roamRadius ?? 5,
+      speed: mob.speed ?? 1.7
+    };
+    Object.assign(mob, initialized);
+    mobs.push(mob);
+    addMobToHomeBuckets(mobHomeBuckets, mob);
+  }
+}
+
+function removeInstanceMobs(mobList) {
+  for (const mob of mobList) {
+    const idx = mobs.indexOf(mob);
+    if (idx !== -1) mobs.splice(idx, 1);
+    removeMobFromHomeBuckets(mobHomeBuckets, mob);
+    forceSimulateMobs.delete(mob);
+  }
+}
+
+function initGroupDungeonModule() {
+  groupDungeons = createGroupDungeonSystem({
+    clients,
+    send,
+    pushChat,
+    broadcastSnapshot,
+    saveClientCharacter,
+    awardXp,
+    createLootItem,
+    addItemToInventory,
+    addGroundItem,
+    ensureMinigameStats: (p) => {
+      if (minigames?.ensureMinigameStats) return minigames.ensureMinigameStats(p);
+      if (!p.minigameStats || typeof p.minigameStats !== "object") p.minigameStats = { trophies: [], scores: {}, flags: {} };
+      if (!p.minigameStats.flags) p.minigameStats.flags = {};
+      return p.minigameStats;
+    },
+    streamChunks: (client, chunks) => streamChunks(client, chunks.map((c) => [c.cx, c.cy])),
+    registerInstanceMobs,
+    removeInstanceMobs,
+    getPartyIdForClient
+  });
+}
+initGroupDungeonModule();
 
 queueSimulate();
 
@@ -5109,6 +5182,15 @@ function addMobToHomeBuckets(buckets, mob) {
   bucket.push(mob);
 }
 
+function removeMobFromHomeBuckets(buckets, mob) {
+  const world = worldForPosition(mob.homeX, mob.homeY);
+  const key = mobSpatialKeyFor(world, mob.homeX, mob.homeY);
+  const bucket = buckets.get(key);
+  if (!bucket) return;
+  const idx = bucket.indexOf(mob);
+  if (idx !== -1) bucket.splice(idx, 1);
+}
+
 function forEachMobHomeInBounds(bounds, visitor) {
   if (!bounds) return;
   const cellSize = MOB_SPATIAL_CELL_SIZE;
@@ -6026,6 +6108,10 @@ function simulate() {
 
   if (minigames) {
     minigames.tick(Date.now());
+  }
+
+  if (groupDungeons) {
+    groupDungeons.tickGroupDungeons(Date.now());
   }
 
   // Expire food buffs periodically (every 4 seconds)
@@ -7010,6 +7096,11 @@ function handleMessage(client, raw) {
     return;
   }
 
+  if (message.type === "groupDungeonConfirm") {
+    if (groupDungeons) groupDungeons.handleGroupDungeonConfirm(client, message);
+    return;
+  }
+
   if (message.type === "interact") {
     handleInteract(client, message);
     return;
@@ -7731,6 +7822,7 @@ function handleAttack(client, message = {}) {
         dropLootForMob(hit);
         recordMobDefeatForQuests(client, hit);
         handleDungeonBossDefeat(client, hit);
+        if (groupDungeons) groupDungeons.onGroupDungeonBossDefeat(client, hit);
       }
     }
 
@@ -10290,6 +10382,15 @@ function handleInteract(client, message = {}) {
 
   if (handleCaveEntranceInteract(client, message)) {
     return;
+  }
+
+  // Group dungeon entrance interaction
+  if (groupDungeons) {
+    const worldId = worldForPosition(client.player.x, client.player.y);
+    const gdEntrance = groupDungeons.findEntranceNear(client.player.x, client.player.y, worldId);
+    if (gdEntrance && groupDungeons.handleGroupDungeonInteract(client, gdEntrance)) {
+      return;
+    }
   }
 
   const ground = nearestGroundItem(client.player);
@@ -13612,7 +13713,8 @@ function createWildernessMobs() {
     }
 
     const routeAngle = Math.atan2(-camp.y, -camp.x);
-    const targetRadius = 104;
+    // March up to (but not inside) the town wall — the interior stays enemy-free.
+    const targetRadius = TOWN_NO_ENEMY_RADIUS + 4;
     const targetX = Math.cos(routeAngle) * targetRadius;
     const targetY = Math.sin(routeAngle) * targetRadius;
     for (let i = 0; i < overflowCount; i += 1) {
@@ -13816,7 +13918,8 @@ function spawnFantasyCampAssault(now, camp) {
   const faction = camp.faction;
   const type = (faction && MOB_TYPES[faction]) ? MOB_TYPES[faction] : (MOB_TYPES[biome] || MOB_TYPES.forest);
   const routeAngle = Math.atan2(-camp.y, -camp.x);
-  const targetRadius = 104;
+  // March up to (but not inside) the town wall — the interior stays enemy-free.
+  const targetRadius = TOWN_NO_ENEMY_RADIUS + 4;
   const targetX = Math.cos(routeAngle) * targetRadius;
   const targetY = Math.sin(routeAngle) * targetRadius;
   const tier = camp.tier || Math.max(1, Math.floor(Math.hypot(camp.x, camp.y) / 90));
@@ -14585,6 +14688,22 @@ function forEachPlayerTargetNear(index, world, x, y, radius, visitor) {
   }
 }
 
+const TOWN_NO_ENEMY_RADIUS_SQ = TOWN_NO_ENEMY_RADIUS * TOWN_NO_ENEMY_RADIUS;
+/**
+ * Hard safety net: hostile mobs are never allowed to step deeper into the walled
+ * fantasy hub town than TOWN_NO_ENEMY_RADIUS. Assault waves now target just outside
+ * the wall, but this also catches roamers/edge cases. Critters and quest slimes are
+ * exempt, and a mob already inside may still walk *outward* so nothing gets trapped.
+ */
+function mobBarredFromTownInteriorAt(mob, px, py) {
+  const r2 = px * px + py * py;
+  if (r2 >= TOWN_NO_ENEMY_RADIUS_SQ) return false;          // cheap reject (far from town)
+  if (mob.isCritter) return false;
+  if (SWORD_GUARD_QUEST_MOB_IDS.has(mob.id)) return false;  // tutorial slimes live by the gate
+  if (r2 >= mob.x * mob.x + mob.y * mob.y) return false;     // moving outward → allow escape
+  return worldForPosition(mob.homeX, mob.homeY) === "fantasy";
+}
+
 function updateMobs(dt, boundsArray) {
   const now = Date.now();
   const playerTargets = buildAttackablePlayerTargetIndex();
@@ -14678,10 +14797,10 @@ function updateMobs(dt, boundsArray) {
     const nextX = mob.x + nx * step;
     const nextY = mob.y + ny * step;
 
-    if (!isBlockedCircle(nextX, mob.y)) {
+    if (!isBlockedCircle(nextX, mob.y) && !mobBarredFromTownInteriorAt(mob, nextX, mob.y)) {
       mob.x = nextX;
     }
-    if (!isBlockedCircle(mob.x, nextY)) {
+    if (!isBlockedCircle(mob.x, nextY) && !mobBarredFromTownInteriorAt(mob, mob.x, nextY)) {
       mob.y = nextY;
     }
     mob.facing = Math.atan2(ny, nx);
@@ -14804,47 +14923,77 @@ function processGatekeeperArchers(now = Date.now()) {
  * so guards never chase things far out into the open world.
  */
 function processSwordGuards(now = Date.now(), dt = 0.05) {
-  for (const guardId of SWORD_GUARD_IDS) {
-    const guard = getNpcById(guardId);
-    if (!guard) continue;
+  const guards = SWORD_GUARD_IDS.map((id) => getNpcById(id)).filter(Boolean);
+  if (!guards.length) return;
 
-    // ── 1. Scan for nearest eligible mob ──────────────────────────────────
-    let target = null;
-    let bestDist = Infinity;
-    forEachMobNear(guard.x, guard.y, SWORD_GUARD_AGGRO_RANGE + 4, (mob) => {
-      if (mob.dead || mob.isCritter) return;
-      if (SWORD_GUARD_QUEST_MOB_IDS.has(mob.id)) return; // never attack quest slimes
-      const townDist = Math.hypot(mob.x, mob.y);
-      if (townDist > SWORD_GUARD_NEAR_TOWN_RADIUS) return;
-      const d = Math.hypot(mob.x - guard.x, mob.y - guard.y);
-      if (d <= SWORD_GUARD_AGGRO_RANGE && d < bestDist) {
-        bestDist = d;
-        target = mob;
+  // ── Gather intruders: hostiles besieging the wall or breaching the town ──────
+  const intruders = [];
+  forEachMobNear(0, 0, SWORD_GUARD_DEFEND_RADIUS + 6, (mob) => {
+    if (mob.dead || mob.isCritter) return;
+    if (SWORD_GUARD_QUEST_MOB_IDS.has(mob.id)) return; // never attack quest slimes
+    if (Math.hypot(mob.x, mob.y) > SWORD_GUARD_DEFEND_RADIUS) return;
+    intruders.push(mob);
+  });
+
+  // ── Assign each intruder to the nearest free guard (greedy, closest pairs first)
+  // so the watch fans out to meet threats instead of all swarming one slime. ──────
+  const targetForGuard = new Map(); // guard.id -> mob
+  if (intruders.length) {
+    const pairs = [];
+    for (const mob of intruders) {
+      for (const g of guards) {
+        const d = Math.hypot(mob.x - g.x, mob.y - g.y);
+        if (d <= SWORD_GUARD_RESPONSE_RANGE) pairs.push({ mob, g, d });
       }
-    });
+    }
+    pairs.sort((a, b) => a.d - b.d);
+    const guardTaken = new Set();
+    const mobTaken = new Set();
+    for (const p of pairs) {
+      if (guardTaken.has(p.g.id) || mobTaken.has(p.mob.id)) continue;
+      guardTaken.add(p.g.id);
+      mobTaken.add(p.mob.id);
+      targetForGuard.set(p.g.id, p.mob);
+    }
+  }
+
+  for (const guard of guards) {
+    const target = targetForGuard.get(guard.id) || null;
 
     if (!target) {
-      // ── 4. Return to post ──────────────────────────────────────────────
-      const homeDx = guard.homeX - guard.x;
-      const homeDy = guard.homeY - guard.y;
-      const homeDist = Math.hypot(homeDx, homeDy);
-      if (homeDist > 0.25) {
-        const step = Math.min(SWORD_GUARD_SPEED * dt, homeDist);
-        guard.x += (homeDx / homeDist) * step;
-        guard.y += (homeDy / homeDist) * step;
-        guard.facing = Math.atan2(homeDy, homeDx);
-        guard.moving = true;
-        guard._targetX = guard.homeX;
-        guard._targetY = guard.homeY;
-      } else {
-        guard.moving = false;
-        guard._targetX = guard.homeX;
-        guard._targetY = guard.homeY;
+      // ── Patrol the beat: stroll to a fresh point within patrolRadius of the post,
+      // pause to scan, then pick another. Keeps guards visibly walking their watch. ──
+      const patrolR = Math.max(2, Number(guard.patrolRadius) || 6);
+      const reached = Math.hypot((guard._patrolX ?? 1e9) - guard.x, (guard._patrolY ?? 1e9) - guard.y) < 0.5;
+      if (!Number.isFinite(guard._patrolX) || reached || now >= (guard._patrolReplanAt || 0)) {
+        const ang = Math.random() * Math.PI * 2;
+        const rad = Math.sqrt(Math.random()) * patrolR;
+        guard._patrolX = guard.homeX + Math.cos(ang) * rad;
+        guard._patrolY = guard.homeY + Math.sin(ang) * rad;
+        guard._patrolPauseUntil = reached ? now + 900 + Math.random() * 2600 : 0;
+        guard._patrolReplanAt = now + 5000 + Math.random() * 4000; // replan even if stuck on a wall
       }
+      const pdx = guard._patrolX - guard.x;
+      const pdy = guard._patrolY - guard.y;
+      const pdist = Math.hypot(pdx, pdy);
+      if (now < (guard._patrolPauseUntil || 0) || pdist < 0.5) {
+        guard.moving = false;
+      } else {
+        const step = Math.min(SWORD_GUARD_SPEED * SWORD_GUARD_PATROL_SPEED_MULT * dt, pdist);
+        const nxx = guard.x + (pdx / pdist) * step;
+        const nyy = guard.y + (pdy / pdist) * step;
+        if (!isBlockedCircle(nxx, guard.y)) guard.x = nxx;
+        if (!isBlockedCircle(guard.x, nyy)) guard.y = nyy;
+        guard.facing = Math.atan2(pdy, pdx);
+        guard.moving = true;
+      }
+      guard._targetX = guard.x;
+      guard._targetY = guard.y;
       continue;
     }
 
-    // ── 2. Chase target ───────────────────────────────────────────────────
+    // ── Chase the assigned intruder ───────────────────────────────────────────
+    guard._patrolX = undefined; // drop any stale patrol waypoint so post resumes cleanly
     const dx = target.x - guard.x;
     const dy = target.y - guard.y;
     const dist = Math.hypot(dx, dy);
@@ -15385,6 +15534,17 @@ function attackPlayerWithMob(mob, player, now) {
 }
 
 function respawnPlayer(player) {
+  // Handle group dungeon respawn (teleports player outside the dungeon)
+  if (groupDungeons && player._activeGroupDungeonInstId) {
+    const client = findClientByPlayerIdInternal(player.id);
+    if (client) {
+      player.hp = player.maxHp;
+      clearPlayerBoardedShips(player);
+      groupDungeons.onGroupDungeonPlayerDeath(client);
+      streamChunks(client, nearbyChunks(player.x, player.y, 3));
+      return;
+    }
+  }
   const spawn = spawnPoint(nextSpawnIndex++);
   player.hp = player.maxHp;
   player.x = spawn.x;
@@ -15475,6 +15635,9 @@ function disconnect(client, reason = null) {
   const playerName = client.player?.name;
   if (social) {
     social.onDisconnect(client);
+  }
+  if (groupDungeons) {
+    groupDungeons.onGroupDungeonDisconnect(client);
   }
   saveClientCharacter(client);
   client.alive = false;
@@ -15908,6 +16071,7 @@ function applySpellDamage(client, spellId, now) {
       dropLootForMob(mob);
       recordMobDefeatForQuests(client, mob);
       handleDungeonBossDefeat(client, mob);
+      if (groupDungeons) groupDungeons.onGroupDungeonBossDefeat(client, mob);
     }
 
     broadcastCombat(event);

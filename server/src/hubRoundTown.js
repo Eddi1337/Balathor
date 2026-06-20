@@ -1066,6 +1066,13 @@ const HUB_MAX_BRIDGES = 8;
 const HUB_MAX_PLATFORMS = 3;
 
 function computeHubUpperDeck(hubBuildings, rects, pathKeys, wallKeys) {
+  // Sky-promenade removed: the exterior rooftop decks, connecting bridges and the
+  // outdoor ladders/stairs that fed them trapped players on the walkways (the only
+  // way back down was through a house). Returning no upper cells removes the whole
+  // elevated network from the starting town. Two-story HOUSE interiors are a separate
+  // system (dwellingIsTwoStory + interior stairs) and are unaffected.
+  return [];
+  /* eslint-disable no-unreachable */
   const cells = new Map();
   const key = (x, y) => `${x},${y}`;
   const buildingAt = (tx, ty, pad = 0) => pointInRects(tx + 0.5, ty + 0.5, rects, pad);

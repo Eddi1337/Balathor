@@ -32,6 +32,9 @@ let ctx = canvas.getContext("2d", {
   powerPreference: "high-performance",
   willReadFrequently: false
 });
+const canvas3d = document.querySelector("#game3d");
+const view3dToggle = document.querySelector("#view3dToggle");
+const RENDER_3D_KEY = "balathor.render3d";
 const bootPanel = document.querySelector("#boot");
 const statusEl = document.querySelector("#status");
 const menu = document.querySelector("#menu");
@@ -154,6 +157,20 @@ const companionOfferAccept = document.querySelector("#companionOfferAccept");
 const companionOfferDecline = document.querySelector("#companionOfferDecline");
 const companionOfferClose = document.querySelector("#companionOfferClose");
 const safeZoneIndicator = document.querySelector("#safeZoneIndicator");
+const groupDungeonOfferPanel = document.querySelector("#groupDungeonOfferPanel");
+const groupDungeonOfferTitle = document.querySelector("#groupDungeonOfferTitle");
+const groupDungeonOfferLore = document.querySelector("#groupDungeonOfferLore");
+const groupDungeonOfferRec = document.querySelector("#groupDungeonOfferRec");
+const groupDungeonOfferMembers = document.querySelector("#groupDungeonOfferMembers");
+const groupDungeonOfferEnter = document.querySelector("#groupDungeonOfferEnter");
+const groupDungeonOfferCancel = document.querySelector("#groupDungeonOfferCancel");
+const groupDungeonOfferClose = document.querySelector("#groupDungeonOfferClose");
+const groupDungeonHud = document.querySelector("#groupDungeonHud");
+const groupDungeonHudName = document.querySelector("#groupDungeonHudName");
+const groupDungeonHudBoss = document.querySelector("#groupDungeonHudBoss");
+const groupDungeonCompleteEl = document.querySelector("#groupDungeonComplete");
+const groupDungeonCompleteLine = document.querySelector("#groupDungeonCompleteLine");
+const groupDungeonCompleteReward = document.querySelector("#groupDungeonCompleteReward");
 const partyPanel = document.querySelector("#partyPanel");
 const partyMembersEl = document.querySelector("#partyMembers");
 const partyPanelMin = document.querySelector("#partyPanelMin");
@@ -987,6 +1004,8 @@ const state = {
   portalTransition: null,
   teleportGuardUntil: 0,
   worldTheme: "fantasy",
+  /** When true, the world is drawn by the Three.js renderer (render3d.js) instead of canvas 2D. */
+  render3D: (() => { try { return localStorage.getItem(RENDER_3D_KEY) === "1"; } catch { return false; } })(),
   chunks: new Map(),
   portals: new Map(),
   caveEntrances: new Map(),
@@ -1028,6 +1047,9 @@ const state = {
   buildingOwnership: new Map(),
   buyHouseOffer: null,
   pendingCompanionInvite: null,
+  groupDungeonOffer: null,
+  activeGroupDungeon: null, // { dungeonId, dungeonName, instId, partySize, bossName, bossDefeated }
+  groupDungeonAoe: null,    // { bossX, bossY, radius, until }
   traderNpcId: null,
   traderItems: [],
   quests: [],
@@ -1600,6 +1622,8 @@ function handleServerMessage(message) {
     state._reconnectAttempt = 0;
     clearTimeout(state._reconnectTimer);
     setWorldTheme(message.theme);
+    update3DToggleVisibility();
+    if (state.render3D) set3DMode(true, false);
     if (typeof message.tickRate === "number") {
       state.debugTickRate = message.tickRate;
     }
@@ -1667,6 +1691,12 @@ function handleServerMessage(message) {
     chunkCanvasCache.clear();
     clearMovementInput();
     requestVisibleChunks();
+    // Clear group dungeon state when exiting (theme flips to fantasy or dungeon)
+    if (typeof message.portalId === "string" && message.portalId.includes("_exit_")) {
+      state.activeGroupDungeon = null;
+      state.groupDungeonAoe = null;
+      updateGroupDungeonHud();
+    }
     if (!message.skipChat && message.name != null && String(message.name).trim()) {
       appendChat({
         kind: "system",
@@ -2352,6 +2382,45 @@ function handleServerMessage(message) {
     if (existing >= 0) state.foodBuffs[existing] = entry;
     else state.foodBuffs.push(entry);
     appendChat({ kind: "system", name: "Food", text: `Buff active: +${message.amount} ${message.stat} for ${Math.round(message.durationMs / 60000)} min` });
+    return;
+  }
+
+  // ── Group Dungeon protocol handlers ─────────────────────────────────────
+  if (message.type === "groupDungeonOffer") {
+    openGroupDungeonOffer(message);
+    return;
+  }
+
+  if (message.type === "groupDungeonEntered") {
+    state.activeGroupDungeon = {
+      dungeonId:    message.dungeonId,
+      dungeonName:  message.dungeonName,
+      instId:       message.instId,
+      partySize:    message.partySize,
+      bossName:     message.bossName,
+      bossDefeated: message.bossDefeated || false
+    };
+    closeGroupDungeonOffer();
+    updateGroupDungeonHud();
+    return;
+  }
+
+  if (message.type === "groupDungeonComplete") {
+    if (state.activeGroupDungeon) {
+      state.activeGroupDungeon.bossDefeated = true;
+    }
+    updateGroupDungeonHud();
+    showGroupDungeonComplete(message);
+    return;
+  }
+
+  if (message.type === "groupDungeonAoe") {
+    state.groupDungeonAoe = {
+      bossX:  message.bossX,
+      bossY:  message.bossY,
+      radius: message.radius,
+      until:  performance.now() + (message.warnMs || 2500)
+    };
     return;
   }
 
@@ -3684,6 +3753,7 @@ function walkStyleRate(style) {
 
 function wireUi() {
   initTradeSlotGrids();
+  view3dToggle?.addEventListener("click", () => toggle3DMode());
   document.querySelectorAll("[data-class]").forEach((button) => {
     button.addEventListener("click", () => {
       state.selectedClass = button.dataset.class;
@@ -3943,6 +4013,16 @@ function wireUi() {
     if (!inv?.npcId || !state.joined) return;
     send({ type: "buyCompanion", npcId: inv.npcId, confirm: true });
     closeCompanionInvitePanel();
+  });
+
+  // Group dungeon buttons
+  groupDungeonOfferClose?.addEventListener("click", () => closeGroupDungeonOffer());
+  groupDungeonOfferCancel?.addEventListener("click", () => closeGroupDungeonOffer());
+  groupDungeonOfferEnter?.addEventListener("click", () => {
+    const offer = state.groupDungeonOffer;
+    if (!offer?.dungeonId || !state.joined) return;
+    send({ type: "groupDungeonConfirm", dungeonId: offer.dungeonId });
+    closeGroupDungeonOffer();
   });
 
   traderStock.addEventListener("pointerdown", (event) => {
@@ -4703,6 +4783,13 @@ function wireUi() {
       } else {
         openProfessionsPanel();
       }
+      return;
+    }
+
+    // Toggle 2D / 3D view — V
+    if (event.key.toLowerCase() === "v" && state.joined && !isTextEntryTarget(event.target)) {
+      event.preventDefault();
+      toggle3DMode();
       return;
     }
 
@@ -5549,6 +5636,69 @@ function openProfessionsPanel() {
 function closeProfessionsPanel() {
   professionsPanel?.classList.add("hidden");
   if (state.activeWindow === "professions") state.activeWindow = null;
+}
+
+// ── Group Dungeon UI ──────────────────────────────────────────────────────────
+
+function openGroupDungeonOffer(msg) {
+  if (!groupDungeonOfferPanel) return;
+  state.groupDungeonOffer = msg;
+  if (groupDungeonOfferTitle) groupDungeonOfferTitle.textContent = msg.dungeonName || "Dungeon Entrance";
+  if (groupDungeonOfferLore) groupDungeonOfferLore.textContent = msg.lore || "";
+  if (groupDungeonOfferRec) {
+    groupDungeonOfferRec.textContent = `Recommended level: ${msg.recLevel || "?"}`;
+  }
+  if (groupDungeonOfferMembers) {
+    const members = Array.isArray(msg.members) ? msg.members : [];
+    const self = state.players.get(state.selfId);
+    const names = [self?.name || "You", ...members.map((m) => m.name)].join(", ");
+    groupDungeonOfferMembers.textContent =
+      `Party (${1 + members.length}): ${names}`;
+  }
+  groupDungeonOfferPanel.classList.remove("hidden");
+  state.activeWindow = "groupDungeonOffer";
+}
+
+function closeGroupDungeonOffer() {
+  groupDungeonOfferPanel?.classList.add("hidden");
+  state.groupDungeonOffer = null;
+  if (state.activeWindow === "groupDungeonOffer") state.activeWindow = null;
+}
+
+function updateGroupDungeonHud() {
+  if (!groupDungeonHud) return;
+  if (!state.activeGroupDungeon) {
+    groupDungeonHud.classList.add("hidden");
+    return;
+  }
+  const gd = state.activeGroupDungeon;
+  groupDungeonHud.classList.remove("hidden");
+  if (groupDungeonHudName) groupDungeonHudName.textContent = gd.dungeonName || "Dungeon";
+  if (groupDungeonHudBoss) {
+    groupDungeonHudBoss.textContent = gd.bossDefeated
+      ? `${gd.bossName} — DEFEATED`
+      : `Boss: ${gd.bossName}`;
+  }
+}
+
+function showGroupDungeonComplete(msg) {
+  if (!groupDungeonCompleteEl) return;
+  if (groupDungeonCompleteLine) {
+    groupDungeonCompleteLine.textContent =
+      `${msg.dungeonName || "Dungeon"} — CLEARED!`;
+  }
+  const firstClearStr = msg.firstClear ? " (First clear bonus!)" : "";
+  if (groupDungeonCompleteReward) {
+    groupDungeonCompleteReward.textContent =
+      `+${msg.gold || 0} gold  +${msg.xp || 0} XP${firstClearStr}`;
+  }
+  groupDungeonCompleteEl.classList.remove("hidden");
+  // Auto-hide after animation completes
+  setTimeout(() => {
+    groupDungeonCompleteEl?.classList.add("hidden");
+    state.activeGroupDungeon = null;
+    updateGroupDungeonHud();
+  }, 5200);
 }
 
 function updateProfessionState(prof) {
@@ -7443,6 +7593,99 @@ function changeServer(url) {
   connect(normalizedUrl);
 }
 
+// ── 3D view mode (render3d.js) ───────────────────────────────────────────────
+// The 3D renderer is a parallel view of the same state: input, networking and the
+// HTML UI are unchanged; only the in-world rendering swaps. The 2D #game canvas
+// stays present underneath (it still receives pointer input) while the opaque
+// #game3d canvas is shown on top.
+function render3DSupported() {
+  return Boolean(globalThis.Render3D && Render3D.isSupported());
+}
+
+function update3DToggleVisibility() {
+  if (!view3dToggle) return;
+  view3dToggle.classList.toggle("hidden", !(state.joined && render3DSupported()));
+}
+
+function resize3DCanvas() {
+  if (!canvas3d || !render3DSupported() || !Render3D.isReady()) return;
+  const size = canvasCssSize();
+  canvas3d.width = size.width;
+  canvas3d.height = size.height;
+  Render3D.setSize(size.width, size.height);
+}
+
+function set3DMode(on, persist = true) {
+  on = Boolean(on) && render3DSupported();
+  state.render3D = on;
+  if (persist) { try { localStorage.setItem(RENDER_3D_KEY, on ? "1" : "0"); } catch { /* ignore */ } }
+  if (on) {
+    if (!Render3D.isReady()) Render3D.attach(canvas3d);
+    resize3DCanvas();
+    Render3D.clearWorld && Render3D.clearWorld();
+  }
+  if (canvas3d) canvas3d.classList.toggle("hidden", !on);
+  if (view3dToggle) {
+    view3dToggle.classList.toggle("active", on);
+    view3dToggle.textContent = on ? "2D" : "3D";
+  }
+}
+
+function toggle3DMode() {
+  if (!render3DSupported()) return;
+  set3DMode(!state.render3D);
+}
+
+function entity3DKind(ent, isMob) {
+  if (isMob) {
+    const n = (ent.name || "").toLowerCase();
+    if (n.includes("slime")) return "slime";
+  }
+  return "humanoid";
+}
+
+function push3DEntities(out, map, isMob) {
+  for (const ent of map.values()) {
+    if (!ent || ent.dead) continue;
+    const x = Number.isFinite(ent.renderX) ? ent.renderX : ent.x;
+    const y = Number.isFinite(ent.renderY) ? ent.renderY : ent.y;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    out.push({
+      id: (isMob ? "m:" : "h:") + (ent.id != null ? ent.id : `${x},${y}`),
+      x, y,
+      facing: Number(ent.facing) || 0,
+      moving: Boolean(ent.moving),
+      kind: entity3DKind(ent, isMob),
+      classId: isMob ? null : (ent.classId || null),
+      body: isMob ? (ent.primary || "#9a6b4f") : (ent.torsoColor || "#6f7b8a"),
+      accent: isMob ? (ent.accent || ent.primary || "#d8d8d8") : (ent.weaponColor || ent.torsoColor || "#d8d8d8"),
+      skin: isMob ? "#dfeede" : (ent.skinColor || "#e8b98a"),
+      scale: Number(ent.sizeScale) || 1,
+      bob: (Math.round(x * 7 + y * 13) % 628) / 100
+    });
+  }
+}
+
+function render3DFrame() {
+  const self = state.players.get(state.selfId);
+  const entities = [];
+  push3DEntities(entities, state.players, false);
+  push3DEntities(entities, state.npcs, false);
+  push3DEntities(entities, state.mobs, true);
+  Render3D.frame({
+    camX: state.camera.x / TILE_SIZE,
+    camY: state.camera.y / TILE_SIZE,
+    zoom: getEffectiveWorldZoom(self),
+    theme: state.worldTheme,
+    TILE,
+    chunkSize: CHUNK_SIZE,
+    getTileColors,
+    chunks: state.chunks.values(),
+    buildings: state.buildings.values(),
+    entities
+  });
+}
+
 function frame(now) {
   const dt = Math.min(0.05, (now - state.lastFrame) / 1000);
   state.lastFrame = now;
@@ -7454,7 +7697,17 @@ function frame(now) {
   updateCamera(dt);
   checkWindowAutoClose();
   tickNpcContextMenuPosition();
-  draw();
+  if (state.render3D && render3DSupported() && Render3D.isReady()) {
+    try {
+      render3DFrame();
+    } catch (err) {
+      console.error("3D render failed, falling back to 2D", err);
+      set3DMode(false);
+      draw();
+    }
+  } else {
+    draw();
+  }
   requestAnimationFrame(frame);
 }
 
@@ -14159,35 +14412,94 @@ function drawCaveEntrances(minTileX, maxTileX, minTileY, maxTileY) {
     const sx = Math.floor(cave.x * TILE_SIZE + TILE_SIZE / 2 - state.camera.x + halfW);
     const sy = Math.floor(cave.y * TILE_SIZE + TILE_SIZE / 2 - state.camera.y + halfH);
 
-    ctx.save();
-    ctx.fillStyle = "#4a4035";
-    ctx.beginPath();
-    ctx.ellipse(sx, sy + 4, 22, 14, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = "#1a1410";
-    ctx.beginPath();
-    ctx.ellipse(sx, sy - 2, 14, 10, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    const accent = cave.color || "#8b7355";
-    ctx.strokeStyle = accent;
-    ctx.lineWidth = 2;
-    ctx.globalAlpha = 0.45 + pulse * 0.35;
-    ctx.beginPath();
-    ctx.ellipse(sx, sy - 2, 16, 11, 0, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.globalAlpha = 0.92;
-    ctx.fillStyle = "#f0e6d0";
-    ctx.font = "11px sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText(cave.name || "Cave", sx, sy - 28);
-    ctx.font = "10px sans-serif";
-    ctx.fillStyle = "rgba(240,230,208,0.75)";
-    ctx.fillText("Interact to enter", sx, sy - 16);
-    ctx.restore();
+    if (cave.isGroupDungeon) {
+      drawGroupDungeonEntrance(sx, sy, cave, pulse);
+    } else {
+      drawSoloCaveEntrance(sx, sy, cave, pulse);
+    }
   }
+}
+
+function drawSoloCaveEntrance(sx, sy, cave, pulse) {
+  ctx.save();
+  ctx.fillStyle = "#4a4035";
+  ctx.beginPath();
+  ctx.ellipse(sx, sy + 4, 22, 14, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#1a1410";
+  ctx.beginPath();
+  ctx.ellipse(sx, sy - 2, 14, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const accent = cave.color || "#8b7355";
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = 0.45 + pulse * 0.35;
+  ctx.beginPath();
+  ctx.ellipse(sx, sy - 2, 16, 11, 0, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.globalAlpha = 0.92;
+  ctx.fillStyle = "#f0e6d0";
+  ctx.font = "11px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(cave.name || "Cave", sx, sy - 28);
+  ctx.font = "10px sans-serif";
+  ctx.fillStyle = "rgba(240,230,208,0.75)";
+  ctx.fillText("Interact to enter", sx, sy - 16);
+  ctx.restore();
+}
+
+function drawGroupDungeonEntrance(sx, sy, cave, pulse) {
+  ctx.save();
+  const accent = cave.color || "#4f9f5f";
+  const ts = TILE_SIZE;
+
+  // Stone arch base
+  ctx.fillStyle = "#3a332b";
+  ctx.fillRect(sx - ts * 0.6, sy - ts * 0.05, ts * 1.2, ts * 0.55);
+
+  // Arch pillars
+  ctx.fillStyle = "#5a5040";
+  ctx.fillRect(sx - ts * 0.6, sy - ts * 0.9, ts * 0.25, ts * 1.0);
+  ctx.fillRect(sx + ts * 0.35, sy - ts * 0.9, ts * 0.25, ts * 1.0);
+
+  // Arch top
+  ctx.fillStyle = "#4a4035";
+  ctx.beginPath();
+  ctx.arc(sx, sy - ts * 0.82, ts * 0.48, Math.PI, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  // Dark door portal inside arch
+  ctx.fillStyle = "#0d0a08";
+  ctx.beginPath();
+  ctx.arc(sx, sy - ts * 0.78, ts * 0.32, Math.PI, 0);
+  ctx.rect(sx - ts * 0.32, sy - ts * 0.78, ts * 0.64, ts * 0.52);
+  ctx.fill();
+
+  // Glowing accent border on arch
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = 0.5 + pulse * 0.4;
+  ctx.beginPath();
+  ctx.arc(sx, sy - ts * 0.82, ts * 0.5, Math.PI, 0);
+  ctx.stroke();
+
+  // Banner / rune glow above arch
+  ctx.globalAlpha = 0.7 + pulse * 0.25;
+  ctx.fillStyle = accent;
+  ctx.font = "bold 10px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(cave.name || "Group Dungeon", sx, sy - ts * 1.05);
+
+  ctx.globalAlpha = 0.75;
+  ctx.fillStyle = "#e8d8b0";
+  ctx.font = "10px sans-serif";
+  ctx.fillText(`Rec. level ${cave.recLevel || "?"}  •  Party entry`, sx, sy - ts * 0.85);
+
+  ctx.restore();
 }
 
 function drawDungeonVoidBackdrop(minChunkX, maxChunkX, minChunkY, maxChunkY) {
@@ -16265,16 +16577,29 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
       ctx.fillStyle = blend(helColor, "#ffffff", 0.18);
       ctx.fillRect(cx - Math.max(1, Math.round(s * 0.4)), vY - Math.round(0.4 * s), Math.max(2, Math.round(s * 0.8)), ridgeH + Math.round(1.2 * s));
 
-      // Plume mounted on the crest, sweeping back.
-      const plumeH = Math.round((3.5 + equipRarityRank) * s);
-      const plumeX = cx - Math.max(1, Math.round(s * 0.7));
+      // Plume: a horsehair crest mounted on the dome that sweeps up and back. The old
+      // version drew a vertical bar capped with a horizontal crossbar, which read as a
+      // stick/flag poking straight out of the top of the helmet.
+      const plumeH = Math.round((3 + equipRarityRank * 0.8) * s);
+      const sweep = fx > 0 ? -1 : 1; // arc opposite the facing nudge so it trails behind
+      const plumeBaseY = vY - Math.round(0.2 * s);
+      const plumeTipX = cx + sweep * Math.round(2.6 * s);
+      const plumeTipY = plumeBaseY - plumeH + Math.round(1.4 * s);
       ctx.fillStyle = plumeCol;
-      ctx.fillRect(plumeX, vY - plumeH, Math.max(2, Math.round(1.4 * s)), plumeH);
-      ctx.fillStyle = blend(plumeCol, "#ffffff", 0.28);
-      ctx.fillRect(plumeX, vY - plumeH, Math.max(1, Math.round(s * 0.6)), plumeH);
-      // Plume crown curl.
-      ctx.fillStyle = plumeCol;
-      ctx.fillRect(plumeX - Math.round(1.4 * s), vY - plumeH, Math.max(2, Math.round(3.2 * s)), Math.max(2, Math.round(1.2 * s)));
+      ctx.beginPath();
+      ctx.moveTo(cx - sweep * Math.round(1.5 * s), plumeBaseY);                         // front root
+      ctx.quadraticCurveTo(cx + sweep * Math.round(0.4 * s), plumeBaseY - plumeH, plumeTipX, plumeTipY); // crown → swept tip
+      ctx.quadraticCurveTo(cx + sweep * Math.round(1.2 * s), plumeBaseY - Math.round(plumeH * 0.45), cx + sweep * Math.round(1.4 * s), plumeBaseY); // back root
+      ctx.closePath();
+      ctx.fill();
+      // Lighter inner strand for a touch of sheen.
+      ctx.fillStyle = blend(plumeCol, "#ffffff", 0.32);
+      ctx.beginPath();
+      ctx.moveTo(cx - sweep * Math.round(0.5 * s), plumeBaseY);
+      ctx.quadraticCurveTo(cx + sweep * Math.round(0.4 * s), plumeBaseY - Math.round(plumeH * 0.82), plumeTipX - sweep * Math.round(0.6 * s), plumeTipY + Math.round(0.6 * s));
+      ctx.quadraticCurveTo(cx + sweep * Math.round(0.6 * s), plumeBaseY - Math.round(plumeH * 0.4), cx + sweep * Math.round(0.5 * s), plumeBaseY);
+      ctx.closePath();
+      ctx.fill();
 
       // High-tier: layered cheek plates + gorget rim for extra silhouette.
       if (equipRarityRank >= 4) {
@@ -22294,6 +22619,7 @@ function resize() {
   canvas.width = size.width;
   canvas.height = size.height;
   chunkCanvasCache.clear();
+  resize3DCanvas();
   if (state?.joined) {
     state.requestedChunks.clear();
     requestVisibleChunks();
