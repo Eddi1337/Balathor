@@ -8,13 +8,15 @@
  * cosy hand-drawn vibe of the 2D art. Toggling 2D/3D only swaps which renderer
  * runs — input, networking and all HTML UI are untouched.
  *
- * Loaded as a plain global script (after vendor/three.min.js, before main.js)
- * and exposes a single global: `Render3D`.
+ * Loaded as an ES module (Three.js resolved via the index.html import map) and
+ * exposes a single global for the classic main.js script to call: `Render3D`.
  */
+import * as THREE from "three";
+
 (function () {
   "use strict";
 
-  const T = typeof window !== "undefined" ? window.THREE : null;
+  const T = THREE;
 
   // ── module state ───────────────────────────────────────────────────────────
   let renderer = null;

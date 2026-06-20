@@ -4,6 +4,7 @@ WORKDIR /app
 
 COPY assets ./assets
 COPY src ./src
+COPY vendor ./vendor
 COPY dev-server.js index.html styles.css ./
 
 ENV CLIENT_HOST=0.0.0.0

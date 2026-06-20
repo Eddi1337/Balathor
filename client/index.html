@@ -601,8 +601,10 @@
       <div id="cast-bar-track"><div id="cast-bar-fill"></div></div>
     </div>
 
-    <script src="./vendor/three.min.js"></script>
-    <script src="./src/render3d.js"></script>
+    <script type="importmap">
+      { "imports": { "three": "./vendor/three.module.js" } }
+    </script>
+    <script type="module" src="./src/render3d.mjs"></script>
     <script src="./src/techDungeonSprites.js"></script>
     <script src="./src/minigames.js"></script>
     <script src="./src/mobileTouch.js"></script>
