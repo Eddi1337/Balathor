@@ -34,6 +34,7 @@ let ctx = canvas.getContext("2d", {
 });
 const canvas3d = document.querySelector("#game3d");
 const view3dToggle = document.querySelector("#view3dToggle");
+const menu3dToggle = document.querySelector("#menu3dToggle");
 const RENDER_3D_KEY = "balathor.render3d";
 const bootPanel = document.querySelector("#boot");
 const statusEl = document.querySelector("#status");
@@ -1036,6 +1037,10 @@ const state = {
   worldTime: { hour: 8, phase: "day" },
   input: { up: false, down: false, left: false, right: false, engage: false, fire: false, repair: false, weaponMode: "laser" },
   inputSeq: 0,
+  // 3D view: mouse-look orbit camera + camera-relative WASD intent.
+  cam3D: { yaw: 0, pitch: 0.62, dist: 12 },
+  move3D: { up: false, down: false, left: false, right: false },
+  pointerLocked: false,
   camera: { x: 0, y: 0, rotation: 0 },
   zoom: 1,
   activeServerUrl: "",
@@ -3754,6 +3759,8 @@ function walkStyleRate(style) {
 function wireUi() {
   initTradeSlotGrids();
   view3dToggle?.addEventListener("click", () => toggle3DMode());
+  menu3dToggle?.addEventListener("click", () => { toggle3DMode(); toggleMenu(); });
+  init3DControls();
   document.querySelectorAll("[data-class]").forEach((button) => {
     button.addEventListener("click", () => {
       state.selectedClass = button.dataset.class;
@@ -5044,6 +5051,16 @@ function updateInput(event, pressed) {
     (key === "up" || key === "down" || key === "left" || key === "right")
   ) {
     cancelBenchSitClient();
+  }
+  // In 3D the four movement keys are camera-relative: record the raw intent and
+  // let update3DMovement() rotate it by the mouse-look yaw into world input each
+  // frame. (W = into the screen regardless of compass direction.)
+  if (is3DActive()) {
+    if (state.move3D[key] !== pressed) {
+      state.move3D[key] = pressed;
+      if (pressed && homeCastTimer) cancelHomeCast();
+    }
+    return;
   }
   const changed = state.input[key] !== pressed;
   state.input[key] = pressed;
@@ -7602,6 +7619,10 @@ function render3DSupported() {
   return Boolean(globalThis.Render3D && Render3D.isSupported());
 }
 
+function is3DActive() {
+  return Boolean(state.render3D && globalThis.Render3D && Render3D.isReady());
+}
+
 function update3DToggleVisibility() {
   if (!view3dToggle) return;
   view3dToggle.classList.toggle("hidden", !(state.joined && render3DSupported()));
@@ -7623,12 +7644,71 @@ function set3DMode(on, persist = true) {
     if (!Render3D.isReady()) Render3D.attach(canvas3d);
     resize3DCanvas();
     Render3D.clearWorld && Render3D.clearWorld();
+  } else {
+    // Leaving 3D: drop look-lock and any camera-relative movement intent so the
+    // 2D view doesn't inherit a stuck key, then clear the world input.
+    if (document.pointerLockElement === canvas3d) document.exitPointerLock?.();
+    state.move3D.up = state.move3D.down = state.move3D.left = state.move3D.right = false;
+    if (state.joined) clearMovementInput();
   }
-  if (canvas3d) canvas3d.classList.toggle("hidden", !on);
+  if (canvas3d) {
+    canvas3d.classList.toggle("hidden", !on);
+    canvas3d.style.pointerEvents = on ? "auto" : "none"; // capture clicks for mouse-look
+  }
   if (view3dToggle) {
     view3dToggle.classList.toggle("active", on);
     view3dToggle.textContent = on ? "2D" : "3D";
   }
+  if (menu3dToggle) menu3dToggle.textContent = on ? "Switch to 2D view" : "Switch to 3D view";
+}
+
+// Translate camera-relative WASD intent (state.move3D) into the server's world-axis
+// input booleans by rotating it through the mouse-look yaw, then send on change.
+function update3DMovement() {
+  const yaw = state.cam3D.yaw;
+  const fwd = (state.move3D.up ? 1 : 0) - (state.move3D.down ? 1 : 0);
+  const strafe = (state.move3D.right ? 1 : 0) - (state.move3D.left ? 1 : 0);
+  // Camera forward on the ground plane is (sin yaw, cos yaw) in (worldX, worldY).
+  let vx = Math.sin(yaw) * fwd + Math.cos(yaw) * strafe;
+  let vy = Math.cos(yaw) * fwd - Math.sin(yaw) * strafe;
+  const up = vy < -0.38;
+  const down = vy > 0.38;
+  const left = vx < -0.38;
+  const right = vx > 0.38;
+  if (
+    up !== state.input.up || down !== state.input.down ||
+    left !== state.input.left || right !== state.input.right
+  ) {
+    if ((up || down || left || right)) cancelBenchSitClient();
+    state.input.up = up; state.input.down = down;
+    state.input.left = left; state.input.right = right;
+    sendInput();
+  }
+}
+
+// Pointer-lock mouse-look: click the 3D view to capture the mouse, move to look,
+// scroll to zoom the orbit distance, Esc (browser default) releases.
+function init3DControls() {
+  if (!canvas3d) return;
+  canvas3d.addEventListener("pointerdown", () => {
+    if (is3DActive() && document.pointerLockElement !== canvas3d) {
+      canvas3d.requestPointerLock?.();
+    }
+  });
+  document.addEventListener("pointerlockchange", () => {
+    state.pointerLocked = document.pointerLockElement === canvas3d;
+  });
+  document.addEventListener("mousemove", (event) => {
+    if (!state.pointerLocked || !is3DActive()) return;
+    const sens = 0.0028;
+    state.cam3D.yaw -= (event.movementX || 0) * sens;
+    state.cam3D.pitch = Math.max(0.12, Math.min(1.35, state.cam3D.pitch + (event.movementY || 0) * sens));
+  });
+  canvas3d.addEventListener("wheel", (event) => {
+    if (!is3DActive()) return;
+    event.preventDefault();
+    state.cam3D.dist = Math.max(6, Math.min(26, state.cam3D.dist + Math.sign(event.deltaY) * 1.2));
+  }, { passive: false });
 }
 
 function toggle3DMode() {
@@ -7668,14 +7748,20 @@ function push3DEntities(out, map, isMob) {
 
 function render3DFrame() {
   const self = state.players.get(state.selfId);
+  update3DMovement();
   const entities = [];
   push3DEntities(entities, state.players, false);
   push3DEntities(entities, state.npcs, false);
   push3DEntities(entities, state.mobs, true);
+  // Centre the 3D camera on the player (falls back to the smoothed 2D camera).
+  const camX = self && Number.isFinite(self.renderX) ? self.renderX : state.camera.x / TILE_SIZE;
+  const camY = self && Number.isFinite(self.renderY) ? self.renderY : state.camera.y / TILE_SIZE;
   Render3D.frame({
-    camX: state.camera.x / TILE_SIZE,
-    camY: state.camera.y / TILE_SIZE,
-    zoom: getEffectiveWorldZoom(self),
+    camX,
+    camY,
+    yaw: state.cam3D.yaw,
+    pitch: state.cam3D.pitch,
+    dist: state.cam3D.dist,
     theme: state.worldTheme,
     TILE,
     chunkSize: CHUNK_SIZE,

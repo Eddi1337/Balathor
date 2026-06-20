@@ -562,6 +562,11 @@
           <button id="resumeButton" class="menu-close" type="button">Resume</button>
         </div>
 
+        <div class="menu-section">
+          <button id="menu3dToggle" class="menu-apply" type="button">Switch to 3D view</button>
+          <p class="menu-hint">3D: mouse looks around, WASD moves, scroll zooms. Same world &amp; characters.</p>
+        </div>
+
         <div id="modTimeControls" class="menu-section mod-time-controls hidden">
           <label>
             <span>World time</span>
@@ -602,7 +607,12 @@
     </div>
 
     <script type="importmap">
-      { "imports": { "three": "./vendor/three.module.js" } }
+      {
+        "imports": {
+          "three": "./vendor/three.module.js",
+          "three/addons/": "./vendor/three/addons/"
+        }
+      }
     </script>
     <script type="module" src="./src/render3d.mjs"></script>
     <script src="./src/techDungeonSprites.js"></script>

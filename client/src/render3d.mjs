@@ -29,6 +29,10 @@ import * as THREE from "three";
   let buildingGroup = null;  // one merged mesh per building
   let entityGroup = null;    // one figure Group per entity id
   let baseGround = null;
+  let sun = null;            // shadow-casting key light (frustum follows the player)
+  let sunGlow = null;        // additive sky sprite for a god-ray feel
+  let composer = null;       // optional postprocessing chain (bloom); null = direct render
+  let bloomPass = null;
 
   const chunkMeshes = new Map();    // "cx,cy" -> Mesh
   const buildingMeshes = new Map(); // "x,y"   -> Mesh
@@ -109,7 +113,10 @@ import * as THREE from "three";
     geo.setAttribute("color", new T.Float32BufferAttribute(b.col, 3));
     geo.setAttribute("normal", new T.Float32BufferAttribute(b.nor, 3));
     const mat = new T.MeshLambertMaterial({ vertexColors: true });
-    return new T.Mesh(geo, mat);
+    const mesh = new T.Mesh(geo, mat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    return mesh;
   }
 
   function disposeMesh(mesh) {
@@ -132,17 +139,37 @@ import * as THREE from "three";
       return false;
     }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = T.PCFSoftShadowMap;
+    renderer.toneMapping = T.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.06;
+    if ("outputColorSpace" in renderer) renderer.outputColorSpace = T.SRGBColorSpace;
 
     scene = new T.Scene();
-    camera = new T.PerspectiveCamera(48, 1, 0.1, 1400);
+    camera = new T.PerspectiveCamera(55, 1, 0.1, 1600);
 
-    scene.add(new T.HemisphereLight(0xffffff, 0x3a4636, 1.0));
-    const sun = new T.DirectionalLight(0xfff2d8, 0.85);
-    sun.position.set(80, 160, 60);
+    scene.add(new T.HemisphereLight(0xddeeff, 0x44503a, 0.85));
+    sun = new T.DirectionalLight(0xfff2d8, 2.0);
+    sun.position.set(60, 120, 40);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.bias = -0.0004;
+    sun.shadow.normalBias = 0.04;
+    const sc = sun.shadow.camera;
+    sc.near = 1; sc.far = 360; sc.left = -90; sc.right = 90; sc.top = 90; sc.bottom = -90;
+    sc.updateProjectionMatrix();
     scene.add(sun);
-    const rim = new T.DirectionalLight(0xbcd4ff, 0.25);
+    scene.add(sun.target);
+    const rim = new T.DirectionalLight(0xbcd4ff, 0.35);
     rim.position.set(-60, 50, -80);
     scene.add(rim);
+
+    // Additive sun glow in the sky — a soft radial sprite that reads as sunlight
+    // bleeding through (a cheap volumetric / god-ray cue; true god rays come later).
+    const glowTex = makeGlowTexture();
+    sunGlow = new T.Sprite(new T.SpriteMaterial({ map: glowTex, color: 0xfff0c0, transparent: true, blending: T.AdditiveBlending, depthWrite: false, depthTest: false }));
+    sunGlow.scale.set(120, 120, 1);
+    scene.add(sunGlow);
 
     terrainGroup = new T.Group();
     buildingGroup = new T.Group();
@@ -154,10 +181,54 @@ import * as THREE from "three";
     baseGround = new T.Mesh(new T.PlaneGeometry(4000, 4000), baseMat);
     baseGround.rotation.x = -Math.PI / 2;
     baseGround.position.y = -0.3;
+    baseGround.receiveShadow = true;
     scene.add(baseGround);
 
     ready = true;
+    setupPostprocessing(); // async; upgrades to a bloom composer if addons load
     return true;
+  }
+
+  // Soft radial-gradient texture for the additive sun sprite.
+  function makeGlowTexture() {
+    const c = document.createElement("canvas");
+    c.width = c.height = 128;
+    const g = c.getContext("2d");
+    const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    grad.addColorStop(0, "rgba(255,255,255,1)");
+    grad.addColorStop(0.25, "rgba(255,244,214,0.85)");
+    grad.addColorStop(1, "rgba(255,244,214,0)");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 128, 128);
+    const tex = new T.CanvasTexture(c);
+    if ("colorSpace" in tex) tex.colorSpace = T.SRGBColorSpace;
+    return tex;
+  }
+
+  // Optionally load postprocessing addons and build a bloom chain. Runs async so
+  // a missing/blocked addon just leaves `composer` null and we render directly.
+  async function setupPostprocessing() {
+    try {
+      const [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] = await Promise.all([
+        import("three/addons/postprocessing/EffectComposer.js"),
+        import("three/addons/postprocessing/RenderPass.js"),
+        import("three/addons/postprocessing/UnrealBloomPass.js"),
+        import("three/addons/postprocessing/OutputPass.js")
+      ]);
+      const w = (canvasEl && canvasEl.width) || 1280;
+      const h = (canvasEl && canvasEl.height) || 720;
+      const comp = new EffectComposer(renderer);
+      comp.addPass(new RenderPass(scene, camera));
+      bloomPass = new UnrealBloomPass(new T.Vector2(w, h), 0.55, 0.5, 0.82);
+      comp.addPass(bloomPass);
+      comp.addPass(new OutputPass());
+      comp.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      comp.setSize(w, h);
+      composer = comp;
+    } catch (err) {
+      composer = null;
+      if (window.console) console.warn("3D bloom postprocessing unavailable, rendering without it:", err && err.message);
+    }
   }
 
   function setSize(w, h) {
@@ -165,6 +236,7 @@ import * as THREE from "three";
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    if (composer) composer.setSize(w, h);
   }
 
   // ── per-theme atmosphere ────────────────────────────────────────────────────
@@ -181,6 +253,9 @@ import * as THREE from "three";
     scene.background = new T.Color(sky);
     scene.fog = new T.Fog(sky, fogNear, fogFar);
     if (baseGround) baseGround.material.color.setHex(ground);
+    const dark = theme === "sci-fi" || theme === "alien" || theme === "dungeon";
+    if (sun) sun.intensity = dark ? 0.9 : 2.0;
+    if (sunGlow) sunGlow.visible = !dark;
   }
 
   // ── terrain ─────────────────────────────────────────────────────────────────
@@ -369,6 +444,7 @@ import * as THREE from "three";
         fig = makeFigure(ent);
         fig.userData.kind = ent.kind;
         fig.userData.classId = ent.classId;
+        fig.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
         const sc = ent.scale || 1;
         fig.scale.setScalar(sc);
         entityGroup.add(fig);
@@ -393,12 +469,32 @@ import * as THREE from "three";
   }
 
   // ── camera ───────────────────────────────────────────────────────────────────
+  // Third-person orbit: the player stands at (tx,tz); the camera sits behind them
+  // along the mouse-controlled yaw, lifted by pitch. WASD is interpreted relative
+  // to this yaw by the caller, so "forward" always means "into the screen".
   function updateCamera(ctx) {
-    const zoom = Math.max(0.32, Math.min(1.0, ctx.zoom || 1));
-    const dist = 30 / zoom;
     const tx = ctx.camX, tz = ctx.camY;
-    camera.position.set(tx, dist * 0.82, tz + dist * 0.62);
-    camera.lookAt(tx, 0.6, tz - 1.5);
+    const yaw = Number(ctx.yaw) || 0;
+    const pitch = Math.max(0.12, Math.min(1.35, Number(ctx.pitch) || 0.62));
+    const dist = Math.max(6, Math.min(26, Number(ctx.dist) || 12));
+    const horiz = Math.cos(pitch) * dist;
+    camera.position.set(
+      tx - Math.sin(yaw) * horiz,
+      1.4 + Math.sin(pitch) * dist,
+      tz - Math.cos(yaw) * horiz
+    );
+    camera.lookAt(tx, 1.3, tz);
+  }
+
+  // Keep the shadow frustum + sun glow anchored near the player so shadows stay
+  // crisp and the sun reads in the sky over the current area.
+  function updateSun(ctx) {
+    if (!sun) return;
+    const tx = ctx.camX, tz = ctx.camY;
+    sun.target.position.set(tx, 0, tz);
+    sun.position.set(tx + 60, 130, tz + 40);
+    sun.target.updateMatrixWorld();
+    if (sunGlow) sunGlow.position.set(tx + 240, 180, tz + 160);
   }
 
   // ── public per-frame entry ────────────────────────────────────────────────────
@@ -410,7 +506,9 @@ import * as THREE from "three";
     syncBuildings(ctx);
     syncEntities(ctx);
     updateCamera(ctx);
-    renderer.render(scene, camera);
+    updateSun(ctx);
+    if (composer) composer.render();
+    else renderer.render(scene, camera);
   }
 
   // Drop cached world geometry (used on world/portal change so stale chunks/

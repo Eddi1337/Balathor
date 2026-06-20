@@ -142,6 +142,13 @@ input {
 }
 #view3dToggle.hidden { display: none; }
 
+.menu-hint {
+  margin: 6px 2px 0;
+  font-size: 11px;
+  line-height: 1.35;
+  opacity: 0.62;
+}
+
 body.theme-sci-fi .panel,
 body.theme-sci-fi .game-window,
 body.theme-sci-fi .chat,
