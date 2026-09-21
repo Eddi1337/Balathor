@@ -1,12 +1,9 @@
 "use strict";
 
 /**
- * Built-in Incoming Webhook (account login / signup). Override with DISCORD_AUTH_WEBHOOK_URL — never revoke
- * lightly; if this repo is public, rotate this webhook in Discord and update this constant.
+ * No default webhook is baked in. Set DISCORD_AUTH_WEBHOOK_URL to enable account
+ * login/signup notifications; without it, notifications are silently disabled.
  */
-const DEFAULT_DISCORD_AUTH_WEBHOOK_URL =
-  "https://discord.com/api/webhooks/1502756721146204291/V55qli-TkWmy3TiWm8WqPnfKDdyLPNUdGqHN_D7tSI-TcVgpnQLXczSt_tYxhfjDlL9F";
-
 const WEBHOOK_HOSTS = new Set(["discord.com", "discordapp.com"]);
 const FETCH_TIMEOUT_MS = 8000;
 
@@ -44,9 +41,9 @@ function resolveDiscordAuthWebhookUrl() {
     if (isAllowedDiscordWebhookUrl(fromEnv)) {
       return fromEnv;
     }
-    console.warn("Balathor: DISCORD_AUTH_WEBHOOK_URL invalid; using built-in Discord webhook");
+    console.warn("Balathor: DISCORD_AUTH_WEBHOOK_URL invalid; Discord notifications disabled");
   }
-  return DEFAULT_DISCORD_AUTH_WEBHOOK_URL;
+  return undefined;
 }
 
 /** Discord code span — strip characters that break formatting. */

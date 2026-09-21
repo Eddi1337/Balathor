@@ -163,24 +163,20 @@ Local development binds to `127.0.0.1` by default. If `3000` or `8080` is busy, 
 
 The game server posts to Discord whenever an account is **created** or someone **logs in** successfully (failed logins are not reported). Each message includes **username**, **event**, and **UTC time** (Discord embed timestamp plus text fields).
 
-**Default**
+**Setup**
 
-A built-in Incoming Webhook URL lives in `server/src/discordWebhook.js` so the server works without extra config.
-
-**Override**
-
-Set **`DISCORD_AUTH_WEBHOOK_URL`** if you want a different channel or if the repo/build is shared (webhook URLs are effectively secrets):
+No webhook is baked into the code. Set **`DISCORD_AUTH_WEBHOOK_URL`** to enable notifications (webhook URLs are effectively secrets — never commit one):
 
 ```bash
 export DISCORD_AUTH_WEBHOOK_URL='https://discord.com/api/webhooks/…'
 npm run server
 ```
 
-If the env value is invalid, the server warns and falls back to the built-in URL.
+If the env value is missing or invalid, the server warns (when invalid) and Discord notifications are simply disabled.
 
-**Create or rotate a webhook (Discord)**
+**Create a webhook (Discord)**
 
-Channel **Edit** → **Integrations** → **Webhooks** → **New webhook** (or regenerate URL on an existing webhook), then paste the URL into env or replace the constant in code.
+Channel **Edit** → **Integrations** → **Webhooks** → **New webhook**, then paste the URL into `DISCORD_AUTH_WEBHOOK_URL`.
 
 You can also run each application separately:
 
