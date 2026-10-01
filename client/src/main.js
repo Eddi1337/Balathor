@@ -5079,6 +5079,16 @@ function clearMovementInput() {
   state.input.engage = false;
   state.input.fire = false;
   state.input.repair = false;
+  // Also drop the 3D camera-relative intent. update3DMovement() re-derives the
+  // movement input from state.move3D every frame, so without this a key held while
+  // walking into a portal would keep being re-sent after the teleport and could
+  // immediately walk you back into the return portal (a teleport ping-pong).
+  if (state.move3D) {
+    state.move3D.up = false;
+    state.move3D.down = false;
+    state.move3D.left = false;
+    state.move3D.right = false;
+  }
   sendInput();
 }
 
