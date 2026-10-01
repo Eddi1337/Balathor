@@ -7911,8 +7911,10 @@ function handleSciFiTeleport(client) {
 
   client.lastSciFiAt = now;
   clearPlayerBoardedShips(client.player);
+  // Land just south of the return stargate (as walking through the hub gate does); landing
+  // on the gate itself immediately triggered portal travel straight back to the hub.
   client.player.x = STARGATE_LANDING.x;
-  client.player.y = STARGATE_LANDING.y;
+  client.player.y = STARGATE_LANDING.y + 3.2;
   client.player.moving = false;
   client.input = normalizeInput();
 
@@ -11811,6 +11813,7 @@ const SELF_FULL_RESEND_SNAPSHOTS = SNAPSHOT_RATE * 10;
 
 function resetSelfSnapshotDelta(client) {
   client._selfSnapState = null;
+  client._otherShipSent = null;
 }
 
 function selfSnapshotJson(client, snap) {
@@ -11818,6 +11821,7 @@ function selfSnapshotJson(client, snap) {
   if (!deltaState || deltaState.player !== client.player || deltaState.snapshots >= SELF_FULL_RESEND_SNAPSHOTS) {
     deltaState = { player: client.player, snapshots: 0, sent: new Map() };
     client._selfSnapState = deltaState;
+    client._otherShipSent = null; // periodic full resend covers other players' ships too
   }
   deltaState.snapshots += 1;
 
@@ -12013,6 +12017,41 @@ function emitSnapshot() {
     return json;
   };
   const joinEntityJson = (list) => list.map(entityJson).join(",");
+  // Other players' ship objects (~0.5KB each) rarely change while docked, so each viewer
+  // only receives a ship when it differs from what that viewer was sent last snapshot.
+  // Players new to the viewer always get it (the client rebuilds players that re-enter view).
+  const shipJsonCache = new Map();
+  const noShipJsonCache = new Map();
+  const shipJsonOf = (snap) => {
+    let json = shipJsonCache.get(snap);
+    if (json === undefined) {
+      json = JSON.stringify(snap.ship ?? null);
+      shipJsonCache.set(snap, json);
+    }
+    return json;
+  };
+  const entityJsonWithoutShip = (snap) => {
+    let json = noShipJsonCache.get(snap);
+    if (json === undefined) {
+      const { ship: _omitted, ...rest } = snap;
+      json = JSON.stringify(rest);
+      noShipJsonCache.set(snap, json);
+    }
+    return json;
+  };
+  const otherPlayersJson = (client, visible) => {
+    const previous = client._otherShipSent || null;
+    const next = new Map();
+    const parts = [];
+    for (let i = 1; i < visible.length; i += 1) {
+      const snap = visible[i];
+      const shipJson = shipJsonOf(snap);
+      next.set(snap.id, shipJson);
+      parts.push(previous && previous.get(snap.id) === shipJson ? entityJsonWithoutShip(snap) : entityJson(snap));
+    }
+    client._otherShipSent = next;
+    return parts.join(",");
+  };
   const mobSnapCache = new Map();
   const snapshotNow = Date.now();
   const worldTimeJson = JSON.stringify(getWorldTimeSnapshot());
@@ -12136,7 +12175,7 @@ function emitSnapshot() {
     sendRaw(client,
       `{"type":"snapshot","serverTime":${snapshotNow},"worldTime":${worldTimeJson},"tick":${tick},` +
       `"population":${totalOnline},"players":[${selfSnapshotJson(client, playersVisible[0])}` +
-      `${playersVisible.length > 1 ? "," : ""}${joinEntityJson(playersVisible.slice(1))}],` +
+      `${playersVisible.length > 1 ? "," : ""}${otherPlayersJson(client, playersVisible)}],` +
       `"npcs":[${joinEntityJson(npcs)}],"mobs":[${joinEntityJson(mobs)}],` +
       `"asteroidStates":${JSON.stringify(asteroidStates ?? null)},"caravans":${JSON.stringify(caravansForViewer ?? null)},` +
       `"chests":${JSON.stringify(visibleChests)},"groundItems":${JSON.stringify(visibleGround)},` +

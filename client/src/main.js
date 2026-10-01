@@ -16237,6 +16237,9 @@ function drawWorldThemedHelmet_Nautical(hx, hy, s, helColor, trimColor, fx, rank
 
 function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const isMod = !!entity.isMod;
+  // Declared up front: the sci-fi robot arm (drawn before the head) also reads it, and a
+  // later declaration threw a TDZ ReferenceError that aborted every frame in sci-fi worlds.
+  const equipRarityRank = Number(entity.equipRarityRank) || 0;
   // Players appear smaller when walking around inside a ship deck so the interior feels spacious
   const onShipDeck = Boolean(entity?.ship?.boarded && entity.ship?.deckMode) || Boolean(poseOpts?.insideShipDeck);
   const deckScale = onShipDeck ? 0.55 : 1;
@@ -16561,7 +16564,6 @@ function drawCharacter(entity, x, y, isNpc = false, poseOpts = null) {
   const bowHeadNudge = bowing ? Math.round(3 * s) : 0;
   const hx = bx - 2 * s + fx * s + (bowing ? Math.round(s) : 0);
   const hy = by - 7 * s + fy + headSitNudge + bowHeadNudge;
-  const equipRarityRank = Number(entity.equipRarityRank) || 0;
   if (sciFiNpc) {
     if (sciFiLook === "alien") {
       drawAlienHead(hx, hy, s, helmetColor, visorColor, fx);
