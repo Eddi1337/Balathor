@@ -6951,7 +6951,7 @@ function isActivityMessage(message) {
   if (!message || typeof message.type !== "string") {
     return false;
   }
-  if (message.type === "ping" || message.type === "view" || message.type === "requestChunks") {
+  if (message.type === "ping" || message.type === "view" || message.type === "requestChunks" || message.type === "resyncSelf") {
     return false;
   }
   if (message.type === "input") {
@@ -6981,6 +6981,11 @@ function handleMessage(client, raw) {
   }
   if (isActivityMessage(message)) {
     client.lastActivityAt = nowMs;
+  }
+
+  if (message.type === "resyncSelf") {
+    resetSelfSnapshotDelta(client);
+    return;
   }
 
   if (message.type === "ping") {
@@ -7663,6 +7668,7 @@ function joinWorld(client, message, savedCharacter = null) {
     saveClientCharacter(client);
   }
 
+  resetSelfSnapshotDelta(client);
   send(client, {
     type: "welcome",
     selfId: client.id,
@@ -11780,6 +11786,57 @@ function snapshotForEachCellInWorldRect(minX, maxX, minY, maxY, cellSize, visito
   }
 }
 
+/**
+ * Bulky self-only fields (inventory, equipment, ships, quests, ...) are only re-sent when
+ * their serialized value changes. The client merges snapshots into its existing player
+ * object, so an omitted field simply keeps its last value. A full copy goes out on the
+ * first snapshot for a character, every SELF_FULL_RESEND_SNAPSHOTS, and on request.
+ */
+const SELF_DELTA_FIELDS = [
+  "ship",
+  "ships",
+  "equipment",
+  "inventory",
+  "quests",
+  "professions",
+  "minigameStats",
+  "stats",
+  "talents",
+  "abilityBar",
+  "unlockedWaypoints",
+  "ownedFurniture"
+];
+const SELF_DELTA_FIELD_SET = new Set(SELF_DELTA_FIELDS);
+const SELF_FULL_RESEND_SNAPSHOTS = SNAPSHOT_RATE * 10;
+
+function resetSelfSnapshotDelta(client) {
+  client._selfSnapState = null;
+}
+
+function selfSnapshotJson(client, snap) {
+  let deltaState = client._selfSnapState;
+  if (!deltaState || deltaState.player !== client.player || deltaState.snapshots >= SELF_FULL_RESEND_SNAPSHOTS) {
+    deltaState = { player: client.player, snapshots: 0, sent: new Map() };
+    client._selfSnapState = deltaState;
+  }
+  deltaState.snapshots += 1;
+
+  const base = {};
+  for (const key of Object.keys(snap)) {
+    if (!SELF_DELTA_FIELD_SET.has(key)) base[key] = snap[key];
+  }
+  let json = JSON.stringify(base).slice(0, -1);
+  for (const field of SELF_DELTA_FIELDS) {
+    const value = snap[field];
+    if (value === undefined) continue;
+    const fieldJson = JSON.stringify(value);
+    if (deltaState.sent.get(field) === fieldJson) continue;
+    deltaState.sent.set(field, fieldJson);
+    json += `,${JSON.stringify(field)}:${fieldJson}`;
+  }
+  return `${json}}`;
+}
+
 function broadcastSnapshot() {
   try {
     emitSnapshot();
@@ -12078,7 +12135,8 @@ function emitSnapshot() {
     const party = social ? social.getPartyView(client) : null;
     sendRaw(client,
       `{"type":"snapshot","serverTime":${snapshotNow},"worldTime":${worldTimeJson},"tick":${tick},` +
-      `"population":${totalOnline},"players":[${joinEntityJson(playersVisible)}],` +
+      `"population":${totalOnline},"players":[${selfSnapshotJson(client, playersVisible[0])}` +
+      `${playersVisible.length > 1 ? "," : ""}${joinEntityJson(playersVisible.slice(1))}],` +
       `"npcs":[${joinEntityJson(npcs)}],"mobs":[${joinEntityJson(mobs)}],` +
       `"asteroidStates":${JSON.stringify(asteroidStates ?? null)},"caravans":${JSON.stringify(caravansForViewer ?? null)},` +
       `"chests":${JSON.stringify(visibleChests)},"groundItems":${JSON.stringify(visibleGround)},` +

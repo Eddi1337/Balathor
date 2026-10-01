@@ -1593,7 +1593,42 @@ function scheduleReconnect(wasJoined) {
   }, delay);
 }
 
+// The server only re-sends bulky self fields (inventory, equipment, ships, quests, ...)
+// when they change, so inventory / panel DOM is rebuilt only when a snapshot carried
+// such a field, a cheap self stat changed, any other server message arrived (it may have
+// changed UI state), or as a once-a-second backstop.
+const SELF_UI_DELTA_FIELDS = ["ship", "ships", "equipment", "inventory", "quests", "professions", "minigameStats", "stats", "talents", "abilityBar", "unlockedWaypoints", "ownedFurniture"];
+const SELF_UI_SCALAR_FIELDS = ["gold", "level", "xp", "xpToNext", "statPoints", "talentPoints", "hp", "maxHp", "moveSpeed", "hasMount", "homeBuildingKey"];
+const SELF_UI_BACKSTOP_MS = 1000;
+const SELF_RESYNC_MIN_INTERVAL_MS = 2000;
+
+function selfSnapshotNeedsUiRender(selfSnap, prevSelf) {
+  if (state._selfUiDirty) return true;
+  if (performance.now() - (state._selfUiRenderedAt || 0) >= SELF_UI_BACKSTOP_MS) return true;
+  if (!selfSnap || !prevSelf) return true;
+  for (const field of SELF_UI_DELTA_FIELDS) {
+    if (field in selfSnap) return true;
+  }
+  for (const field of SELF_UI_SCALAR_FIELDS) {
+    if (selfSnap[field] !== prevSelf[field]) return true;
+  }
+  return false;
+}
+
+/** Ask for a full self snapshot if our copy is missing the bulky fields (e.g. after a local reset). */
+function requestSelfResyncIfIncomplete() {
+  const self = state.players.get(state.selfId);
+  if (!self || Array.isArray(self.inventory)) return;
+  const now = performance.now();
+  if (now - (state._selfResyncRequestedAt || 0) < SELF_RESYNC_MIN_INTERVAL_MS) return;
+  state._selfResyncRequestedAt = now;
+  send({ type: "resyncSelf" });
+}
+
 function handleServerMessage(message) {
+  if (message.type !== "snapshot" && message.type !== "pong" && message.type !== "chunk") {
+    state._selfUiDirty = true;
+  }
   if (message.type === "pong") {
     const t = Number(message.t);
     if (Number.isFinite(t)) {
@@ -1797,7 +1832,11 @@ function handleServerMessage(message) {
     }
     applyWorldTime(message.worldTime);
     state.population = message.population;
+    const selfSnap = Array.isArray(message.players) ? message.players.find((p) => p.id === state.selfId) : null;
+    const prevSelf = state.players.get(state.selfId);
+    const prevSelfScalars = prevSelf ? Object.fromEntries(SELF_UI_SCALAR_FIELDS.map((f) => [f, prevSelf[f]])) : null;
     applySnapshot(message.players);
+    requestSelfResyncIfIncomplete();
     applyNpcSnapshot(message.npcs || []);
     applyMobSnapshot(message.mobs || []);
     applyCaravanSnapshot(message.caravans || []);
@@ -1812,18 +1851,24 @@ function handleServerMessage(message) {
     state.groundItems = message.groundItems || [];
     updateSelfInventory();
     syncWorldThemeFromSelf();
-    if (state.activeWindow === "equipment") renderEquipment();
-    if (state.activeWindow === "talent") renderTalentPanel();
-    if (state.activeWindow === "quests") renderQuestPanel();
-    renderBags();
-    renderHouseChestPanelIfOpen();
+    if (selfSnapshotNeedsUiRender(selfSnap, prevSelfScalars)) {
+      state._selfUiDirty = false;
+      state._selfUiRenderedAt = performance.now();
+      if (state.activeWindow === "equipment") renderEquipment();
+      if (state.activeWindow === "talent") renderTalentPanel();
+      if (state.activeWindow === "quests") renderQuestPanel();
+      renderBags();
+      renderHouseChestPanelIfOpen();
+      renderShop();
+      if (state.activeWindow === "trader") {
+        renderTraderStock();
+        renderTraderSellSlots();
+      }
+    } else {
+      renderNearbyLoot();
+    }
     renderAbilityBar();
     renderPotionSlot();
-    renderShop();
-    if (state.activeWindow === "trader") {
-      renderTraderStock();
-      renderTraderSellSlots();
-    }
     return;
   }
 

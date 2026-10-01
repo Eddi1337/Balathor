@@ -309,6 +309,7 @@ async function joinViaWebSocket(port, account) {
     let sentDropEquipment = false;
     let sentPickupGroundItem = false;
     const messages = [];
+    const mergedPlayers = new Map();
     const timeout = setTimeout(() => {
       socket.destroy();
       reject(new Error("WebSocket smoke test timed out"));
@@ -350,7 +351,7 @@ async function joinViaWebSocket(port, account) {
       const decoded = decodeServerFrames(buffer);
       buffer = decoded.remaining;
       for (const payload of decoded.payloads) {
-        messages.push(JSON.parse(payload.toString("utf8")));
+        messages.push(mergeSnapshotPlayers(JSON.parse(payload.toString("utf8")), mergedPlayers));
       }
 
       if (!sentHello && messages.some((message) => message.type === "auth" && message.ok && message.hasCharacter === false)) {
@@ -509,6 +510,7 @@ async function loginSavedCharacter(port, username, password) {
     let buffer = Buffer.alloc(0);
     let upgraded = false;
     const messages = [];
+    const mergedPlayers = new Map();
     const timeout = setTimeout(() => {
       socket.destroy();
       reject(new Error("Saved character login timed out"));
@@ -550,7 +552,7 @@ async function loginSavedCharacter(port, username, password) {
       const decoded = decodeServerFrames(buffer);
       buffer = decoded.remaining;
       for (const payload of decoded.payloads) {
-        messages.push(JSON.parse(payload.toString("utf8")));
+        messages.push(mergeSnapshotPlayers(JSON.parse(payload.toString("utf8")), mergedPlayers));
       }
 
       if (
@@ -635,4 +637,20 @@ function decodeServerFrames(buffer) {
     payloads,
     remaining: buffer.subarray(offset)
   };
+}
+
+/**
+ * The server omits unchanged bulky self fields from snapshots; like the real client, fold
+ * each snapshot's players into the last known state so assertions see the merged view.
+ */
+function mergeSnapshotPlayers(message, mergedPlayers) {
+  if (message?.type !== "snapshot" || !Array.isArray(message.players)) {
+    return message;
+  }
+  message.players = message.players.map((player) => {
+    const merged = Object.assign(mergedPlayers.get(player.id) || {}, player);
+    mergedPlayers.set(player.id, merged);
+    return structuredClone(merged);
+  });
+  return message;
 }
