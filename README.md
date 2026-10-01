@@ -208,7 +208,7 @@ From PowerShell, run:
 That launches 500 clients against:
 
 ```text
-wss://balathor.edmundmurphy.com/ws
+wss://balathor.click/ws
 ```
 
 Add `--attack` when you want combat traffic too:
@@ -303,10 +303,16 @@ Client house sprites use Kenney's `RPG Base` asset pack under CC0. The copied li
 The packaged client defaults to:
 
 ```text
-wss://balathor.edmundmurphy.com/ws
+wss://balathor.click/ws
 ```
 
 For local development, `npm run dev` injects the local server URL into `/config.json`.
+
+The web client container defaults to `GAME_SERVER_URL=same-origin`: browsers connect to `wss://<site>/ws` on whatever host served the page, and the client container forwards `/ws` to the game server set in `GAME_SERVER_PROXY_URL` (production: `http://balathor-server:8080`). The site's reverse proxy therefore only needs one route to the client container, with WebSocket support enabled.
+
+### Server load tuning
+
+Defaults favour a light host: `TICK_RATE=30`, `SNAPSHOT_RATE=15`, `AI_TICK_DIVISOR=2`. Raise them (for example `TICK_RATE=60 SNAPSHOT_RATE=20 AI_TICK_DIVISOR=3`) if the host has CPU to spare.
 
 The world is chunked into 16x16 tile regions. The server generates chunks deterministically from world coordinates, with a central social plaza and mostly forest terrain outside the hub.
 

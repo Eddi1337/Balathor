@@ -725,7 +725,15 @@ function getGroupDungeonTileAt(x, y) {
  * Returns true if the coordinate is inside any group dungeon plane (active or not).
  * Used by worldForPosition to label these coordinates as "dungeon" theme.
  */
+// Every instance plane sits on the GROUP_DUNGEON_ORIGIN_Y row, so a band check rejects
+// almost every overworld lookup before touching the per-instance loop.
+const GROUP_DUNGEON_MAX_HALF_H = Math.max(...GROUP_DUNGEON_DEFS.map((def) => def.halfH)) + 2;
+const GROUP_DUNGEON_MAX_HALF_W = Math.max(...GROUP_DUNGEON_DEFS.map((def) => def.halfW)) + 2;
+const GROUP_DUNGEON_MAX_X = GROUP_DUNGEON_ORIGIN_X + (GROUP_DUNGEON_DEFS.length * GROUP_DUNGEON_SLOTS - 1) * GROUP_DUNGEON_SPACING + GROUP_DUNGEON_MAX_HALF_W;
+
 function pointInsideGroupDungeon(x, y) {
+  if (Math.abs(y - GROUP_DUNGEON_ORIGIN_Y) > GROUP_DUNGEON_MAX_HALF_H) return false;
+  if (x < GROUP_DUNGEON_ORIGIN_X - GROUP_DUNGEON_MAX_HALF_W || x > GROUP_DUNGEON_MAX_X) return false;
   for (let d = 0; d < GROUP_DUNGEON_DEFS.length; d += 1) {
     const def = GROUP_DUNGEON_DEFS[d];
     for (let slot = 0; slot < GROUP_DUNGEON_SLOTS; slot += 1) {

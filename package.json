@@ -14,7 +14,7 @@
     "test:mobile": "node --test tests/mobile-touch.mjs",
     "stress": "node tools/stress.mjs",
     "generate:sci-fi-station": "node tools/generateSciFiStation.mjs",
-    "stress:remote": "node tools/stress.mjs --url wss://balathor.edmundmurphy.com/ws",
+    "stress:remote": "node tools/stress.mjs --url wss://balathor.click/ws",
     "server:docker:build": "docker build -t balathor-server ./server",
     "server:docker:run": "docker run --rm --name balathor-server -p 8080:8080 balathor-server",
     "client:docker:build": "docker build -t balathor-client ./client",

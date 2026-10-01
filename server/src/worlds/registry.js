@@ -150,9 +150,20 @@ for (const world of RESOLVE_ORDER) {
 /**
  * Dungeon instances use dynamic ids `dungeon:<dungeonId>`.
  */
+const DUNGEON_WORLD_CACHE = new Map();
+
 function resolveDungeonWorld(x, y) {
   const dungeon = getDungeonByInteriorPoint(x, y);
   if (!dungeon) return null;
+  let world = DUNGEON_WORLD_CACHE.get(dungeon);
+  if (!world) {
+    world = buildDungeonWorld(dungeon);
+    DUNGEON_WORLD_CACHE.set(dungeon, world);
+  }
+  return world;
+}
+
+function buildDungeonWorld(dungeon) {
   const id = `dungeon:${dungeon.id}`;
   return {
     id,

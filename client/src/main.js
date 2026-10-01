@@ -401,7 +401,9 @@ const TALENT_TREES = {
     ]}
   ]
 };
-const PRODUCTION_SERVER_URL = "wss://balathor.edmundmurphy.com/ws";
+const PRODUCTION_SERVER_URL = "wss://balathor.click/ws";
+/** Hosts that no longer serve the realm; saved URLs pointing at them are discarded. */
+const RETIRED_SERVER_HOSTS = new Set(["balathor.edmundmurphy.com"]);
 const SERVER_URL_STORAGE_KEY = "balathor.serverUrl";
 const DEBUG_HUD_STORAGE_KEY  = "balathor.debugHud";
 const SAVED_CREDS_COOKIE     = "balathor_creds";
@@ -1439,7 +1441,7 @@ async function start() {
     }
     setStatus("Loading realm config");
     state.config = await loadConfig();
-    const serverUrl = localStorage.getItem(SERVER_URL_STORAGE_KEY) || state.config.gameServerUrl;
+    const serverUrl = readSavedServerUrl() || state.config.gameServerUrl;
     setStatus("Connecting to realm");
     connect(serverUrl);
   } catch (error) {
@@ -1456,7 +1458,7 @@ async function loadConfig() {
     };
   }
 
-  const fallbackUrl = PRODUCTION_SERVER_URL;
+  const fallbackUrl = sameOriginServerUrl() || PRODUCTION_SERVER_URL;
   const sources = ["/config.json", "./config.local.json"];
 
   for (const source of sources) {
@@ -1474,6 +1476,27 @@ async function loadConfig() {
   }
 
   return { gameServerUrl: fallbackUrl };
+}
+
+/** ws(s)://<page host>/ws when the page itself is served over http(s); the client host proxies it. */
+function sameOriginServerUrl() {
+  if (location.protocol !== "http:" && location.protocol !== "https:") return null;
+  if (!location.host) return null;
+  return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+}
+
+function readSavedServerUrl() {
+  let saved = null;
+  try {
+    saved = localStorage.getItem(SERVER_URL_STORAGE_KEY);
+    if (saved && RETIRED_SERVER_HOSTS.has(new URL(saved).hostname.toLowerCase())) {
+      localStorage.removeItem(SERVER_URL_STORAGE_KEY);
+      return null;
+    }
+  } catch {
+    return null;
+  }
+  return saved;
 }
 
 function fetchWithTimeout(url, options, timeoutMs) {
@@ -3873,7 +3896,7 @@ function wireUi() {
     clearTimeout(state._reconnectTimer);
     state._manualReconnectRequired = false;
     reconnectButton.classList.add("hidden");
-    const url = state.activeServerUrl || state.config?.gameServerUrl || PRODUCTION_SERVER_URL;
+    const url = state.activeServerUrl || state.config?.gameServerUrl || sameOriginServerUrl() || PRODUCTION_SERVER_URL;
     connect(url);
   });
 
@@ -7542,7 +7565,7 @@ function openMenu() {
   state.menuOpen = true;
   menu.classList.remove("hidden");
   menu.setAttribute("aria-hidden", "false");
-  menuServerUrlInput.value = state.activeServerUrl || localStorage.getItem(SERVER_URL_STORAGE_KEY) || state.config.gameServerUrl;
+  menuServerUrlInput.value = state.activeServerUrl || readSavedServerUrl() || state.config.gameServerUrl;
   menuServerUrlInput.focus();
   menuServerUrlInput.select();
   clearMovementInput();

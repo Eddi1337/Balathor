@@ -1736,14 +1736,37 @@ function getProceduralSettlementTile(x, y) {
 
 // ---------------------------------------------------------------------------
 
+// Coarse grid of camps by footprint (size + 2 apron) so per-tile lookups only test nearby
+// camps. Buckets keep ENEMY_CAMPS order, so the first matching camp still wins.
+const CAMP_GRID_CELL = 32;
+const CAMP_GRID = new Map();
+for (const camp of ENEMY_CAMPS) {
+  const reach = camp.size + 2;
+  for (let cx = Math.floor((camp.x - reach) / CAMP_GRID_CELL); cx <= Math.floor((camp.x + reach) / CAMP_GRID_CELL); cx += 1) {
+    for (let cy = Math.floor((camp.y - reach) / CAMP_GRID_CELL); cy <= Math.floor((camp.y + reach) / CAMP_GRID_CELL); cy += 1) {
+      const key = `${cx},${cy}`;
+      let bucket = CAMP_GRID.get(key);
+      if (!bucket) {
+        bucket = [];
+        CAMP_GRID.set(key, bucket);
+      }
+      bucket.push(camp);
+    }
+  }
+}
+
 function getEnemyCampTile(x, y) {
+  const camps = CAMP_GRID.get(`${Math.floor(x / CAMP_GRID_CELL)},${Math.floor(y / CAMP_GRID_CELL)}`);
+  if (!camps) {
+    return null;
+  }
   const tix = Math.floor(x);
   const tiy = Math.floor(y);
   if (isNearHubStargatePortalClearance(tix, tiy) || isPortalCourtyardStoneTile(tix, tiy)) {
     return null;
   }
 
-  for (const camp of ENEMY_CAMPS) {
+  for (const camp of camps) {
     const dx  = x - camp.x;
     const dy  = y - camp.y;
     const adx = Math.abs(dx);
@@ -2517,8 +2540,33 @@ function getBiomeForTile(x, y) {
   return getBiome(x + wx, y + wy);
 }
 
+// Tile generation is a pure function of (x, y) (chunk workers rely on that too), and the
+// simulation re-samples the same tiles constantly for collision / swimming checks. Keep a
+// two-generation memo so hot tiles stay cached while memory stays bounded.
+const TILE_CACHE_GENERATION_SIZE = 150_000;
+const TILE_CACHE_Y_LIMIT = 2 ** 21;
+let tileCacheCurrent = new Map();
+let tileCachePrevious = new Map();
+
 function generateTile(x, y) {
-  return generateExteriorTile(x, y);
+  if (!Number.isInteger(x) || !Number.isInteger(y) || y <= -TILE_CACHE_Y_LIMIT || y >= TILE_CACHE_Y_LIMIT) {
+    return generateExteriorTile(x, y);
+  }
+  const key = x * (TILE_CACHE_Y_LIMIT * 2) + y;
+  let tile = tileCacheCurrent.get(key);
+  if (tile !== undefined) {
+    return tile;
+  }
+  tile = tileCachePrevious.get(key);
+  if (tile === undefined) {
+    tile = generateExteriorTile(x, y);
+  }
+  if (tileCacheCurrent.size >= TILE_CACHE_GENERATION_SIZE) {
+    tileCachePrevious = tileCacheCurrent;
+    tileCacheCurrent = new Map();
+  }
+  tileCacheCurrent.set(key, tile);
+  return tile;
 }
 
 function applyHandmadeOverlay(x, y, baseTile) {
@@ -2876,7 +2924,7 @@ function generateChunk(cx, cy) {
 
   for (let y = 0; y < CHUNK_SIZE; y += 1) {
     for (let x = 0; x < CHUNK_SIZE; x += 1) {
-      tiles.push(generateTile(startX + x, startY + y));
+      tiles.push(generateExteriorTile(startX + x, startY + y)); // bypass the hot-tile memo; chunks are cached whole
     }
   }
 

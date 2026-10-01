@@ -9,7 +9,7 @@ COPY dev-server.js index.html styles.css ./
 
 ENV CLIENT_HOST=0.0.0.0
 ENV CLIENT_PORT=3000
-ENV GAME_SERVER_URL=wss://balathor.edmundmurphy.com/ws
+ENV GAME_SERVER_URL=same-origin
 
 EXPOSE 3000
 

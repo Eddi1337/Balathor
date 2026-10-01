@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
 
-const GAME_SERVER_URL = process.env.GAME_SERVER_URL || "wss://balathor.edmundmurphy.com/ws";
+const GAME_SERVER_URL = process.env.GAME_SERVER_URL || "wss://balathor.click/ws";
 
 // Chromium cannot fork a sandboxed renderer from a UNC path (\\server\...).
 // This happens when the exe is run directly from the WSL filesystem on Windows.

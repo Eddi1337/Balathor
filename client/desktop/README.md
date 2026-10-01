@@ -20,7 +20,7 @@ npm run build:win
 By default the packaged client points at:
 
 ```text
-wss://balathor.edmundmurphy.com/ws
+wss://balathor.click/ws
 ```
 
 Override that during development with:

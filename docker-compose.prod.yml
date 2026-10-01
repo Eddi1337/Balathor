@@ -23,7 +23,12 @@ services:
     environment:
       CLIENT_HOST: 0.0.0.0
       CLIENT_PORT: 3000
-      GAME_SERVER_URL: wss://balathor.edmundmurphy.com/ws
+      # Browsers connect to wss://<site>/ws on the client's own domain; the client
+      # container forwards it to the game server over the compose network.
+      GAME_SERVER_URL: same-origin
+      GAME_SERVER_PROXY_URL: http://balathor-server:8080
+    depends_on:
+      - balathor-server
     ports:
       - "8083:3000"
     healthcheck:

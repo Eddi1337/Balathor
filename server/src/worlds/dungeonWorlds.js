@@ -359,8 +359,47 @@ function pointInsideDungeon(dungeon, x, y) {
   return Math.abs(dx) <= reachX && Math.abs(dy) <= reachY;
 }
 
+// Coarse grid over dungeon interiors so per-tile world lookups (hot: tile generation,
+// collision, snapshots) avoid scanning every dungeon. Buckets keep definition order so the
+// first matching dungeon wins, exactly like the old linear find().
+const DUNGEON_GRID_CELL = 64;
+const DUNGEON_GRID = new Map();
+let dungeonMinX = Infinity;
+let dungeonMinY = Infinity;
+let dungeonMaxX = -Infinity;
+let dungeonMaxY = -Infinity;
+for (const dungeon of DUNGEON_DEFINITIONS) {
+  const reachX = dungeon.halfW + DUNGEON_EDGE_MARGIN;
+  const reachY = dungeon.halfH + DUNGEON_EDGE_MARGIN;
+  const minX = dungeon.interiorX - reachX;
+  const maxX = dungeon.interiorX + reachX;
+  const minY = dungeon.interiorY - reachY;
+  const maxY = dungeon.interiorY + reachY;
+  dungeonMinX = Math.min(dungeonMinX, minX);
+  dungeonMinY = Math.min(dungeonMinY, minY);
+  dungeonMaxX = Math.max(dungeonMaxX, maxX);
+  dungeonMaxY = Math.max(dungeonMaxY, maxY);
+  for (let cx = Math.floor(minX / DUNGEON_GRID_CELL); cx <= Math.floor(maxX / DUNGEON_GRID_CELL); cx += 1) {
+    for (let cy = Math.floor(minY / DUNGEON_GRID_CELL); cy <= Math.floor(maxY / DUNGEON_GRID_CELL); cy += 1) {
+      const key = `${cx},${cy}`;
+      let bucket = DUNGEON_GRID.get(key);
+      if (!bucket) {
+        bucket = [];
+        DUNGEON_GRID.set(key, bucket);
+      }
+      bucket.push(dungeon);
+    }
+  }
+}
+
 function getDungeonByInteriorPoint(x, y) {
-  return DUNGEON_DEFINITIONS.find((dungeon) => pointInsideDungeon(dungeon, x, y)) || null;
+  if (!(x >= dungeonMinX && x <= dungeonMaxX && y >= dungeonMinY && y <= dungeonMaxY)) return null;
+  const bucket = DUNGEON_GRID.get(`${Math.floor(x / DUNGEON_GRID_CELL)},${Math.floor(y / DUNGEON_GRID_CELL)}`);
+  if (!bucket) return null;
+  for (let i = 0; i < bucket.length; i += 1) {
+    if (pointInsideDungeon(bucket[i], x, y)) return bucket[i];
+  }
+  return null;
 }
 
 function getDungeonAtEntrance(x, y, maxDist = DUNGEON_INTERACT_RADIUS) {

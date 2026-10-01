@@ -6,7 +6,7 @@
  *   node tools/stress.mjs [options]
  *
  * Options:
- *   --url      ws://host:port/ws   Target server   (default: wss://balathor.edmundmurphy.com/ws)
+ *   --url      ws://host:port/ws   Target server   (default: wss://balathor.click/ws)
  *   --clients N                    Number of clients (default: 100)
  *   --bots     N                   Alias for --clients
  *   --duration S                   Run duration    (default: 300 seconds)
@@ -20,7 +20,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 const { values: argv } = parseArgs({
   options: {
-    url:           { type: "string",  default: "wss://balathor.edmundmurphy.com/ws" },
+    url:           { type: "string",  default: "wss://balathor.click/ws" },
     clients:       { type: "string" },
     bots:          { type: "string" },
     duration:      { type: "string",  default: "300" },

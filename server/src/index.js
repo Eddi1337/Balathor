@@ -207,9 +207,12 @@ function readIntEnv(name, fallback, min, max) {
   return Math.max(min, Math.min(max, Math.floor(value)));
 }
 
-const TICK_RATE = readRateEnv("TICK_RATE", 60, 20, 120);
-const SNAPSHOT_RATE = Math.min(TICK_RATE, readRateEnv("SNAPSHOT_RATE", 20, 5, 60));
-const AI_TICK_DIVISOR = readIntEnv("AI_TICK_DIVISOR", 3, 1, 6);
+// Defaults favour low host load: 30 Hz simulation, 15 Hz snapshots (every other tick, so
+// spacing is even) and world AI at 15 Hz. The client predicts the local player and eases
+// remote entities, so this reads the same as 60/20 while costing roughly half the CPU.
+const TICK_RATE = readRateEnv("TICK_RATE", 30, 20, 120);
+const SNAPSHOT_RATE = Math.min(TICK_RATE, readRateEnv("SNAPSHOT_RATE", 15, 5, 60));
+const AI_TICK_DIVISOR = readIntEnv("AI_TICK_DIVISOR", 2, 1, 6);
 const CPU_COUNT = typeof os.availableParallelism === "function" ? os.availableParallelism() : os.cpus().length;
 const CHUNK_WORKER_COUNT = readIntEnv("CHUNK_WORKERS", Math.max(1, Math.min(4, CPU_COUNT - 1)), 0, Math.max(1, CPU_COUNT));
 const MAX_CONNECTED_CLIENTS = Number(process.env.MAX_CLIENTS || 500);
@@ -323,6 +326,7 @@ const TOWN_ARCHER_IDS = Object.freeze([
 const GATEKEEPER_RANGE = 20;
 const GATEKEEPER_NEAR_TOWN_RADIUS = HUB_TOWN_GRASS_RADIUS + 84;
 const GATEKEEPER_ATTACK_COOLDOWN_MS = 1150;
+const GATEKEEPER_IDLE_SCAN_MS = 250;
 const GATEKEEPER_ARROW_DAMAGE = 34;
 // Sword guard melee constants
 const SWORD_GUARD_AGGRO_RANGE = 22;   // tiles: guards spot mobs within this radius
@@ -3002,10 +3006,10 @@ function serializeShipForPlayer(player, ship = player?.ship) {
 }
 
 /** Minimal ship payload for other players — full ship state is only sent to the owner. */
-function serializeShipForViewer(player, ship, viewerId) {
+function serializeShipForViewer(player, ship, viewerId, viewerPlayer = undefined) {
   if (!ship) return null;
-  let viewer = null;
-  if (viewerId) {
+  let viewer = viewerPlayer === undefined ? null : viewerPlayer;
+  if (viewerId && viewerPlayer === undefined) {
     for (const client of clients.values()) {
       if (client.player?.id === viewerId) {
         viewer = client.player;
@@ -5180,18 +5184,23 @@ function addMobToHomeBuckets(buckets, mob) {
     buckets.set(key, bucket);
   }
   bucket.push(mob);
+  mob._homeBucketKey = key;
 }
 
 function removeMobFromHomeBuckets(buckets, mob) {
-  const world = worldForPosition(mob.homeX, mob.homeY);
-  const key = mobSpatialKeyFor(world, mob.homeX, mob.homeY);
+  const key = mob._homeBucketKey || mobSpatialKeyFor(worldForPosition(mob.homeX, mob.homeY), mob.homeX, mob.homeY);
   const bucket = buckets.get(key);
   if (!bucket) return;
   const idx = bucket.indexOf(mob);
   if (idx !== -1) bucket.splice(idx, 1);
 }
 
-function forEachMobHomeInBounds(bounds, visitor) {
+/**
+ * Visit every mob whose home bucket overlaps `bounds`. Each mob lives in exactly one bucket,
+ * so de-duplication only needs to track visited cells (passed in when several bounds are
+ * combined) instead of building a Set of every mob id.
+ */
+function forEachMobHomeInBounds(bounds, visitor, visitedCells = null) {
   if (!bounds) return;
   const cellSize = MOB_SPATIAL_CELL_SIZE;
   const minCx = Math.floor((bounds.minX - MOB_SPATIAL_QUERY_PAD) / cellSize);
@@ -5201,13 +5210,18 @@ function forEachMobHomeInBounds(bounds, visitor) {
   const worlds = typeof bounds.world === "string" && bounds.world
     ? [bounds.world]
     : WORLD_IDS_WITH_MOBS;
-  for (let cx = minCx; cx <= maxCx; cx += 1) {
-    for (let cy = minCy; cy <= maxCy; cy += 1) {
-      for (const world of worlds) {
-        const bucket = mobHomeBuckets.get(`${world}|${cx},${cy}`);
+  for (const world of worlds) {
+    for (let cx = minCx; cx <= maxCx; cx += 1) {
+      for (let cy = minCy; cy <= maxCy; cy += 1) {
+        const key = `${world}|${cx},${cy}`;
+        const bucket = mobHomeBuckets.get(key);
         if (!bucket) continue;
-        for (const mob of bucket) {
-          visitor(mob);
+        if (visitedCells) {
+          if (visitedCells.has(key)) continue;
+          visitedCells.add(key);
+        }
+        for (let i = 0; i < bucket.length; i += 1) {
+          visitor(bucket[i]);
         }
       }
     }
@@ -5215,17 +5229,12 @@ function forEachMobHomeInBounds(bounds, visitor) {
 }
 
 function forEachMobCandidate(boundsArray, visitor) {
-  const seen = new Set();
+  const visitedCells = new Set();
   for (const bounds of boundsArray || []) {
-    forEachMobHomeInBounds(bounds, (mob) => {
-      if (seen.has(mob.id)) return;
-      seen.add(mob.id);
-      visitor(mob);
-    });
+    forEachMobHomeInBounds(bounds, visitor, visitedCells);
   }
   for (const mob of forceSimulateMobs) {
-    if (seen.has(mob.id)) continue;
-    seen.add(mob.id);
+    if (mob._homeBucketKey && visitedCells.has(mob._homeBucketKey)) continue;
     visitor(mob);
   }
 }
@@ -5238,16 +5247,11 @@ function forEachMobNear(x, y, radius, visitor) {
     maxY: y + radius,
     world: worldForPosition(x, y)
   };
-  const seen = new Set();
-  forEachMobHomeInBounds(bounds, (mob) => {
-    if (seen.has(mob.id)) return;
-    seen.add(mob.id);
-    visitor(mob);
-  });
+  const visitedCells = forceSimulateMobs.size > 0 ? new Set() : null;
+  forEachMobHomeInBounds(bounds, visitor, visitedCells);
   for (const mob of forceSimulateMobs) {
-    if (seen.has(mob.id)) continue;
+    if (mob._homeBucketKey && visitedCells.has(mob._homeBucketKey)) continue;
     if (Math.abs(mob.x - x) > radius + MOB_SPATIAL_QUERY_PAD || Math.abs(mob.y - y) > radius + MOB_SPATIAL_QUERY_PAD) continue;
-    seen.add(mob.id);
     visitor(mob);
   }
 }
@@ -11813,16 +11817,27 @@ function emitSnapshot() {
   }
 
   const playerSnapCache = new Map();
+  const snapshotViewerById = new Map();
+  for (const c of joinedClients) {
+    snapshotViewerById.set(c.player.id, c.player);
+  }
 
   // Build a compact representation for a player entity (cached per snapshot pass)
   function playerSnapshot(p, viewerId = null) {
-    const cacheKey = `${p.id}:${viewerId ?? "_"}`;
+    const isSelf = Boolean(viewerId && p.id === viewerId);
+    // Only the self view and a boarded viewer's crew list depend on the viewer; everything
+    // else is shared, so one snapshot (and one JSON string) serves every other viewer.
+    const viewer = !isSelf && viewerId ? snapshotViewerById.get(viewerId) || null : null;
+    const viewerAboard = Boolean(
+      viewer && p.ship &&
+        (viewer.aboardShipId === p.ship.id || (viewer.ship?.id === p.ship.id && viewer.ship?.boarded))
+    );
+    const cacheKey = isSelf ? `${p.id}:self` : viewerAboard ? `${p.id}:${viewerId}` : `${p.id}:other`;
     let snap = playerSnapCache.get(cacheKey);
     if (snap) {
       return snap;
     }
     const appearance = getPlayerAppearance(p);
-    const isSelf = Boolean(viewerId && p.id === viewerId);
     snap = {
       id: p.id,
       name: p.name,
@@ -11842,7 +11857,7 @@ function emitSnapshot() {
       hp: p.hp,
       maxHp: p.maxHp,
       ship: p.ship
-        ? (isSelf ? serializeShipForPlayer(p, p.ship) : serializeShipForViewer(p, p.ship, viewerId))
+        ? (isSelf ? serializeShipForPlayer(p, p.ship) : serializeShipForViewer(p, p.ship, viewerId, viewerAboard ? viewer : null))
         : null,
       x: Number(p.x.toFixed(3)),
       y: Number(p.y.toFixed(3)),
@@ -11929,6 +11944,22 @@ function emitSnapshot() {
     snapshotAddToSpatialBucket(groundBuckets, g.x, g.y, g, cellSize);
   }
 
+  // Entities visible to several viewers are stringified once per pass and spliced into
+  // each viewer's message, instead of JSON.stringify re-walking them for every client.
+  const entityJsonCache = new Map();
+  const entityJson = (entity) => {
+    let json = entityJsonCache.get(entity);
+    if (json === undefined) {
+      json = JSON.stringify(entity);
+      entityJsonCache.set(entity, json);
+    }
+    return json;
+  };
+  const joinEntityJson = (list) => list.map(entityJson).join(",");
+  const mobSnapCache = new Map();
+  const snapshotNow = Date.now();
+  const worldTimeJson = JSON.stringify(getWorldTimeSnapshot());
+
   const playerBuckets = new Map();
   const totalOnline = joinedClients.length;
   for (const c of joinedClients) {
@@ -11936,6 +11967,9 @@ function emitSnapshot() {
   }
 
   for (const client of joinedClients) {
+    if (!canSendSnapshot(client)) {
+      continue;
+    }
     const view = client.view || defaultViewForPlayer(client.player);
 
     const minX = view.x - view.halfW - margin;
@@ -12000,7 +12034,7 @@ function emitSnapshot() {
       minY,
       maxY,
       world: viewerWorld
-    });
+    }, mobSnapCache);
 
     const visibleChests = [];
     const seenChest = new Set();
@@ -12041,21 +12075,15 @@ function emitSnapshot() {
     const caravansForViewer = viewerWorld === "fantasy" ? getCaravansSnapshotForViewer(view) : [];
     const asteroidStates = buildAsteroidSnapshotForView(minX, maxX, minY, maxY, viewerWorld);
 
-    send(client, {
-      type: "snapshot",
-      serverTime: Date.now(),
-      worldTime: getWorldTimeSnapshot(),
-      tick,
-      population: totalOnline,
-      players: playersVisible,
-      npcs,
-      mobs,
-      asteroidStates,
-      caravans: caravansForViewer,
-      chests: visibleChests,
-      groundItems: visibleGround,
-      party: social ? social.getPartyView(client) : null
-    });
+    const party = social ? social.getPartyView(client) : null;
+    sendRaw(client,
+      `{"type":"snapshot","serverTime":${snapshotNow},"worldTime":${worldTimeJson},"tick":${tick},` +
+      `"population":${totalOnline},"players":[${joinEntityJson(playersVisible)}],` +
+      `"npcs":[${joinEntityJson(npcs)}],"mobs":[${joinEntityJson(mobs)}],` +
+      `"asteroidStates":${JSON.stringify(asteroidStates ?? null)},"caravans":${JSON.stringify(caravansForViewer ?? null)},` +
+      `"chests":${JSON.stringify(visibleChests)},"groundItems":${JSON.stringify(visibleGround)},` +
+      `"party":${JSON.stringify(party ?? null)}}`
+    );
   }
 }
 
@@ -14856,6 +14884,10 @@ function processGatekeeperArchers(now = Date.now()) {
     if (now - (guard._lastGateShotAt || 0) < GATEKEEPER_ATTACK_COOLDOWN_MS) {
       continue;
     }
+    // Idle archers re-scan a few times a second rather than every tick.
+    if (now < (guard._nextGateScanAt || 0)) {
+      continue;
+    }
 
     let target = null;
     let bestDist = Infinity;
@@ -14869,7 +14901,10 @@ function processGatekeeperArchers(now = Date.now()) {
         target = mob;
       }
     });
-    if (!target) continue;
+    if (!target) {
+      guard._nextGateScanAt = now + GATEKEEPER_IDLE_SCAN_MS;
+      continue;
+    }
 
     const damage = Math.max(1, Math.round(GATEKEEPER_ARROW_DAMAGE + (Number(target.level) || 1) * 1.5));
     guard._lastGateShotAt = now;
@@ -14922,18 +14957,30 @@ function processGatekeeperArchers(now = Date.now()) {
  * Invariant: only mobs within SWORD_GUARD_NEAR_TOWN_RADIUS are engaged
  * so guards never chase things far out into the open world.
  */
+const SWORD_GUARD_SCAN_MS = 200;
+let swordGuardScanAt = 0;
+let swordGuardCandidates = [];
+
 function processSwordGuards(now = Date.now(), dt = 0.05) {
   const guards = SWORD_GUARD_IDS.map((id) => getNpcById(id)).filter(Boolean);
   if (!guards.length) return;
 
   // ── Gather intruders: hostiles besieging the wall or breaching the town ──────
-  const intruders = [];
-  forEachMobNear(0, 0, SWORD_GUARD_DEFEND_RADIUS + 6, (mob) => {
-    if (mob.dead || mob.isCritter) return;
-    if (SWORD_GUARD_QUEST_MOB_IDS.has(mob.id)) return; // never attack quest slimes
-    if (Math.hypot(mob.x, mob.y) > SWORD_GUARD_DEFEND_RADIUS) return;
-    intruders.push(mob);
-  });
+  // The wide spatial scan is refreshed a few times a second; in between, the cached
+  // candidates are just re-filtered so dead / departed mobs drop out immediately.
+  if (now - swordGuardScanAt >= SWORD_GUARD_SCAN_MS) {
+    swordGuardScanAt = now;
+    swordGuardCandidates = [];
+    forEachMobNear(0, 0, SWORD_GUARD_DEFEND_RADIUS + 6, (mob) => {
+      if (mob.dead || mob.isCritter) return;
+      if (SWORD_GUARD_QUEST_MOB_IDS.has(mob.id)) return; // never attack quest slimes
+      if (Math.hypot(mob.x, mob.y) > SWORD_GUARD_DEFEND_RADIUS + 12) return;
+      swordGuardCandidates.push(mob);
+    });
+  }
+  const intruders = swordGuardCandidates.filter(
+    (mob) => !mob.dead && Math.hypot(mob.x, mob.y) <= SWORD_GUARD_DEFEND_RADIUS
+  );
 
   // ── Assign each intruder to the nearest free guard (greedy, closest pairs first)
   // so the watch fans out to meet threats instead of all swarming one slime. ──────
@@ -15553,7 +15600,7 @@ function respawnPlayer(player) {
   clearPlayerBoardedShips(player);
 }
 
-function getMobSnapshot(viewBounds) {
+function getMobSnapshot(viewBounds, snapCache = null) {
   if (!viewBounds) {
     return [];
   }
@@ -15562,19 +15609,24 @@ function getMobSnapshot(viewBounds) {
     if (mob.dead) {
       return;
     }
-    if (typeof viewBounds.world === "string" && worldForPosition(mob.x, mob.y) !== viewBounds.world) {
-      return;
-    }
+    // Cheap rectangle test first; the world lookup is far more expensive.
     if (
-      viewBounds &&
-      (mob.x < viewBounds.minX ||
-        mob.x > viewBounds.maxX ||
-        mob.y < viewBounds.minY ||
-        mob.y > viewBounds.maxY)
+      mob.x < viewBounds.minX ||
+      mob.x > viewBounds.maxX ||
+      mob.y < viewBounds.minY ||
+      mob.y > viewBounds.maxY
     ) {
       return;
     }
-    out.push({
+    if (typeof viewBounds.world === "string" && worldForPosition(mob.x, mob.y) !== viewBounds.world) {
+      return;
+    }
+    const cached = snapCache?.get(mob);
+    if (cached) {
+      out.push(cached);
+      return;
+    }
+    const snap = {
       id: mob.id,
       name: mob.name,
       primary: mob.primary,
@@ -15597,7 +15649,9 @@ function getMobSnapshot(viewBounds) {
       x: Number(mob.x.toFixed(3)),
       y: Number(mob.y.toFixed(3)),
       facing: Number(mob.facing.toFixed(3))
-    });
+    };
+    snapCache?.set(mob, snap);
+    out.push(snap);
   });
   return out;
 }
@@ -15610,7 +15664,20 @@ function send(client, message) {
     return;
   }
 
-  client.socket.write(encodeFrame(Buffer.from(JSON.stringify(message)), 1));
+  client.socket.write(encodeTextFrame(JSON.stringify(message)));
+}
+
+/** Snapshots are skipped (not queued) for clients whose socket is backed up. */
+function canSendSnapshot(client) {
+  return client.alive && !client.socket.destroyed && client.socket.writableLength <= MAX_SOCKET_BUFFER_BYTES;
+}
+
+/** Send an already-serialized JSON text message. */
+function sendRaw(client, json) {
+  if (!client.alive || client.socket.destroyed) {
+    return;
+  }
+  client.socket.write(encodeTextFrame(json));
 }
 
 function disconnectIdleClients(now = Date.now()) {
@@ -15714,6 +15781,25 @@ function decodeFrames(buffer) {
     remaining: buffer.subarray(offset),
     close: false
   };
+}
+
+/** Text frame built in one allocation (no intermediate payload Buffer + concat copy). */
+function encodeTextFrame(text) {
+  const length = Buffer.byteLength(text);
+  const headerLength = length < 126 ? 2 : length < 65536 ? 4 : 10;
+  const frame = Buffer.allocUnsafe(headerLength + length);
+  frame[0] = 0x81;
+  if (headerLength === 2) {
+    frame[1] = length;
+  } else if (headerLength === 4) {
+    frame[1] = 126;
+    frame.writeUInt16BE(length, 2);
+  } else {
+    frame[1] = 127;
+    frame.writeBigUInt64BE(BigInt(length), 2);
+  }
+  frame.write(text, headerLength);
+  return frame;
 }
 
 function encodeFrame(payload, opcode = 1) {
