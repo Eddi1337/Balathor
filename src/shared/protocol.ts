@@ -90,7 +90,22 @@ export interface NetLoot {
   gold: number;
 }
 
-export type NetEntity = NetPlayer | NetMob | NetNpc | NetLoot;
+export interface NetFurniture {
+  k: "f";
+  id: string;
+  x: number;
+  y: number;
+  kind: string;
+  rot: number;
+}
+
+export type NetEntity = NetPlayer | NetMob | NetNpc | NetLoot | NetFurniture;
+
+export interface HouseInfo {
+  plot: string;
+  owner: string | null;
+  open: boolean;
+}
 
 // ─── Combat / world effects ───────────────────────────────────────────────────
 
@@ -110,7 +125,8 @@ export type FxEvent =
   | { e: "ability"; id: string; ab: string; a: number }
   | { e: "nova"; id: string; ab: string; x: number; y: number; r: number }
   | { e: "zone"; zid: number; kind: ZoneKind; x: number; y: number; r: number; dur: number }
-  | { e: "buff"; id: string; buff: BuffId; dur: number };
+  | { e: "buff"; id: string; buff: BuffId; dur: number }
+  | { e: "jump"; id: string };
 
 // ─── The local player's private state ─────────────────────────────────────────
 
@@ -137,6 +153,10 @@ export interface SelfState {
   markers: Record<string, "!" | "?">;
   waypoints: string[];
   hasMount: boolean;
+  /** Owned-but-unplaced furniture counts. */
+  furniture: Record<string, number>;
+  /** Plot id of the home you own, if any. */
+  home: string | null;
 }
 
 export interface PartyMember {
@@ -206,6 +226,12 @@ export type C2S =
   | { t: "mount" }
   | { t: "travel"; id: string }
   | { t: "emote"; id: string }
+  | { t: "jump" }
+  | { t: "door"; id: string }
+  | { t: "house"; op: "buy" | "sell" | "open"; plot: string; open?: boolean }
+  | { t: "furn"; op: "place"; kind: string; x: number; y: number; rot: number }
+  | { t: "furn"; op: "pickup"; id: string }
+  | { t: "storage"; op: "open" | "close" | "deposit" | "withdraw"; slot: number }
   | { t: "party"; op: "invite" | "accept" | "decline" | "leave" | "kick"; target?: string }
   | { t: "trade"; op: "request" | "accept" | "decline" | "cancel" | "offer" | "unoffer" | "gold" | "ready"; target?: string; slot?: number; gold?: number }
   | { t: "ping"; c: number };
@@ -241,6 +267,8 @@ export type S2C =
   | { t: "party"; party: PartyView | null }
   | { t: "partyInvite"; from: string; name: string }
   | { t: "tradeRequest"; from: string; name: string }
-  | { t: "trade"; trade: TradeView | null };
+  | { t: "trade"; trade: TradeView | null }
+  | { t: "houses"; list: HouseInfo[] }
+  | { t: "storage"; items: (Item | null)[] | null };
 
 export type S2CType = S2C["t"];

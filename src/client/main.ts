@@ -5,7 +5,13 @@ import type { Appearance, C2S, FxEvent, NetEntity, NetPlayer, S2C } from "../sha
 import { CLASSES, type ClassId } from "../shared/game/classes";
 import { MOB_TEMPLATES } from "../shared/game/mobs";
 import { npcDef } from "../shared/game/npcs";
-import { OVERWORLD } from "../shared/world/maps";
+import { OVERWORLD, getMap, isInterior, type MapDef } from "../shared/world/maps";
+import { obstacleTopAt } from "../shared/world/city";
+import { riverAt } from "../shared/world/rivers";
+import { DOOR_RADIUS, PLOTS_BY_ID, doorsOn, parseHouseMapId, type Door } from "../shared/world/housing";
+import { FURNITURE, cellsOf, placementError, type PlacedPiece } from "../shared/game/furniture";
+import { buildFurniture, buildInterior } from "./render/interior";
+import { HomeUI } from "./ui/home";
 import { stepMovement } from "../shared/game/movement";
 import { Tile } from "../shared/world/tiles";
 import { Net } from "./net";
@@ -13,10 +19,12 @@ import { Input } from "./input";
 import { ClientState, type ClientEntity } from "./state";
 import { Renderer, detectQuality } from "./render/renderer";
 import { TerrainStreamer } from "./render/terrain";
-import { buildTown } from "./render/town";
+import { cityFountains, marketLights } from "./render/city";
+import { Fountains } from "./render/water";
+import { applyCurrent, isSwimming } from "../shared/game/movement";
 import { Effects } from "./render/effects";
 import { worldUniforms } from "./render/builder";
-import { animate, attachPony, buildHumanoid, buildLoot, buildMob, detachPony, disposeModel, setStunStars, type Model } from "./render/models";
+import { JUMP_TIME, animate, attachPony, buildHumanoid, buildLoot, buildMob, detachPony, disposeModel, jumpOffset, setStunStars, type Model } from "./render/models";
 import { Landmarks } from "./render/landmarks";
 import { Labels } from "./ui/labels";
 import { Hud, type MinimapDot } from "./ui/hud";
@@ -29,16 +37,19 @@ import { MOUNT_SPEED_MULT } from "../shared/game/stats";
 
 type Phase = "connecting" | "auth" | "create" | "play";
 
-const map = OVERWORLD;
+let map: MapDef = OVERWORLD;
+let interiorGroup: THREE.Group | null = null;
 const quality = detectQuality();
 const canvas = document.getElementById("scene") as HTMLCanvasElement;
 const renderer = new Renderer(canvas, quality);
+renderer.occluder = obstacleTopAt;
 const terrain = new TerrainStreamer(quality.msaa ? 4 : 3);
-const town = buildTown();
+const cityLights = marketLights();
 const effects = new Effects();
 effects.setHeightFn((x, y) => map.heightAt(x, y));
 const landmarks = new Landmarks();
-renderer.scene.add(terrain.group, terrain.water, town.mesh, effects.group, landmarks.group, ...town.lights);
+const fountains = new Fountains(cityFountains());
+renderer.scene.add(terrain.group, terrain.water, effects.group, landmarks.group, fountains.group, ...cityLights);
 
 const net = new Net(Net.defaultUrl());
 const state = new ClientState();
@@ -49,8 +60,11 @@ const hud = new Hud(send);
 const screens = new Screens(send);
 const panels = new Panels(send, (t, k) => hud.toast(t, k));
 panels.onCast = (id) => castAbility(id, performance.now());
+const home = new HomeUI(send, (title, text, yes) => panels.dialog("", title, text, "", yes, undefined, "Yes", "Cancel"));
 
 let phase: Phase = "connecting";
+/** Where the title screen camera looks: the market fountain, the city rising behind it. */
+const MENU_SPOT = { x: 0.5, y: 113.5 };
 let loadingHidden = false;
 
 // ── entity views ────────────────────────────────────────────────────────────
@@ -67,6 +81,7 @@ function viewSignature(d: NetEntity): string {
   if (d.k === "p") return `p|${d.cls}|${d.look.body}|${d.look.accent}|${d.look.skin}|${d.look.hair}|${d.look.hairStyle}|${d.wr}|${d.ar}`;
   if (d.k === "m") return `m|${d.tpl}`;
   if (d.k === "n") return `n|${d.npc}`;
+  if (d.k === "f") return `f|${d.kind}|${d.rot}|${d.x}|${d.y}`;
   return `l|${d.tpl}|${d.rarity}|${d.gold}`;
 }
 
@@ -80,7 +95,27 @@ function buildView(d: NetEntity): Model {
     const def = npcDef(d.npc);
     return buildHumanoid({ look: { body: def?.body ?? "#8fc97a", accent: def?.accent ?? "#fff", skin: "#ffd9b8", hair: "#7a5234", hairStyle: (d.npc.length % 5) }, hat: def?.hat ?? "none", cls: def?.role === "guard" ? "knight" : undefined });
   }
+  if (d.k === "f") return staticModel(buildFurniture(d.kind, d.rot));
   return buildLoot(d.gold, d.rarity);
+}
+
+function staticModel(group: THREE.Group): Model {
+  const m = buildLoot(0, null);
+  m.root.clear();
+  m.root.add(group);
+  m.kind = "furniture";
+  m.height = 1;
+  return m;
+}
+
+/** Keep the client's copy of furniture collision in sync (for movement prediction). */
+function syncBlockers(): void {
+  if (!isInterior(map)) return;
+  map.blockers.clear();
+  for (const e of state.entities.values()) {
+    if (e.data.k !== "f" || e.removedAt || !FURNITURE[e.data.kind]?.solid) continue;
+    for (const c of cellsOf(e.data)) map.blockers.add(`${c.x},${c.y}`);
+  }
 }
 
 function ensureView(e: ClientEntity): View {
@@ -106,8 +141,13 @@ function dropView(id: string): void {
   labels.removePlate(id);
 }
 
+state.onRemove = (e) => {
+  if (e.data.k === "f") syncBlockers();
+};
+
 state.onAdd = (e) => {
   ensureView(e);
+  if (e.data.k === "f") syncBlockers();
   if (e.data.k === "m" && phase === "play") {
     const h = map.heightAt(e.data.x, e.data.y);
     effects.particles.emit(e.data.x, h + 0.3, e.data.y, { n: 6, color: "#ffffff", speed: 1, up: 1.5, size: 0.08, life: 0.5 });
@@ -147,6 +187,8 @@ function predict(dt: number, now: number): void {
     stepMovement(map, me, mx, my, s.derived.speed * (d.mt ? MOUNT_SPEED_MULT : 1) * haste, dt);
     if (now - lastAttackAt > 350) me.f = Math.atan2(my, mx);
   }
+  // Rivers carry swimmers downstream (same shared rule as the server).
+  if (d && !d.dead && isSwimming(map, me.x, me.y)) applyCurrent(map, me, dt);
   // Reconcile with the authoritative position.
   const ex = state.serverX - me.x;
   const ey = state.serverY - me.y;
@@ -246,10 +288,38 @@ function nearestObelisk(): Waypoint | null {
   return null;
 }
 
-function nearestInteractable(): { id: string; kind: "npc" | "loot" | "waypoint"; label: string } | null {
-  let best: { id: string; kind: "npc" | "loot" | "waypoint"; label: string } | null = null;
+function doorLabel(door: Door): string {
+  if (!door.plot || door.to.map === OVERWORLD.id) return door.label;
+  const plot = PLOTS_BY_ID[door.plot];
+  const info = home.houses.get(door.plot);
+  if (!info?.owner) return `${plot.name}: for sale (${plot.price}g)`;
+  if (state.self?.home === door.plot) return "Enter your home";
+  return `Visit ${info.owner}'s home${info.open ? "" : " (if invited)"}`;
+}
+
+type InteractKind = "npc" | "loot" | "waypoint" | "door" | "chest";
+
+function nearestInteractable(): { id: string; kind: InteractKind; label: string } | null {
+  let best: { id: string; kind: InteractKind; label: string } | null = null;
   let bestD = Infinity;
-  const ob = nearestObelisk();
+  for (const door of doorsOn(map.id)) {
+    const dd = Math.hypot(door.x - me.x, door.y - me.y);
+    if (dd <= DOOR_RADIUS && dd < bestD) {
+      bestD = dd;
+      best = { id: door.id, kind: "door", label: `E · ${doorLabel(door)}` };
+    }
+  }
+  if (home.insideOwnHome) {
+    for (const e of state.entities.values()) {
+      if (e.data.k !== "f" || !FURNITURE[e.data.kind]?.storage || e.removedAt) continue;
+      const dd = Math.hypot(e.data.x + 0.5 - me.x, e.data.y + 0.5 - me.y);
+      if (dd < 2.4 && dd < bestD) {
+        bestD = dd;
+        best = { id: e.id, kind: "chest", label: "E · Open storage" };
+      }
+    }
+  }
+  const ob = map.id === OVERWORLD.id ? nearestObelisk() : null;
   if (ob) {
     best = { id: ob.id, kind: "waypoint", label: state.self?.waypoints.includes(ob.id) ? `E · Travel from ${ob.name}` : `E · Attune to ${ob.name}` };
     bestD = Math.hypot(ob.x - me.x, ob.y - me.y);
@@ -269,9 +339,34 @@ function nearestInteractable(): { id: string; kind: "npc" | "loot" | "waypoint";
   return best;
 }
 
+let lastJumpAt = 0;
+function jump(): void {
+  const d = selfData();
+  const now = performance.now();
+  if (!d || d.dead || now - lastJumpAt < 560) return;
+  lastJumpAt = now;
+  const v = state.selfId ? views.get(state.selfId) : undefined;
+  if (v) v.model.jumpT = JUMP_TIME;
+  send({ t: "jump" });
+}
+
 function interact(): void {
   const target = nearestInteractable();
   if (!target) return;
+  if (target.kind === "door") {
+    const door = doorsOn(map.id).find((d) => d.id === target.id);
+    if (door?.plot && door.to.map !== OVERWORLD.id && !home.houses.get(door.plot)?.owner) {
+      const plot = PLOTS_BY_ID[door.plot];
+      panels.dialog("Estate notice", `${plot.name} is for sale`, `A lovely ${plot.manor ? "two-storey manor" : "townhouse"} on the ${["", "Artisans'", "Guild", "Nobles'"][plot.house.tier]} Ring. Make it yours for ${plot.price} gold?`, "", () => send({ t: "house", op: "buy", plot: plot.id }), undefined, "Buy it!", "Not now");
+      return;
+    }
+    send({ t: "door", id: target.id });
+    return;
+  }
+  if (target.kind === "chest") {
+    send({ t: "storage", op: "open", slot: -1 });
+    return;
+  }
   if (target.kind === "waypoint") {
     const w = WAYPOINTS.find((o) => o.id === target.id);
     if (w) panels.openWaypoints(w);
@@ -302,8 +397,10 @@ input.onKey = (code, e) => {
       hud.toggle("win-char");
       break;
     case "KeyE":
-    case "KeyF":
       interact();
+      break;
+    case "Space":
+      jump();
       break;
     case "KeyQ":
       hud.drinkPotion();
@@ -317,6 +414,13 @@ input.onKey = (code, e) => {
     case "KeyM":
       send({ t: "mount" });
       break;
+    case "KeyH":
+      if (home.insideOwnHome) home.toggleDecorate();
+      else if (state.self?.home) hud.toast("Decorate inside your home (press H there)");
+      break;
+    case "KeyR":
+      if (home.placing) home.rot = (home.rot + 1) % 4;
+      break;
     case "Digit1":
     case "Digit2":
     case "Digit3":
@@ -327,13 +431,20 @@ input.onKey = (code, e) => {
       break;
     }
     case "Escape":
-      if (!panels.closeAll()) hud.closeAll();
+      if (home.placing) home.placing = null;
+      else if (home.decorating) home.stopDecorating();
+      else if (home.storageOpen) home.closeStorage();
+      else if (!panels.closeAll()) hud.closeAll();
       break;
   }
 };
 
 input.onClickWorld = (sx, sy) => {
   if (phase !== "play") return;
+  if (home.decorating) {
+    decorateClick(sx, sy);
+    return;
+  }
   // Clicking a villager or loot interacts; anything else attacks toward the cursor.
   const ndc = new THREE.Vector2((sx / innerWidth) * 2 - 1, -(sy / innerHeight) * 2 + 1);
   const ray = new THREE.Raycaster();
@@ -368,8 +479,104 @@ input.onClickWorld = (sx, sy) => {
   tryAttack(performance.now());
 };
 
+function floorCell(sx: number, sy: number): { x: number; y: number } | null {
+  const g = renderer.screenToGround(sx, sy, 0);
+  return g ? { x: Math.floor(g.x), y: Math.floor(g.y) } : null;
+}
+
+function placedPieces(): PlacedPiece[] {
+  const out: PlacedPiece[] = [];
+  for (const e of state.entities.values()) if (e.data.k === "f" && !e.removedAt) out.push({ id: e.id, kind: e.data.kind, x: e.data.x, y: e.data.y, rot: e.data.rot });
+  return out;
+}
+
+function decorateClick(sx: number, sy: number): void {
+  const cell = floorCell(sx, sy);
+  if (!cell) return;
+  if (home.placing) {
+    send({ t: "furn", op: "place", kind: home.placing, x: cell.x, y: cell.y, rot: home.rot });
+    if ((state.self?.furniture[home.placing] ?? 0) <= 1) home.placing = null;
+    return;
+  }
+  // Click an existing piece to pick it up.
+  for (const p of placedPieces()) {
+    if (cellsOf(p).some((c) => c.x === cell.x && c.y === cell.y)) {
+      send({ t: "furn", op: "pickup", id: p.id });
+      return;
+    }
+  }
+}
+
+// Ghost preview of the piece being placed.
+let ghost: { kind: string; rot: number; group: THREE.Group } | null = null;
+function updateGhost(): void {
+  const want = home.decorating && home.placing && isInterior(map) ? home.placing : null;
+  if (ghost && (!want || ghost.kind !== want || ghost.rot !== home.rot)) {
+    renderer.scene.remove(ghost.group);
+    ghost = null;
+  }
+  if (!want || !isInterior(map)) return;
+  if (!ghost) {
+    const group = buildFurniture(want, home.rot);
+    group.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (mesh.isMesh) {
+        mesh.material = new THREE.MeshBasicMaterial({ color: 0x9dffb8, transparent: true, opacity: 0.55, depthWrite: false });
+        mesh.castShadow = false;
+      }
+    });
+    renderer.scene.add(group);
+    ghost = { kind: want, rot: home.rot, group };
+  }
+  const cell = floorCell(input.mouseX, input.mouseY);
+  if (!cell) return;
+  ghost.group.position.set(cell.x, 0.02, cell.y);
+  const err = placementError(map.layout, placedPieces(), want, cell.x, cell.y, home.rot);
+  ghost.group.traverse((o) => {
+    const mesh = o as THREE.Mesh;
+    if (mesh.isMesh) (mesh.material as THREE.MeshBasicMaterial).color.set(err ? 0xff8fb1 : 0x9dffb8);
+  });
+}
+
+/** Switch the scene to another map (overworld ↔ interiors). */
+function switchMap(id: string): void {
+  if (id === map.id && (interiorGroup !== null) === isInterior(map)) return;
+  state.clear((e) => dropView(e.id));
+  home.stopDecorating();
+  home.closeStorage();
+  if (interiorGroup) {
+    renderer.scene.remove(interiorGroup);
+    interiorGroup = null;
+  }
+  map = getMap(id);
+  const indoor = isInterior(map);
+  renderer.indoor = indoor;
+  renderer.occluder = indoor ? null : obstacleTopAt;
+  terrain.group.visible = terrain.water.visible = landmarks.group.visible = fountains.group.visible = !indoor;
+  for (const l of cityLights) l.visible = !indoor;
+  if (isInterior(map)) {
+    map.blockers.clear();
+    interiorGroup = buildInterior(map);
+    renderer.scene.add(interiorGroup);
+    renderer.distance = 11;
+    renderer.pitch = 0.85;
+    renderer.lookAbove = 0.6;
+    renderer.yaw = 0;
+  } else {
+    renderer.distance = 14;
+    renderer.pitch = 0.5;
+    renderer.lookAbove = 2.2;
+  }
+  const house = parseHouseMapId(map.id);
+  home.insideOwnHome = house && state.self?.home === house.plotId ? house.plotId : null;
+}
+
 document.getElementById("hot-attack")!.addEventListener("click", () => tryAttack(performance.now(), me.f));
 document.getElementById("hot-interact")!.addEventListener("click", () => interact());
+document.getElementById("touch-jump")!.addEventListener("touchstart", (e) => {
+  e.preventDefault();
+  jump();
+}, { passive: false });
 document.getElementById("touch-interact")!.addEventListener("touchstart", (e) => {
   e.preventDefault();
   interact();
@@ -430,6 +637,9 @@ net.on((msg: S2C) => {
       me.x = msg.x;
       me.y = msg.y;
       hud.setDead(false);
+      switchMap(msg.map);
+      renderer.target.set(me.x, map.heightAt(me.x, me.y), me.y);
+      renderer.snapCamera();
       if (first && menuPreview) {
         renderer.scene.remove(menuPreview.root);
         disposeModel(menuPreview);
@@ -448,7 +658,19 @@ net.on((msg: S2C) => {
       state.self = msg.self;
       hud.setSelf(msg.self);
       panels.setSelf(msg.self);
+      home.setSelf(msg.self);
       landmarks.setAttuned(msg.self.waypoints);
+      {
+        const house = parseHouseMapId(map.id);
+        home.insideOwnHome = house && msg.self.home === house.plotId ? house.plotId : null;
+      }
+      return;
+    case "houses":
+      home.setHouses(msg.list);
+      return;
+    case "storage":
+      home.openStorage(msg.items);
+      hud.bagClickOverride = msg.items ? (slot) => send({ t: "storage", op: "deposit", slot }) : null;
       return;
     case "cd":
       panels.startCooldown(msg.id, msg.ms);
@@ -594,6 +816,11 @@ function handleFx(ev: FxEvent): void {
     case "zone":
       effects.zone(ev.zid, ev.kind, ev.x, ev.y, ev.r, ev.dur);
       return;
+    case "jump": {
+      const v = views.get(ev.id);
+      if (v) v.model.jumpT = JUMP_TIME;
+      return;
+    }
     case "buff": {
       const e = state.entities.get(ev.id);
       if (e) {
@@ -624,6 +851,12 @@ const ABILITY_COLORS: Record<string, string> = {
   battle_cry: "#ff6f8e",
   time_warp: "#b9a3ff"
 };
+
+/** Surface height of the water at (x, y): river level or sea level. */
+function waterLevelAt(x: number, y: number): number {
+  const r = riverAt(x, y);
+  return r ? r.level : 0;
+}
 
 /** Glowing bubbles / rings / tints for active buffs (players) and status effects (mobs). */
 function updateAuras(v: View, buffs: string[], dt: number, x: number, y: number): void {
@@ -692,7 +925,7 @@ screens.onLookChange = (cls: ClassId, look: Appearance) => {
     disposeModel(menuPreview);
   }
   menuPreview = buildHumanoid({ look, cls });
-  menuPreview.root.position.set(0.5, map.heightAt(0.5, 4.5), 4.5);
+  menuPreview.root.position.set(MENU_SPOT.x, map.heightAt(MENU_SPOT.x, MENU_SPOT.y), MENU_SPOT.y);
   menuPreview.root.scale.setScalar(1.25);
   renderer.scene.add(menuPreview.root);
 };
@@ -721,6 +954,21 @@ function updateEntities(dt: number, now: number, time: number): void {
     const moving = isSelf ? me.moving : "mv" in d && d.mv === 1;
     let fadeCap = 1;
     if (d.k === "p") {
+      const swim = isSwimming(map, x, y);
+      const was = Boolean(v.model.root.userData.swim);
+      if (swim !== was) {
+        v.model.root.userData.swim = swim;
+        // Splash on entering (or climbing out of) the water.
+        effects.particles.emit(x, map.heightAt(x, y) + 0.5, y, { n: swim ? 22 : 10, color: "#d9f6ff", speed: 2.2, up: 3, size: 0.07, life: 0.7 });
+        fountains.addRipple(x, waterLevelAt(x, y), y, 1.2);
+      }
+      if (swim) {
+        v.auraT -= dt;
+        if (v.auraT <= 0) {
+          v.auraT = moving ? 0.22 : 0.7;
+          fountains.addRipple(x, waterLevelAt(x, y), y, moving ? 0.8 : 0.5);
+        }
+      }
       if (d.mt) attachPony(m);
       else detachPony(m);
       const buffs = d.bf ? d.bf.split(",") : [];
@@ -732,6 +980,7 @@ function updateEntities(dt: number, now: number, time: number): void {
       updateAuras(v, [(d.st & 1) ? "slow" : "", (d.st & 4) ? "blind" : ""].filter(Boolean), dt, x, y);
     }
     animate(m, { moving, dead, swimming: d.k === "p" && d.sw === 1, speed: d.k === "m" ? 0.7 : 1, mounted: d.k === "p" && d.mt === 1, emote: d.k === "p" ? d.em : "" }, dt, time);
+    m.root.position.y += jumpOffset(m, dt);
     // Fade out removed entities (and dead mobs) instead of popping.
     const fadeTarget = e.removedAt ? 0 : fadeCap;
     const fade = m.material.userData.fade;
@@ -767,6 +1016,17 @@ function updateEntities(dt: number, now: number, time: number): void {
     }
     labels.moveBubble(e.id, tmpV);
   }
+  // Little signs over homes: owner names or "for sale".
+  if (map.id === OVERWORLD.id) {
+    for (const plot of Object.values(PLOTS_BY_ID)) {
+      if (Math.hypot(plot.front.x - me.x, plot.front.y - me.y) > 16) continue;
+      const info = home.houses.get(plot.id);
+      tmpV.set(plot.front.x, map.heightAt(plot.front.x, plot.front.y) + 2.6, plot.front.y);
+      const key = `plot_${plot.id}`;
+      keepPlates.add(key);
+      labels.plate(key, tmpV, { name: info?.owner ? `🏠 ${info.owner}` : `🏷️ For sale · ${plot.price}g`, kind: "npc", showBar: false });
+    }
+  }
   labels.hidePlatesExcept(keepPlates);
 }
 
@@ -800,10 +1060,10 @@ function updateHud(now: number): void {
     for (const pm of panels.party?.members ?? []) {
       if (pm.id !== state.selfId) dots.push({ x: pm.x, y: pm.y, color: "#b26bff", size: 3.5 });
     }
-    for (const w of WAYPOINTS) dots.push({ x: w.x, y: w.y, color: state.self?.waypoints.includes(w.id) ? "#d9a6ff" : "#9a94a6", size: 3 });
-    hud.drawMinimap(map, me.x, me.y, me.f, dots, panels.objective());
+    if (map.id === OVERWORLD.id) for (const w of WAYPOINTS) dots.push({ x: w.x, y: w.y, color: state.self?.waypoints.includes(w.id) ? "#d9a6ff" : "#9a94a6", size: 3 });
+    hud.drawMinimap(map, me.x, me.y, me.f, dots, map.id === OVERWORLD.id ? panels.objective() : null);
     const biome = map.biomeAt(me.x, me.y);
-    hud.setZone(biome === "town" ? "Hearthmoor" : `${biome} · lv ${map.zoneLevelAt(me.x, me.y)}`);
+    hud.setZone(isInterior(map) ? map.name : biome === "town" ? "Hearthmoor" : `${biome} · lv ${map.zoneLevelAt(me.x, me.y)}`);
   }
 }
 
@@ -819,30 +1079,31 @@ function frame(): void {
   if (phase === "play") {
     renderer.orbit(drag.dx, drag.dy, drag.wheel);
     predict(dt, now);
-    // Holding Space, the mouse button or the touch attack button keeps attacking on cooldown.
-    if (!hud.chatFocused && (input.isDown("Space") || input.touchAttack || (input.mouseDown && !input.touchMode))) tryAttack(now);
+    // Holding F, the mouse button or the touch attack button keeps attacking on cooldown.
+    if (!hud.chatFocused && (input.isDown("KeyF") || input.touchAttack || (input.mouseDown && !input.touchMode))) tryAttack(now);
     renderer.target.set(me.x, map.heightAt(me.x, me.y), me.y);
     updateEntities(dt, now, time);
     updateHud(now);
   } else {
     // Title / creator: slowly orbit the plaza around the preview character.
     menuAngle += dt * 0.08;
-    renderer.yaw = 0.25 + Math.sin(menuAngle) * 0.4;
-    renderer.pitch = 0.22;
-    renderer.distance = 7;
-    renderer.lookAbove = 1.5;
+    renderer.yaw = 0.2 + Math.sin(menuAngle) * 0.35;
+    renderer.pitch = 0.16;
+    renderer.distance = 8;
+    renderer.lookAbove = 4.5;
     // On wide screens the creator card sits on the right, so shift the view to put the
     // preview character in the left half.
     const shift = phase === "create" && innerWidth > 720 ? 2.6 : 0;
-    renderer.target.set(0.5 + Math.cos(renderer.yaw) * shift, map.heightAt(0.5, 4.5), 4.5 - Math.sin(renderer.yaw) * shift);
+    renderer.target.set(MENU_SPOT.x + Math.cos(renderer.yaw) * shift, map.heightAt(MENU_SPOT.x, MENU_SPOT.y), MENU_SPOT.y - Math.sin(renderer.yaw) * shift);
     if (menuPreview) {
       menuPreview.root.rotation.y = renderer.yaw;
       animate(menuPreview, { moving: false, dead: false }, dt, time);
     }
   }
 
-  const focus = phase === "play" ? me : { x: 0.5, y: 4.5 };
-  terrain.update(focus.x, focus.y, loadingHidden ? 2 : 6);
+  const focus = phase === "play" ? me : MENU_SPOT;
+  updateGhost();
+  if (!isInterior(map)) terrain.update(focus.x, focus.y, loadingHidden ? 2 : 6);
   if (!loadingHidden && terrain.pending === 0) {
     loadingHidden = true;
     document.getElementById("loading")!.classList.add("fade");
@@ -850,11 +1111,12 @@ function frame(): void {
   renderer.update(dt, worldTime);
   worldUniforms.uTime.value = time;
   worldUniforms.uNight.value = renderer.night;
-  for (const l of town.lights) l.intensity = renderer.night * 6;
-  effects.updateBeams(map, focus.x, focus.y, renderer.sunDir, 1 - renderer.night * 1.4, now);
-  effects.updateFireflies(focus.x, focus.y, renderer.night, time);
+  for (const l of cityLights) l.intensity = renderer.night * 6;
+  effects.updateBeams(map, focus.x, focus.y, renderer.sunDir, isInterior(map) ? 0 : 1 - renderer.night * 1.4, now);
+  effects.updateFireflies(focus.x, focus.y, isInterior(map) ? 0 : renderer.night, time);
   effects.update(dt);
   landmarks.update(time);
+  if (!isInterior(map)) fountains.update(dt, renderer.camera.position.x, renderer.camera.position.z);
   labels.update(now);
   renderer.render(dt);
 }

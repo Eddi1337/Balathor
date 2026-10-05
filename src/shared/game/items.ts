@@ -1,6 +1,7 @@
 // Item templates, rarity and rolling. Items are small plain objects so they persist as JSON.
 
 import type { ClassId } from "./classes";
+import { FURNITURE } from "./furniture";
 
 export type Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary" | "mythic";
 export const RARITIES: Rarity[] = ["common", "uncommon", "rare", "epic", "legendary", "mythic"];
@@ -17,7 +18,7 @@ export const RARITY_INFO: Record<Rarity, { color: string; mult: number; weight: 
 export type EquipSlot = "weapon" | "body" | "ring1" | "ring2";
 export const EQUIP_SLOTS: EquipSlot[] = ["weapon", "body", "ring1", "ring2"];
 
-export type ItemKind = "weapon" | "armor" | "ring" | "potion" | "junk" | "mount";
+export type ItemKind = "weapon" | "armor" | "ring" | "potion" | "junk" | "mount" | "furniture";
 
 export interface ItemTemplate {
   id: string;
@@ -76,6 +77,11 @@ export const ITEM_TEMPLATES: Record<string, ItemTemplate> = {
   fluffy_tail: { id: "fluffy_tail", name: "Fluffy Tail", kind: "junk", icon: "🦊", value: 5, stack: 50 },
   shiny_pebble: { id: "shiny_pebble", name: "Shiny Pebble", kind: "junk", icon: "💎", value: 9, stack: 50 }
 };
+
+// Furniture is sold like an item ("furn_<id>") but goes to your home's furniture stock.
+for (const f of Object.values(FURNITURE)) {
+  ITEM_TEMPLATES[`furn_${f.id}`] = { id: `furn_${f.id}`, name: f.name, kind: "furniture", icon: f.icon, value: Math.round(f.price / 2) };
+}
 
 export function itemTemplate(id: string): ItemTemplate | undefined {
   return ITEM_TEMPLATES[id];

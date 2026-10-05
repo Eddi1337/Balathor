@@ -34,8 +34,46 @@ const MIGRATIONS: string[] = [
      name_lower TEXT NOT NULL UNIQUE,
      data TEXT NOT NULL,
      updated_at INTEGER NOT NULL
+   )`,
+  `CREATE TABLE IF NOT EXISTS houses (
+     plot_id TEXT PRIMARY KEY,
+     account_id INTEGER NOT NULL UNIQUE,
+     owner_name TEXT NOT NULL,
+     open INTEGER NOT NULL DEFAULT 0,
+     bought_at INTEGER NOT NULL
+   );
+   CREATE TABLE IF NOT EXISTS furniture (
+     id TEXT PRIMARY KEY,
+     plot_id TEXT NOT NULL,
+     floor INTEGER NOT NULL,
+     kind TEXT NOT NULL,
+     x INTEGER NOT NULL,
+     y INTEGER NOT NULL,
+     rot INTEGER NOT NULL
+   );
+   CREATE INDEX IF NOT EXISTS furniture_plot ON furniture(plot_id);
+   CREATE TABLE IF NOT EXISTS house_storage (
+     plot_id TEXT PRIMARY KEY,
+     data TEXT NOT NULL
    )`
 ];
+
+export interface HouseRow {
+  plot_id: string;
+  account_id: number;
+  owner_name: string;
+  open: number;
+}
+
+export interface FurnitureRow {
+  id: string;
+  plot_id: string;
+  floor: number;
+  kind: string;
+  x: number;
+  y: number;
+  rot: number;
+}
 
 export class Store {
   private db: DatabaseSync;
@@ -101,6 +139,49 @@ export class Store {
       this.db.exec("ROLLBACK");
       throw error;
     }
+  }
+
+  // ── housing ──────────────────────────────────────────────────────────────
+
+  allHouses(): HouseRow[] {
+    return this.db.prepare("SELECT plot_id, account_id, owner_name, open FROM houses").all() as unknown as HouseRow[];
+  }
+
+  buyHouse(plotId: string, accountId: number, ownerName: string): void {
+    this.db.prepare("INSERT INTO houses (plot_id, account_id, owner_name, open, bought_at) VALUES (?, ?, ?, 0, ?)").run(plotId, accountId, ownerName, Date.now());
+  }
+
+  sellHouse(plotId: string): void {
+    this.db.prepare("DELETE FROM houses WHERE plot_id = ?").run(plotId);
+    this.db.prepare("DELETE FROM furniture WHERE plot_id = ?").run(plotId);
+    this.db.prepare("DELETE FROM house_storage WHERE plot_id = ?").run(plotId);
+  }
+
+  setHouseOpen(plotId: string, open: boolean): void {
+    this.db.prepare("UPDATE houses SET open = ? WHERE plot_id = ?").run(open ? 1 : 0, plotId);
+  }
+
+  furnitureFor(plotId: string): FurnitureRow[] {
+    return this.db.prepare("SELECT id, plot_id, floor, kind, x, y, rot FROM furniture WHERE plot_id = ?").all(plotId) as unknown as FurnitureRow[];
+  }
+
+  addFurniture(row: FurnitureRow): void {
+    this.db.prepare("INSERT INTO furniture (id, plot_id, floor, kind, x, y, rot) VALUES (?, ?, ?, ?, ?, ?, ?)").run(row.id, row.plot_id, row.floor, row.kind, row.x, row.y, row.rot);
+  }
+
+  removeFurniture(id: string): void {
+    this.db.prepare("DELETE FROM furniture WHERE id = ?").run(id);
+  }
+
+  loadStorage(plotId: string): string | null {
+    const row = this.db.prepare("SELECT data FROM house_storage WHERE plot_id = ?").get(plotId) as { data: string } | undefined;
+    return row ? row.data : null;
+  }
+
+  saveStorage(plotId: string, data: unknown): void {
+    this.db
+      .prepare("INSERT INTO house_storage (plot_id, data) VALUES (?, ?) ON CONFLICT(plot_id) DO UPDATE SET data = excluded.data")
+      .run(plotId, JSON.stringify(data));
   }
 
   counts(): { accounts: number; characters: number } {

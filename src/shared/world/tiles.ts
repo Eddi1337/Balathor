@@ -17,6 +17,10 @@ export const Tile = {
   COBBLE: 11,
   PLAZA: 12,
   FLOOR: 13,
+  /** Farm field (crops; walkable). */
+  FIELD: 16,
+  /** Flowing river water (swimmable, with a current). */
+  RIVER: 17,
   // Blocking props / structures
   TREE: 20,
   PINE: 21,
@@ -30,7 +34,12 @@ export const Tile = {
   BUILDING: 29,
   FOUNTAIN: 30,
   WILLOW: 31,
-  CRYSTAL: 32
+  CRYSTAL: 32,
+  // Interiors
+  DOORMAT: 14,
+  STAIRS: 15,
+  /** A cell occupied by solid furniture. */
+  FURNITURE: 33
 } as const;
 
 export type TileId = (typeof Tile)[keyof typeof Tile];
@@ -49,7 +58,8 @@ const BLOCKING = new Set<number>([
   Tile.BUILDING,
   Tile.FOUNTAIN,
   Tile.WILLOW,
-  Tile.CRYSTAL
+  Tile.CRYSTAL,
+  Tile.FURNITURE
 ]);
 
 export function isBlockingTile(tile: number): boolean {
@@ -74,7 +84,12 @@ export function blocksProjectile(tile: number): boolean {
 }
 
 export function isWaterTile(tile: number): boolean {
-  return tile === Tile.WATER || tile === Tile.SHALLOW;
+  return tile === Tile.WATER || tile === Tile.SHALLOW || tile === Tile.RIVER;
+}
+
+/** Tiles you swim in (slowly) rather than walk on. */
+export function isSwimTile(tile: number): boolean {
+  return tile === Tile.SHALLOW || tile === Tile.RIVER;
 }
 
 /** Ground colour under a prop tile (props are drawn on top of this). */

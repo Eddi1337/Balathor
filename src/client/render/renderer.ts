@@ -76,6 +76,8 @@ export class Renderer {
   /** 0 at noon … 1 at midnight; drives window glow and lamps. */
   night = 0;
   sunDir = new THREE.Vector3(0, 1, -1).normalize();
+  /** Indoors: no sky, warm light from above, no god rays. */
+  indoor = false;
 
   // Camera rig (orbit around the target).
   yaw = 0;
@@ -85,6 +87,9 @@ export class Renderer {
   lookAbove = 2.2;
   readonly target = new THREE.Vector3();
   private smoothTarget = new THREE.Vector3();
+  /** Height of solid scenery at a world (x, y); the camera is pulled in front of it. */
+  occluder: ((x: number, y: number) => number) | null = null;
+  private camDist = 14;
 
   private sky: THREE.Mesh;
   private skyUniforms: { top: { value: THREE.Color }; horizon: { value: THREE.Color }; sunDir: { value: THREE.Vector3 }; sunColor: { value: THREE.Color }; night: { value: number } };
@@ -252,6 +257,12 @@ export class Renderer {
     this.composer.setSize(innerWidth, innerHeight);
   }
 
+  /** Jump the camera straight to its target (after teleports / map changes). */
+  snapCamera(): void {
+    this.smoothTarget.copy(this.target);
+    this.camDist = this.distance;
+  }
+
   /** Orbit input: drag rotates, wheel zooms (closer also lowers the camera a little). */
   orbit(dx: number, dy: number, wheel: number): void {
     this.yaw -= dx * 0.006;
@@ -285,10 +296,27 @@ export class Renderer {
     // Camera follows the target smoothly.
     this.smoothTarget.lerp(this.target, 1 - Math.pow(0.0005, dt));
     const cp = Math.cos(this.pitch);
+    const dir = new THREE.Vector3(Math.sin(this.yaw) * cp, Math.sin(this.pitch), Math.cos(this.yaw) * cp);
+    // Camera collision: march from the player toward the camera; stop in front of walls/roofs.
+    let want = this.distance;
+    if (this.occluder) {
+      const eyeY = this.smoothTarget.y + 1.4;
+      for (let t = 1.2; t < this.distance; t += 0.5) {
+        const px = this.smoothTarget.x + dir.x * t;
+        const pz = this.smoothTarget.z + dir.z * t;
+        const rayY = eyeY + ((this.smoothTarget.y + dir.y * this.distance - eyeY) * t) / this.distance;
+        if (rayY < this.occluder(px, pz) + 0.4) {
+          want = Math.max(3, t - 0.7);
+          break;
+        }
+      }
+    }
+    // Pull in quickly, ease back out slowly.
+    this.camDist += (want - this.camDist) * Math.min(1, dt * (want < this.camDist ? 14 : 2.5));
     this.camera.position.set(
-      this.smoothTarget.x + Math.sin(this.yaw) * cp * this.distance,
-      this.smoothTarget.y + Math.sin(this.pitch) * this.distance,
-      this.smoothTarget.z + Math.cos(this.yaw) * cp * this.distance
+      this.smoothTarget.x + dir.x * this.camDist,
+      this.smoothTarget.y + dir.y * this.camDist,
+      this.smoothTarget.z + dir.z * this.camDist
     );
     this.camera.lookAt(this.smoothTarget.x, this.smoothTarget.y + this.lookAbove, this.smoothTarget.z);
 
@@ -297,7 +325,9 @@ export class Renderer {
     const sunAngle = (worldTime - 0.25) * Math.PI * 2; // 0 at sunrise
     const elev = Math.sin(sunAngle);
     const isDay = elev > -0.08;
-    const dirSun = new THREE.Vector3(Math.cos(sunAngle) * 0.9, Math.max(0.1, elev) * 0.52 + 0.06, -0.85).normalize();
+    // The sun rises in the east and arcs through the southern sky, so the city's facades (which
+    // you mostly see from the south, looking up the hill) are sunlit; the moon takes the north.
+    const dirSun = new THREE.Vector3(Math.cos(sunAngle) * 0.9, Math.max(0.12, elev) * 0.7 + 0.08, 0.55).normalize();
     const dirMoon = new THREE.Vector3(-Math.cos(sunAngle) * 0.9, Math.max(0.2, -elev) * 0.8 + 0.1, -0.7).normalize();
     this.sunDir.copy(isDay ? dirSun : dirMoon);
     const sky = sampleSky(worldTime);
@@ -337,6 +367,26 @@ export class Renderer {
       this.godRays.godRaysMaterial.uniforms.weight.value = clamp(0.32 + golden * 0.3, 0.2, 0.62) * (1 - this.night);
     }
     if (this.bloom) this.bloom.intensity = 0.7 + this.night * 0.9;
+
+    if (this.indoor) {
+      this.sky.visible = this.sunDisc.visible = this.moonDisc.visible = this.stars.visible = this.clouds.visible = false;
+      this.scene.background = new THREE.Color(0x2b2238);
+      (this.scene.fog as THREE.Fog).near = 200;
+      (this.scene.fog as THREE.Fog).far = 400;
+      this.hemi.color.set(0xfff1dc);
+      this.hemi.groundColor.set(0x8a6a5a);
+      this.hemi.intensity = 1.25;
+      this.sun.color.set(0xfff1d6);
+      this.sun.intensity = 1.2;
+      this.sunDir.set(0.25, 1, 0.35).normalize();
+      this.sun.position.copy(center).addScaledVector(this.sunDir, 40);
+      if (this.godRays) this.godRays.godRaysMaterial.uniforms.weight.value = 0;
+    } else {
+      this.sky.visible = this.stars.visible = this.clouds.visible = true;
+      this.scene.background = null;
+      (this.scene.fog as THREE.Fog).near = 70;
+      (this.scene.fog as THREE.Fog).far = 175;
+    }
 
     // Drift clouds with the wind, recycling them around the player.
     for (const c of this.clouds.children) {

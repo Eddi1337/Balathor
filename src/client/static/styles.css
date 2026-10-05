@@ -199,6 +199,7 @@ label { display: grid; gap: 6px; font-weight: 500; font-size: 14px; color: var(-
 #touch-attack, #touch-interact { position: absolute; pointer-events: auto; border: 0; border-radius: 50%; background: rgba(255,249,241,.85); box-shadow: var(--shadow); font-size: 30px; }
 #touch-attack { right: 30px; bottom: 120px; width: 90px; height: 90px; }
 #touch-interact { right: 132px; bottom: 112px; width: 60px; height: 60px; font-size: 24px; }
+#touch-jump { position: absolute; pointer-events: auto; border: 0; border-radius: 50%; background: rgba(255,249,241,.85); box-shadow: var(--shadow); right: 44px; bottom: 222px; width: 60px; height: 60px; font-size: 24px; }
 
 @media (max-width: 720px) {
   .hud-portrait { width: 190px; top: 8px; left: 8px; }
@@ -312,3 +313,16 @@ label { display: grid; gap: 6px; font-weight: 500; font-size: 14px; color: var(-
   .menu-dock .hot { width: 38px; height: 38px; }
   .emote-menu { top: 230px; bottom: auto; right: 56px; }
 }
+
+/* ── Homes ───────────────────────────────────────────────────── */
+#win-decorate { width: 380px; left: 14px; right: auto; top: 180px; }
+.decorate-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; max-height: 45vh; overflow: auto; }
+.decor { border: 2px solid var(--line); border-radius: 12px; background: #fff; padding: 6px; display: grid; justify-items: center; gap: 2px; cursor: pointer; font-size: 12px; text-align: center; }
+.decor .ico { font-size: 26px; }
+.decor.selected { border-color: var(--pink); box-shadow: 0 0 0 3px rgba(255,143,177,.25); }
+.decor.empty { opacity: .45; cursor: default; }
+.home-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+.toggle { display: flex; grid-template-columns: none; align-items: center; gap: 6px; color: var(--ink); }
+.toggle input { width: auto; }
+#win-storage { width: 420px; left: 50%; right: auto; transform: translateX(-50%); }
+.storage-grid { grid-template-columns: repeat(6, 1fr); }

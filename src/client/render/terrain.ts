@@ -6,6 +6,10 @@ import { CHUNK, getChunkTiles, heightAt, biomeAt, type Biome } from "../../share
 import { Tile } from "../../shared/world/tiles";
 import { hash2 } from "../../shared/math";
 import { GeometryBuilder, PRIMS, sceneryMaterial, worldUniforms } from "./builder";
+import { addCityFeatures, addWallTile } from "./city";
+import { wallRingAt } from "../../shared/world/city";
+import { riverAt } from "../../shared/world/rivers";
+import { flowingWaterMaterial, stillWaterMaterial, withStillFlow } from "./water";
 
 const TILE_COLORS: Record<number, string> = {
   [Tile.GRASS]: "#8fd16a",
@@ -21,7 +25,12 @@ const TILE_COLORS: Record<number, string> = {
   [Tile.PATH]: "#ecd09a",
   [Tile.COBBLE]: "#d9cfc4",
   [Tile.PLAZA]: "#f0e2cf",
-  [Tile.FLOOR]: "#d8b48a"
+  [Tile.FLOOR]: "#d8b48a",
+  [Tile.FIELD]: "#b98f5e",
+  [Tile.WALL]: "#e3dccf",
+  [Tile.BUILDING]: "#d9cfc4",
+  [Tile.FOUNTAIN]: "#e9dccb",
+  [Tile.RIVER]: "#b9a27a"
 };
 
 const BIOME_GROUND: Record<Biome, number> = {
@@ -60,7 +69,7 @@ function tileColor(tile: number, biome: Biome, x: number, y: number, h: number):
 }
 
 function isProp(tile: number): boolean {
-  return tile >= 20;
+  return tile >= 20 && tile !== Tile.WALL && tile !== Tile.BUILDING && tile !== Tile.FOUNTAIN;
 }
 
 function pick<T>(arr: T[], r: number): T {
@@ -161,22 +170,42 @@ function addProp(b: GeometryBuilder, tile: number, biome: Biome, x: number, y: n
       b.add(PRIMS.octa, { x: cx - 0.2, y: h + 0.28, z: cz - 0.12, sx: 0.12, sy: 0.32, sz: 0.12, rz: 0.4, color: col, glow: 0.9 });
       break;
     }
-    case Tile.WALL: {
-      // Town wall stones with little crenellations; the top tier glows faintly at night (torches).
-      b.add(PRIMS.box, { x: x + 0.5, y: h + 1.1, z: y + 0.5, sx: 1.02, sy: 2.2, sz: 1.02, color: hash2(x, y, 3) > 0.5 ? "#d8cfc4" : "#cbbfb2", jitter: 0.06 });
-      if ((x + y) % 2 === 0) b.add(PRIMS.box, { x: x + 0.5, y: h + 2.4, z: y + 0.5, sx: 0.6, sy: 0.4, sz: 0.6, color: "#e3dace" });
-      if (hash2(x, y, 41) > 0.93) {
-        b.add(PRIMS.cyl6, { x: x + 0.5, y: h + 2.45, z: y + 0.5, sx: 0.05, sy: 0.3, sz: 0.05, color: "#6a4a3a" });
-        b.add(PRIMS.ico, { x: x + 0.5, y: h + 2.7, z: y + 0.5, sx: 0.12, sy: 0.16, sz: 0.12, color: "#ffb347", glow: -2.2 });
-      }
-      break;
-    }
     default:
       break;
   }
 }
 
+const CROPS = ["wheat", "cabbage", "pumpkin", "carrot"] as const;
+
+function addCrop(b: GeometryBuilder, x: number, y: number, h: number): void {
+  // Each field patch grows one crop, planted in tidy rows.
+  const kind = CROPS[Math.floor(hash2(Math.floor(x / 9), Math.floor(y / 9), 555) * CROPS.length)];
+  for (let i = 0; i < 2; i += 1) {
+    const px = x + 0.25 + i * 0.5;
+    const pz = y + 0.5;
+    switch (kind) {
+      case "wheat":
+        for (let k = 0; k < 3; k += 1) b.add(PRIMS.cone4, { x: px + (k - 1) * 0.12, y: h + 0.32, z: pz + (k % 2) * 0.1, sx: 0.06, sy: 0.65, sz: 0.06, color: k === 1 ? "#f2cf6a" : "#e8bf55", sway: 1.1 });
+        break;
+      case "cabbage":
+        b.add(PRIMS.ico1, { x: px, y: h + 0.14, z: pz, sx: 0.2, sy: 0.15, sz: 0.2, color: "#8fd16a", jitter: 0.1 });
+        break;
+      case "pumpkin":
+        if ((Math.floor(x) + i) % 2 === 0) b.add(PRIMS.ico1, { x: px, y: h + 0.15, z: pz, sx: 0.24, sy: 0.18, sz: 0.24, color: "#ff9a3c", jitter: 0.08 });
+        else b.add(PRIMS.ico, { x: px, y: h + 0.08, z: pz, sx: 0.18, sy: 0.08, sz: 0.18, color: "#6fbf5f", sway: 0.4 });
+        break;
+      case "carrot":
+        b.add(PRIMS.cone4, { x: px, y: h + 0.15, z: pz, sx: 0.08, sy: 0.3, sz: 0.08, color: "#5fae5a", sway: 0.8 });
+        break;
+    }
+  }
+}
+
 function addGroundDecor(b: GeometryBuilder, tile: number, biome: Biome, x: number, y: number, h: number): void {
+  if (tile === Tile.FIELD) {
+    addCrop(b, x, y, h);
+    return;
+  }
   if (tile === Tile.FLOWERS) {
     for (let i = 0; i < 3; i += 1) {
       const fx = x + 0.2 + hash2(x, y, 100 + i) * 0.6;
@@ -203,6 +232,77 @@ function addGroundDecor(b: GeometryBuilder, tile: number, biome: Biome, x: numbe
     b.add(PRIMS.cyl8, { x: x + 0.5, y: 0.02, z: y + 0.5, sx: 0.35, sy: 0.02, sz: 0.35, color: "#6fc25a" }); // lily pad
     if (hash2(x, y, 407) < 0.4) b.add(PRIMS.octa, { x: x + 0.55, y: 0.08, z: y + 0.45, sx: 0.08, sy: 0.06, sz: 0.08, color: "#ffd3e0" });
   }
+}
+
+/** River surface quads for a chunk (with a per-vertex flow direction), or null. */
+function buildRiverGeometry(tiles: Uint8Array, ox: number, oy: number): THREE.BufferGeometry | null {
+  const pos: number[] = [];
+  const flow: number[] = [];
+  const corner = (x: number, y: number) => {
+    const r = riverAt(x, y);
+    return { h: r ? r.level : 0, fx: r ? r.dirX : 0, fy: r ? r.dirY : 0 };
+  };
+  for (let ly = 0; ly < CHUNK; ly += 1) {
+    for (let lx = 0; lx < CHUNK; lx += 1) {
+      const t = tiles[ly * CHUNK + lx];
+      const x = ox + lx;
+      const y = oy + ly;
+      // Water also runs under bridges (road tiles over the river).
+      if (t !== Tile.RIVER && !(t === Tile.PATH && (riverAt(x + 0.5, y + 0.5)?.dist ?? 99) < (riverAt(x + 0.5, y + 0.5)?.width ?? 0) / 2 + 0.5)) continue;
+      // Extend each quad slightly past the tile so it tucks under the banks.
+      const c00 = corner(x - 0.15, y - 0.15);
+      const c10 = corner(x + 1.15, y - 0.15);
+      const c01 = corner(x - 0.15, y + 1.15);
+      const c11 = corner(x + 1.15, y + 1.15);
+      const q = [
+        [x - 0.15, c00.h, y - 0.15, c00],
+        [x - 0.15, c01.h, y + 1.15, c01],
+        [x + 1.15, c10.h, y - 0.15, c10],
+        [x + 1.15, c10.h, y - 0.15, c10],
+        [x - 0.15, c01.h, y + 1.15, c01],
+        [x + 1.15, c11.h, y + 1.15, c11]
+      ] as const;
+      for (const [px, py, pz, c] of q) {
+        pos.push(px, py, pz);
+        flow.push(c.fx, c.fy);
+      }
+    }
+  }
+  if (!pos.length) return null;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("flow", new THREE.Float32BufferAttribute(flow, 2));
+  g.computeVertexNormals();
+  g.computeBoundingSphere();
+  return g;
+}
+
+function addBridge(b: GeometryBuilder, tiles: Uint8Array, lx: number, ly: number, x: number, y: number, h: number): void {
+  // Plank deck, with railings on edges that don't continue the road.
+  b.add(PRIMS.box, { x: x + 0.5, y: h - 0.05, z: y + 0.5, sx: 1.04, sy: 0.18, sz: 1.04, color: (x + y) % 2 ? "#b9854f" : "#a6764a" });
+  const at = (dx: number, dy: number) => {
+    const nx = lx + dx;
+    const ny = ly + dy;
+    if (nx < 0 || ny < 0 || nx >= CHUNK || ny >= CHUNK) return Tile.PATH;
+    return tiles[ny * CHUNK + nx];
+  };
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    if (at(dx, dy) === Tile.PATH) continue;
+    const rx = x + 0.5 + dx * 0.46;
+    const rz = y + 0.5 + dy * 0.46;
+    b.add(PRIMS.box, { x: rx, y: h + 0.45, z: rz, sx: dx ? 0.08 : 1.02, sy: 0.08, sz: dy ? 0.08 : 1.02, color: "#8a5a3a" });
+    b.add(PRIMS.box, { x: rx, y: h + 0.22, z: rz, sx: 0.1, sy: 0.5, sz: 0.1, color: "#7a5234" });
+  }
+}
+
+export interface ChunkMeshes {
+  scenery: THREE.BufferGeometry;
+  water: THREE.BufferGeometry | null;
+}
+
+export function buildChunk(cx: number, cy: number): ChunkMeshes {
+  const tiles = getChunkTiles(cx, cy);
+  return { scenery: buildChunkGeometry(cx, cy), water: buildRiverGeometry(tiles, cx * CHUNK, cy * CHUNK) };
 }
 
 export function buildChunkGeometry(cx: number, cy: number): THREE.BufferGeometry {
@@ -235,15 +335,22 @@ export function buildChunkGeometry(cx: number, cy: number): THREE.BufferGeometry
         b.tri(x, h00, y, x + 1, h11, y + 1, x + 1, h10, y, c);
         b.tri(x, h00, y, x, h01, y + 1, x + 1, h11, y + 1, c.clone().multiplyScalar(0.97));
       }
-      if (isProp(tile)) addProp(b, tile, biome, x, y, hc);
+      if (tile === Tile.WALL) {
+        const ring = wallRingAt(x, y);
+        if (ring >= 0) addWallTile(b, x, y, ring);
+      } else if (tile === Tile.PATH && biome !== "town") {
+        const r = riverAt(x + 0.5, y + 0.5);
+        if (r && r.dist < r.width / 2 + 0.6) addBridge(b, tiles, lx, ly, x, y, heightAt(x + 0.5, y + 0.5));
+      } else if (isProp(tile)) addProp(b, tile, biome, x, y, hc);
       else addGroundDecor(b, tile, biome, x, y, hc);
     }
   }
+  addCityFeatures(b, cx, cy);
   return b.build();
 }
 
 export class TerrainStreamer {
-  private chunks = new Map<string, THREE.Mesh>();
+  private chunks = new Map<string, THREE.Object3D>();
   private queue: [number, number][] = [];
   readonly group = new THREE.Group();
   readonly water: THREE.Mesh;
@@ -251,19 +358,7 @@ export class TerrainStreamer {
   constructor(private radius: number) {
     const geo = new THREE.PlaneGeometry(320, 320, 96, 96);
     geo.rotateX(-Math.PI / 2);
-    const mat = new THREE.MeshStandardMaterial({ color: "#5cc6e8", roughness: 0.32, metalness: 0.02, transparent: true, opacity: 0.8, flatShading: true });
-    mat.onBeforeCompile = (shader) => {
-      shader.uniforms.uTime = worldUniforms.uTime;
-      shader.vertexShader = shader.vertexShader
-        .replace("#include <common>", "#include <common>\nuniform float uTime;")
-        .replace(
-          "#include <begin_vertex>",
-          `#include <begin_vertex>
-           vec4 wpos = modelMatrix * vec4(position, 1.0);
-           transformed.y += sin(wpos.x * 0.55 + uTime * 1.3) * 0.06 + cos(wpos.z * 0.48 + uTime * 1.1) * 0.06;`
-        );
-    };
-    this.water = new THREE.Mesh(geo, mat);
+    this.water = new THREE.Mesh(withStillFlow(geo), stillWaterMaterial());
     this.water.position.y = -0.04;
     this.water.receiveShadow = true;
   }
@@ -286,13 +381,23 @@ export class TerrainStreamer {
     this.queue.sort((a, b) => (a[0] - ccx) ** 2 + (a[1] - ccy) ** 2 - ((b[0] - ccx) ** 2 + (b[1] - ccy) ** 2));
     for (let i = 0; i < Math.min(budget, this.queue.length); i += 1) {
       const [cx, cy] = this.queue[i];
-      const mesh = new THREE.Mesh(buildChunkGeometry(cx, cy), sceneryMaterial());
+      const built = buildChunk(cx, cy);
+      const holder = new THREE.Group();
+      const mesh = new THREE.Mesh(built.scenery, sceneryMaterial());
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       mesh.matrixAutoUpdate = false;
       mesh.updateMatrix();
-      this.chunks.set(`${cx},${cy}`, mesh);
-      this.group.add(mesh);
+      holder.add(mesh);
+      if (built.water) {
+        const water = new THREE.Mesh(built.water, flowingWaterMaterial());
+        water.receiveShadow = true;
+        water.matrixAutoUpdate = false;
+        water.updateMatrix();
+        holder.add(water);
+      }
+      this.chunks.set(`${cx},${cy}`, holder);
+      this.group.add(holder);
     }
     for (const [key, mesh] of this.chunks) {
       if (wanted.has(key)) continue;
@@ -300,7 +405,7 @@ export class TerrainStreamer {
       const [kx, ky] = key.split(",").map(Number);
       if ((kx - ccx) ** 2 + (ky - ccy) ** 2 <= (this.radius + 2) ** 2) continue;
       this.group.remove(mesh);
-      mesh.geometry.dispose();
+      mesh.traverse((o) => (o as THREE.Mesh).isMesh && (o as THREE.Mesh).geometry.dispose());
       this.chunks.delete(key);
     }
     this.water.position.x = Math.round(x / 4) * 4;

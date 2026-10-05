@@ -5,6 +5,7 @@
 // so the whole static world renders with a single shared material.
 
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 
 export const worldUniforms = {
   uTime: { value: 0 },
@@ -66,6 +67,8 @@ function flat(g: THREE.BufferGeometry): THREE.BufferGeometry {
 
 export const PRIMS = {
   box: flat(new THREE.BoxGeometry(1, 1, 1)),
+  /** Soft cube: the cute "slightly blocky" character shape. */
+  rbox: flat(new RoundedBoxGeometry(1, 1, 1, 2, 0.24)),
   ico: flat(new THREE.IcosahedronGeometry(1, 0)),
   ico1: flat(new THREE.IcosahedronGeometry(1, 1)),
   dodeca: flat(new THREE.DodecahedronGeometry(1, 0)),

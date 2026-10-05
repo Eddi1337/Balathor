@@ -1,7 +1,7 @@
 // Server-side entity types. Each knows how to serialise itself for replication (`net()`),
 // cached per snapshot pass so many viewers share one object.
 
-import type { Appearance, NetEntity, NetLoot, NetMob, NetNpc, NetPlayer } from "../../shared/protocol";
+import type { Appearance, NetEntity, NetFurniture, NetLoot, NetMob, NetNpc, NetPlayer } from "../../shared/protocol";
 import type { ClassId } from "../../shared/game/classes";
 import type { EquipSlot, Item, Rarity } from "../../shared/game/items";
 import { RARITIES } from "../../shared/game/items";
@@ -40,6 +40,7 @@ export interface CharacterSave {
   quests: QuestLog;
   waypoints: string[];
   hasMount: boolean;
+  furniture: Record<string, number>;
 }
 
 export interface ActiveBuff {
@@ -66,6 +67,7 @@ export class Player implements Spatial, NetCached {
   swimming = false;
   input = { mx: 0, my: 0, seq: 0 };
   lastAttackAt = 0;
+  lastJumpAt = 0;
   lastDamagedAt = 0;
   lastChatAt = 0;
   derived!: Derived;
@@ -77,6 +79,9 @@ export class Player implements Spatial, NetCached {
   cooldowns = new Map<string, number>();
   partyId: string | null = null;
   tradeId: string | null = null;
+  /** Plot whose storage chest this player has open. */
+  storageOpen: string | null = null;
+  lastDoorAt = 0;
   nextDiscoverAt = 0;
   /** Self state (inventory/stats) changed and must be re-sent. */
   selfDirty = true;
@@ -287,4 +292,29 @@ export class Loot implements Spatial, NetCached {
   }
 }
 
-export type Entity = Player | Mob | Npc | Loot;
+export class Furn implements Spatial, NetCached {
+  readonly kind = "furniture" as const;
+  cell = 0;
+  netPass = -1;
+  netValue: NetEntity | null = null;
+
+  constructor(
+    readonly id: string,
+    readonly furn: string,
+    readonly x: number,
+    readonly y: number,
+    readonly rot: number,
+    readonly plotId: string,
+    readonly floor: number
+  ) {}
+
+  net(pass: number): NetFurniture {
+    if (this.netPass === pass && this.netValue) return this.netValue as NetFurniture;
+    const value: NetFurniture = { k: "f", id: this.id, x: this.x, y: this.y, kind: this.furn, rot: this.rot };
+    this.netPass = pass;
+    this.netValue = value;
+    return value;
+  }
+}
+
+export type Entity = Player | Mob | Npc | Loot | Furn;

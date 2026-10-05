@@ -7,17 +7,17 @@ import { BIOME_BOSSES, BIOME_SPAWNS, MOB_TEMPLATES, mobStats, type MobTemplate }
 import { NPCS, scheduleAt } from "../../shared/game/npcs";
 import { CLASSES } from "../../shared/game/classes";
 import { MOUNT_SPEED_MULT, mitigate } from "../../shared/game/stats";
-import { circleBlocked, stepMovement } from "../../shared/game/movement";
+import { applyCurrent, circleBlocked, isSwimming, stepMovement } from "../../shared/game/movement";
 import { findPath } from "../../shared/game/pathfind";
 import type { BuffId, Talent, ZoneKind } from "../../shared/game/talents";
 import { EMOTES } from "../../shared/game/emotes";
 import { blocksProjectile, Tile } from "../../shared/world/tiles";
 import { coastRadiusAt, MEADOW_RADIUS, type Biome } from "../../shared/world/overworld";
 import { bossSpot } from "../../shared/world/landmarks";
-import { TOWN_WALL_OUTER } from "../../shared/world/town";
+import { CITY_RADIUS } from "../../shared/world/city";
 import { angleDelta, dist, dist2, rng, TAU } from "../../shared/math";
 import type { FxEvent, ProjectileKind } from "../../shared/protocol";
-import { Loot, Mob, Npc, Player, type Entity } from "./entities";
+import { Furn, Loot, Mob, Npc, Player, type Entity } from "./entities";
 import { SpatialGrid } from "./spatial";
 
 export interface WorldHooks {
@@ -101,13 +101,28 @@ export class World {
   // ── population ──────────────────────────────────────────────────────────────
 
   populate(): void {
+    const interior = this.def.theme === "interior";
     for (const def of NPCS) {
+      if ((def.map ?? "overworld") !== this.def.id) continue;
       const npc = new Npc(def.id, def);
       this.npcs.set(npc.id, npc);
       this.grid.insert(npc);
     }
+    if (interior) return;
     this.spawnWildlife();
     this.spawnBosses();
+  }
+
+  readonly furniture = new Map<string, Furn>();
+
+  addFurniture(f: Furn): void {
+    this.furniture.set(f.id, f);
+    this.grid.insert(f);
+  }
+
+  removeFurniture(f: Furn): void {
+    this.furniture.delete(f.id);
+    this.grid.remove(f);
   }
 
   private spawnWildlife(): void {
@@ -120,13 +135,13 @@ export class World {
         const x = gx + rand() * SPACING;
         const y = gy + rand() * SPACING;
         const d = Math.hypot(x, y);
-        if (d < TOWN_WALL_OUTER + 6) continue;
+        if (d < CITY_RADIUS + 8) continue;
         if (d > coastRadiusAt(Math.atan2(y, x)) - 4) continue;
         // Thin out the starter meadow a little so it stays calm near the gates.
         if (d < MEADOW_RADIUS && rand() < 0.45) continue;
         if (rand() < 0.38) continue;
         if (circleBlocked(this.def, x, y, 0.45)) continue;
-        if (this.def.tileAt(x, y) === Tile.SHALLOW) continue;
+        if (isSwimming(this.def, x, y)) continue;
         const table = BIOME_SPAWNS[this.def.biomeAt(x, y)];
         if (!table) continue;
         const tplId = pickWeighted(table, rand());
@@ -629,8 +644,11 @@ export class World {
       } else {
         p.moving = false;
       }
-      p.swimming = this.def.tileAt(p.x, p.y) === Tile.SHALLOW;
-      if (p.swimming) p.mounted = false;
+      p.swimming = isSwimming(this.def, p.x, p.y);
+      if (p.swimming) {
+        p.mounted = false;
+        if (applyCurrent(this.def, p, dt)) this.grid.moved(p);
+      }
       // Regen: brisk out of combat, slow during.
       const outOfCombat = now - p.lastDamagedAt > 5000;
       if (p.hp < p.derived.maxHp) {

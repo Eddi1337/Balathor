@@ -1,7 +1,7 @@
 // Movement + collision shared by the server simulation and client-side prediction, so both
 // sides integrate the same input the same way.
 
-import { isBlockingTile, Tile } from "../world/tiles";
+import { isBlockingTile, isSwimTile } from "../world/tiles";
 import { SWIM_SPEED_MULT } from "./stats";
 
 export const PLAYER_RADIUS = 0.3;
@@ -20,7 +20,33 @@ export function circleBlocked(src: TileSource, x: number, y: number, r = PLAYER_
 }
 
 export function isSwimming(src: TileSource, x: number, y: number): boolean {
-  return src.tileAt(x, y) === Tile.SHALLOW;
+  return isSwimTile(src.tileAt(x, y));
+}
+
+/**
+ * Let a river's current carry an entity downstream (no-op on dry land). Shared so the client's
+ * prediction drifts exactly like the server does.
+ */
+export function applyCurrent(src: TileSource & { currentAt?: (x: number, y: number) => { vx: number; vy: number } }, pos: { x: number; y: number }, dt: number): boolean {
+  if (!src.currentAt) return false;
+  const c = src.currentAt(pos.x, pos.y);
+  const speed = Math.hypot(c.vx, c.vy);
+  if (speed < 0.01) return false;
+  const steps = Math.max(1, Math.ceil((speed * dt) / 0.25));
+  const sx = (c.vx * dt) / steps;
+  const sy = (c.vy * dt) / steps;
+  let moved = false;
+  for (let i = 0; i < steps; i += 1) {
+    if (!circleBlocked(src, pos.x + sx, pos.y)) {
+      pos.x += sx;
+      moved = true;
+    }
+    if (!circleBlocked(src, pos.x, pos.y + sy)) {
+      pos.y += sy;
+      moved = true;
+    }
+  }
+  return moved;
 }
 
 /**

@@ -17,8 +17,8 @@ const cache = new Map<Biome, { x: number; y: number }>();
 export function bossSpot(biome: Biome): { x: number; y: number } {
   const hit = cache.get(biome);
   if (hit) return hit;
-  let x = 26;
-  let y = -42; // King Wobble lounges in the meadow just north-east of town.
+  let x = 100;
+  let y = -100; // King Wobble lounges in the fields north-east of the city.
   const a = SECTOR_ANGLE[biome];
   if (a !== undefined) {
     const r = coastRadiusAt(a) * 0.62;

@@ -59,7 +59,7 @@ export const QUESTS: Quest[] = [
     requires: ["q_welcome"],
     offer: "Puddle Slimes keep oozing up to the gates. Pop five of them in the meadow outside town. They're squishy, you'll be fine!",
     complete: "Ew, you're all gooey. Here, take these tonics, you've earned them.",
-    steps: [{ type: "kill", mobs: ["slime"], biome: "meadow", count: 5, text: "Defeat Puddle Slimes in the meadow", hint: { x: 0, y: 50 } }],
+    steps: [{ type: "kill", mobs: ["slime"], biome: "meadow", count: 5, text: "Defeat Puddle Slimes in the meadow", hint: { x: 0, y: 118 } }],
     reward: { xp: 90, gold: 10, items: [{ tpl: "potion_small", qty: 3 }] }
   },
   {
@@ -70,7 +70,7 @@ export const QUESTS: Quest[] = [
     requires: ["q_first_hunt"],
     offer: "Slime gel makes the BEST jelly tonics. Could you bring me six blobs? Don't ask what's in them.",
     complete: "Perfect wobble! Take this ring, it's been sitting in my drawer looking lonely.",
-    steps: [{ type: "collect", item: "slime_gel", count: 6, text: "Collect Slime Gel", hint: { x: 0, y: 50 } }],
+    steps: [{ type: "collect", item: "slime_gel", count: 6, text: "Collect Slime Gel", hint: { x: 0, y: 118 } }],
     reward: { xp: 70, gold: 40, items: [{ tpl: "ring_copper", rarity: "uncommon" }] }
   },
   {
@@ -80,7 +80,7 @@ export const QUESTS: Quest[] = [
     level: 2,
     offer: "Those Grumpcap mushrooms keep heckling me on my walks. Teach four of them some manners.",
     complete: "Ha! That'll learn 'em. Back in my day mushrooms were polite.",
-    steps: [{ type: "kill", mobs: ["shroom"], count: 4, text: "Defeat Grumpcaps", hint: { x: -50, y: 30 } }],
+    steps: [{ type: "kill", mobs: ["shroom"], count: 4, text: "Defeat Grumpcaps", hint: { x: -118, y: 40 } }],
     reward: { xp: 110, gold: 25 }
   },
   {
@@ -105,7 +105,7 @@ export const QUESTS: Quest[] = [
     level: 3,
     offer: "I'm making a SCARF. Out of tails. Fluffy ones! Can you find me five? Puffbuns and wolves have the best.",
     complete: "It's going to be the fluffiest scarf in history. You can borrow it sometimes.",
-    steps: [{ type: "collect", item: "fluffy_tail", count: 5, text: "Collect Fluffy Tails", hint: { x: -120, y: 60 } }],
+    steps: [{ type: "collect", item: "fluffy_tail", count: 5, text: "Collect Fluffy Tails", hint: { x: -150, y: 90 } }],
     reward: { xp: 160, gold: 30, items: [{ tpl: "potion_big", qty: 1 }] }
   },
   {
@@ -134,6 +134,21 @@ export const QUESTS: Quest[] = [
     reward: { xp: 380, gold: 120, gear: "rare" }
   },
   {
+    id: "q_audience",
+    name: "An Audience with the King",
+    giver: "npc_rin",
+    level: 2,
+    requires: ["q_welcome"],
+    offer: "Have you met King Aldric? He sits in the castle at the very top of the city. Climb the rings and say hello. He LOVES visitors.",
+    complete: "Splendid! A new face in my hall. Hearthmoor is in good hands with folk like you.",
+    turnIn: "npc_king",
+    steps: [
+      { type: "visit", x: 0.5, y: 8, r: 9, text: "Climb up to the Citadel" },
+      { type: "talk", npc: "npc_king", text: "Greet King Aldric in the throne room" }
+    ],
+    reward: { xp: 160, gold: 50, items: [{ tpl: "potion_big", qty: 2 }] }
+  },
+  {
     id: "q_explorer",
     name: "Road's End",
     giver: "npc_rin",
@@ -142,10 +157,10 @@ export const QUESTS: Quest[] = [
     offer: "Every road out of Hearthmoor leads somewhere wild. Attune to the far obelisks so you can always find your way home.",
     complete: "A true wanderer! Those obelisks will whisk you anywhere you've been.",
     steps: [
-      { type: "visit", x: 5, y: -215, r: 10, text: "Reach Whitepine Hollow (end of the north road)" },
-      { type: "visit", x: 215, y: 5, r: 10, text: "Reach Glasshide Flats (end of the east road)" },
-      { type: "visit", x: 5, y: 215, r: 10, text: "Reach Bogfather's Mire (end of the south road)" },
-      { type: "visit", x: -215, y: 5, r: 10, text: "Reach Scarcliff (end of the west road)" }
+      { type: "visit", x: 5, y: -345, r: 12, text: "Reach Whitepine Hollow (far up the north road)" },
+      { type: "visit", x: 345, y: 5, r: 12, text: "Reach Glasshide Flats (far along the east road)" },
+      { type: "visit", x: 5, y: 345, r: 12, text: "Reach Bogfather's Mire (far down the south road)" },
+      { type: "visit", x: -345, y: 5, r: 12, text: "Reach Scarcliff (far along the west road)" }
     ],
     reward: { xp: 900, gold: 150 }
   },
@@ -156,7 +171,7 @@ export const QUESTS: Quest[] = [
     level: 5,
     offer: "My ponies love shiny pebbles. Weird, I know. Bring me five and I'll give you a stack of coin toward one.",
     complete: "Look at them sparkle! Here, put this toward a pony of your own.",
-    steps: [{ type: "collect", item: "shiny_pebble", count: 5, text: "Collect Shiny Pebbles", hint: { x: 150, y: 80 } }],
+    steps: [{ type: "collect", item: "shiny_pebble", count: 5, text: "Collect Shiny Pebbles", hint: { x: 260, y: 150 } }],
     reward: { xp: 250, gold: 175 }
   },
   {
@@ -166,7 +181,7 @@ export const QUESTS: Quest[] = [
     level: 6,
     offer: "Bog Croakers have been croaking ALL night. I haven't slept in a week. Six of them, please.",
     complete: "Silence! Beautiful, beautiful silence.",
-    steps: [{ type: "kill", mobs: ["toad"], biome: "swamp", count: 6, text: "Silence Bog Croakers in the swamp", hint: { x: 0, y: 150 } }],
+    steps: [{ type: "kill", mobs: ["toad"], biome: "swamp", count: 6, text: "Silence Bog Croakers in the swamp", hint: { x: 0, y: 250 } }],
     reward: { xp: 420, gold: 60 }
   },
   {
@@ -176,7 +191,7 @@ export const QUESTS: Quest[] = [
     level: 6,
     offer: "Mossfangs are prowling the highland road. Thin the pack: six should do it.",
     complete: "The road's safer already. Good hunting.",
-    steps: [{ type: "kill", mobs: ["wolf"], biome: "highlands", count: 6, text: "Hunt Mossfangs in the highlands", hint: { x: -150, y: 0 } }],
+    steps: [{ type: "kill", mobs: ["wolf"], biome: "highlands", count: 6, text: "Hunt Mossfangs in the highlands", hint: { x: -225, y: -130 } }],
     reward: { xp: 440, gold: 65 }
   },
   {
@@ -186,7 +201,7 @@ export const QUESTS: Quest[] = [
     level: 7,
     offer: "Dune Pinchers keep snipping the caravan ropes. Snip six of them back.",
     complete: "Ha! Snip snip yourself, crabs. Scorpions. Whatever they are.",
-    steps: [{ type: "kill", mobs: ["scorpion"], biome: "desert", count: 6, text: "Defeat Dune Pinchers in the desert", hint: { x: 150, y: 70 } }],
+    steps: [{ type: "kill", mobs: ["scorpion"], biome: "desert", count: 6, text: "Defeat Dune Pinchers in the desert", hint: { x: 230, y: 135 } }],
     reward: { xp: 520, gold: 75 }
   },
   {
@@ -196,16 +211,16 @@ export const QUESTS: Quest[] = [
     level: 8,
     offer: "Frost Wisps have been freezing the north road solid. Six of them, and mind their icy bolts.",
     complete: "Warmer already! Well, a bit. It's still the frost.",
-    steps: [{ type: "kill", mobs: ["wisp"], biome: "frost", count: 6, text: "Disperse Frost Wisps in the frost", hint: { x: 0, y: -170 } }],
+    steps: [{ type: "kill", mobs: ["wisp"], biome: "frost", count: 6, text: "Disperse Frost Wisps in the frost", hint: { x: 0, y: -260 } }],
     reward: { xp: 640, gold: 85 }
   },
   {
     id: "q_boss_forest",
     name: "The Old Rootback",
-    giver: "npc_oswin",
+    giver: "npc_king",
     level: 9,
-    requires: ["q_wobble"],
-    offer: "Old Rootback has trampled half the south-west forest. Our oldest bounty. Claim it.",
+    requires: ["q_wobble", "q_audience"],
+    offer: "Old Rootback has trampled half the south-west forest. The crown's oldest bounty. Will you claim it?",
     complete: "Rootback, felled! The forest owes you one.",
     steps: [{ type: "kill", mobs: ["boss_forest"], count: 1, text: "Defeat the Old Rootback in the forest", hint: bossSpot("forest") }],
     reward: { xp: 1200, gold: 220, gear: "rare" }
@@ -213,9 +228,9 @@ export const QUESTS: Quest[] = [
   {
     id: "q_boss_swamp",
     name: "An Offer You Can't Refuse",
-    giver: "npc_oswin",
+    giver: "npc_king",
     level: 10,
-    requires: ["q_wobble"],
+    requires: ["q_wobble", "q_audience"],
     offer: "The Bogfather runs the swamp like a family business. Shut it down.",
     complete: "The Bogfather sleeps with the fishes. Literally, it's a swamp.",
     steps: [{ type: "kill", mobs: ["boss_swamp"], count: 1, text: "Defeat the Bogfather in the swamp", hint: bossSpot("swamp") }],
@@ -224,9 +239,9 @@ export const QUESTS: Quest[] = [
   {
     id: "q_boss_desert",
     name: "Glass Half Empty",
-    giver: "npc_oswin",
+    giver: "npc_king",
     level: 12,
-    requires: ["q_wobble"],
+    requires: ["q_wobble", "q_audience"],
     offer: "Glasshide's crystal shell turns arrows. Find a way through it.",
     complete: "Shattered! Mind the shards on your way out.",
     steps: [{ type: "kill", mobs: ["boss_desert"], count: 1, text: "Defeat Glasshide in the desert", hint: bossSpot("desert") }],
@@ -235,9 +250,9 @@ export const QUESTS: Quest[] = [
   {
     id: "q_boss_highlands",
     name: "Scar Warden",
-    giver: "npc_oswin",
+    giver: "npc_king",
     level: 13,
-    requires: ["q_wobble"],
+    requires: ["q_wobble", "q_audience"],
     offer: "The Scar Warden leads the highland packs. Take down the alpha.",
     complete: "The packs scatter. The heights are yours.",
     steps: [{ type: "kill", mobs: ["boss_highlands"], count: 1, text: "Defeat the Scar Warden in the highlands", hint: bossSpot("highlands") }],
@@ -246,9 +261,9 @@ export const QUESTS: Quest[] = [
   {
     id: "q_boss_frost",
     name: "Winter's Warden",
-    giver: "npc_oswin",
+    giver: "npc_king",
     level: 13,
-    requires: ["q_wobble"],
+    requires: ["q_wobble", "q_audience"],
     offer: "The Whitepine Warden guards the frozen north. Bundle up.",
     complete: "Spring might come to the north after all!",
     steps: [{ type: "kill", mobs: ["boss_frost"], count: 1, text: "Defeat the Whitepine Warden in the frost", hint: bossSpot("frost") }],
@@ -257,9 +272,9 @@ export const QUESTS: Quest[] = [
   {
     id: "q_boss_ember",
     name: "Red Crag",
-    giver: "npc_oswin",
+    giver: "npc_king",
     level: 14,
-    requires: ["q_wobble"],
+    requires: ["q_wobble", "q_audience"],
     offer: "Red Crag is the oldest thing on the isle, a mountain that walks. The guild's final bounty.",
     complete: "You did it. Every champion of the isle has fallen. Hearthmoor will sing about you for years.",
     steps: [{ type: "kill", mobs: ["boss_ember"], count: 1, text: "Defeat Red Crag in the ember wastes", hint: bossSpot("ember") }],

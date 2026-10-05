@@ -59,13 +59,15 @@ export interface Model {
   body: THREE.Group;
   parts: Partial<Record<"torso" | "head" | "armL" | "armR" | "legL" | "legR" | "weapon" | "tail" | "extra" | "pony" | "stars", THREE.Object3D>>;
   material: ModelMaterial;
-  kind: "humanoid" | MobModel | "loot";
+  kind: "humanoid" | MobModel | "loot" | "furniture";
   /** Nameplate anchor height. */
   height: number;
   phase: number;
   attackT: number;
   hitT: number;
   scale: number;
+  /** Seconds left in the current jump (0 = grounded). */
+  jumpT: number;
 }
 
 function part(b: GeometryBuilder, mat: THREE.Material, pivot?: [number, number, number]): THREE.Object3D {
@@ -84,7 +86,7 @@ function newModel(kind: Model["kind"], height: number, scale = 1): Model {
   const body = new THREE.Group();
   root.add(body);
   body.scale.setScalar(scale);
-  return { root, body, parts: {}, material: modelMaterial(), kind, height: height * scale, phase: Math.random() * 10, attackT: 0, hitT: 0, scale };
+  return { root, body, parts: {}, material: modelMaterial(), kind, height: height * scale, phase: Math.random() * 10, attackT: 0, hitT: 0, scale, jumpT: 0 };
 }
 
 function shade(color: string, k: number): string {
@@ -93,7 +95,7 @@ function shade(color: string, k: number): string {
 
 // ── humanoids ────────────────────────────────────────────────────────────────
 
-export type HatKind = "none" | "cap" | "hood" | "wizard" | "helmet" | "chef" | "bow";
+export type HatKind = "none" | "cap" | "hood" | "wizard" | "helmet" | "chef" | "bow" | "crown";
 
 export interface HumanoidOpts {
   look: Appearance;
@@ -111,24 +113,24 @@ export function buildHumanoid(o: HumanoidOpts): Model {
 
   // Torso: rounded tunic + belt + collar.
   const torso = new GeometryBuilder();
-  torso.add(PRIMS.ico1, { x: 0, y: 0.72, z: 0, sx: 0.36, sy: 0.4, sz: 0.3, color: look.body });
-  torso.add(PRIMS.cyl12, { x: 0, y: 0.5, z: 0, sx: 0.37, sy: 0.24, sz: 0.31, color: look.body });
-  torso.add(PRIMS.cyl12, { x: 0, y: 0.62, z: 0, sx: 0.36, sy: 0.07, sz: 0.3, color: look.accent });
-  torso.add(PRIMS.box, { x: 0, y: 0.62, z: 0.3, sx: 0.12, sy: 0.1, sz: 0.04, color: "#ffd166" });
+  torso.add(PRIMS.rbox, { x: 0, y: 0.68, z: 0, sx: 0.66, sy: 0.6, sz: 0.52, color: look.body });
+  torso.add(PRIMS.rbox, { x: 0, y: 0.47, z: 0, sx: 0.7, sy: 0.2, sz: 0.56, color: look.body });
+  torso.add(PRIMS.box, { x: 0, y: 0.6, z: 0, sx: 0.69, sy: 0.08, sz: 0.55, color: look.accent });
+  torso.add(PRIMS.box, { x: 0, y: 0.6, z: 0.28, sx: 0.13, sy: 0.11, sz: 0.04, color: "#ffd166" });
   if (armorGlow) torso.add(PRIMS.octa, { x: 0, y: 0.86, z: 0.27, sx: 0.07, sy: 0.09, sz: 0.04, color: armorGlow, glow: 1.2 });
   m.parts.torso = part(torso, mat);
   m.body.add(m.parts.torso);
 
   // Head: big round head, eyes with highlights, blush, little smile.
   const head = new GeometryBuilder();
-  head.add(PRIMS.ico1, { x: 0, y: 1.32, z: 0, sx: 0.4, sy: 0.38, sz: 0.38, color: look.skin });
-  head.add(PRIMS.ico, { x: -0.14, y: 1.3, z: 0.33, sx: 0.06, sy: 0.08, sz: 0.04, color: "#2b2238" });
-  head.add(PRIMS.ico, { x: 0.14, y: 1.3, z: 0.33, sx: 0.06, sy: 0.08, sz: 0.04, color: "#2b2238" });
-  head.add(PRIMS.ico, { x: -0.125, y: 1.33, z: 0.36, sx: 0.02, sy: 0.02, sz: 0.01, color: "#ffffff", glow: 0.5 });
-  head.add(PRIMS.ico, { x: 0.155, y: 1.33, z: 0.36, sx: 0.02, sy: 0.02, sz: 0.01, color: "#ffffff", glow: 0.5 });
-  head.add(PRIMS.ico, { x: -0.25, y: 1.2, z: 0.28, sx: 0.07, sy: 0.04, sz: 0.03, color: "#ff9fb4" });
-  head.add(PRIMS.ico, { x: 0.25, y: 1.2, z: 0.28, sx: 0.07, sy: 0.04, sz: 0.03, color: "#ff9fb4" });
-  head.add(PRIMS.box, { x: 0, y: 1.17, z: 0.36, sx: 0.07, sy: 0.015, sz: 0.01, color: "#8a4a5a" });
+  head.add(PRIMS.rbox, { x: 0, y: 1.32, z: 0, sx: 0.8, sy: 0.74, sz: 0.74, color: look.skin });
+  head.add(PRIMS.rbox, { x: -0.15, y: 1.3, z: 0.37, sx: 0.11, sy: 0.15, sz: 0.04, color: "#2b2238" });
+  head.add(PRIMS.rbox, { x: 0.15, y: 1.3, z: 0.37, sx: 0.11, sy: 0.15, sz: 0.04, color: "#2b2238" });
+  head.add(PRIMS.box, { x: -0.13, y: 1.34, z: 0.395, sx: 0.04, sy: 0.04, sz: 0.01, color: "#ffffff", glow: 0.5 });
+  head.add(PRIMS.box, { x: 0.17, y: 1.34, z: 0.395, sx: 0.04, sy: 0.04, sz: 0.01, color: "#ffffff", glow: 0.5 });
+  head.add(PRIMS.rbox, { x: -0.27, y: 1.19, z: 0.36, sx: 0.13, sy: 0.07, sz: 0.03, color: "#ff9fb4" });
+  head.add(PRIMS.rbox, { x: 0.27, y: 1.19, z: 0.36, sx: 0.13, sy: 0.07, sz: 0.03, color: "#ff9fb4" });
+  head.add(PRIMS.box, { x: 0, y: 1.16, z: 0.375, sx: 0.08, sy: 0.018, sz: 0.01, color: "#8a4a5a" });
   addHair(head, look);
   addHat(head, o.hat ?? classHat(o.cls), look, o.cls);
   m.parts.head = part(head, mat, [0, 1.0, 0]);
@@ -137,8 +139,8 @@ export function buildHumanoid(o: HumanoidOpts): Model {
   // Arms (pivot at shoulder) with little hands.
   for (const side of [-1, 1] as const) {
     const arm = new GeometryBuilder();
-    arm.add(PRIMS.cyl6, { x: side * 0.4, y: 0.72, z: 0, sx: 0.08, sy: 0.32, sz: 0.08, rz: side * 0.15, color: look.body });
-    arm.add(PRIMS.ico, { x: side * 0.43, y: 0.54, z: 0, sx: 0.09, sy: 0.09, sz: 0.09, color: look.skin });
+    arm.add(PRIMS.rbox, { x: side * 0.41, y: 0.72, z: 0, sx: 0.17, sy: 0.34, sz: 0.17, rz: side * 0.12, color: look.body });
+    arm.add(PRIMS.rbox, { x: side * 0.43, y: 0.53, z: 0, sx: 0.16, sy: 0.15, sz: 0.16, color: look.skin });
     const p = part(arm, mat, [side * 0.37, 0.88, 0]);
     if (side < 0) m.parts.armL = p;
     else m.parts.armR = p;
@@ -147,8 +149,8 @@ export function buildHumanoid(o: HumanoidOpts): Model {
   // Legs + boots.
   for (const side of [-1, 1] as const) {
     const leg = new GeometryBuilder();
-    leg.add(PRIMS.cyl6, { x: side * 0.14, y: 0.25, z: 0, sx: 0.09, sy: 0.3, sz: 0.09, color: shade(look.body, 0.7) });
-    leg.add(PRIMS.box, { x: side * 0.14, y: 0.07, z: 0.04, sx: 0.17, sy: 0.12, sz: 0.24, color: "#7a5234" });
+    leg.add(PRIMS.rbox, { x: side * 0.15, y: 0.26, z: 0, sx: 0.18, sy: 0.3, sz: 0.18, color: shade(look.body, 0.7) });
+    leg.add(PRIMS.rbox, { x: side * 0.15, y: 0.07, z: 0.04, sx: 0.2, sy: 0.14, sz: 0.27, color: "#7a5234" });
     const p = part(leg, mat, [side * 0.14, 0.4, 0]);
     if (side < 0) m.parts.legL = p;
     else m.parts.legR = p;
@@ -202,8 +204,9 @@ function classHat(cls?: ClassId): HatKind {
 
 function addHair(b: GeometryBuilder, look: Appearance): void {
   const c = look.hair;
-  b.add(PRIMS.ico1, { x: 0, y: 1.45, z: -0.04, sx: 0.42, sy: 0.3, sz: 0.4, color: c });
-  b.add(PRIMS.ico, { x: 0, y: 1.5, z: 0.24, sx: 0.3, sy: 0.12, sz: 0.12, color: c });
+  b.add(PRIMS.rbox, { x: 0, y: 1.56, z: -0.05, sx: 0.86, sy: 0.36, sz: 0.8, color: c });
+  b.add(PRIMS.rbox, { x: 0, y: 1.32, z: -0.33, sx: 0.84, sy: 0.6, sz: 0.2, color: c });
+  b.add(PRIMS.rbox, { x: -0.12, y: 1.5, z: 0.33, sx: 0.42, sy: 0.16, sz: 0.14, rz: 0.15, color: c });
   switch (look.hairStyle) {
     case 1: // side tufts
       b.add(PRIMS.ico, { x: -0.36, y: 1.28, z: 0.08, sx: 0.1, sy: 0.18, sz: 0.12, color: c });
@@ -229,7 +232,7 @@ function addHat(b: GeometryBuilder, hat: HatKind, look: Appearance, cls?: ClassI
   const tint = cls ? look.accent : look.body;
   switch (hat) {
     case "hood":
-      b.add(PRIMS.ico1, { x: 0, y: 1.42, z: -0.06, sx: 0.46, sy: 0.38, sz: 0.44, color: look.body });
+      b.add(PRIMS.rbox, { x: 0, y: 1.45, z: -0.07, sx: 0.92, sy: 0.82, sz: 0.86, color: look.body });
       b.add(PRIMS.cone6, { x: 0, y: 1.5, z: -0.45, sx: 0.16, sy: 0.4, sz: 0.16, rx: -1.2, color: look.body });
       b.add(PRIMS.cone4, { x: 0.18, y: 1.78, z: 0, sx: 0.03, sy: 0.25, sz: 0.06, rz: -0.6, color: "#ff8fb1" });
       break;
@@ -240,17 +243,25 @@ function addHat(b: GeometryBuilder, hat: HatKind, look: Appearance, cls?: ClassI
       b.add(PRIMS.octa, { x: 0.05, y: 1.95, z: 0.25, sx: 0.06, sy: 0.06, sz: 0.02, color: "#ffd166", glow: 1 });
       break;
     case "helmet":
-      b.add(PRIMS.ico1, { x: 0, y: 1.48, z: -0.02, sx: 0.44, sy: 0.33, sz: 0.43, color: "#d9dde6" });
+      b.add(PRIMS.rbox, { x: 0, y: 1.52, z: -0.02, sx: 0.88, sy: 0.6, sz: 0.84, color: "#d9dde6" });
       b.add(PRIMS.box, { x: 0, y: 1.42, z: 0.37, sx: 0.08, sy: 0.2, sz: 0.04, color: "#c3c8d2" });
       b.add(PRIMS.ico, { x: 0, y: 1.82, z: -0.08, sx: 0.08, sy: 0.22, sz: 0.25, color: tint === look.body ? "#ff6f8e" : tint });
       break;
     case "cap":
-      b.add(PRIMS.ico1, { x: 0, y: 1.55, z: 0, sx: 0.4, sy: 0.22, sz: 0.4, color: tint });
+      b.add(PRIMS.rbox, { x: 0, y: 1.62, z: 0, sx: 0.84, sy: 0.3, sz: 0.8, color: tint });
       b.add(PRIMS.cyl12, { x: 0, y: 1.52, z: 0.25, sx: 0.28, sy: 0.03, sz: 0.2, color: tint });
       break;
     case "chef":
       b.add(PRIMS.cyl12, { x: 0, y: 1.72, z: 0, sx: 0.28, sy: 0.3, sz: 0.28, color: "#ffffff" });
       b.add(PRIMS.ico1, { x: 0, y: 1.9, z: 0, sx: 0.36, sy: 0.18, sz: 0.36, color: "#ffffff" });
+      break;
+    case "crown":
+      b.add(PRIMS.cyl8, { x: 0, y: 1.78, z: 0, sx: 0.36, sy: 0.16, sz: 0.36, color: "#ffc94d", glow: 0.35 });
+      for (let i = 0; i < 6; i += 1) {
+        const a = (i / 6) * Math.PI * 2;
+        b.add(PRIMS.cone4, { x: Math.cos(a) * 0.3, y: 1.95, z: Math.sin(a) * 0.3, sx: 0.07, sy: 0.2, sz: 0.07, color: "#ffc94d", glow: 0.35 });
+      }
+      b.add(PRIMS.octa, { x: 0, y: 1.8, z: 0.36, sx: 0.07, sy: 0.08, sz: 0.04, color: "#ff5c8a", glow: 1.2 });
       break;
     case "bow":
       b.add(PRIMS.cone4, { x: -0.12, y: 1.72, z: 0.05, sx: 0.12, sy: 0.18, sz: 0.06, rz: Math.PI / 2, color: "#ff8fb1" });
@@ -557,6 +568,7 @@ export function animate(m: Model, s: AnimState, dt: number, time: number): void 
   m.material.userData.flash.value = m.hitT > 0 ? m.hitT * 2.2 : 0;
   if (m.attackT > 0) m.attackT = Math.max(0, m.attackT - dt);
 
+  if (m.kind === "furniture") return;
   if (m.kind === "loot") {
     m.body.rotation.y += dt * 1.6;
     m.body.position.y = 0.1 + Math.sin(time * 3 + m.phase) * 0.06;
@@ -729,6 +741,23 @@ function animateEmote(m: Model, emote: string, time: number): boolean {
       return true;
   }
   return false;
+}
+
+export const JUMP_TIME = 0.62;
+export const JUMP_HEIGHT = 1.15;
+
+/** Vertical offset of a jump arc; also tucks the legs while airborne. */
+export function jumpOffset(m: Model, dt: number): number {
+  if (m.jumpT <= 0) return 0;
+  m.jumpT = Math.max(0, m.jumpT - dt);
+  const k = 1 - m.jumpT / JUMP_TIME;
+  const y = Math.sin(k * Math.PI) * JUMP_HEIGHT;
+  if (m.kind === "humanoid" && m.jumpT > 0) {
+    if (m.parts.legL) m.parts.legL.rotation.x = -0.7 * Math.sin(k * Math.PI);
+    if (m.parts.legR) m.parts.legR.rotation.x = -0.4 * Math.sin(k * Math.PI);
+    if (m.parts.armL) m.parts.armL.rotation.z = -0.6 * Math.sin(k * Math.PI);
+  }
+  return y;
 }
 
 export function disposeModel(m: Model): void {

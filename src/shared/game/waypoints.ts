@@ -20,15 +20,16 @@ function place(id: string, name: string, x: number, y: number): Waypoint {
 }
 
 export const WAYPOINTS: Waypoint[] = [
-  place("wp_hearthmoor", "Hearthmoor Plaza", -4.5, 5.5),
-  place("wp_north_road", "Frostwatch Road", 5, -118),
-  place("wp_north_end", "Whitepine Hollow", 5, -215),
-  place("wp_east_road", "Dune Gate", 118, 5),
-  place("wp_east_end", "Glasshide Flats", 215, 5),
-  place("wp_south_road", "Mirewater Crossing", 5, 118),
-  place("wp_south_end", "Bogfather's Mire", 5, 215),
-  place("wp_west_road", "Highland Steps", -118, 5),
-  place("wp_west_end", "Scarcliff", -215, 5)
+  place("wp_hearthmoor", "Hearthmoor Market", -8.5, 97.5),
+  place("wp_citadel", "The Citadel", 7.5, 6.5),
+  place("wp_north_road", "Frostwatch Road", 5, -178),
+  place("wp_north_end", "Whitepine Hollow", 5, -345),
+  place("wp_east_road", "Dune Gate", 178, 5),
+  place("wp_east_end", "Glasshide Flats", 345, 5),
+  place("wp_south_road", "Mirewater Crossing", 5, 178),
+  place("wp_south_end", "Bogfather's Mire", 5, 345),
+  place("wp_west_road", "Highland Steps", -178, 5),
+  place("wp_west_end", "Scarcliff", -345, 5)
 ];
 
 export function waypointById(id: string): Waypoint | undefined {

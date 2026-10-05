@@ -27,7 +27,12 @@ import { WAYPOINTS, WAYPOINT_COST, WAYPOINT_DISCOVER_RADIUS, WAYPOINT_USE_RADIUS
 import { EMOTES } from "../../shared/game/emotes";
 import { QuestService } from "./questService";
 import { SocialService } from "./socialService";
-import { OVERWORLD } from "../../shared/world/maps";
+import { OVERWORLD, getMap, isInterior, type MapDef } from "../../shared/world/maps";
+import { DOORS_BY_ID, DOOR_RADIUS, PLOTS_BY_ID, parseHouseMapId, houseMapId } from "../../shared/world/housing";
+import { HOUSE_STORAGE_SIZE } from "../../shared/game/furniture";
+import { circleBlocked } from "../../shared/game/movement";
+import { Tile } from "../../shared/world/tiles";
+import { HousingService } from "./housingService";
 import { findWalkableNear } from "../../shared/world/overworld";
 import { clamp, dist, wrapAngle } from "../../shared/math";
 import { CHARACTER_NAME_RE, hashPassword, validateCredentials, verifyPassword } from "../auth";
@@ -65,6 +70,7 @@ export class Game {
   private lastCheckAt = 0;
   readonly quests: QuestService;
   readonly social: SocialService;
+  readonly housing: HousingService;
 
   constructor(private store: Store) {
     this.quests = new QuestService({
@@ -88,16 +94,61 @@ export class Game {
       addToBag: (p, item) => this.addToBag(p, item),
       system: (p, text) => p.session.send({ t: "chat", from: "", name: "", text, kind: "system" })
     });
-    const overworld = new World(OVERWORLD, {
-      onMobKilled: (w, mob) => this.onMobKilled(w, mob),
-      onPlayerDied: (w, p) => this.onPlayerDied(w, p),
+    this.housing = new HousingService(store);
+    this.getWorld(OVERWORLD.id);
+    this.tickMs = 1000 / config.tickRate;
+    this.snapEvery = Math.max(1, Math.round(config.tickRate / config.snapRate));
+  }
+
+  /** Maps are simulated as separate worlds, created the first time someone goes there. */
+  getWorld(mapId: string): World {
+    let w = this.worlds.get(mapId);
+    if (w) return w;
+    const def = getMap(mapId);
+    w = this.worlds.get(def.id);
+    if (w) return w;
+    w = new World(def, {
+      onMobKilled: (world, mob) => this.onMobKilled(world, mob),
+      onPlayerDied: (world, p) => this.onPlayerDied(world, p),
       hour: () => this.worldTime() * 24,
       partyOf: (p) => this.social.membersOf(p).filter((m) => m.mapId === p.mapId)
     });
-    overworld.populate();
-    this.worlds.set(OVERWORLD.id, overworld);
-    this.tickMs = 1000 / config.tickRate;
-    this.snapEvery = Math.max(1, Math.round(config.tickRate / config.snapRate));
+    w.populate();
+    this.housing.loadInto(w);
+    this.worlds.set(def.id, w);
+    return w;
+  }
+
+  /** Move a player to another map (or another spot on the same one). */
+  transfer(p: Player, mapId: string, x: number, y: number): void {
+    const from = this.worlds.get(p.mapId);
+    const to = this.getWorld(mapId);
+    if (p.storageOpen) {
+      this.housing.saveStorage(p.storageOpen);
+      p.storageOpen = null;
+      p.session.send({ t: "storage", items: null });
+    }
+    if (from !== to) {
+      from?.removePlayer(p);
+      p.x = x;
+      p.y = y;
+      p.mounted = false;
+      to.addPlayer(p);
+      p.session.known.clear();
+    } else {
+      p.x = x;
+      p.y = y;
+      to.grid.moved(p);
+    }
+    p.input.mx = p.input.my = 0;
+    p.lastDoorAt = Date.now();
+    p.saveDirty = true;
+    p.session.send({ t: "welcome", id: p.id, map: to.def.id, x: p.x, y: p.y, time: this.worldTime(), dayLength: config.dayLengthMs });
+  }
+
+  private broadcastHouses(): void {
+    const json = JSON.stringify({ t: "houses", list: this.housing.list() } satisfies S2C);
+    for (const s of this.sessions.values()) if (s.player) s.sendRaw(json);
   }
 
   // ── lifecycle ───────────────────────────────────────────────────────────────
@@ -271,10 +322,27 @@ export class Game {
         return this.travel(p, world, String(msg.id));
       case "emote":
         return world.setEmote(p, String(msg.id), now);
+      case "jump":
+        if (p.dead || now - p.lastJumpAt < 550) return;
+        p.lastJumpAt = now;
+        p.emote = "";
+        // Everyone else nearby sees the hop; the jumper already predicted it.
+        world.grid.forEachNear(p.x, p.y, 44, (e) => {
+          if (e.kind === "player" && e !== p) e.session.fx.push({ e: "jump", id: p.id });
+        });
+        return;
       case "party":
         return this.partyOp(p, msg);
       case "trade":
         return this.tradeOp(p, msg);
+      case "door":
+        return this.useDoor(p, world, String(msg.id), now);
+      case "house":
+        return this.houseOp(p, world, msg);
+      case "furn":
+        return this.furnOp(p, world, msg);
+      case "storage":
+        return this.storageOp(p, world, msg);
     }
   }
 
@@ -350,7 +418,8 @@ export class Game {
       bar: new Array(BAR_SLOTS).fill(null),
       quests: { active: [], done: [] },
       waypoints: ["wp_hearthmoor"],
-      hasMount: false
+      hasMount: false,
+      furniture: {}
     };
     this.store.saveCharacter(s.accountId, name, save);
     this.handlePlay(s);
@@ -361,11 +430,17 @@ export class Game {
     const row = this.store.loadCharacter(s.accountId);
     if (!row) return;
     const save = normalizeSave(JSON.parse(row.data) as CharacterSave);
-    const world = this.worlds.get(save.map) ?? this.worlds.get(OVERWORLD.id)!;
-    if (save.map !== world.def.id || world.def.tileAt(save.x, save.y) === undefined) {
-      save.map = world.def.id;
+    // You may log out inside a home you no longer have access to: put you on its doorstep.
+    const house = parseHouseMapId(save.map);
+    if (house && !(this.housing.ownerOf(house.plotId)?.accountId === s.accountId)) {
+      const plot = PLOTS_BY_ID[house.plotId];
+      save.map = OVERWORLD.id;
+      save.x = plot?.front.x ?? OVERWORLD.spawn.x;
+      save.y = plot?.front.y ?? OVERWORLD.spawn.y;
     }
-    const safe = findWalkableNear(save.x, save.y, 6);
+    const world = this.getWorld(save.map);
+    save.map = world.def.id;
+    const safe = safeSpot(world.def, save.x, save.y);
     save.x = safe.x;
     save.y = safe.y;
     const p = new Player(`p${s.accountId}`, s.accountId, s, save);
@@ -375,6 +450,7 @@ export class Game {
     s.known.clear();
     world.addPlayer(p);
     s.send({ t: "welcome", id: p.id, map: world.def.id, x: p.x, y: p.y, time: this.worldTime(), dayLength: config.dayLengthMs });
+    s.send({ t: "houses", list: this.housing.list() });
     this.sendSelf(p);
     s.send({ t: "chat", from: "", name: "", text: `Welcome to Balathor v2, ${save.name}! Press Enter to chat, /help for commands.`, kind: "system" });
     this.broadcastNear(world, p.x, p.y, 60, { t: "chat", from: "", name: "", text: `${save.name} arrived in Hearthmoor.`, kind: "system" }, p.id);
@@ -465,11 +541,8 @@ export class Game {
     p.dead = false;
     p.mounted = false;
     p.hp = p.derived.maxHp;
-    p.x = world.def.spawn.x;
-    p.y = world.def.spawn.y;
-    world.grid.moved(p);
-    p.saveDirty = true;
-    p.session.send({ t: "welcome", id: p.id, map: world.def.id, x: p.x, y: p.y, time: this.worldTime(), dayLength: config.dayLengthMs });
+    void world;
+    this.transfer(p, OVERWORLD.id, OVERWORLD.spawn.x, OVERWORLD.spawn.y);
   }
 
   private spendStat(p: Player, stat: StatId): void {
@@ -634,6 +707,14 @@ export class Game {
     const entry = shop?.stock[idx];
     if (!entry || !this.nearShop(p, world, shopId)) return;
     if (p.save.gold < entry.price) return p.session.toast("Not enough gold", "bad");
+    if (itemTemplate(entry.tpl)?.kind === "furniture") {
+      const kind = entry.tpl.slice(5);
+      p.save.gold -= entry.price;
+      p.save.furniture[kind] = (p.save.furniture[kind] ?? 0) + 1;
+      p.selfDirty = p.saveDirty = true;
+      p.session.toast(`Bought ${itemName(makeItem(entry.tpl))}! Decorate your home with H.`, "good");
+      return;
+    }
     if (itemTemplate(entry.tpl)?.kind === "mount") {
       if (p.save.hasMount) return p.session.toast("You already have a pony!", "bad");
       p.save.gold -= entry.price;
@@ -703,10 +784,7 @@ export class Game {
       case "home": {
         if (p.dead) return;
         if (Date.now() - p.lastDamagedAt < 8000) return sys("You can't go home mid-fight!");
-        p.x = world.def.spawn.x;
-        p.y = world.def.spawn.y;
-        world.grid.moved(p);
-        s.send({ t: "welcome", id: p.id, map: world.def.id, x: p.x, y: p.y, time: this.worldTime(), dayLength: config.dayLengthMs });
+        this.transfer(p, OVERWORLD.id, OVERWORLD.spawn.x, OVERWORLD.spawn.y);
         return sys("Whoosh! Back to Hearthmoor.");
       }
       case "tp": {
@@ -714,11 +792,20 @@ export class Game {
         if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
         const [, xs, ys] = text.trim().split(/\s+/);
         const spot = findWalkableNear(Number(xs) || 0, Number(ys) || 0, 10);
-        p.x = spot.x;
-        p.y = spot.y;
-        world.grid.moved(p);
-        s.send({ t: "welcome", id: p.id, map: world.def.id, x: p.x, y: p.y, time: this.worldTime(), dayLength: config.dayLengthMs });
+        this.transfer(p, OVERWORLD.id, spot.x, spot.y);
         return sys(`Teleported to ${p.x.toFixed(0)}, ${p.y.toFixed(0)}`);
+      }
+      case "tpnpc": {
+        if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
+        const id = text.trim().split(/\s+/)[1] ?? "";
+        for (const w of this.worlds.values()) {
+          const npc = w.npcs.get(id);
+          if (!npc) continue;
+          const spot = w.def.id === OVERWORLD.id ? findWalkableNear(npc.x, npc.y + 1, 4) : { x: npc.x, y: npc.y + 1 };
+          this.transfer(p, w.def.id, spot.x, spot.y);
+          return sys(`Teleported to ${npc.def.name}`);
+        }
+        return sys(`No NPC ${id}`);
       }
       case "xp":
       case "gold": {
@@ -805,7 +892,7 @@ export class Game {
 
   private travel(p: Player, world: World, id: string): void {
     const dest = waypointById(id);
-    if (!dest || !p.save.waypoints.includes(id) || p.dead) return;
+    if (!dest || !p.save.waypoints.includes(id) || p.dead || world.def.id !== OVERWORLD.id) return;
     const near = WAYPOINTS.find((w) => dist(p.x, p.y, w.x, w.y) <= WAYPOINT_USE_RADIUS && p.save.waypoints.includes(w.id));
     if (!near) return p.session.toast("Stand next to an attuned obelisk to travel", "bad");
     if (near.id === id) return;
@@ -814,12 +901,8 @@ export class Game {
     if (Date.now() - p.lastDamagedAt < 5000) return p.session.toast("You can't travel mid-fight!", "bad");
     p.save.gold -= cost;
     const spot = findWalkableNear(dest.x + 1.5, dest.y + 1.5, 4);
-    p.x = spot.x;
-    p.y = spot.y;
-    p.mounted = false;
-    world.grid.moved(p);
     p.selfDirty = p.saveDirty = true;
-    p.session.send({ t: "welcome", id: p.id, map: world.def.id, x: p.x, y: p.y, time: this.worldTime(), dayLength: config.dayLengthMs });
+    this.transfer(p, OVERWORLD.id, spot.x, spot.y);
     p.session.toast(`Whoosh! Welcome to ${dest.name}.`, "good");
   }
 
@@ -902,8 +985,12 @@ export class Game {
       for (const s of this.sessions.values()) {
         const p = s.player;
         if (!p || p.dead) continue;
-        this.discoverWaypoints(p);
-        this.quests.checkVisits(p);
+        if (p.mapId === OVERWORLD.id) {
+          this.discoverWaypoints(p);
+          this.quests.checkVisits(p);
+        } else {
+          this.checkStairs(p, now);
+        }
       }
     }
     if (now - this.lastPartyTickAt >= 1000) {
@@ -977,6 +1064,101 @@ export class Game {
     s.send(msg);
   }
 
+  // ── doors, homes, decorating, storage ───────────────────────────────────────
+
+  private useDoor(p: Player, world: World, id: string, now: number): void {
+    const door = DOORS_BY_ID[id];
+    if (!door || door.map !== world.def.id || p.dead) return;
+    if (Math.hypot(p.x - door.x, p.y - door.y) > DOOR_RADIUS + 0.4) return;
+    if (now - p.lastDoorAt < 600) return;
+    if (door.plot && door.to.map !== OVERWORLD.id) {
+      const owner = this.housing.ownerOf(door.plot);
+      if (!owner) {
+        const plot = PLOTS_BY_ID[door.plot];
+        return p.session.send({ t: "toast", text: `${plot.name} is for sale: ${plot.price} gold`, kind: "info" });
+      }
+      if (!this.housing.canEnter(p, door.plot, this.social.membersOf(p))) {
+        return p.session.toast(`${owner.name}'s home is locked`, "bad");
+      }
+    }
+    this.transfer(p, door.to.map, door.to.x, door.to.y);
+  }
+
+  private checkStairs(p: Player, now: number): void {
+    const map = getMap(p.mapId);
+    if (!isInterior(map) || !map.plot?.manor || now - p.lastDoorAt < 1200) return;
+    if (map.tileAt(p.x, p.y) !== Tile.STAIRS) return;
+    const other = map.floor === 0 ? 1 : 0;
+    const target = getMap(houseMapId(map.plot.id, other));
+    if (!isInterior(target) || !target.layout.stairs) return;
+    this.transfer(p, target.id, target.layout.stairs.x - 0.8, target.layout.stairs.y + 1.3);
+  }
+
+  private houseOp(p: Player, world: World, msg: Extract<C2S, { t: "house" }>): void {
+    const plotId = String(msg.plot);
+    let err: string | null = null;
+    if (msg.op === "buy") {
+      const plot = PLOTS_BY_ID[plotId];
+      if (!plot || Math.hypot(p.x - plot.front.x, p.y - plot.front.y) > 4 || world.def.id !== OVERWORLD.id) return;
+      err = this.housing.buy(p, plotId);
+      if (!err) p.session.toast(`Welcome home! ${plot.name} is yours.`, "good");
+    } else if (msg.op === "sell") {
+      err = this.housing.sell(p, plotId, this.worlds.values());
+      if (!err) {
+        p.session.toast("Home sold. Your furniture is back in your stock.", "good");
+        for (const w of this.worlds.values()) {
+          const id = parseHouseMapId(w.def.id);
+          if (id?.plotId !== plotId) continue;
+          const plot = PLOTS_BY_ID[plotId];
+          for (const other of [...w.players.values()]) this.transfer(other, OVERWORLD.id, plot.front.x, plot.front.y);
+        }
+      }
+    } else if (msg.op === "open") {
+      this.housing.setOpen(p, plotId, Boolean(msg.open));
+      p.session.toast(msg.open ? "Your home is open to visitors" : "Your home is private again", "good");
+    }
+    if (err) p.session.toast(err, "bad");
+    else this.broadcastHouses();
+  }
+
+  private furnOp(p: Player, world: World, msg: Extract<C2S, { t: "furn" }>): void {
+    const err =
+      msg.op === "place"
+        ? this.housing.place(p, world, String(msg.kind), Number(msg.x), Number(msg.y), Number(msg.rot))
+        : this.housing.pickup(p, world, String(msg.id));
+    if (err) p.session.toast(err, "bad");
+  }
+
+  private storageOp(p: Player, world: World, msg: Extract<C2S, { t: "storage" }>): void {
+    if (msg.op === "close") {
+      if (p.storageOpen) this.housing.saveStorage(p.storageOpen);
+      p.storageOpen = null;
+      return;
+    }
+    const plotId = this.housing.storageAccess(p, world);
+    if (!plotId) return p.session.toast("Stand next to a storage chest in your home", "bad");
+    const items = this.housing.getStorage(plotId);
+    p.storageOpen = plotId;
+    const slot = Math.floor(Number(msg.slot));
+    if (msg.op === "deposit") {
+      const item = p.save.inv[slot];
+      const free = items.indexOf(null);
+      if (item && free !== -1 && free < HOUSE_STORAGE_SIZE) {
+        items[free] = item;
+        p.save.inv[slot] = null;
+        p.selfDirty = p.saveDirty = true;
+        this.housing.saveStorage(plotId);
+      } else if (item) p.session.toast("Your storage is full", "bad");
+    } else if (msg.op === "withdraw") {
+      const item = items[slot];
+      if (item && this.addToBag(p, { ...item })) {
+        items[slot] = null;
+        this.housing.saveStorage(plotId);
+      } else if (item) p.session.toast("Your bag is full", "bad");
+    }
+    p.session.send({ t: "storage", items });
+  }
+
   private sendSelf(p: Player): void {
     // Bag-dependent systems re-check before we publish the new state.
     this.quests.onBagChanged(p);
@@ -1010,7 +1192,9 @@ export class Game {
       quests: s.quests,
       markers: this.quests.markers(p),
       waypoints: s.waypoints,
-      hasMount: s.hasMount
+      hasMount: s.hasMount,
+      furniture: s.furniture,
+      home: this.housing.homeOf(p.accountId)
     };
     p.session.send({ t: "self", self });
   }
@@ -1080,6 +1264,7 @@ function normalizeSave(save: CharacterSave): CharacterSave {
   save.waypoints = Array.isArray(save.waypoints) ? save.waypoints : ["wp_hearthmoor"];
   if (!save.waypoints.includes("wp_hearthmoor")) save.waypoints.push("wp_hearthmoor");
   save.hasMount = Boolean(save.hasMount);
+  save.furniture = save.furniture && typeof save.furniture === "object" ? save.furniture : {};
   return save;
 }
 
@@ -1091,4 +1276,11 @@ function randomGear(cls: keyof typeof CLASSES | undefined, level: number, luck: 
   const pool = roll < 0.45 ? weapons : roll < 0.8 ? armor : rings;
   const tpl = pool[Math.floor(Math.random() * pool.length)];
   return makeItem(tpl.id, rollRarity(Math.random, luck), Math.max(1, level));
+}
+
+/** A walkable spot near (x, y) on any map. */
+function safeSpot(map: MapDef, x: number, y: number): { x: number; y: number } {
+  if (!isInterior(map)) return findWalkableNear(x, y, 6);
+  if (!circleBlocked(map, x, y)) return { x, y };
+  return { ...map.spawn };
 }

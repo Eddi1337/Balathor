@@ -28,13 +28,13 @@ async function goTo(c, x, y) {
 }
 
 async function talkTo(c, defId) {
+  await c.chat(`/tpnpc ${defId}`, 1200);
   let npc;
   for (let i = 0; i < 30 && !npc; i += 1) {
     npc = c.npc(defId);
     if (!npc) await sleep(100);
   }
   assert.ok(npc, `${defId} should be visible`);
-  await goTo(c, npc.x, npc.y + 0.8);
   c.send({ t: "talk", id: npc.id });
   await sleep(400);
 }
@@ -113,11 +113,11 @@ test("mounts: buy a pony from Holt, ride it", async () => {
 
 test("waypoints: attune by walking near an obelisk, then travel between them", async () => {
   assert.deepEqual(a.self.waypoints, ["wp_hearthmoor"]);
-  await goTo(a, 5, -118);
+  await goTo(a, 5, -178);
   const self = await a.selfWhere((s) => s.waypoints.includes("wp_north_road"), 3000, "attuned");
   assert.ok(self.waypoints.includes("wp_north_road"));
   // Head home (monsters roam out there) and travel from the safe plaza obelisk.
-  await goTo(a, -4.5, 5.5);
+  await goTo(a, -8.5, 97.5);
   a.send({ t: "respawn" });
   await sleep(5500); // travel is refused for 5s after taking damage
 
@@ -125,9 +125,9 @@ test("waypoints: attune by walking near an obelisk, then travel between them", a
   a.messages = [];
   a.send({ t: "travel", id: "wp_north_road" });
   const w = await a.wait((m) => m.t === "welcome", 3000, "travel teleport");
-  assert.ok(Math.hypot(w.x - 5, w.y + 118) < 10, `arrived at the north road (${w.x}, ${w.y})`);
+  assert.ok(Math.hypot(w.x - 5, w.y + 178) < 10, `arrived at the north road (${w.x}, ${w.y})`);
   await a.selfWhere((s) => s.gold === gold - 12, 2000, "travel fee paid");
-  await goTo(a, 0.5, 4.5);
+  await goTo(a, 3.5, 100.5);
   a.send({ t: "respawn" });
   await sleep(500);
 });
@@ -175,7 +175,7 @@ test("parties, party chat, emotes and trading between two players", async () => 
 });
 
 test("villagers follow their routine: at night Pip goes home", async () => {
-  await goTo(a, 0.5, 4.5);
+  await a.chat("/tpnpc npc_pip", 1200);
   await a.wait(() => a.npc("npc_pip"), 3000, "Pip visible by day");
   await a.chat("/time 0.97", 1500);
   // Pip walks to her cottage and goes inside (disappearing from view).
