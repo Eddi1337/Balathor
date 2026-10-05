@@ -1,14 +1,6 @@
 node_modules/
 dist/
-build/
-client/desktop/app/
-.env
+data/
+*.sqlite
+*.sqlite-*
 .DS_Store
-*.log
-server/data/
-client/assets/*-source.png
-# Licensed art — add locally from your itch.io purchase (do not commit)
-client/assets/sci-fi/tileset.png
-client/assets/sci-fi/*.zip
-*Zone.Identifier
-**/__MACOSX/

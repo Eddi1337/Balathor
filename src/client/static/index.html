@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#9fd8ff" />
+    <title>Balathor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ccircle cx=%2250%22 cy=%2258%22 r=%2238%22 fill=%22%237fd66b%22/%3E%3Ccircle cx=%2238%22 cy=%2254%22 r=%226%22 fill=%22%232b2238%22/%3E%3Ccircle cx=%2262%22 cy=%2254%22 r=%226%22 fill=%22%232b2238%22/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <div id="overlay-labels"></div>
+
+    <!-- Title / auth -->
+    <section id="screen-auth" class="screen">
+      <div class="card title-card">
+        <h1 class="logo">Balathor<span>v2</span></h1>
+        <p class="tagline">A cosy little world of slimes, sunbeams and second breakfasts.</p>
+        <form id="auth-form" autocomplete="on">
+          <label>Username<input id="auth-user" name="username" autocomplete="username" maxlength="16" required /></label>
+          <label>Password<input id="auth-pass" name="password" type="password" autocomplete="current-password" maxlength="128" required /></label>
+          <div class="row">
+            <button type="submit" class="btn primary" data-mode="login">Log in</button>
+            <button type="submit" class="btn" data-mode="register">Create account</button>
+          </div>
+          <p id="auth-status" class="status" role="status"></p>
+        </form>
+      </div>
+    </section>
+
+    <!-- Character creation -->
+    <section id="screen-create" class="screen hidden">
+      <div class="card create-card">
+        <h2>Make your adventurer</h2>
+        <label>Name<input id="create-name" maxlength="16" placeholder="Pippin" /></label>
+        <div class="class-picker" id="class-picker"></div>
+        <div class="swatches">
+          <div><span>Outfit</span><div class="swatch-row" data-look="body"></div></div>
+          <div><span>Trim</span><div class="swatch-row" data-look="accent"></div></div>
+          <div><span>Skin</span><div class="swatch-row" data-look="skin"></div></div>
+          <div><span>Hair</span><div class="swatch-row" data-look="hair"></div></div>
+          <div><span>Hairstyle</span><div class="swatch-row" data-look="hairStyle"></div></div>
+        </div>
+        <button id="create-go" class="btn primary big">Begin adventure</button>
+        <p id="create-status" class="status" role="status"></p>
+      </div>
+    </section>
+
+    <!-- In-game HUD -->
+    <section id="hud" class="hidden">
+      <div class="hud-portrait card">
+        <div class="hud-name"><span id="hud-name">Hero</span><span class="lv">Lv <b id="hud-level">1</b></span></div>
+        <div class="bar hp"><div id="hud-hp-fill"></div><span id="hud-hp-text"></span></div>
+        <div class="bar xp"><div id="hud-xp-fill"></div><span id="hud-xp-text"></span></div>
+      </div>
+      <div class="hud-topright">
+        <div class="gold card"><span class="coin"></span><b id="hud-gold">0</b></div>
+        <div class="minimap card"><canvas id="minimap" width="168" height="168"></canvas><div id="hud-zone" class="zone"></div></div>
+      </div>
+      <div id="toasts"></div>
+      <div class="hotbar card">
+        <button class="hot" id="hot-attack" title="Attack (click / Space)"><span class="ico">⚔️</span><span class="key">Spc</span><span class="cd" id="hot-attack-cd"></span></button>
+        <button class="hot" id="hot-potion" title="Drink a tonic (Q)"><span class="ico">🧃</span><span class="key">Q</span><span class="count" id="hot-potion-count">0</span></button>
+        <button class="hot" id="hot-interact" title="Talk / pick up (E)"><span class="ico">💬</span><span class="key">E</span></button>
+        <button class="hot" id="hot-bag" title="Bag (I)"><span class="ico">🎒</span><span class="key">I</span></button>
+        <button class="hot" id="hot-char" title="Character (C)"><span class="ico">🧝</span><span class="key">C</span><span class="badge hidden" id="hot-char-badge">!</span></button>
+      </div>
+      <div id="chat" class="card">
+        <div id="chat-log"></div>
+        <form id="chat-form"><input id="chat-input" maxlength="160" placeholder="Press Enter to chat" autocomplete="off" /></form>
+      </div>
+      <div id="interact-hint" class="hint hidden"></div>
+
+      <div id="win-bag" class="window card hidden">
+        <header><h3>Bag</h3><button class="x" data-close="win-bag">✕</button></header>
+        <div id="bag-grid" class="item-grid"></div>
+        <p class="tip">Click to use / equip · Right-click to drop · Shift-click to sell at a shop · Drag to rearrange</p>
+      </div>
+
+      <div id="win-char" class="window card hidden">
+        <header><h3 id="char-title">Character</h3><button class="x" data-close="win-char">✕</button></header>
+        <div class="char-body">
+          <div id="equip-slots" class="equip-slots"></div>
+          <div class="stats">
+            <div class="points">Stat points: <b id="char-points">0</b></div>
+            <div id="char-stats"></div>
+            <div id="char-derived" class="derived"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="win-shop" class="window card hidden">
+        <header><h3 id="shop-title">Shop</h3><button class="x" data-close="win-shop">✕</button></header>
+        <p id="shop-greeting" class="greeting"></p>
+        <div id="shop-stock" class="shop-stock"></div>
+        <p class="tip">Shift-click items in your bag to sell them here.</p>
+      </div>
+
+      <div id="tooltip" class="tooltip hidden"></div>
+
+      <div id="death" class="death hidden">
+        <div class="card">
+          <h2>You fainted!</h2>
+          <p>Hearthmoor's healers will patch you right up.</p>
+          <button id="respawn" class="btn primary big">Wake up in town</button>
+        </div>
+      </div>
+
+      <div id="touch-controls" class="hidden">
+        <div id="joystick"><div id="joystick-knob"></div></div>
+        <button id="touch-attack">⚔️</button>
+        <button id="touch-interact">💬</button>
+      </div>
+    </section>
+
+    <div id="loading" class="loading"><div class="spinner"></div><p id="loading-text">Waking up the slimes…</p></div>
+    <div id="conn-banner" class="conn-banner hidden">Reconnecting…</div>
+
+    <script type="module" src="./game.js"></script>
+  </body>
+</html>

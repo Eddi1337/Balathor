@@ -1,30 +1,29 @@
 {
-  "name": "balathor",
-  "version": "0.1.0",
+  "name": "balathor-v2",
+  "version": "2.0.0-alpha.1",
   "private": true,
-  "description": "Authoritative server and sprite-canvas client prototype for Balathor.",
-  "scripts": {
-    "test": "npm run check:syntax && npm run smoke && npm run test:ui && npm run test:mobile",
-    "check:syntax": "find client server tools tests -path 'client/desktop' -prune -o -type f \\( -name '*.js' -o -name '*.mjs' \\) -print0 | xargs -0 -n1 node --check",
-    "dev": "node tools/dev.js",
-    "server": "node server/src/index.js",
-    "client": "node client/dev-server.js",
-    "smoke": "node tests/smoke.mjs",
-    "test:ui": "node --test tests/ui-local.mjs",
-    "test:mobile": "node --test tests/mobile-touch.mjs",
-    "stress": "node tools/stress.mjs",
-    "generate:sci-fi-station": "node tools/generateSciFiStation.mjs",
-    "stress:remote": "node tools/stress.mjs --url wss://balathor.click/ws",
-    "server:docker:build": "docker build -t balathor-server ./server",
-    "server:docker:run": "docker run --rm --name balathor-server -p 8080:8080 balathor-server",
-    "client:docker:build": "docker build -t balathor-client ./client",
-    "client:docker:run": "docker run --rm --name balathor-client -p 3000:3000 -e GAME_SERVER_URL=ws://localhost:8080/ws balathor-client",
-    "client:desktop:install": "npm install --prefix client/desktop",
-    "client:desktop:dev": "npm run dev --prefix client/desktop",
-    "client:desktop:build:win-dir": "npm run build:win:dir --prefix client/desktop",
-    "client:desktop:build:win": "npm run build:win --prefix client/desktop"
-  },
+  "description": "Balathor v2 — cozy low-poly 3D MMO. Authoritative TypeScript server + three.js client sharing one protocol and world generator.",
+  "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch --serve",
+    "start": "node dist/server/main.js",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "npm run typecheck && npm run build && node --test --test-concurrency=1 tests/*.test.mjs"
+  },
+  "dependencies": {
+    "postprocessing": "^6.39.5",
+    "three": "^0.186.1",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/three": "^0.186.0",
+    "@types/ws": "^8.18.2",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
   }
 }

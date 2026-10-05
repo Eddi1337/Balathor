@@ -1,0 +1,288 @@
+// The overworld ("Verdant Isle"): a single island with the walled hub town at its centre,
+// a gentle starter meadow around it and six biome sectors beyond. Fully deterministic from
+// WORLD_SEED; client and server both call these functions.
+
+import { Tile, isBlockingTile } from "./tiles";
+import { townTileAt, TOWN_RADIUS, TOWN_SPAWN } from "./town";
+import { clamp, fbm, hash2, lerp, smoothstep, valueNoise, TAU } from "../math";
+
+export const WORLD_SEED = 1337;
+export const ISLAND_RADIUS = 420;
+export const MEADOW_RADIUS = 72;
+export const CHUNK = 32;
+
+export type Biome = "town" | "meadow" | "forest" | "swamp" | "desert" | "frost" | "ember" | "highlands" | "beach" | "ocean";
+
+export const BIOMES: Biome[] = ["meadow", "forest", "swamp", "desert", "frost", "ember", "highlands"];
+
+/** Biome sectors by angle (radians, 0 = east, +PI/2 = south since +y is south). */
+const SECTORS: { biome: Biome; center: number }[] = [
+  { biome: "frost", center: -Math.PI / 2 },
+  { biome: "ember", center: -Math.PI / 6 },
+  { biome: "desert", center: Math.PI / 6 },
+  { biome: "swamp", center: Math.PI / 2 },
+  { biome: "forest", center: (5 * Math.PI) / 6 },
+  { biome: "highlands", center: (-5 * Math.PI) / 6 }
+];
+
+/** The four roads leaving the town gates, each heading into a biome. */
+const ROADS = [
+  { angle: -Math.PI / 2, length: 230 },
+  { angle: 0, length: 230 },
+  { angle: Math.PI / 2, length: 230 },
+  { angle: Math.PI, length: 230 }
+];
+
+export function coastRadiusAt(angle: number): number {
+  // Smooth radial noise around the island so the coast has bays and headlands.
+  const a = (angle + Math.PI) / TAU;
+  const n = valueNoise(a * 9, 0.5, WORLD_SEED + 11) * 0.6 + valueNoise(a * 23, 3.5, WORLD_SEED + 12) * 0.4;
+  return ISLAND_RADIUS * (0.86 + n * 0.22);
+}
+
+export function biomeAt(x: number, y: number): Biome {
+  const d = Math.hypot(x, y);
+  if (d < TOWN_RADIUS + 1) return "town";
+  const coast = coastRadiusAt(Math.atan2(y, x));
+  if (d > coast) return "ocean";
+  if (d > coast - 8) return "beach";
+  const meadowEdge = MEADOW_RADIUS + (fbm(x / 40, y / 40, WORLD_SEED + 21, 3) - 0.5) * 34;
+  if (d < meadowEdge) return "meadow";
+  const warp = (fbm(x / 70, y / 70, WORLD_SEED + 22, 3) - 0.5) * 1.1;
+  const angle = Math.atan2(y, x) + warp;
+  let best: Biome = "forest";
+  let bestDelta = Infinity;
+  for (const s of SECTORS) {
+    let delta = Math.abs(angle - s.center) % TAU;
+    if (delta > Math.PI) delta = TAU - delta;
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      best = s.biome;
+    }
+  }
+  return best;
+}
+
+/** Monster level band for a position: 1 in the meadow, rising towards the coast. */
+export function zoneLevelAt(x: number, y: number): number {
+  const d = Math.hypot(x, y);
+  return clamp(Math.round(1 + Math.max(0, d - 45) / 19), 1, 20);
+}
+
+function roadDistance(x: number, y: number): number {
+  const d = Math.hypot(x, y);
+  let best = Infinity;
+  for (const road of ROADS) {
+    if (d > road.length) continue;
+    // Gentle meander: offset perpendicular to the road by low-frequency noise of distance.
+    const wobble = (valueNoise(d / 30, road.angle * 7, WORLD_SEED + 31) - 0.5) * 10 * smoothstep(TOWN_RADIUS, TOWN_RADIUS + 30, d);
+    const ux = Math.cos(road.angle);
+    const uy = Math.sin(road.angle);
+    const along = x * ux + y * uy;
+    if (along < 0) continue;
+    const perp = -x * uy + y * ux - wobble;
+    best = Math.min(best, Math.abs(perp));
+  }
+  return best;
+}
+
+function lakeValue(x: number, y: number): number {
+  return fbm(x / 46, y / 46, WORLD_SEED + 41, 3);
+}
+
+const HILL_AMP: Record<string, number> = {
+  frost: 4.2,
+  highlands: 4.0,
+  ember: 3.0,
+  forest: 2.0,
+  desert: 1.6,
+  swamp: 0.35
+};
+
+/** Hill amplitude blended smoothly across sector borders (no cliffs at biome edges). */
+function hillAmplitudeAt(x: number, y: number, d: number): number {
+  const warp = (fbm(x / 70, y / 70, WORLD_SEED + 22, 3) - 0.5) * 1.1;
+  const angle = Math.atan2(y, x) + warp;
+  let sum = 0;
+  let wsum = 0;
+  for (const s of SECTORS) {
+    let delta = Math.abs(angle - s.center) % TAU;
+    if (delta > Math.PI) delta = TAU - delta;
+    const w = Math.exp(-((delta / 0.45) ** 2));
+    sum += w * (HILL_AMP[s.biome] ?? 1);
+    wsum += w;
+  }
+  const sectorAmp = sum / Math.max(1e-6, wsum);
+  const meadowEdge = MEADOW_RADIUS + (fbm(x / 40, y / 40, WORLD_SEED + 21, 3) - 0.5) * 34;
+  return lerp(1.1, sectorAmp, smoothstep(meadowEdge - 12, meadowEdge + 12, d));
+}
+
+/** Continuous terrain height (world units). Sea level is 0. */
+export function heightAt(x: number, y: number): number {
+  const d = Math.hypot(x, y);
+  const townFlat = 0.35;
+  if (d < TOWN_RADIUS + 2) return townFlat;
+  const coast = coastRadiusAt(Math.atan2(y, x));
+  const townBlend = smoothstep(TOWN_RADIUS + 2, TOWN_RADIUS + 26, d);
+  const hills = fbm(x / 38, y / 38, WORLD_SEED + 51, 4) * hillAmplitudeAt(x, y, d) * townBlend;
+  let h = townFlat + hills;
+  const lake = lakeValue(x, y);
+  const roadBlend = smoothstep(3.2, 1.2, roadDistance(x, y));
+  if (d > 48 && lake > 0.66) h -= smoothstep(0.66, 0.74, lake) * (h + 0.7) * (1 - roadBlend);
+  h = lerp(h, Math.max(0.25, h * 0.6 + 0.2), roadBlend);
+  // Coast: hills flatten into a low beach, then the seabed drops away past the shoreline.
+  const beach = 0.18;
+  if (d < coast - 1.5) {
+    return beach + (h - beach) * smoothstep(coast - 2, coast - 30, d);
+  }
+  return Math.max(-1.8, beach - (d - (coast - 1.5)) * 0.38);
+}
+
+function rawTileAt(x: number, y: number): number {
+  const town = townTileAt(x, y);
+  if (town !== null) return town;
+
+  const cx = x + 0.5;
+  const cy = y + 0.5;
+  const d = Math.hypot(cx, cy);
+  const coast = coastRadiusAt(Math.atan2(cy, cx));
+  if (d > coast + 1) return Tile.WATER;
+  if (d > coast - 1) return Tile.SHALLOW;
+  const biome = biomeAt(cx, cy);
+
+  // Roads win over everything else outside town (they cross lakes as causeways).
+  const road = roadDistance(cx, cy);
+  if (road < 1.4) return Tile.PATH;
+  const nearRoad = road < 3.2;
+
+  const lake = lakeValue(cx, cy);
+  if (d > 48 && lake > 0.71 && !nearRoad) return Tile.WATER;
+  if (d > 48 && lake > 0.68) return biome === "swamp" || biome === "forest" ? Tile.SHALLOW : Tile.SAND;
+
+  if (biome === "beach") {
+    return hash2(x, y, WORLD_SEED + 61) > 0.985 ? Tile.PALM : Tile.SAND;
+  }
+
+  const r = hash2(x, y, WORLD_SEED + 71);
+  const cluster = fbm(cx / 14, cy / 14, WORLD_SEED + 81, 3);
+  const detail = hash2(x, y, WORLD_SEED + 91);
+
+  switch (biome) {
+    case "meadow": {
+      if (!nearRoad && d > TOWN_RADIUS + 5) {
+        if (cluster > 0.66 && r < 0.32) return Tile.TREE;
+        if (r < 0.006) return Tile.ROCK;
+        if (r < 0.014) return Tile.BUSH;
+      }
+      if (detail < 0.12) return Tile.FLOWERS;
+      return cluster > 0.55 ? Tile.GRASS : Tile.MEADOW;
+    }
+    case "forest": {
+      if (!nearRoad) {
+        if (cluster > 0.5 && r < 0.42) return r < 0.2 ? Tile.PINE : Tile.TREE;
+        if (r < 0.05) return Tile.TREE;
+        if (r < 0.07) return Tile.BUSH;
+        if (r < 0.075) return Tile.ROCK;
+      }
+      return detail < 0.05 ? Tile.FLOWERS : Tile.DARK_GRASS;
+    }
+    case "swamp": {
+      if (!nearRoad) {
+        if (cluster > 0.62 && r < 0.18) return Tile.WILLOW;
+        if (lake > 0.6 && detail < 0.45) return Tile.SHALLOW;
+        if (r < 0.02) return Tile.BUSH;
+      }
+      return fbm(cx / 9, cy / 9, WORLD_SEED + 95, 2) > 0.56 ? Tile.MUD : Tile.DARK_GRASS;
+    }
+    case "desert": {
+      if (!nearRoad) {
+        if (r < 0.012) return Tile.CACTUS;
+        if (r < 0.02) return Tile.ROCK;
+        // Oases: rare lush pockets with palms.
+        if (cluster > 0.78) return r < 0.12 ? Tile.PALM : Tile.GRASS;
+      }
+      return Tile.SAND;
+    }
+    case "frost": {
+      if (!nearRoad) {
+        if (cluster > 0.52 && r < 0.3) return Tile.SNOW_PINE;
+        if (r < 0.02) return Tile.ROCK;
+        if (r < 0.024) return Tile.CRYSTAL;
+      }
+      return Tile.SNOW;
+    }
+    case "ember": {
+      if (!nearRoad) {
+        if (cluster > 0.6 && r < 0.12) return Tile.DEAD_TREE;
+        if (r < 0.03) return Tile.ROCK;
+        if (r < 0.037) return Tile.CRYSTAL;
+      }
+      return fbm(cx / 11, cy / 11, WORLD_SEED + 96, 2) > 0.68 ? Tile.DARK_GRASS : Tile.ASH;
+    }
+    case "highlands": {
+      if (!nearRoad) {
+        if (cluster > 0.6 && r < 0.22) return Tile.PINE;
+        if (r < 0.045) return Tile.ROCK;
+      }
+      return detail < 0.08 ? Tile.FLOWERS : Tile.GRASS;
+    }
+    default:
+      return Tile.GRASS;
+  }
+}
+
+// Chunk cache: tiles are generated once per 32x32 chunk and kept (bounded) in memory.
+const MAX_CACHED_CHUNKS = 2048;
+const chunkCache = new Map<number, Uint8Array>();
+
+function chunkKey(cx: number, cy: number): number {
+  return (cx + 4096) * 8192 + (cy + 4096);
+}
+
+export function getChunkTiles(cx: number, cy: number): Uint8Array {
+  const key = chunkKey(cx, cy);
+  let tiles = chunkCache.get(key);
+  if (tiles) return tiles;
+  tiles = new Uint8Array(CHUNK * CHUNK);
+  const ox = cx * CHUNK;
+  const oy = cy * CHUNK;
+  for (let ly = 0; ly < CHUNK; ly += 1) {
+    for (let lx = 0; lx < CHUNK; lx += 1) {
+      tiles[ly * CHUNK + lx] = rawTileAt(ox + lx, oy + ly);
+    }
+  }
+  if (chunkCache.size >= MAX_CACHED_CHUNKS) {
+    const oldest = chunkCache.keys().next().value;
+    if (oldest !== undefined) chunkCache.delete(oldest);
+  }
+  chunkCache.set(key, tiles);
+  return tiles;
+}
+
+export function tileAt(x: number, y: number): number {
+  const tx = Math.floor(x);
+  const ty = Math.floor(y);
+  const cx = Math.floor(tx / CHUNK);
+  const cy = Math.floor(ty / CHUNK);
+  return getChunkTiles(cx, cy)[(ty - cy * CHUNK) * CHUNK + (tx - cx * CHUNK)];
+}
+
+export function isBlockedAt(x: number, y: number): boolean {
+  return isBlockingTile(tileAt(x, y));
+}
+
+export const OVERWORLD_SPAWN = TOWN_SPAWN;
+
+/** Find a walkable tile near (x, y), searching outward in rings. */
+export function findWalkableNear(x: number, y: number, maxRadius = 12): { x: number; y: number } {
+  for (let r = 0; r <= maxRadius; r += 1) {
+    for (let i = 0; i < Math.max(1, r * 8); i += 1) {
+      const a = (i / Math.max(1, r * 8)) * TAU;
+      const px = Math.floor(x + Math.cos(a) * r) + 0.5;
+      const py = Math.floor(y + Math.sin(a) * r) + 0.5;
+      const t = tileAt(px, py);
+      if (!isBlockingTile(t) && t !== Tile.SHALLOW) return { x: px, y: py };
+    }
+  }
+  return { x: OVERWORLD_SPAWN.x, y: OVERWORLD_SPAWN.y };
+}
