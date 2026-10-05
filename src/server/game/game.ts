@@ -21,6 +21,12 @@ import {
 } from "../../shared/game/items";
 import { deriveStats, MAX_LEVEL, STAT_IDS, xpToNext, type StatId } from "../../shared/game/stats";
 import { SHOPS } from "../../shared/game/npcs";
+import { BAR_SLOTS, TALENTS_BY_ID, canLearn, respecCost, talentPoints } from "../../shared/game/talents";
+import { QUESTS_BY_ID } from "../../shared/game/quests";
+import { WAYPOINTS, WAYPOINT_COST, WAYPOINT_DISCOVER_RADIUS, WAYPOINT_USE_RADIUS, waypointById } from "../../shared/game/waypoints";
+import { EMOTES } from "../../shared/game/emotes";
+import { QuestService } from "./questService";
+import { SocialService } from "./socialService";
 import { OVERWORLD } from "../../shared/world/maps";
 import { findWalkableNear } from "../../shared/world/overworld";
 import { clamp, dist, wrapAngle } from "../../shared/math";
@@ -55,11 +61,38 @@ export class Game {
   private snapEvery: number;
   /** Rolling average of tick cost, for /health. */
   private tickCostMs = 0;
+  private lastPartyTickAt = 0;
+  private lastCheckAt = 0;
+  readonly quests: QuestService;
+  readonly social: SocialService;
 
   constructor(private store: Store) {
+    this.quests = new QuestService({
+      awardXp: (p, xp) => this.awardXp(p, xp),
+      addToBag: (p, item) => this.addToBag(p, item),
+      randomGear: (p, rarity) => {
+        const item = randomGear(p.save.cls, p.save.lv, 0);
+        const order = ["common", "uncommon", "rare", "epic", "legendary", "mythic"];
+        if (order.indexOf(item.rarity) < order.indexOf(rarity)) return makeItem(item.tpl, rarity, Math.max(1, p.save.lv));
+        return item;
+      },
+      chat: (p, text) => p.session.send({ t: "chat", from: "", name: "", text, kind: "system" })
+    });
+    this.social = new SocialService({
+      player: (id) => this.findPlayer(id),
+      findByName: (name) => {
+        const lower = name.toLowerCase();
+        for (const s of this.sessions.values()) if (s.player && s.player.name.toLowerCase() === lower) return s.player;
+        return undefined;
+      },
+      addToBag: (p, item) => this.addToBag(p, item),
+      system: (p, text) => p.session.send({ t: "chat", from: "", name: "", text, kind: "system" })
+    });
     const overworld = new World(OVERWORLD, {
       onMobKilled: (w, mob) => this.onMobKilled(w, mob),
-      onPlayerDied: (w, p) => this.onPlayerDied(w, p)
+      onPlayerDied: (w, p) => this.onPlayerDied(w, p),
+      hour: () => this.worldTime() * 24,
+      partyOf: (p) => this.social.membersOf(p).filter((m) => m.mapId === p.mapId)
     });
     overworld.populate();
     this.worlds.set(OVERWORLD.id, overworld);
@@ -156,6 +189,7 @@ export class Game {
     }
     const p = session.player;
     if (p) {
+      this.social.onDisconnect(p);
       this.persist(p);
       this.worlds.get(p.mapId)?.removePlayer(p);
       session.player = null;
@@ -216,6 +250,31 @@ export class Game {
         return this.spendStat(p, msg.stat);
       case "respawn":
         return this.respawn(p, world);
+      case "learn":
+        return this.learnTalent(p, String(msg.id));
+      case "bind":
+        return this.bindAbility(p, Number(msg.slot), msg.id === null ? null : String(msg.id));
+      case "cast":
+        return this.castAbility(p, world, String(msg.id), Number(msg.a), Number(msg.x), Number(msg.y), now);
+      case "respec":
+        return this.respec(p, world);
+      case "questAccept":
+        return this.quests.accept(p, String(msg.id), (npcId) => {
+          const npc = world.npcs.get(npcId);
+          return Boolean(npc && dist(p.x, p.y, npc.x, npc.y) <= TALK_RADIUS + 2);
+        });
+      case "questAbandon":
+        return this.quests.abandon(p, String(msg.id));
+      case "mount":
+        return this.toggleMount(p, now);
+      case "travel":
+        return this.travel(p, world, String(msg.id));
+      case "emote":
+        return world.setEmote(p, String(msg.id), now);
+      case "party":
+        return this.partyOp(p, msg);
+      case "trade":
+        return this.tradeOp(p, msg);
     }
   }
 
@@ -286,7 +345,12 @@ export class Game {
       y: spawn.y,
       // 0 = "start at full health" (resolved once derived stats are known in handlePlay).
       hp: 0,
-      kills: 0
+      kills: 0,
+      talents: [],
+      bar: new Array(BAR_SLOTS).fill(null),
+      quests: { active: [], done: [] },
+      waypoints: ["wp_hearthmoor"],
+      hasMount: false
     };
     this.store.saveCharacter(s.accountId, name, save);
     this.handlePlay(s);
@@ -325,7 +389,8 @@ export class Game {
     p.saveDirty = true;
   }
 
-  private awardXp(p: Player, world: World, xp: number): void {
+  private awardXp(p: Player, xp: number): void {
+    const world = this.worlds.get(p.mapId);
     const s = p.save;
     if (s.lv >= MAX_LEVEL) return;
     s.xp += xp;
@@ -339,8 +404,8 @@ export class Game {
     if (leveled) {
       this.recompute(p);
       p.hp = p.derived.maxHp;
-      world.fx(p.x, p.y, { e: "lvl", id: p.id, lv: s.lv });
-      p.session.toast(`Level up! You are now level ${s.lv}. +3 stat points`, "good");
+      world?.fx(p.x, p.y, { e: "lvl", id: p.id, lv: s.lv });
+      p.session.toast(`Level up! You are now level ${s.lv}. +3 stat points and a talent point`, "good");
     }
     p.selfDirty = true;
     p.saveDirty = true;
@@ -350,16 +415,25 @@ export class Game {
     const now = Date.now();
     let topId: string | null = null;
     let topDmg = 0;
+    // Everyone who helped, plus their party members nearby, gets full XP and quest credit:
+    // cosy co-op over kill-stealing.
+    const credited = new Set<Player>();
     for (const [pid, dmg] of mob.damageBy) {
       const p = world.players.get(pid);
       if (!p || dist(p.x, p.y, mob.x, mob.y) > 48) continue;
-      // Everyone who helped gets full XP: cosy co-op over kill-stealing.
-      this.awardXp(p, world, mob.xp);
-      p.save.kills += 1;
+      for (const m of this.social.membersOf(p)) {
+        if (m.mapId === world.def.id && !m.dead && dist(m.x, m.y, mob.x, mob.y) <= 48) credited.add(m);
+      }
       if (dmg > topDmg) {
         topDmg = dmg;
         topId = pid;
       }
+    }
+    const biome = world.def.biomeAt(mob.homeX, mob.homeY);
+    for (const p of credited) {
+      this.awardXp(p, mob.xp);
+      p.save.kills += 1;
+      this.quests.onKill(p, mob, biome);
     }
     const tpl = mob.tpl;
     const [gMin, gMax] = tpl.gold;
@@ -381,6 +455,7 @@ export class Game {
   }
 
   private onPlayerDied(_world: World, p: Player): void {
+    p.mounted = false;
     p.session.toast("You fainted! Respawn when you're ready.", "bad");
     p.saveDirty = true;
   }
@@ -388,6 +463,7 @@ export class Game {
   private respawn(p: Player, world: World): void {
     if (!p.dead) return;
     p.dead = false;
+    p.mounted = false;
     p.hp = p.derived.maxHp;
     p.x = world.def.spawn.x;
     p.y = world.def.spawn.y;
@@ -524,10 +600,12 @@ export class Game {
     npc.talkUntil = now + 4000;
     npc.f = Math.atan2(p.y - npc.y, p.x - npc.x);
     const def = npc.def;
+    const offer = this.quests.onTalk(p, npc.id);
+    if (offer) p.session.send({ t: "questOffer", npc: npc.id, id: offer });
     if (def.shopId && SHOPS[def.shopId]) {
       p.session.send({ t: "shop", shop: this.shopView(def.shopId, npc.id) });
     }
-    const line = def.lines[Math.floor(Math.random() * def.lines.length)];
+    const line = offer ? QUESTS_BY_ID[offer].offer : def.lines[Math.floor(Math.random() * def.lines.length)];
     world.fx(npc.x, npc.y, { e: "say", id: npc.id, text: line }, 20);
     p.session.send({ t: "chat", from: npc.id, name: def.name, text: line, kind: "npc" });
   }
@@ -556,6 +634,14 @@ export class Game {
     const entry = shop?.stock[idx];
     if (!entry || !this.nearShop(p, world, shopId)) return;
     if (p.save.gold < entry.price) return p.session.toast("Not enough gold", "bad");
+    if (itemTemplate(entry.tpl)?.kind === "mount") {
+      if (p.save.hasMount) return p.session.toast("You already have a pony!", "bad");
+      p.save.gold -= entry.price;
+      p.save.hasMount = true;
+      p.selfDirty = p.saveDirty = true;
+      p.session.toast("You got a Fluffy Pony! Press M to ride.", "good");
+      return;
+    }
     const item = makeItem(entry.tpl, entry.rarity ?? "common", entry.lvl ?? 1);
     if (!this.addToBag(p, item)) return p.session.toast("Your bag is full", "bad");
     p.save.gold -= entry.price;
@@ -590,7 +676,20 @@ export class Game {
     const sys = (t: string) => s.send({ t: "chat", from: "", name: "", text: t, kind: "system" });
     switch ((cmd ?? "").toLowerCase()) {
       case "help":
-        return sys("Commands: /who, /roll, /home, /where, /help");
+        return sys("Commands: /who, /roll, /home, /where, /invite name, /leave, /kick name, /p message, /trade name, /mount, emotes: /" + Object.keys(EMOTES).join(" /"));
+      case "invite":
+        return this.social.invite(p, text.trim().split(/\s+/).slice(1).join(" "));
+      case "leave":
+        return this.social.leave(p);
+      case "kick":
+        return this.social.kick(p, text.trim().split(/\s+/).slice(1).join(" "));
+      case "p":
+      case "party":
+        return this.social.partyChat(p, text.trim().split(/\s+/).slice(1).join(" ").slice(0, 160));
+      case "trade":
+        return this.social.requestTrade(p, text.trim().split(/\s+/).slice(1).join(" "));
+      case "mount":
+        return this.toggleMount(p, Date.now());
       case "who": {
         const names = [...world.players.values()].map((o) => `${o.name} (Lv ${o.save.lv})`);
         return sys(`${names.length} online: ${names.join(", ")}`);
@@ -621,6 +720,17 @@ export class Game {
         s.send({ t: "welcome", id: p.id, map: world.def.id, x: p.x, y: p.y, time: this.worldTime(), dayLength: config.dayLengthMs });
         return sys(`Teleported to ${p.x.toFixed(0)}, ${p.y.toFixed(0)}`);
       }
+      case "xp":
+      case "gold": {
+        if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
+        const n = Math.max(0, Math.min(1_000_000, Number(text.trim().split(/\s+/)[1]) || 0));
+        if (cmd === "xp") this.awardXp(p, n);
+        else {
+          p.save.gold += n;
+          p.selfDirty = p.saveDirty = true;
+        }
+        return sys(`Granted ${n} ${cmd}`);
+      }
       case "time": {
         if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
         const t = Number(text.trim().split(/\s+/)[1]);
@@ -630,8 +740,146 @@ export class Game {
         return sys(`World time is now ${this.worldTime().toFixed(2)}`);
       }
       default:
+        if (EMOTES[(cmd ?? "").toLowerCase()]) return world.setEmote(p, (cmd ?? "").toLowerCase(), Date.now());
         return sys(`Unknown command /${cmd}. Try /help`);
     }
+  }
+
+  // ── talents & abilities ─────────────────────────────────────────────────────
+
+  private learnTalent(p: Player, id: string): void {
+    const err = canLearn(p.save.cls, p.save.lv, p.save.talents, id);
+    if (err) return p.session.toast(err, "bad");
+    p.save.talents.push(id);
+    // Drop it on the first empty hotbar slot.
+    const free = p.save.bar.indexOf(null);
+    if (free !== -1) p.save.bar[free] = id;
+    p.selfDirty = p.saveDirty = true;
+    p.session.toast(`Learned ${TALENTS_BY_ID[id].name}!`, "good");
+  }
+
+  private bindAbility(p: Player, slot: number, id: string | null): void {
+    if (!(slot >= 0 && slot < BAR_SLOTS)) return;
+    if (id !== null && !p.save.talents.includes(id)) return;
+    if (id !== null) p.save.bar = p.save.bar.map((b) => (b === id ? null : b));
+    p.save.bar[slot] = id;
+    p.selfDirty = p.saveDirty = true;
+  }
+
+  private castAbility(p: Player, world: World, id: string, a: number, x: number, y: number, now: number): void {
+    const t = TALENTS_BY_ID[id];
+    if (!t || !p.save.talents.includes(id) || p.dead || !Number.isFinite(a)) return;
+    if ((p.cooldowns.get(id) ?? 0) > now) return;
+    if (!world.castAbility(p, t, wrapAngle(a), x, y, now)) return;
+    p.cooldowns.set(id, now + t.cooldownMs);
+    p.session.send({ t: "cd", id, ms: t.cooldownMs });
+  }
+
+  private respec(p: Player, world: World): void {
+    const npc = world.npcs.get("npc_oswin");
+    if (!npc || dist(p.x, p.y, npc.x, npc.y) > 6) return p.session.toast("Visit Guildmaster Oswin to reset talents", "bad");
+    const cost = respecCost(p.save.lv);
+    if (p.save.gold < cost) return p.session.toast(`Resetting talents costs ${cost}g`, "bad");
+    if (!p.save.talents.length) return;
+    p.save.gold -= cost;
+    p.save.talents = [];
+    p.save.bar = new Array(BAR_SLOTS).fill(null);
+    p.cooldowns.clear();
+    p.selfDirty = p.saveDirty = true;
+    p.session.toast(`Talents reset for ${cost}g`, "good");
+  }
+
+  // ── mounts, waypoints, social ───────────────────────────────────────────────
+
+  private toggleMount(p: Player, now: number): void {
+    if (!p.save.hasMount) return p.session.toast("You need a pony first. Visit Stable Keeper Holt!", "bad");
+    if (p.mounted) {
+      p.mounted = false;
+      return;
+    }
+    if (p.dead || p.swimming) return;
+    if (now - p.lastDamagedAt < 3000) return p.session.toast("You can't mount up mid-fight!", "bad");
+    p.mounted = true;
+    p.emote = "";
+  }
+
+  private travel(p: Player, world: World, id: string): void {
+    const dest = waypointById(id);
+    if (!dest || !p.save.waypoints.includes(id) || p.dead) return;
+    const near = WAYPOINTS.find((w) => dist(p.x, p.y, w.x, w.y) <= WAYPOINT_USE_RADIUS && p.save.waypoints.includes(w.id));
+    if (!near) return p.session.toast("Stand next to an attuned obelisk to travel", "bad");
+    if (near.id === id) return;
+    const cost = id === "wp_hearthmoor" ? 0 : WAYPOINT_COST;
+    if (p.save.gold < cost) return p.session.toast(`Travel costs ${cost}g`, "bad");
+    if (Date.now() - p.lastDamagedAt < 5000) return p.session.toast("You can't travel mid-fight!", "bad");
+    p.save.gold -= cost;
+    const spot = findWalkableNear(dest.x + 1.5, dest.y + 1.5, 4);
+    p.x = spot.x;
+    p.y = spot.y;
+    p.mounted = false;
+    world.grid.moved(p);
+    p.selfDirty = p.saveDirty = true;
+    p.session.send({ t: "welcome", id: p.id, map: world.def.id, x: p.x, y: p.y, time: this.worldTime(), dayLength: config.dayLengthMs });
+    p.session.toast(`Whoosh! Welcome to ${dest.name}.`, "good");
+  }
+
+  private discoverWaypoints(p: Player): void {
+    for (const w of WAYPOINTS) {
+      if (p.save.waypoints.includes(w.id)) continue;
+      if (dist(p.x, p.y, w.x, w.y) <= WAYPOINT_DISCOVER_RADIUS) {
+        p.save.waypoints.push(w.id);
+        p.selfDirty = p.saveDirty = true;
+        p.session.toast(`Attuned to ${w.name}!`, "good");
+      }
+    }
+  }
+
+  private partyOp(p: Player, msg: Extract<C2S, { t: "party" }>): void {
+    switch (msg.op) {
+      case "invite": {
+        const target = msg.target ? this.findPlayer(msg.target) : undefined;
+        return this.social.invite(p, target?.name ?? String(msg.target ?? ""));
+      }
+      case "accept":
+        return this.social.respondInvite(p, true);
+      case "decline":
+        return this.social.respondInvite(p, false);
+      case "leave":
+        return this.social.leave(p);
+      case "kick": {
+        const target = msg.target ? this.findPlayer(msg.target) : undefined;
+        return this.social.kick(p, target?.name ?? String(msg.target ?? ""));
+      }
+    }
+  }
+
+  private tradeOp(p: Player, msg: Extract<C2S, { t: "trade" }>): void {
+    switch (msg.op) {
+      case "request":
+        return this.social.requestTrade(p, String(msg.target ?? ""));
+      case "accept":
+        return this.social.respondTrade(p, true);
+      case "decline":
+        return this.social.respondTrade(p, false);
+      case "cancel":
+        return this.social.cancelTrade(p);
+      case "offer":
+        return this.social.offer(p, Number(msg.slot), true);
+      case "unoffer":
+        return this.social.offer(p, Number(msg.slot), false);
+      case "gold":
+        return this.social.setGold(p, Number(msg.gold));
+      case "ready":
+        return this.social.ready(p);
+    }
+  }
+
+  private findPlayer(id: string): Player | undefined {
+    for (const w of this.worlds.values()) {
+      const p = w.players.get(id);
+      if (p) return p;
+    }
+    return undefined;
   }
 
   private broadcastNear(world: World, x: number, y: number, r: number, msg: S2C, exceptId?: string): void {
@@ -648,6 +896,19 @@ export class Game {
     for (const world of this.worlds.values()) {
       world.tick(dt, now);
       this.magnetGold(world, now);
+    }
+    if (now - this.lastCheckAt >= 500) {
+      this.lastCheckAt = now;
+      for (const s of this.sessions.values()) {
+        const p = s.player;
+        if (!p || p.dead) continue;
+        this.discoverWaypoints(p);
+        this.quests.checkVisits(p);
+      }
+    }
+    if (now - this.lastPartyTickAt >= 1000) {
+      this.lastPartyTickAt = now;
+      this.social.tick();
     }
     if (this.tickCount % this.snapEvery === 0) this.replicateAll(now);
     for (const s of this.sessions.values()) {
@@ -717,6 +978,9 @@ export class Game {
   }
 
   private sendSelf(p: Player): void {
+    // Bag-dependent systems re-check before we publish the new state.
+    this.quests.onBagChanged(p);
+    this.social.onBagChanged(p);
     p.selfDirty = false;
     const s = p.save;
     const self: SelfState = {
@@ -739,7 +1003,14 @@ export class Game {
       },
       inv: s.inv,
       equip: s.equip,
-      kills: s.kills
+      kills: s.kills,
+      talents: s.talents,
+      talentPoints: talentPoints(s.lv, s.talents),
+      bar: s.bar,
+      quests: s.quests,
+      markers: this.quests.markers(p),
+      waypoints: s.waypoints,
+      hasMount: s.hasMount
     };
     p.session.send({ t: "self", self });
   }
@@ -800,6 +1071,15 @@ function normalizeSave(save: CharacterSave): CharacterSave {
   save.kills ??= 0;
   save.statPoints ??= 0;
   save.map ??= OVERWORLD.id;
+  save.talents = Array.isArray(save.talents) ? save.talents.filter((t) => TALENTS_BY_ID[t]?.cls === save.cls) : [];
+  save.bar = Array.isArray(save.bar) ? save.bar.slice(0, BAR_SLOTS) : [];
+  while (save.bar.length < BAR_SLOTS) save.bar.push(null);
+  save.bar = save.bar.map((b) => (b && save.talents.includes(b) ? b : null));
+  save.quests = { active: save.quests?.active ?? [], done: save.quests?.done ?? [] };
+  save.quests.active = save.quests.active.filter((q) => QUESTS_BY_ID[q.id]);
+  save.waypoints = Array.isArray(save.waypoints) ? save.waypoints : ["wp_hearthmoor"];
+  if (!save.waypoints.includes("wp_hearthmoor")) save.waypoints.push("wp_hearthmoor");
+  save.hasMount = Boolean(save.hasMount);
   return save;
 }
 

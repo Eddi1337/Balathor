@@ -22,24 +22,28 @@ function toonGradient(): THREE.DataTexture {
   return gradient;
 }
 
-export type ModelMaterial = THREE.MeshToonMaterial & { userData: { flash: { value: number }; fade: { value: number } } };
+export type ModelMaterial = THREE.MeshToonMaterial & {
+  userData: { flash: { value: number }; fade: { value: number }; tint: { value: THREE.Vector4 } };
+};
 
 export function modelMaterial(): ModelMaterial {
   const mat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: toonGradient(), transparent: false }) as ModelMaterial;
   const flash = { value: 0 };
   const fade = { value: 1 };
-  mat.userData = { flash, fade };
+  const tint = { value: new THREE.Vector4(0, 0, 0, 0) };
+  mat.userData = { flash, fade, tint };
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uFlash = flash;
     shader.uniforms.uFade = fade;
+    shader.uniforms.uTint = tint;
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", "#include <common>\nattribute float glow;\nvarying float vGlow;")
       .replace("#include <begin_vertex>", "#include <begin_vertex>\nvGlow = glow;");
     shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying float vGlow;\nuniform float uFlash;\nuniform float uFade;")
+      .replace("#include <common>", "#include <common>\nvarying float vGlow;\nuniform float uFlash;\nuniform float uFade;\nuniform vec4 uTint;")
       .replace(
         "#include <emissivemap_fragment>",
-        "#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * max(vGlow, 0.0) + vec3(uFlash);"
+        "#include <emissivemap_fragment>\ntotalEmissiveRadiance += vColor.rgb * max(vGlow, 0.0) + vec3(uFlash) + uTint.rgb * uTint.a;"
       )
       .replace("#include <dithering_fragment>", "#include <dithering_fragment>\ngl_FragColor.a *= uFade;");
   };
@@ -53,7 +57,7 @@ export interface Model {
   root: THREE.Group;
   /** Rotates with facing. */
   body: THREE.Group;
-  parts: Partial<Record<"torso" | "head" | "armL" | "armR" | "legL" | "legR" | "weapon" | "tail" | "extra", THREE.Object3D>>;
+  parts: Partial<Record<"torso" | "head" | "armL" | "armR" | "legL" | "legR" | "weapon" | "tail" | "extra" | "pony" | "stars", THREE.Object3D>>;
   material: ModelMaterial;
   kind: "humanoid" | MobModel | "loot";
   /** Nameplate anchor height. */
@@ -476,6 +480,66 @@ export function buildLoot(gold: number, rarity: string | null): Model {
   return m;
 }
 
+// ── mount & status props ─────────────────────────────────────────────────────
+
+/** A fluffy pastel pony that the humanoid sits on (added under the model's root). */
+export function attachPony(m: Model, coat = "#fff1e6", mane = "#ff9fc4"): void {
+  if (m.parts.pony) {
+    m.parts.pony.visible = true;
+    return;
+  }
+  const pony = new THREE.Group();
+  const b = new GeometryBuilder();
+  b.add(PRIMS.ico1, { x: 0, y: 0.72, z: 0, sx: 0.36, sy: 0.33, sz: 0.62, color: coat });
+  b.add(PRIMS.ico1, { x: 0, y: 1.08, z: 0.6, sx: 0.24, sy: 0.27, sz: 0.3, color: coat });
+  b.add(PRIMS.ico, { x: 0, y: 0.98, z: 0.84, sx: 0.15, sy: 0.13, sz: 0.12, color: "#ffd9e3" });
+  for (const sd of [-1, 1]) {
+    b.add(PRIMS.ico, { x: sd * 0.13, y: 1.13, z: 0.82, sx: 0.04, sy: 0.05, sz: 0.03, color: "#2b2238" });
+    b.add(PRIMS.cone4, { x: sd * 0.12, y: 1.36, z: 0.55, sx: 0.06, sy: 0.14, sz: 0.04, color: coat });
+  }
+  for (let i = 0; i < 5; i += 1) b.add(PRIMS.ico, { x: 0, y: 1.25 - i * 0.1, z: 0.45 - i * 0.12, sx: 0.09, sy: 0.12, sz: 0.1, color: mane });
+  b.add(PRIMS.ico, { x: 0, y: 0.72, z: -0.68, sx: 0.12, sy: 0.3, sz: 0.12, rx: 0.6, color: mane });
+  b.add(PRIMS.box, { x: 0, y: 1.02, z: -0.05, sx: 0.42, sy: 0.08, sz: 0.4, color: "#8a5a3a" });
+  const body = new THREE.Mesh(b.build(), m.material);
+  body.castShadow = true;
+  pony.add(body);
+  const legs: THREE.Object3D[] = [];
+  for (const [x, z] of [[-0.2, 0.35], [0.2, 0.35], [-0.2, -0.35], [0.2, -0.35]]) {
+    const lb = new GeometryBuilder();
+    lb.add(PRIMS.cyl6, { x, y: 0.25, z, sx: 0.08, sy: 0.5, sz: 0.08, color: coat });
+    lb.add(PRIMS.cyl6, { x, y: 0.04, z, sx: 0.09, sy: 0.08, sz: 0.09, color: "#c98b6a" });
+    const leg = part(lb, m.material, [x, 0.5, z]);
+    pony.add(leg);
+    legs.push(leg);
+  }
+  pony.userData.legs = legs;
+  m.parts.pony = pony;
+  m.root.add(pony);
+}
+
+export function detachPony(m: Model): void {
+  if (m.parts.pony) m.parts.pony.visible = false;
+}
+
+export function setStunStars(m: Model, on: boolean): void {
+  if (!on) {
+    if (m.parts.stars) m.parts.stars.visible = false;
+    return;
+  }
+  if (!m.parts.stars) {
+    const b = new GeometryBuilder();
+    for (let i = 0; i < 3; i += 1) {
+      const a = (i / 3) * Math.PI * 2;
+      b.add(PRIMS.octa, { x: Math.cos(a) * 0.35, y: 0, z: Math.sin(a) * 0.35, sx: 0.08, sy: 0.08, sz: 0.03, color: "#ffd166", glow: 1.5 });
+    }
+    const g = new THREE.Mesh(b.build(), m.material);
+    g.position.y = m.height / m.scale + 0.1;
+    m.parts.stars = g;
+    m.body.add(g);
+  }
+  m.parts.stars.visible = true;
+}
+
 // ── animation ────────────────────────────────────────────────────────────────
 
 export interface AnimState {
@@ -483,6 +547,8 @@ export interface AnimState {
   dead: boolean;
   swimming?: boolean;
   speed?: number;
+  mounted?: boolean;
+  emote?: string;
 }
 
 export function animate(m: Model, s: AnimState, dt: number, time: number): void {
@@ -509,7 +575,29 @@ export function animate(m: Model, s: AnimState, dt: number, time: number): void 
   m.phase += dt * rate;
   const swing = s.moving ? Math.sin(m.phase) : 0;
 
+  if (m.parts.stars?.visible) m.parts.stars.rotation.y += dt * 5;
+
   if (m.kind === "humanoid") {
+    if (s.mounted && m.parts.pony?.visible) {
+      // Riding: sit in the saddle, legs out, pony trots.
+      const legs = m.parts.pony.userData.legs as THREE.Object3D[];
+      const gallop = s.moving ? Math.sin(m.phase * 1.2) : 0;
+      legs.forEach((l, i) => (l.rotation.x = gallop * 0.8 * (i % 3 === 0 ? 1 : -1)));
+      m.parts.pony.position.y = s.moving ? Math.abs(gallop) * 0.08 : Math.sin(time * 2) * 0.01;
+      m.body.position.y = 0.62 + m.parts.pony.position.y;
+      m.body.rotation.x = 0;
+      if (p.legL) p.legL.rotation.set(-1.2, 0, 0.35);
+      if (p.legR) p.legR.rotation.set(-1.2, 0, -0.35);
+      if (p.armL) p.armL.rotation.x = -0.4;
+      if (p.armR && m.attackT <= 0) p.armR.rotation.x = -0.4;
+      if (p.armR && m.attackT > 0) p.armR.rotation.x = -2.2 * Math.sin((m.attackT / 0.3) * Math.PI);
+      return;
+    }
+    if (p.legL) p.legL.rotation.z = 0;
+    if (p.legR) p.legR.rotation.z = 0;
+    if (s.emote && !s.moving && animateEmote(m, s.emote, time)) return;
+    m.body.rotation.x = 0;
+    m.body.rotation.y = 0;
     const bob = s.moving ? Math.abs(Math.sin(m.phase)) * 0.07 : Math.sin(m.phase) * 0.012;
     m.body.position.y = bob + (s.swimming ? -0.55 : 0);
     if (p.legL) p.legL.rotation.x = swing * 0.7;
@@ -578,6 +666,69 @@ export function animate(m: Model, s: AnimState, dt: number, time: number): void 
   } else {
     m.body.position.z = 0;
   }
+}
+
+/** Character emote poses. Returns false for unknown emotes. */
+function animateEmote(m: Model, emote: string, time: number): boolean {
+  const p = m.parts;
+  const t = time * 6;
+  m.body.rotation.x = 0;
+  m.body.position.y = 0;
+  if (p.legL) p.legL.rotation.x = 0;
+  if (p.legR) p.legR.rotation.x = 0;
+  if (p.armL) p.armL.rotation.set(0, 0, 0);
+  if (p.armR) p.armR.rotation.set(0, 0, 0);
+  if (p.head) p.head.rotation.set(0, 0, 0);
+  switch (emote) {
+    case "wave":
+      if (p.armR) {
+        p.armR.rotation.x = -2.8;
+        p.armR.rotation.z = Math.sin(t * 1.4) * 0.5;
+      }
+      if (p.head) p.head.rotation.z = Math.sin(t * 0.7) * 0.1;
+      return true;
+    case "dance":
+      m.body.rotation.y = Math.sin(time * 3) * 0.9;
+      m.body.position.y = Math.abs(Math.sin(t)) * 0.12;
+      if (p.armL) p.armL.rotation.x = -2.5 + Math.sin(t) * 0.5;
+      if (p.armR) p.armR.rotation.x = -2.5 - Math.sin(t) * 0.5;
+      if (p.legL) p.legL.rotation.x = Math.sin(t) * 0.4;
+      if (p.legR) p.legR.rotation.x = -Math.sin(t) * 0.4;
+      return true;
+    case "cheer":
+      m.body.position.y = Math.max(0, Math.sin(t * 0.8)) * 0.35;
+      if (p.armL) p.armL.rotation.set(-2.9, 0, 0.4);
+      if (p.armR) p.armR.rotation.set(-2.9, 0, -0.4);
+      return true;
+    case "bow":
+      m.body.rotation.x = 0.55;
+      if (p.armR) p.armR.rotation.x = -0.6;
+      return true;
+    case "sit":
+      m.body.position.y = -0.38;
+      if (p.legL) p.legL.rotation.x = -1.5;
+      if (p.legR) p.legR.rotation.x = -1.5;
+      if (p.armL) p.armL.rotation.x = -0.5;
+      if (p.armR) p.armR.rotation.x = -0.5;
+      return true;
+    case "laugh":
+      m.body.position.y = Math.abs(Math.sin(t * 1.5)) * 0.05;
+      if (p.head) p.head.rotation.x = -0.3 + Math.sin(t * 1.5) * 0.08;
+      if (p.armL) p.armL.rotation.set(-0.5, 0, 0.6);
+      if (p.armR) p.armR.rotation.set(-0.5, 0, -0.6);
+      return true;
+    case "cry":
+      if (p.head) p.head.rotation.x = 0.35 + Math.sin(t * 2) * 0.04;
+      if (p.armL) p.armL.rotation.x = -2.0;
+      if (p.armR) p.armR.rotation.x = -2.0;
+      return true;
+    case "heart":
+      if (p.armL) p.armL.rotation.set(-1.4, 0, -0.7);
+      if (p.armR) p.armR.rotation.set(-1.4, 0, 0.7);
+      m.body.position.y = Math.abs(Math.sin(t * 0.5)) * 0.05;
+      return true;
+  }
+  return false;
 }
 
 export function disposeModel(m: Model): void {

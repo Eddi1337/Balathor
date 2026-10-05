@@ -3,6 +3,7 @@
 
 import * as THREE from "three";
 import type { ProjectileKind } from "../../shared/protocol";
+import type { BuffId, ZoneKind } from "../../shared/game/talents";
 import type { MapDef } from "../../shared/world/maps";
 import { Tile } from "../../shared/world/tiles";
 import { hash2 } from "../../shared/math";
@@ -119,8 +120,37 @@ const PROJ_COLORS: Record<ProjectileKind, string> = {
   arrow: "#fff4e6",
   fireball: "#ff9a3c",
   frostbolt: "#9fe7ff",
-  emberball: "#ff6a3c"
+  emberball: "#ff6a3c",
+  arcane: "#d9a6ff"
 };
+
+const ZONE_COLORS: Record<ZoneKind, string> = {
+  arrows: "#fff4e6",
+  caltrops: "#c9c3b8",
+  inferno: "#ff7a3c",
+  blizzard: "#bfefff",
+  consecration: "#ffd166"
+};
+
+const BUFF_COLORS: Record<BuffId, string> = {
+  shield: "#8fe3ff",
+  evasion: "#e8f7ff",
+  camo: "#7fd66b",
+  fortify: "#ffd166",
+  haste: "#b9a3ff",
+  rage: "#ff6f8e",
+  regen: "#9dffb8"
+};
+
+interface ZoneFx {
+  kind: ZoneKind;
+  x: number;
+  y: number;
+  r: number;
+  until: number;
+  disc: THREE.Mesh;
+  emitT: number;
+}
 
 function buildProjectile(kind: ProjectileKind): THREE.Object3D {
   if (kind === "arrow") {
@@ -193,6 +223,7 @@ export class Effects {
   readonly particles = new Particles();
   private projectiles = new Map<number, Proj>();
   private arcs: Arc[] = [];
+  private zones = new Map<number, ZoneFx>();
   private beams: THREE.Mesh[] = [];
   private beamRefreshAt = 0;
   private fireflies: THREE.Points;
@@ -278,6 +309,81 @@ export class Effects {
     mesh.userData.radius = 0;
     this.group.add(mesh);
     this.arcs.push({ mesh, t: 0 });
+  }
+
+  zone(zid: number, kind: ZoneKind, x: number, y: number, r: number, durMs: number): void {
+    const color = ZONE_COLORS[kind];
+    const geo = new THREE.CircleGeometry(1, 40);
+    geo.rotateX(-Math.PI / 2);
+    const disc = new THREE.Mesh(
+      geo,
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.32, depthWrite: false, blending: THREE.AdditiveBlending })
+    );
+    disc.scale.setScalar(r);
+    disc.position.set(x, this.heightAt(x, y) + 0.07, y);
+    this.group.add(disc);
+    this.zones.set(zid, { kind, x, y, r, until: performance.now() + durMs, disc, emitT: 0 });
+    this.ring(x, y, r, color);
+  }
+
+  private updateZones(dt: number, now: number): void {
+    for (const [zid, z] of this.zones) {
+      const left = z.until - now;
+      const mat = z.disc.material as THREE.MeshBasicMaterial;
+      mat.opacity = 0.32 * Math.min(1, left / 400) * (0.85 + Math.sin(now / 120) * 0.15);
+      if (left <= 0) {
+        this.group.remove(z.disc);
+        disposeObject(z.disc);
+        this.zones.delete(zid);
+        continue;
+      }
+      z.emitT -= dt;
+      if (z.emitT > 0) continue;
+      z.emitT = 0.05;
+      const a = Math.random() * Math.PI * 2;
+      const rr = Math.sqrt(Math.random()) * z.r;
+      const px = z.x + Math.cos(a) * rr;
+      const py = z.y + Math.sin(a) * rr;
+      const h = this.heightAt(px, py);
+      switch (z.kind) {
+        case "arrows":
+          this.particles.emit(px, h + 6, py, { n: 1, color: "#fff4e6", speed: 0, up: -16, size: 0.07, life: 0.4, gravity: 10, spread: 0 });
+          this.particles.emit(px, h + 0.1, py, { n: 2, color: "#d9c4a0", speed: 1, up: 1, size: 0.04, life: 0.3 });
+          break;
+        case "inferno":
+          this.particles.emit(px, h + 0.2, py, { n: 2, color: Math.random() < 0.5 ? "#ff9a3c" : "#ffd166", speed: 0.3, up: 2.5, size: 0.13, life: 0.7, gravity: -1 });
+          break;
+        case "blizzard":
+          this.particles.emit(px, h + 4, py, { n: 2, color: "#ffffff", speed: 0.6, up: -2, size: 0.06, life: 1.4, gravity: 1 });
+          break;
+        case "consecration":
+          this.particles.emit(px, h + 0.1, py, { n: 1, color: "#fff3b0", speed: 0.1, up: 1.4, size: 0.07, life: 1, gravity: -0.5 });
+          break;
+        case "caltrops":
+          if (Math.random() < 0.3) this.particles.emit(px, h + 0.05, py, { n: 1, color: "#a9a9b3", speed: 0.2, up: 0.4, size: 0.05, life: 0.5 });
+          break;
+      }
+    }
+  }
+
+  nova(x: number, y: number, r: number, color: THREE.ColorRepresentation): void {
+    this.ring(x, y, r, color);
+    const h = this.heightAt(x, y) + 0.6;
+    for (let i = 0; i < 24; i += 1) {
+      const a = (i / 24) * Math.PI * 2;
+      this.particles.emit(x + Math.cos(a) * 0.5, h, y + Math.sin(a) * 0.5, { n: 1, color, speed: r * 2.4, up: 1, size: 0.1, life: 0.45, gravity: 2, spread: 0 });
+    }
+  }
+
+  buffBurst(x: number, y: number, buff: BuffId): void {
+    const h = this.heightAt(x, y);
+    const color = BUFF_COLORS[buff];
+    this.particles.emit(x, h + 0.4, y, { n: 18, color, speed: 1.4, up: 2.5, size: 0.08, life: 1, gravity: -0.5, spread: 0.6 });
+    this.ring(x, y, 1.6, color);
+  }
+
+  static buffColor(buff: BuffId): string {
+    return BUFF_COLORS[buff];
   }
 
   hitSpark(x: number, y: number, h: number, crit: boolean): void {
@@ -368,6 +474,7 @@ export class Effects {
 
   update(dt: number): void {
     this.particles.update(dt);
+    this.updateZones(dt, performance.now());
     for (const [pid, p] of this.projectiles) {
       const step = Math.min(p.remaining, p.spd * dt);
       p.remaining -= step;

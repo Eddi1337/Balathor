@@ -9,10 +9,15 @@ export interface PlateOpts {
   hp?: number;
   mhp?: number;
   showBar: boolean;
+  /** Quest marker over villagers: "!" (quest) or "?" (hand in). */
+  marker?: string;
+  /** Emote icon over players. */
+  emote?: string;
 }
 
 interface Plate {
   el: HTMLDivElement;
+  top: HTMLDivElement;
   nm: HTMLDivElement;
   bar: HTMLDivElement;
   fill: HTMLDivElement;
@@ -49,13 +54,14 @@ export class Labels {
     if (!p) {
       const el = document.createElement("div");
       el.className = "plate";
+      const top = document.createElement("div");
       const nm = document.createElement("div");
       const bar = document.createElement("div");
       const fill = document.createElement("div");
       bar.appendChild(fill);
-      el.append(nm, bar);
+      el.append(top, nm, bar);
       this.root.appendChild(el);
-      p = { el, nm, bar, fill, last: "" };
+      p = { el, top, nm, bar, fill, last: "" };
       this.plates.set(id, p);
     }
     const s = this.project(pos);
@@ -65,9 +71,19 @@ export class Labels {
     }
     p.el.style.display = "";
     p.el.style.transform = `translate(${s.x.toFixed(1)}px, ${s.y.toFixed(1)}px) translate(-50%, -100%)`;
-    const key = `${o.name}|${o.kind}|${o.showBar}|${o.hp}|${o.mhp}`;
+    const key = `${o.name}|${o.kind}|${o.showBar}|${o.hp}|${o.mhp}|${o.marker ?? ""}|${o.emote ?? ""}`;
     if (key !== p.last) {
       p.last = key;
+      if (o.marker) {
+        p.top.className = `marker ${o.marker === "?" ? "ready" : ""}`;
+        p.top.textContent = o.marker;
+      } else if (o.emote) {
+        p.top.className = "emote";
+        p.top.textContent = o.emote;
+      } else {
+        p.top.className = "";
+        p.top.textContent = "";
+      }
       p.nm.textContent = o.name;
       p.nm.className = `nm ${o.kind === "self" ? "" : o.kind}`;
       p.bar.className = `mini ${o.kind === "boss" ? "boss" : ""}`;

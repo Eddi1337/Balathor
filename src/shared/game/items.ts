@@ -17,7 +17,7 @@ export const RARITY_INFO: Record<Rarity, { color: string; mult: number; weight: 
 export type EquipSlot = "weapon" | "body" | "ring1" | "ring2";
 export const EQUIP_SLOTS: EquipSlot[] = ["weapon", "body", "ring1", "ring2"];
 
-export type ItemKind = "weapon" | "armor" | "ring" | "potion" | "junk";
+export type ItemKind = "weapon" | "armor" | "ring" | "potion" | "junk" | "mount";
 
 export interface ItemTemplate {
   id: string;
@@ -69,6 +69,8 @@ export const ITEM_TEMPLATES: Record<string, ItemTemplate> = {
   // Consumables
   potion_small: { id: "potion_small", name: "Berry Tonic", kind: "potion", icon: "🧃", heal: 45, value: 8, stack: 20 },
   potion_big: { id: "potion_big", name: "Honey Elixir", kind: "potion", icon: "🍯", heal: 120, value: 24, stack: 20 },
+  // Mounts (unlock on purchase; never enter the bag)
+  mount_pony: { id: "mount_pony", name: "Fluffy Pony", kind: "mount", icon: "🐴", value: 100 },
   // Junk (sold to vendors)
   slime_gel: { id: "slime_gel", name: "Slime Gel", kind: "junk", icon: "🟢", value: 3, stack: 50 },
   fluffy_tail: { id: "fluffy_tail", name: "Fluffy Tail", kind: "junk", icon: "🦊", value: 5, stack: 50 },

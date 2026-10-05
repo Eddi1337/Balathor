@@ -16,10 +16,16 @@ import { TerrainStreamer } from "./render/terrain";
 import { buildTown } from "./render/town";
 import { Effects } from "./render/effects";
 import { worldUniforms } from "./render/builder";
-import { animate, buildHumanoid, buildLoot, buildMob, disposeModel, type Model } from "./render/models";
+import { animate, attachPony, buildHumanoid, buildLoot, buildMob, detachPony, disposeModel, setStunStars, type Model } from "./render/models";
+import { Landmarks } from "./render/landmarks";
 import { Labels } from "./ui/labels";
 import { Hud, type MinimapDot } from "./ui/hud";
 import { Screens } from "./ui/screens";
+import { Panels } from "./ui/panels";
+import { TALENTS_BY_ID, type BuffId } from "../shared/game/talents";
+import { WAYPOINTS, WAYPOINT_USE_RADIUS, type Waypoint } from "../shared/game/waypoints";
+import { EMOTES } from "../shared/game/emotes";
+import { MOUNT_SPEED_MULT } from "../shared/game/stats";
 
 type Phase = "connecting" | "auth" | "create" | "play";
 
@@ -31,7 +37,8 @@ const terrain = new TerrainStreamer(quality.msaa ? 4 : 3);
 const town = buildTown();
 const effects = new Effects();
 effects.setHeightFn((x, y) => map.heightAt(x, y));
-renderer.scene.add(terrain.group, terrain.water, town.mesh, effects.group, ...town.lights);
+const landmarks = new Landmarks();
+renderer.scene.add(terrain.group, terrain.water, town.mesh, effects.group, landmarks.group, ...town.lights);
 
 const net = new Net(Net.defaultUrl());
 const state = new ClientState();
@@ -40,6 +47,8 @@ const labels = new Labels(renderer.camera);
 const send = (msg: C2S) => net.send(msg);
 const hud = new Hud(send);
 const screens = new Screens(send);
+const panels = new Panels(send, (t, k) => hud.toast(t, k));
+panels.onCast = (id) => castAbility(id, performance.now());
 
 let phase: Phase = "connecting";
 let loadingHidden = false;
@@ -49,6 +58,8 @@ let loadingHidden = false;
 interface View {
   model: Model;
   sig: string;
+  auras: Map<string, THREE.Object3D>;
+  auraT: number;
 }
 const views = new Map<string, View>();
 
@@ -80,7 +91,7 @@ function ensureView(e: ClientEntity): View {
     renderer.scene.remove(v.model.root);
     disposeModel(v.model);
   }
-  v = { model: buildView(e.data), sig };
+  v = { model: buildView(e.data), sig, auras: new Map(), auraT: 0 };
   renderer.scene.add(v.model.root);
   views.set(e.id, v);
   return v;
@@ -131,8 +142,9 @@ function predict(dt: number, now: number): void {
     my = 0;
   }
   me.moving = Math.hypot(mx, my) > 0.05;
-  if (me.moving && s) {
-    stepMovement(map, me, mx, my, s.derived.speed, dt);
+  if (me.moving && s && d) {
+    const haste = d.bf.includes("haste") ? 1.4 : 1;
+    stepMovement(map, me, mx, my, s.derived.speed * (d.mt ? MOUNT_SPEED_MULT : 1) * haste, dt);
     if (now - lastAttackAt > 350) me.f = Math.atan2(my, mx);
   }
   // Reconcile with the authoritative position.
@@ -187,7 +199,7 @@ function tryAttack(now: number, angle?: number): void {
   const s = state.self;
   const d = selfData();
   if (!s || !d || d.dead) return;
-  const cd = CLASSES[s.cls].cooldownMs;
+  const cd = CLASSES[s.cls].cooldownMs * (d.bf.includes("haste") ? 0.6 : 1);
   if (now - lastAttackAt < cd) return;
   lastAttackAt = now;
   const a = angle ?? aimAngle();
@@ -197,9 +209,51 @@ function tryAttack(now: number, angle?: number): void {
   send({ t: "attack", a: round(a) });
 }
 
-function nearestInteractable(): { id: string; kind: "npc" | "loot"; label: string } | null {
-  let best: { id: string; kind: "npc" | "loot"; label: string } | null = null;
+/** Ground point under the cursor (desktop) or a sensible point ahead (touch). */
+function aimPoint(angle: number): { x: number; y: number } {
+  if (!input.touchMode) {
+    const g = renderer.screenToGround(input.mouseX, input.mouseY, map.heightAt(me.x, me.y) + 0.2);
+    if (g) return g;
+  }
+  let best: ClientEntity | null = null;
+  let bestD = 15;
+  for (const e of state.entities.values()) {
+    if (e.data.k !== "m" || e.data.dead || e.removedAt) continue;
+    const dd = Math.hypot(e.rx - me.x, e.ry - me.y);
+    if (dd < bestD) {
+      bestD = dd;
+      best = e;
+    }
+  }
+  return best ? { x: best.rx, y: best.ry } : { x: me.x + Math.cos(angle) * 6, y: me.y + Math.sin(angle) * 6 };
+}
+
+function castAbility(id: string, now: number): void {
+  const d = selfData();
+  if (!d || d.dead || !TALENTS_BY_ID[id]) return;
+  if (!panels.isReady(id)) return;
+  const a = aimAngle();
+  const p = aimPoint(a);
+  me.f = a;
+  panels.startCooldown(id, 350); // brief lockout until the server confirms the real cooldown
+  const v = state.selfId ? views.get(state.selfId) : undefined;
+  if (v) v.model.attackT = 0.3;
+  send({ t: "cast", id, a: round(a), x: round(p.x), y: round(p.y) });
+}
+
+function nearestObelisk(): Waypoint | null {
+  for (const w of WAYPOINTS) if (Math.hypot(w.x - me.x, w.y - me.y) <= WAYPOINT_USE_RADIUS) return w;
+  return null;
+}
+
+function nearestInteractable(): { id: string; kind: "npc" | "loot" | "waypoint"; label: string } | null {
+  let best: { id: string; kind: "npc" | "loot" | "waypoint"; label: string } | null = null;
   let bestD = Infinity;
+  const ob = nearestObelisk();
+  if (ob) {
+    best = { id: ob.id, kind: "waypoint", label: state.self?.waypoints.includes(ob.id) ? `E · Travel from ${ob.name}` : `E · Attune to ${ob.name}` };
+    bestD = Math.hypot(ob.x - me.x, ob.y - me.y);
+  }
   for (const e of state.entities.values()) {
     if (e.removedAt) continue;
     const d = Math.hypot(e.rx - me.x, e.ry - me.y);
@@ -218,6 +272,11 @@ function nearestInteractable(): { id: string; kind: "npc" | "loot"; label: strin
 function interact(): void {
   const target = nearestInteractable();
   if (!target) return;
+  if (target.kind === "waypoint") {
+    const w = WAYPOINTS.find((o) => o.id === target.id);
+    if (w) panels.openWaypoints(w);
+    return;
+  }
   send(target.kind === "npc" ? { t: "talk", id: target.id } : { t: "pickup", id: target.id });
 }
 
@@ -249,8 +308,26 @@ input.onKey = (code, e) => {
     case "KeyQ":
       hud.drinkPotion();
       break;
+    case "KeyT":
+      panels.toggle("win-talents");
+      break;
+    case "KeyL":
+      panels.toggle("win-quests");
+      break;
+    case "KeyM":
+      send({ t: "mount" });
+      break;
+    case "Digit1":
+    case "Digit2":
+    case "Digit3":
+    case "Digit4":
+    case "Digit5": {
+      const id = state.self?.bar[Number(code.slice(5)) - 1];
+      if (id) castAbility(id, performance.now());
+      break;
+    }
     case "Escape":
-      hud.closeAll();
+      if (!panels.closeAll()) hud.closeAll();
       break;
   }
 };
@@ -264,8 +341,8 @@ input.onClickWorld = (sx, sy) => {
   const candidates: { id: string; obj: THREE.Object3D }[] = [];
   for (const [id, v] of views) {
     const e = state.entities.get(id);
-    if (!e || (e.data.k !== "n" && e.data.k !== "l")) continue;
-    if (Math.hypot(e.rx - me.x, e.ry - me.y) > 8) continue;
+    if (!e || (e.data.k !== "n" && e.data.k !== "l" && e.data.k !== "p") || id === state.selfId) continue;
+    if (Math.hypot(e.rx - me.x, e.ry - me.y) > (e.data.k === "p" ? 20 : 8)) continue;
     candidates.push({ id, obj: v.model.root });
   }
   const hits = ray.intersectObjects(candidates.map((c) => c.obj), true);
@@ -276,7 +353,9 @@ input.onClickWorld = (sx, sy) => {
     const e = hit ? state.entities.get(hit.id) : undefined;
     if (e) {
       const d = Math.hypot(e.rx - me.x, e.ry - me.y);
-      if (e.data.k === "n") {
+      if (e.data.k === "p") {
+        panels.openPlayerMenu(e.id, e.data.name, sx + 8, sy + 8);
+      } else if (e.data.k === "n") {
         if (d < 3.4) send({ t: "talk", id: e.id });
         else hud.toast("Walk a little closer to talk");
       } else if (e.data.k === "l") {
@@ -368,6 +447,34 @@ net.on((msg: S2C) => {
     case "self":
       state.self = msg.self;
       hud.setSelf(msg.self);
+      panels.setSelf(msg.self);
+      landmarks.setAttuned(msg.self.waypoints);
+      return;
+    case "cd":
+      panels.startCooldown(msg.id, msg.ms);
+      return;
+    case "questOffer":
+      panels.offerQuest(msg.npc, msg.id);
+      return;
+    case "questDone": {
+      const pos = state.selfId ? headPos(state.selfId) : null;
+      if (pos) effects.sparkleColumn(pos.x, pos.z, "#8fe3ff");
+      return;
+    }
+    case "party":
+      panels.setParty(msg.party, state.selfId);
+      return;
+    case "partyInvite":
+      panels.partyInvite(msg.name);
+      return;
+    case "tradeRequest":
+      panels.tradeRequest(msg.name);
+      return;
+    case "trade":
+      panels.setTrade(msg.trade);
+      hud.bagClickOverride = msg.trade ? (slot) => send({ t: "trade", op: "offer", slot }) : null;
+      hud.offeredUids = panels.offeredUids();
+      hud.refreshBag();
       return;
     case "fx":
       for (const ev of msg.ev) handleFx(ev);
@@ -470,6 +577,110 @@ function handleFx(ev: FxEvent): void {
       if (pos) labels.bubble(ev.id, pos, ev.text);
       return;
     }
+    case "ability": {
+      const v = views.get(ev.id);
+      if (v && ev.id !== state.selfId) v.model.attackT = 0.3;
+      const pos = headPos(ev.id);
+      const t = TALENTS_BY_ID[ev.ab];
+      if (pos && t) {
+        effects.particles.emit(pos.x, pos.y - 0.9, pos.z, { n: 10, color: ABILITY_COLORS[t.id] ?? "#fff3b0", speed: 1.2, up: 2, size: 0.07, life: 0.6, gravity: -0.5, spread: 0.6 });
+        if (ev.id !== state.selfId) labels.bubble(ev.id, pos, `${t.icon} ${t.name}!`);
+      }
+      return;
+    }
+    case "nova":
+      effects.nova(ev.x, ev.y, ev.r, ABILITY_COLORS[ev.ab] ?? "#ffffff");
+      return;
+    case "zone":
+      effects.zone(ev.zid, ev.kind, ev.x, ev.y, ev.r, ev.dur);
+      return;
+    case "buff": {
+      const e = state.entities.get(ev.id);
+      if (e) {
+        const x = ev.id === state.selfId ? me.x : e.rx;
+        const y = ev.id === state.selfId ? me.y : e.ry;
+        effects.buffBurst(x, y, ev.buff);
+      }
+      return;
+    }
+  }
+}
+
+const ABILITY_COLORS: Record<string, string> = {
+  shield_bash: "#d9dde6",
+  holy_strike: "#ffd166",
+  divine_wrath: "#fff3b0",
+  fire_nova: "#ff7a3c",
+  smoke_bomb: "#b8b0c4",
+  precise_shot: "#fff4e6",
+  piercing_arrow: "#e8f7ff",
+  multishot: "#fff4e6",
+  volley: "#fff4e6",
+  great_fireball: "#ff9a3c",
+  ice_shard: "#9fe7ff",
+  arcane_bolt: "#d9a6ff",
+  lay_on_hands: "#9dffb8",
+  healing_aura: "#9dffb8",
+  battle_cry: "#ff6f8e",
+  time_warp: "#b9a3ff"
+};
+
+/** Glowing bubbles / rings / tints for active buffs (players) and status effects (mobs). */
+function updateAuras(v: View, buffs: string[], dt: number, x: number, y: number): void {
+  const m = v.model;
+  const want = new Set(buffs);
+  for (const [id, obj] of v.auras) {
+    if (!want.has(id)) {
+      m.root.remove(obj);
+      obj.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (mesh.isMesh) {
+          mesh.geometry.dispose();
+          (mesh.material as THREE.Material).dispose();
+        }
+      });
+      v.auras.delete(id);
+    }
+  }
+  for (const id of want) {
+    if (v.auras.has(id) || !["shield", "fortify", "haste", "rage", "evasion"].includes(id)) continue;
+    const color = Effects.buffColor(id as BuffId);
+    let obj: THREE.Object3D;
+    if (id === "shield") {
+      obj = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(1.05, 2),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending })
+      );
+      obj.position.y = 0.95;
+    } else {
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(0.75, 0.05, 6, 32),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending })
+      );
+      ring.rotation.x = Math.PI / 2;
+      obj = new THREE.Group();
+      obj.add(ring);
+      obj.position.y = id === "rage" ? 1.0 : 0.08;
+    }
+    m.root.add(obj);
+    v.auras.set(id, obj);
+  }
+  for (const [id, obj] of v.auras) {
+    obj.rotation.y += dt * (id === "haste" ? 6 : 1.5);
+    if (id === "shield") obj.scale.setScalar(1 + Math.sin(performance.now() / 300) * 0.03);
+  }
+  // Tints: rage glows warm, slowed mobs look icy.
+  const tint = m.material.userData.tint.value;
+  if (want.has("rage")) tint.set(1, 0.25, 0.35, 0.25 + Math.sin(performance.now() / 150) * 0.1);
+  else if (want.has("slow")) tint.set(0.4, 0.7, 1, 0.35);
+  else if (want.has("blind")) tint.set(0.4, 0.4, 0.45, 0.3);
+  else tint.set(0, 0, 0, 0);
+  if (want.has("regen")) {
+    v.auraT -= dt;
+    if (v.auraT <= 0) {
+      v.auraT = 0.25;
+      effects.particles.emit(x, map.heightAt(x, y) + 0.4, y, { n: 2, color: "#9dffb8", speed: 0.3, up: 1.4, size: 0.06, life: 0.9, gravity: -1, spread: 0.7 });
+    }
   }
 }
 
@@ -508,9 +719,21 @@ function updateEntities(dt: number, now: number, time: number): void {
     if (d.k !== "l") m.root.rotation.y = Math.PI / 2 - f;
     const dead = "dead" in d && d.dead === 1;
     const moving = isSelf ? me.moving : "mv" in d && d.mv === 1;
-    animate(m, { moving, dead, swimming: d.k === "p" && d.sw === 1, speed: d.k === "m" ? 0.7 : 1 }, dt, time);
+    let fadeCap = 1;
+    if (d.k === "p") {
+      if (d.mt) attachPony(m);
+      else detachPony(m);
+      const buffs = d.bf ? d.bf.split(",") : [];
+      updateAuras(v, buffs, dt, x, y);
+      if (buffs.includes("camo")) fadeCap = isSelf ? 0.5 : 0.25;
+      else if (buffs.includes("evasion")) fadeCap = 0.75 + Math.sin(now / 80) * 0.15;
+    } else if (d.k === "m") {
+      setStunStars(m, (d.st & 2) !== 0 && !dead);
+      updateAuras(v, [(d.st & 1) ? "slow" : "", (d.st & 4) ? "blind" : ""].filter(Boolean), dt, x, y);
+    }
+    animate(m, { moving, dead, swimming: d.k === "p" && d.sw === 1, speed: d.k === "m" ? 0.7 : 1, mounted: d.k === "p" && d.mt === 1, emote: d.k === "p" ? d.em : "" }, dt, time);
     // Fade out removed entities (and dead mobs) instead of popping.
-    const fadeTarget = e.removedAt ? 0 : 1;
+    const fadeTarget = e.removedAt ? 0 : fadeCap;
     const fade = m.material.userData.fade;
     fade.value += (fadeTarget - fade.value) * Math.min(1, dt * 8);
     m.material.transparent = fade.value < 0.99;
@@ -521,11 +744,18 @@ function updateEntities(dt: number, now: number, time: number): void {
     tmpV.set(x, map.heightAt(x, y) + m.height + 0.15, y);
     if (d.k === "p") {
       keepPlates.add(e.id);
-      labels.plate(e.id, tmpV, { name: isSelf ? d.name : `${d.name} · ${d.lv}`, kind: isSelf ? "self" : "player", hp: d.hp, mhp: d.mhp, showBar: !isSelf && d.hp < d.mhp });
+      labels.plate(e.id, tmpV, {
+        name: isSelf ? d.name : `${d.name} · ${d.lv}`,
+        kind: isSelf ? "self" : "player",
+        hp: d.hp,
+        mhp: d.mhp,
+        showBar: !isSelf && d.hp < d.mhp,
+        emote: d.em ? EMOTES[d.em]?.icon : undefined
+      });
     } else if (d.k === "n") {
       if (dist < 22) {
         keepPlates.add(e.id);
-        labels.plate(e.id, tmpV, { name: npcDef(d.npc)?.name ?? "Villager", kind: "npc", showBar: false });
+        labels.plate(e.id, tmpV, { name: npcDef(d.npc)?.name ?? "Villager", kind: "npc", showBar: false, marker: state.self?.markers[d.npc] });
       }
     } else if (d.k === "m") {
       const tpl = MOB_TEMPLATES[d.tpl];
@@ -551,6 +781,8 @@ function updateHud(now: number): void {
     const cd = CLASSES[s.cls].cooldownMs;
     hud.setCooldown(1 - (now - lastAttackAt) / cd);
   }
+  panels.updateCooldowns(now);
+  document.getElementById("hot-mount")!.classList.toggle("mounted", Boolean(d?.mt));
   const target = nearestInteractable();
   hud.setHint(target && !input.touchMode ? target.label : target ? target.label.replace("E · ", "") : null);
   if (now >= minimapAt) {
@@ -564,7 +796,12 @@ function updateHud(now: number): void {
       else if (dd.k === "p") dots.push({ x: e.rx, y: e.ry, color: "#5b8def", size: 3 });
       else if (dd.k === "l") dots.push({ x: e.rx, y: e.ry, color: "#ffd166", size: 1.5 });
     }
-    hud.drawMinimap(map, me.x, me.y, me.f, dots);
+    // Party members show even when they're out of view range.
+    for (const pm of panels.party?.members ?? []) {
+      if (pm.id !== state.selfId) dots.push({ x: pm.x, y: pm.y, color: "#b26bff", size: 3.5 });
+    }
+    for (const w of WAYPOINTS) dots.push({ x: w.x, y: w.y, color: state.self?.waypoints.includes(w.id) ? "#d9a6ff" : "#9a94a6", size: 3 });
+    hud.drawMinimap(map, me.x, me.y, me.f, dots, panels.objective());
     const biome = map.biomeAt(me.x, me.y);
     hud.setZone(biome === "town" ? "Hearthmoor" : `${biome} · lv ${map.zoneLevelAt(me.x, me.y)}`);
   }
@@ -617,6 +854,7 @@ function frame(): void {
   effects.updateBeams(map, focus.x, focus.y, renderer.sunDir, 1 - renderer.night * 1.4, now);
   effects.updateFireflies(focus.x, focus.y, renderer.night, time);
   effects.update(dt);
+  landmarks.update(time);
   labels.update(now);
   renderer.render(dt);
 }
@@ -632,5 +870,5 @@ net.connect();
 requestAnimationFrame(frame);
 
 // Debug handle for tests / console tinkering.
-(globalThis as unknown as { balathor: unknown }).balathor = { state, me, renderer, map, Tile, send };
+(globalThis as unknown as { balathor: unknown }).balathor = { state, me, renderer, map, Tile, send, views };
 

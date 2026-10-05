@@ -158,3 +158,13 @@ function nearDoor(x: number, y: number): boolean {
 export function isInsideTown(x: number, y: number): boolean {
   return Math.hypot(x, y) < TOWN_WALL_INNER;
 }
+
+/** A walkable spot just outside a building's door (where NPCs wait / go in at night). */
+export function doorFront(buildingId: string, dist = 1.3): { x: number; y: number } {
+  const b = TOWN.buildings.find((o) => o.id === buildingId);
+  if (!b) return { x: TOWN_SPAWN.x, y: TOWN_SPAWN.y };
+  return {
+    x: b.door.x + 0.5 + Math.cos(b.door.facing) * dist,
+    y: b.door.y + 0.5 + Math.sin(b.door.facing) * dist
+  };
+}

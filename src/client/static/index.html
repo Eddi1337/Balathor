@@ -62,13 +62,23 @@
         <div class="minimap card"><canvas id="minimap" width="168" height="168"></canvas><div id="hud-zone" class="zone"></div></div>
       </div>
       <div id="toasts"></div>
+      <div id="party-frames"></div>
+      <div id="quest-tracker" class="tracker hidden"></div>
       <div class="hotbar card">
         <button class="hot" id="hot-attack" title="Attack (click / Space)"><span class="ico">⚔️</span><span class="key">Spc</span><span class="cd" id="hot-attack-cd"></span></button>
+        <div id="ability-bar" class="ability-bar"></div>
         <button class="hot" id="hot-potion" title="Drink a tonic (Q)"><span class="ico">🧃</span><span class="key">Q</span><span class="count" id="hot-potion-count">0</span></button>
         <button class="hot" id="hot-interact" title="Talk / pick up (E)"><span class="ico">💬</span><span class="key">E</span></button>
+        <button class="hot" id="hot-mount" title="Ride your pony (M)"><span class="ico">🐴</span><span class="key">M</span></button>
+      </div>
+      <div class="menu-dock card">
         <button class="hot" id="hot-bag" title="Bag (I)"><span class="ico">🎒</span><span class="key">I</span></button>
         <button class="hot" id="hot-char" title="Character (C)"><span class="ico">🧝</span><span class="key">C</span><span class="badge hidden" id="hot-char-badge">!</span></button>
+        <button class="hot" id="hot-talents" title="Talents (T)"><span class="ico">🌟</span><span class="key">T</span><span class="badge hidden" id="hot-talent-badge">!</span></button>
+        <button class="hot" id="hot-quests" title="Quests (L)"><span class="ico">📜</span><span class="key">L</span></button>
+        <button class="hot" id="hot-emote" title="Emotes"><span class="ico">😊</span></button>
       </div>
+      <div id="emote-menu" class="emote-menu card hidden"></div>
       <div id="chat" class="card">
         <div id="chat-log"></div>
         <form id="chat-form"><input id="chat-input" maxlength="160" placeholder="Press Enter to chat" autocomplete="off" /></form>
@@ -99,6 +109,48 @@
         <div id="shop-stock" class="shop-stock"></div>
         <p class="tip">Shift-click items in your bag to sell them here.</p>
       </div>
+
+      <div id="win-talents" class="window card hidden">
+        <header><h3 id="talent-title">Talents</h3><button class="x" data-close="win-talents">✕</button></header>
+        <div class="talent-points">Talent points: <b id="talent-points">0</b><button id="talent-respec" class="btn small">Reset</button></div>
+        <div id="talent-trees" class="talent-trees"></div>
+        <p class="tip">Click to learn · Drag onto the hotbar (keys 1-5) · Tiers unlock at levels 2, 5 and 9</p>
+      </div>
+
+      <div id="win-quests" class="window card hidden">
+        <header><h3>Quest Log</h3><button class="x" data-close="win-quests">✕</button></header>
+        <div id="quest-list" class="quest-list"></div>
+      </div>
+
+      <div id="win-waypoints" class="window card hidden">
+        <header><h3>Waypoint Obelisk</h3><button class="x" data-close="win-waypoints">✕</button></header>
+        <p class="greeting">The obelisk hums. Where would you like to go?</p>
+        <div id="waypoint-list" class="shop-stock"></div>
+      </div>
+
+      <div id="win-trade" class="window card hidden">
+        <header><h3 id="trade-title">Trade</h3><button class="x" id="trade-cancel-x">✕</button></header>
+        <div class="trade-cols">
+          <div><h4>You offer</h4><div id="trade-mine" class="item-grid trade-grid"></div>
+            <label class="gold-input">Gold <input id="trade-gold" type="number" min="0" value="0" /></label>
+            <div id="trade-mine-ready" class="ready-tag"></div></div>
+          <div><h4 id="trade-them-name">They offer</h4><div id="trade-theirs" class="item-grid trade-grid"></div>
+            <div class="gold-line">Gold: <b id="trade-their-gold">0</b></div>
+            <div id="trade-their-ready" class="ready-tag"></div></div>
+        </div>
+        <div class="row"><button id="trade-ready" class="btn primary">Ready</button><button id="trade-cancel" class="btn">Cancel</button></div>
+        <p class="tip">Click items in your bag to offer them. Any change un-readies both of you.</p>
+      </div>
+
+      <div id="dialog" class="dialog card hidden">
+        <div id="dialog-who" class="dialog-who"></div>
+        <h3 id="dialog-title"></h3>
+        <p id="dialog-text"></p>
+        <div id="dialog-extra"></div>
+        <div class="row"><button id="dialog-yes" class="btn primary">Accept</button><button id="dialog-no" class="btn">Not now</button></div>
+      </div>
+
+      <div id="player-menu" class="player-menu card hidden"></div>
 
       <div id="tooltip" class="tooltip hidden"></div>
 

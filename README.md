@@ -18,7 +18,7 @@ npm run dev        # builds, watches and serves on http://localhost:8080
 Or step by step: `npm run build && npm start`. Useful URL flags: `?quality=low|high` and
 `?server=ws://host:port/ws`.
 
-Set `DEV_COMMANDS=1` to enable `/tp x y` and `/time 0..1` chat commands while developing.
+Set `DEV_COMMANDS=1` to enable `/tp x y`, `/time 0..1`, `/xp n` and `/gold n` chat commands while developing.
 
 ## Controls
 
@@ -27,10 +27,13 @@ Set `DEV_COMMANDS=1` to enable `/tp x y` and `/time 0..1` chat commands while de
 | WASD / arrows | Walk (camera-relative) |
 | Left click / hold Space | Attack toward the cursor |
 | Right-drag, mouse wheel | Rotate / zoom the camera |
-| E | Talk to villagers, pick up loot |
+| 1-5 | Abilities on your hotbar |
+| E | Talk to villagers, pick up loot, use obelisks |
 | Q | Drink a tonic |
-| I / C | Bag / character sheet |
-| Enter, `/` | Chat, commands (`/help`) |
+| M | Ride your pony |
+| I / C / T / L | Bag / character / talents / quest log |
+| Enter, `/` | Chat, commands (`/help`, `/invite name`, `/p`, `/trade name`, `/dance`…) |
+| Click a player | Invite to party, trade, wave |
 
 On touch screens: left joystick to walk, ⚔️ to attack (auto-aims), 💬 to interact, drag the scene
 to rotate.

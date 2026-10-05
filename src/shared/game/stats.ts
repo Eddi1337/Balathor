@@ -15,6 +15,8 @@ export const STAT_INFO: Record<StatId, { name: string; blurb: string }> = {
 export const MAX_LEVEL = 30;
 export const BASE_SPEED = 5.2;
 export const SWIM_SPEED_MULT = 0.45;
+/** Riding a pony. */
+export const MOUNT_SPEED_MULT = 1.6;
 
 export function xpToNext(level: number): number {
   return Math.round(60 + level * 45 + level * level * 6);

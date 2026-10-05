@@ -46,6 +46,9 @@ export class Hud {
   private minimapBase: ImageData | null = null;
   private minimapCenter = { x: 1e9, y: 1e9 };
   chatFocused = false;
+  /** When set (e.g. during a trade), bag clicks go here instead of use/equip. */
+  bagClickOverride: ((slot: number) => void) | null = null;
+  offeredUids = new Set<string>();
 
   constructor(private send: (msg: C2S) => void) {
     document.querySelectorAll<HTMLButtonElement>("[data-close]").forEach((btn) =>
@@ -249,10 +252,12 @@ export class Hud {
     if (!this.self) return;
     this.self.inv.forEach((item, i) => {
       const el = this.slotEl(item);
+      if (item && this.offeredUids.has(item.uid)) el.classList.add("offered");
       el.draggable = Boolean(item);
       el.addEventListener("click", (e) => {
         if (!item) return;
         this.hideTooltip();
+        if (this.bagClickOverride) return this.bagClickOverride(i);
         if (e.shiftKey && this.shop) this.send({ t: "sell", slot: i });
         else this.send({ t: "use", slot: i });
       });
@@ -385,7 +390,11 @@ export class Hud {
 
   // ── minimap ─────────────────────────────────────────────────────────────────
 
-  drawMinimap(map: MapDef, px: number, py: number, facing: number, dots: MinimapDot[]): void {
+  refreshBag(): void {
+    this.renderBag();
+  }
+
+  drawMinimap(map: MapDef, px: number, py: number, facing: number, dots: MinimapDot[], objective: { x: number; y: number } | null = null): void {
     const ctx = this.minimapCtx;
     const size = 168;
     const half = size / 2;
@@ -420,6 +429,40 @@ export class Hud {
       ctx.beginPath();
       ctx.arc(dx, dy, d.size, 0, Math.PI * 2);
       ctx.fill();
+    }
+    // Quest objective: a golden star, or an arrow at the rim when it's off the map.
+    if (objective) {
+      let ox = (objective.x - px) / scale;
+      let oy = (objective.y - py) / scale;
+      const d = Math.hypot(ox, oy);
+      const edge = half - 8;
+      const inside = d <= edge;
+      if (!inside) {
+        ox = (ox / d) * edge;
+        oy = (oy / d) * edge;
+      }
+      ctx.save();
+      ctx.translate(half + ox, half + oy);
+      ctx.fillStyle = "#ffc94d";
+      ctx.strokeStyle = "#8a5a1a";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      if (inside) {
+        for (let i = 0; i < 10; i += 1) {
+          const r = i % 2 ? 3 : 7;
+          const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
+          ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+        }
+      } else {
+        ctx.rotate(Math.atan2(oy, ox));
+        ctx.moveTo(7, 0);
+        ctx.lineTo(-4, 5);
+        ctx.lineTo(-4, -5);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
     }
     // Player arrow
     ctx.save();

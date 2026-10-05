@@ -97,12 +97,19 @@ Legend: ✅ in v2 · 🔜 planned milestone
 | Minimap | ✅ |
 | Health endpoint, stress tool, smoke tests | ✅ |
 
-### Milestone 2: progression and town life 🔜
+### Milestone 2: progression and town life ✅
 
-Talent trees (3 trees × 3 tiers per class, hotbar abilities: Precise Shot … Battle Cry), the
-quest system and the 29 v1 quests (onboarding tour, kill/location/talk steps, quest panel, map
-markers), NPC daily schedules (commute, pub evenings), mounts (Stable Keeper Holt, horse /
-hoverboard), waypoint obelisks + fast travel, parties, player trading, emotes.
+| v1 feature | v2 |
+|---|---|
+| Talent trees, 3 trees × 3 tiers per class | ✅ 27 abilities (Precise Shot … Battle Cry): projectiles (multishot, piercing, slowing), novas (stun, blind, knockback), lingering zones (Rain of Arrows, Caltrops, Inferno, Blizzard, Consecration), buffs (shields, evasion, camouflage, fortify, haste, rage, party regen) and heals; tiers unlock at levels 2/5/9; respec at Guildmaster Oswin |
+| Ability hotbar | ✅ keys 1-5, drag talents onto it, cooldown sweeps |
+| Quests (kill / location / talk), quest panel, markers | ✅ 20 quests incl. onboarding, collect quests, guard bounties, biome bosses and a road-exploration quest; offer dialog, quest log (L), tracker, ! / ? markers over villagers, minimap objective star |
+| NPC daily schedules (commute, pub evenings) | ✅ villagers pathfind between shop, inn and home by the in-game clock and go indoors at night |
+| Mounts (Stable Keeper Holt) | ✅ Fluffy Pony (350g), M to ride, +60% speed, dismounts on combat/swimming |
+| Waypoint obelisks + fast travel | ✅ 9 obelisks along the roads; attune by walking near; travel for 12g (home is free) |
+| Parties | ✅ up to 5; shared XP + quest kill credit nearby, party frames, party chat (/p), party-wide buffs and heals |
+| Player trading | ✅ request → offer items + gold → both ready → atomic swap; any change un-readies |
+| Emotes | ✅ wave, dance, cheer, bow, sit, laugh, cry, love (menu or /commands) |
 
 ### Milestone 3: housing and professions 🔜
 

@@ -11,6 +11,8 @@ import type { NpcDef } from "../../shared/game/npcs";
 import type { Spatial } from "./spatial";
 import type { Session } from "./session";
 import { round2 } from "../../shared/math";
+import type { BuffId } from "../../shared/game/talents";
+import type { QuestLog } from "../../shared/game/quests";
 
 interface NetCached {
   netPass: number;
@@ -33,6 +35,18 @@ export interface CharacterSave {
   y: number;
   hp: number;
   kills: number;
+  talents: string[];
+  bar: (string | null)[];
+  quests: QuestLog;
+  waypoints: string[];
+  hasMount: boolean;
+}
+
+export interface ActiveBuff {
+  until: number;
+  value: number;
+  /** Remaining absorb for "shield". */
+  absorb?: number;
 }
 
 const rarityIndex = (r: Rarity | undefined) => (r ? RARITIES.indexOf(r) : 0);
@@ -55,6 +69,15 @@ export class Player implements Spatial, NetCached {
   lastDamagedAt = 0;
   lastChatAt = 0;
   derived!: Derived;
+  mounted = false;
+  emote = "";
+  emoteUntil = 0;
+  buffs = new Map<BuffId, ActiveBuff>();
+  /** Ability id → time it is ready again. */
+  cooldowns = new Map<string, number>();
+  partyId: string | null = null;
+  tradeId: string | null = null;
+  nextDiscoverAt = 0;
   /** Self state (inventory/stats) changed and must be re-sent. */
   selfDirty = true;
   /** Persisted fields changed since the last save. */
@@ -95,7 +118,10 @@ export class Player implements Spatial, NetCached {
       sw: this.swimming ? 1 : 0,
       dead: this.dead ? 1 : 0,
       wr: rarityIndex(s.equip.weapon?.rarity),
-      ar: rarityIndex(s.equip.body?.rarity)
+      ar: rarityIndex(s.equip.body?.rarity),
+      mt: this.mounted ? 1 : 0,
+      em: this.emote,
+      bf: this.buffs.size ? [...this.buffs.keys()].join(",") : ""
     };
     this.netPass = pass;
     this.netValue = value;
@@ -128,6 +154,10 @@ export class Mob implements Spatial, NetCached {
   nextThinkAt = 0;
   lastAttackAt = 0;
   fleeUntil = 0;
+  slowUntil = 0;
+  slowMult = 1;
+  stunUntil = 0;
+  blindUntil = 0;
   /** Damage dealt per player id (for XP / loot ownership). */
   damageBy = new Map<string, number>();
 
@@ -154,6 +184,10 @@ export class Mob implements Spatial, NetCached {
     return 0.35 * this.tpl.scale + 0.1;
   }
 
+  statusBits(now: number): number {
+    return (now < this.slowUntil ? 1 : 0) | (now < this.stunUntil ? 2 : 0) | (now < this.blindUntil ? 4 : 0);
+  }
+
   net(pass: number): NetMob {
     if (this.netPass === pass && this.netValue) return this.netValue as NetMob;
     const value: NetMob = {
@@ -168,7 +202,8 @@ export class Mob implements Spatial, NetCached {
       mhp: this.maxHp,
       mv: this.moving ? 1 : 0,
       ag: this.state === "chase" ? 1 : 0,
-      dead: this.dead ? 1 : 0
+      dead: this.dead ? 1 : 0,
+      st: this.statusBits(Date.now())
     };
     this.netPass = pass;
     this.netValue = value;
@@ -189,12 +224,24 @@ export class Npc implements Spatial, NetCached {
   goalY: number;
   nextThinkAt = 0;
   talkUntil = 0;
+  /** Inside a building (not replicated) until their schedule moves them on. */
+  indoors = false;
+  /** Current schedule entry key, and the path being walked to it. */
+  scheduleKey = "";
+  path: { x: number; y: number }[] = [];
+  homeX: number;
+  homeY: number;
+  wander: number;
+  stuckSince = 0;
 
   constructor(readonly id: string, readonly def: NpcDef) {
     this.x = def.x;
     this.y = def.y;
     this.goalX = def.x;
     this.goalY = def.y;
+    this.homeX = def.x;
+    this.homeY = def.y;
+    this.wander = def.wander;
   }
 
   net(pass: number): NetNpc {

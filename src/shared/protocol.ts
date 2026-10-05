@@ -8,6 +8,8 @@
 import type { ClassId } from "./game/classes";
 import type { EquipSlot, Item } from "./game/items";
 import type { StatId } from "./game/stats";
+import type { BuffId, ZoneKind } from "./game/talents";
+import type { QuestLog } from "./game/quests";
 
 export const PROTOCOL_VERSION = 1;
 
@@ -42,6 +44,12 @@ export interface NetPlayer {
   /** Rarity index (0-5) of equipped weapon / armour, for visual flair. */
   wr: number;
   ar: number;
+  /** Riding a pony. */
+  mt: 0 | 1;
+  /** Current emote ("" when none). */
+  em: string;
+  /** Active visible buffs, comma-separated (e.g. "shield,rage"). */
+  bf: string;
 }
 
 export interface NetMob {
@@ -58,6 +66,8 @@ export interface NetMob {
   /** 1 while chasing / attacking someone. */
   ag: 0 | 1;
   dead: 0 | 1;
+  /** Status bits: 1 slowed, 2 stunned, 4 blinded. */
+  st: number;
 }
 
 export interface NetNpc {
@@ -84,7 +94,7 @@ export type NetEntity = NetPlayer | NetMob | NetNpc | NetLoot;
 
 // ─── Combat / world effects ───────────────────────────────────────────────────
 
-export type ProjectileKind = "arrow" | "fireball" | "frostbolt" | "emberball";
+export type ProjectileKind = "arrow" | "fireball" | "frostbolt" | "emberball" | "arcane";
 
 export type FxEvent =
   | { e: "swing"; id: string; a: number }
@@ -96,7 +106,11 @@ export type FxEvent =
   | { e: "die"; id: string }
   | { e: "lvl"; id: string; lv: number }
   | { e: "loot"; id: string; by: string }
-  | { e: "say"; id: string; text: string };
+  | { e: "say"; id: string; text: string }
+  | { e: "ability"; id: string; ab: string; a: number }
+  | { e: "nova"; id: string; ab: string; x: number; y: number; r: number }
+  | { e: "zone"; zid: number; kind: ZoneKind; x: number; y: number; r: number; dur: number }
+  | { e: "buff"; id: string; buff: BuffId; dur: number };
 
 // ─── The local player's private state ─────────────────────────────────────────
 
@@ -115,6 +129,44 @@ export interface SelfState {
   inv: (Item | null)[];
   equip: Record<EquipSlot, Item | null>;
   kills: number;
+  talents: string[];
+  talentPoints: number;
+  bar: (string | null)[];
+  quests: QuestLog;
+  /** Quest markers over NPC heads: "!" = quest available, "?" = ready to hand in. */
+  markers: Record<string, "!" | "?">;
+  waypoints: string[];
+  hasMount: boolean;
+}
+
+export interface PartyMember {
+  id: string;
+  name: string;
+  cls: ClassId;
+  lv: number;
+  hp: number;
+  mhp: number;
+  x: number;
+  y: number;
+  online: boolean;
+}
+
+export interface PartyView {
+  leader: string;
+  members: PartyMember[];
+}
+
+export interface TradeSide {
+  id: string;
+  name: string;
+  items: Item[];
+  gold: number;
+  ready: boolean;
+}
+
+export interface TradeView {
+  me: TradeSide;
+  them: TradeSide;
 }
 
 export interface ShopView {
@@ -145,6 +197,17 @@ export type C2S =
   | { t: "sell"; slot: number }
   | { t: "stat"; stat: StatId }
   | { t: "respawn" }
+  | { t: "learn"; id: string }
+  | { t: "bind"; slot: number; id: string | null }
+  | { t: "cast"; id: string; a: number; x: number; y: number }
+  | { t: "respec" }
+  | { t: "questAccept"; id: string }
+  | { t: "questAbandon"; id: string }
+  | { t: "mount" }
+  | { t: "travel"; id: string }
+  | { t: "emote"; id: string }
+  | { t: "party"; op: "invite" | "accept" | "decline" | "leave" | "kick"; target?: string }
+  | { t: "trade"; op: "request" | "accept" | "decline" | "cancel" | "offer" | "unoffer" | "gold" | "ready"; target?: string; slot?: number; gold?: number }
   | { t: "ping"; c: number };
 
 // ─── Server → client ──────────────────────────────────────────────────────────
@@ -171,6 +234,13 @@ export type S2C =
   | { t: "shop"; shop: ShopView | null }
   | { t: "toast"; text: string; kind?: "info" | "good" | "bad" }
   | { t: "time"; time: number }
-  | { t: "pong"; c: number; s: number };
+  | { t: "pong"; c: number; s: number }
+  | { t: "cd"; id: string; ms: number }
+  | { t: "questOffer"; npc: string; id: string }
+  | { t: "questDone"; id: string }
+  | { t: "party"; party: PartyView | null }
+  | { t: "partyInvite"; from: string; name: string }
+  | { t: "tradeRequest"; from: string; name: string }
+  | { t: "trade"; trade: TradeView | null };
 
 export type S2CType = S2C["t"];
