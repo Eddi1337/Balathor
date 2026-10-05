@@ -16,7 +16,12 @@ env:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Runs on the self-hosted Balathor runner so deploys never wait on hosted-runner queues.
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - balathor
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
