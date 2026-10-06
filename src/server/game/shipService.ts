@@ -19,6 +19,7 @@ import {
 } from "../../shared/game/ships";
 import { DISCOVER_RANGE, DOCK_RANGE, LAUNCH_POINT, POIS, POIS_BY_ID, poiArrival, poiNear } from "../../shared/world/scifi/space";
 import { LAUNCH_PAD } from "../../shared/world/scifi/station";
+import { PAD_RADIUS, PLANET_PAD, PLANETS, parsePlanetMapId } from "../../shared/world/scifi/planets";
 import { dist } from "../../shared/math";
 import type { C2S } from "../../shared/protocol";
 import type { Mob, Player, ShipState } from "./entities";
@@ -110,7 +111,18 @@ export class ShipService {
   }
 
   launch(p: Player, world: World): void {
-    if (world.def.id !== "station" || p.dead) return;
+    if (p.dead) return;
+    const planet = parsePlanetMapId(world.def.id);
+    if (planet) {
+      if (dist(p.x, p.y, PLANET_PAD.x, PLANET_PAD.y) > PAD_RADIUS + 1.5) return p.session.toast("Stand on the landing pad to launch", "bad");
+      if (!p.save.activeShip) return p.session.toast("You don't have a ship!", "bad");
+      const poi = POIS_BY_ID[planet];
+      const to = poiArrival(poi);
+      this.ctx.transfer(p, "space", to.x, to.y);
+      p.f = Math.PI / 2;
+      return;
+    }
+    if (world.def.id !== "station") return;
     if (dist(p.x, p.y, LAUNCH_PAD.x, LAUNCH_PAD.y) > LAUNCH_PAD.r + 1.5) return p.session.toast("Stand on the hangar pad to launch", "bad");
     if (!p.save.activeShip) return p.session.toast("You don't have a ship yet. Station Master Orla can help!", "bad");
     this.discover(p, "ringforge");
@@ -120,9 +132,14 @@ export class ShipService {
 
   dock(p: Player, world: World): void {
     if (world.def.kind !== "space" || !p.ship || p.dead) return;
-    const poi = poiNear(p.x, p.y, ["station"], DOCK_RANGE);
+    const poi = poiNear(p.x, p.y, ["station", "planet"], DOCK_RANGE);
     if (!poi) return p.session.toast("Fly into the station's docking ring first", "bad");
     world.fx(p.x, p.y, { e: "warp", id: p.id, x: p.x, y: p.y, out: 1 });
+    if (poi.planet) {
+      this.ctx.transfer(p, poi.planet, PLANET_PAD.x, PLANET_PAD.y + 2.5);
+      p.session.toast(`Landed on ${PLANETS[poi.id as keyof typeof PLANETS]?.name ?? poi.name}!`, "good");
+      return;
+    }
     this.ctx.transfer(p, "station", LAUNCH_PAD.x, LAUNCH_PAD.y + LAUNCH_PAD.r + 1);
     p.session.toast("Docked at Ringforge. Hull repaired!", "good");
   }

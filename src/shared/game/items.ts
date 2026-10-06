@@ -144,6 +144,8 @@ export const ITEM_TEMPLATES: Record<string, ItemTemplate> = {
   food_star_latte: { id: "food_star_latte", name: "Star Latte", kind: "food", icon: "☕", heal: 40, value: 12, stack: 20, buff: { stat: "spd", value: 0.1, ms: 240_000 } },
   food_nebula_noodles: { id: "food_nebula_noodles", name: "Nebula Noodles", kind: "food", icon: "🍜", heal: 120, value: 24, stack: 20, buff: { stat: "str", value: 0.12, ms: 240_000 } },
   food_jelly_tart: { id: "food_jelly_tart", name: "Jelly Tart", kind: "food", icon: "🥧", heal: 160, value: 30, stack: 20, buff: { stat: "regen", value: 0.02, ms: 240_000 } },
+  fish_glowfin: { id: "fish_glowfin", name: "Glowfin", kind: "material", icon: "🐠", value: 18, stack: 30 },
+  food_glowfin_bowl: { id: "food_glowfin_bowl", name: "Glowfin Poke Bowl", kind: "food", icon: "🥗", heal: 170, value: 34, stack: 20, buff: { stat: "def", value: 8, ms: 240_000 } },
   junk_boot: { id: "junk_boot", name: "Soggy Boot", kind: "junk", icon: "🥾", value: 1, stack: 20 },
   junk_bottle: { id: "junk_bottle", name: "Message in a Bottle", kind: "junk", icon: "🍾", value: 40, stack: 20 },
   // Cooked food & smithing tonics (heal + timed buff)

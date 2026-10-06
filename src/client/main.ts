@@ -46,6 +46,9 @@ import { SpaceScene } from "./render/space";
 import { buildDeck, type Deck } from "./render/deck";
 import { SHIP_FLOAT, animateScifi, buildScifiMob, buildShip, isScifiModel } from "./render/scifiModels";
 import { HangarUI, WarpUI } from "./ui/hangar";
+import { Surface, planetSky } from "./render/surface";
+import { PAD_RADIUS, PLANET_PAD } from "../shared/world/scifi/planets";
+import { isPlanet } from "../shared/world/maps";
 
 type Phase = "connecting" | "auth" | "create" | "play";
 
@@ -65,6 +68,7 @@ const space = new SpaceScene();
 space.group.visible = false;
 renderer.scene.add(terrain.group, terrain.water, effects.group, landmarks.group, fountains.group, space.group, ...cityLights);
 let deck: Deck | null = null;
+let surface: Surface | null = null;
 /** The ship parked on the hangar pad (station only). */
 let parkedShip: { hull: string; model: Model } | null = null;
 
@@ -344,7 +348,7 @@ function hasTool(tpl: string | undefined): boolean {
 
 /** The nearest gatherable prop (tree, rock, flowers…) within reach, if any. */
 function nearestNode(): { x: number; y: number; label: string; locked: boolean } | null {
-  if (map.id !== OVERWORLD.id) return null;
+  if (map.kind !== "overworld" && map.kind !== "surface") return null;
   let best: { x: number; y: number; label: string; locked: boolean } | null = null;
   let bestD = GATHER_RANGE;
   const r = Math.ceil(GATHER_RANGE);
@@ -353,7 +357,7 @@ function nearestNode(): { x: number; y: number; label: string; locked: boolean }
       const tx = Math.floor(me.x) + dx;
       const ty = Math.floor(me.y) + dy;
       const d = Math.hypot(tx + 0.5 - me.x, ty + 0.5 - me.y);
-      if (d > GATHER_RANGE || depleted.has(`${tx},${ty}`)) continue;
+      if (d > GATHER_RANGE || depleted.has(`${map.id}|${tx},${ty}`)) continue;
       const node = gatherNode(map.tileAt(tx, ty), map.biomeAt(tx + 0.5, ty + 0.5));
       if (!node || !hasTool(PROFESSIONS[node.prof].tool)) continue;
       // Nodes you can't work yet only show when nothing workable is in reach.
@@ -370,7 +374,7 @@ function nearestNode(): { x: number; y: number; label: string; locked: boolean }
 
 /** A water spot to cast into: straight ahead first, else the nearest water in range. */
 function fishingSpot(): { x: number; y: number } | null {
-  if (map.id !== OVERWORLD.id || !hasTool("tool_rod")) return null;
+  if ((map.kind !== "overworld" && map.kind !== "surface") || !hasTool("tool_rod")) return null;
   for (let d = 1.5; d <= FISH_RANGE; d += 0.5) {
     const x = me.x + Math.cos(me.f) * d;
     const y = me.y + Math.sin(me.f) * d;
@@ -408,8 +412,11 @@ function nearestInteractable(): { id: string; kind: InteractKind; label: string 
   }
   if (crafting.fishing?.bite) return { id: "reel", kind: "reel", label: "E · Reel in!" };
   if (map.kind === "space") {
-    const dock = poiNear(me.x, me.y, ["station"], DOCK_RANGE);
-    if (dock) return { id: dock.id, kind: "dock", label: `E · Dock at ${dock.name}` };
+    const dock = poiNear(me.x, me.y, ["station", "planet"], DOCK_RANGE);
+    if (dock) return { id: dock.id, kind: "dock", label: dock.planet ? `E · Land on ${dock.name}` : `E · Dock at ${dock.name}` };
+  }
+  if (isPlanet(map) && Math.hypot(me.x - PLANET_PAD.x, me.y - PLANET_PAD.y) <= PAD_RADIUS) {
+    return { id: "launch", kind: "launch", label: state.self?.activeShip ? "E · Launch to orbit" : "E · Launch (you need a ship)" };
   }
   if (map.id === "station" && Math.hypot(me.x - LAUNCH_PAD.x, me.y - LAUNCH_PAD.y) <= LAUNCH_PAD.r + 1) {
     const hull = state.self?.activeShip;
@@ -700,6 +707,11 @@ function switchMap(id: string): void {
     renderer.scene.remove(deck.group);
     deck = null;
   }
+  if (surface) {
+    renderer.scene.remove(surface.group);
+    surface.dispose();
+    surface = null;
+  }
   if (parkedShip) {
     renderer.scene.remove(parkedShip.model.root);
     disposeModel(parkedShip.model);
@@ -717,6 +729,22 @@ function switchMap(id: string): void {
     renderer.distance = 23;
     renderer.pitch = 0.98;
     renderer.lookAbove = 0;
+  } else if (isPlanet(map)) {
+    surface = new Surface(map);
+    surface.update(0, 24);
+    renderer.scene.add(surface.group);
+    const sky = planetSky(map.planet.id);
+    const ps = renderer.planetSky;
+    ps.top.set(sky.top);
+    ps.horizon.set(sky.horizon);
+    ps.fog.set(sky.fog);
+    ps.sun.set(sky.sun);
+    ps.ground.set(sky.ground);
+    ps.sunI = sky.sunI;
+    ps.hemiI = sky.hemiI;
+    renderer.distance = 14;
+    renderer.pitch = 0.5;
+    renderer.lookAbove = 2.2;
   } else if (map.kind === "deck") {
     deck = buildDeck(map, STATION_W, STATION_H);
     renderer.scene.add(deck.group);
@@ -869,7 +897,7 @@ net.on((msg: S2C) => {
         me.f = Math.atan2(msg.y + 0.5 - me.y, msg.x + 0.5 - me.x);
       } else {
         crafting.stopWork();
-        if (msg.state === "done") depleted.add(`${msg.x},${msg.y}`);
+        if (msg.state === "done") depleted.add(`${map.id}|${msg.x},${msg.y}`);
         if (msg.state === "done" && msg.item) hud.toast(`+1 ${itemTemplate(msg.item)?.name ?? msg.item}`, "good");
       }
       return;
@@ -1105,6 +1133,7 @@ const ABILITY_COLORS: Record<string, string> = {
 
 /** Surface height of the water at (x, y): river level or sea level. */
 function waterLevelAt(x: number, y: number): number {
+  if (map.kind === "surface") return 0.14;
   const r = riverAt(x, y);
   return r ? r.level : 0;
 }
@@ -1425,6 +1454,7 @@ function frame(): void {
   effects.updateFireflies(focus.x, focus.y, outdoors ? renderer.night : 0, time);
   if (map.kind === "space") space.update(time, renderer.camera);
   deck?.update(time);
+  surface?.update(time);
   effects.update(dt);
   landmarks.update(time);
   if (outdoors) {

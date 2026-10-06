@@ -40,6 +40,26 @@ export interface GatherNode {
 
 /** What (if anything) can be gathered from a tile. */
 export function gatherNode(tile: number, biome: Biome): GatherNode | null {
+  // Alien worlds have their own flora and ore.
+  if (biome === "alien_lush") {
+    if (tile === Tile.TREE) return { prof: "woodcutting", item: "log_glowwood", level: 8, xp: 24, name: "Glowwood" };
+    if (tile === Tile.CRYSTAL) return { prof: "mining", item: "crystal_bloom", level: 10, xp: 28, name: "Bloomstone" };
+    if (tile === Tile.FLOWERS) return { prof: "herbalism", item: "herb_starmoss", level: 9, xp: 24, name: "Starmoss" };
+    if (tile === Tile.BUSH) return { prof: "herbalism", item: "herb_berries", level: 3, xp: 14, name: "Star berries" };
+    return null;
+  }
+  if (biome === "alien_ice") {
+    if (tile === Tile.CRYSTAL) return { prof: "mining", item: "crystal_frost", level: 18, xp: 42, name: "Frost crystal" };
+    if (tile === Tile.ROCK) return { prof: "mining", item: "ore_silver", level: 16, xp: 38, name: "Silver vein" };
+    if (tile === Tile.SNOW_PINE) return { prof: "woodcutting", item: "log_frost", level: 18, xp: 40, name: "Ice spire" };
+    return null;
+  }
+  if (biome === "alien_rust") {
+    if (tile === Tile.ROCK) return { prof: "mining", item: "ore_titanium", level: 14, xp: 34, name: "Titanium seam" };
+    if (tile === Tile.CACTUS) return { prof: "herbalism", item: "herb_cactus", level: 12, xp: 30, name: "Spinefruit" };
+    if (tile === Tile.DEAD_TREE) return { prof: "woodcutting", item: "log_ash", level: 22, xp: 48, name: "Rustwood" };
+    return null;
+  }
   switch (tile) {
     case Tile.TREE:
       return { prof: "woodcutting", item: "log_oak", level: 1, xp: 12, name: "Oak" };
@@ -99,6 +119,7 @@ export function fishTable(biome: Biome, river: boolean): FishEntry[] {
   if (biome === "frost") base.push({ item: "fish_frostfin", level: 16, weight: 6, xp: 42 });
   if (biome === "desert") base.push({ item: "fish_goldcarp", level: 14, weight: 5, xp: 38 });
   if (biome === "meadow" || biome === "forest" || biome === "highlands") base.push({ item: "fish_pike", level: 10, weight: 5, xp: 28 });
+  if (biome === "alien_lush") base.push({ item: "fish_glowfin", level: 9, weight: 9, xp: 30 });
   base.push({ item: "junk_bottle", level: 5, weight: 0.6, xp: 15 });
   return base;
 }
@@ -132,6 +153,7 @@ export const RECIPES: Recipe[] = [
   { id: "cook_stew", station: "campfire", prof: "cooking", level: 9, inputs: [{ tpl: "fish_catfish", qty: 1 }, { tpl: "herb_bogmoss", qty: 2 }], output: { tpl: "food_bog_stew", qty: 1 }, xp: 30 },
   { id: "cook_snapper", station: "campfire", prof: "cooking", level: 11, inputs: [{ tpl: "fish_snapper", qty: 1 }, { tpl: "herb_sunpetal", qty: 2 }], output: { tpl: "food_seaside_platter", qty: 1 }, xp: 34 },
   { id: "cook_feast", station: "campfire", prof: "cooking", level: 15, inputs: [{ tpl: "fish_goldcarp", qty: 1 }, { tpl: "herb_cactus", qty: 2 }], output: { tpl: "food_golden_feast", qty: 1 }, xp: 46 },
+  { id: "cook_glowfin", station: "campfire", prof: "cooking", level: 10, inputs: [{ tpl: "fish_glowfin", qty: 1 }, { tpl: "herb_starmoss", qty: 1 }], output: { tpl: "food_glowfin_bowl", qty: 1 }, xp: 36 },
   { id: "cook_sashimi", station: "campfire", prof: "cooking", level: 18, inputs: [{ tpl: "fish_frostfin", qty: 1 }], output: { tpl: "food_frostfin_sashimi", qty: 1 }, xp: 52 },
   // Smithing
   { id: "smelt_copper", station: "forge", prof: "smithing", level: 1, inputs: [{ tpl: "ore_copper", qty: 2 }, { tpl: "log_oak", qty: 1 }], output: { tpl: "bar_copper", qty: 1 }, xp: 14 },

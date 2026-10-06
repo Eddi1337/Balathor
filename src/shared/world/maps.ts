@@ -9,6 +9,7 @@ import { Tile } from "./tiles";
 import { riverCurrent } from "./rivers";
 import { STATION_ARRIVAL, STATION_W, stationTileAt } from "./scifi/station";
 import { SPACE_RADIUS, spaceSpawns, spaceTileAt, LAUNCH_POINT, type SpawnSpec } from "./scifi/space";
+import { PLANETS, PLANET_PAD, parsePlanetMapId, planetHeightAt, planetLevelAt, planetSpawns, planetTileAt, type PlanetDef } from "./scifi/planets";
 
 export type MapTheme = "fantasy" | "scifi" | "ocean" | "dungeon" | "interior";
 
@@ -129,12 +130,44 @@ export function getMap(id: string): MapDef {
       return map;
     }
   }
+  const planet = parsePlanetMapId(id);
+  if (planet) {
+    const map = createPlanet(PLANETS[planet]);
+    MAPS.set(id, map);
+    return map;
+  }
   if (id === "castle:throne") {
     const map = createInterior(id, null, 0, THRONE_ROOM, "The Throne Room");
     MAPS.set(id, map);
     return map;
   }
   return OVERWORLD;
+}
+
+export interface PlanetMapDef extends MapDef {
+  kind: "surface";
+  planet: PlanetDef;
+}
+
+function createPlanet(def: PlanetDef): PlanetMapDef {
+  return {
+    id: `planet:${def.id}`,
+    name: def.name,
+    theme: "scifi",
+    kind: "surface",
+    planet: def,
+    bounds: def.radius + 4,
+    spawn: { x: PLANET_PAD.x, y: PLANET_PAD.y + 2.5 },
+    tileAt: (x, y) => planetTileAt(def, x, y),
+    heightAt: (x, y) => planetHeightAt(def, x, y),
+    biomeAt: () => def.biome,
+    zoneLevelAt: (x, y) => planetLevelAt(def, x, y),
+    spawns: () => planetSpawns(def)
+  };
+}
+
+export function isPlanet(map: MapDef): map is PlanetMapDef {
+  return map.kind === "surface";
 }
 
 export function isInterior(map: MapDef): map is InteriorMapDef {

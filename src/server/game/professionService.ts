@@ -82,13 +82,13 @@ export class ProfessionService {
   }
 
   startGather(p: Player, world: World, x: number, y: number, now: number): void {
-    if (world.def.id !== "overworld" || p.dead) return;
+    if ((world.def.kind !== "overworld" && world.def.kind !== "surface") || p.dead) return;
     const tx = Math.floor(x);
     const ty = Math.floor(y);
     if (Math.hypot(tx + 0.5 - p.x, ty + 0.5 - p.y) > GATHER_RANGE + 0.6) return;
-    const node = gatherNode(world.def.tileAt(tx, ty), biomeAt(tx + 0.5, ty + 0.5));
+    const node = gatherNode(world.def.tileAt(tx, ty), world.def.biomeAt(tx + 0.5, ty + 0.5));
     if (!node) return;
-    const key = `${tx},${ty}`;
+    const key = `${world.def.id}|${tx},${ty}`;
     if ((this.depleted.get(key) ?? 0) > now) return p.session.toast(`This ${node.name.toLowerCase()} needs time to regrow`, "bad");
     if (!this.hasTool(p, node.prof)) return p.session.toast(`You need a ${itemName(makeItem(PROFESSIONS[node.prof].tool!))}. Bram sells them in the market.`, "bad");
     const lv = p.save.professions[node.prof].lv;
@@ -102,7 +102,7 @@ export class ProfessionService {
   }
 
   startFishing(p: Player, world: World, x: number, y: number, now: number): void {
-    if (world.def.id !== "overworld" || p.dead) return;
+    if ((world.def.kind !== "overworld" && world.def.kind !== "surface") || p.dead) return;
     if (Math.hypot(x - p.x, y - p.y) > FISH_RANGE + 0.5) return;
     if (!isWaterTile(world.def.tileAt(x, y))) return p.session.toast("Cast into water!", "bad");
     if (!this.hasTool(p, "fishing")) return p.session.toast("You need a fishing rod. Bram sells them in the market.", "bad");
@@ -123,7 +123,7 @@ export class ProfessionService {
       return;
     }
     const lv = p.save.professions.fishing.lv;
-    const table = fishTable(biomeAt(f.x, f.y), Boolean(riverAt(f.x, f.y))).filter((e) => e.level <= lv);
+    const table = fishTable(world.def.biomeAt(f.x, f.y), world.def.kind === "overworld" && Boolean(riverAt(f.x, f.y))).filter((e) => e.level <= lv);
     let roll = Math.random() * table.reduce((a, e) => a + e.weight, 0);
     let pick = table[0];
     for (const e of table) {

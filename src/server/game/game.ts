@@ -1121,7 +1121,7 @@ export class Game {
     );
     if (depleted.length) {
       const json = JSON.stringify({ t: "depleted", keys: this.professions.depletedKeys() } satisfies S2C);
-      for (const s of this.sessions.values()) if (s.player?.mapId === OVERWORLD.id) s.sendRaw(json);
+      for (const s of this.sessions.values()) if (s.player) s.sendRaw(json);
     }
     if (now - this.lastPartyTickAt >= 1000) {
       this.lastPartyTickAt = now;

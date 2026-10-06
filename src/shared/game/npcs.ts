@@ -248,6 +248,13 @@ export const NPCS: NpcDef[] = [
     lines: ["The Tech Labs below are... a little haunted by robots. My robots.", "The lifts go down to Labs I, II and III."] },
   guard("npc_sec_1", "Security Officer Kade", 27.5, 8.5, ["Arrivals, this way.", "Keep your weapons holstered on deck."], "station"),
   guard("npc_sec_2", "Security Officer Lin", 36.5, 8.5, ["The Stargate leads back to Hearthmoor.", "All clear."], "station"),
+  // Planet guides, waiting by the landing pads.
+  { id: "npc_fern", name: "Ranger Fern", role: "guide", x: 4.5, y: 7.5, wander: 1.5, body: "#3fae8a", accent: "#ffd1f0", hat: "hood", map: "planet:aurelia",
+    lines: ["Welcome to Aurelia! Everything glows at night. Everything bites, too.", "The glowwood trees make lovely logs.", "Mind the pools. The fish bite back."] },
+  { id: "npc_tundra", name: "Surveyor Tundra", role: "guide", x: 4.5, y: 7.5, wander: 1.5, body: "#9fd4f5", accent: "#ffffff", hat: "hood", map: "planet:icefall",
+    lines: ["Brr! Welcome to Icefall. Keep moving, it helps.", "The crystals sing when the wind blows.", "Shardlings look like snowmen. They are not snowmen."] },
+  { id: "npc_rusty", name: "Prospector Rusty", role: "guide", x: 4.5, y: 7.5, wander: 1.5, body: "#e07a4a", accent: "#ffd166", hat: "cap", map: "planet:rust",
+    lines: ["Rust! Red sand, titanium, and things with too many legs.", "The old relay ridge still pings now and then.", "Don't swim in the green lakes. Trust me."] },
   // Inside the castle.
   { id: "npc_king", name: "King Aldric the Kind", role: "villager", x: 11.5, y: 3.6, wander: 0, body: "#7b3fbf", accent: "#ffd166", hat: "crown", map: "castle:throne",
     lines: ["Welcome, welcome! Any friend of Hearthmoor is a friend of mine.", "Our island's champions grow restless. Will you help?", "Have you tried the honey elixirs? Splendid stuff."] },

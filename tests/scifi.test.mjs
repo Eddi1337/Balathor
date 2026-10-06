@@ -20,6 +20,9 @@ await build({
       export { STATION } from "./src/shared/world/maps";
       export { findPath } from "./src/shared/game/pathfind";
       export { NPCS } from "./src/shared/game/npcs";
+      export { getMap } from "./src/shared/world/maps";
+      export { PLANETS, PLANET_PAD, planetSpawns } from "./src/shared/world/scifi/planets";
+      export { isBlockingTile } from "./src/shared/world/tiles";
     `,
     resolveDir: process.cwd(),
     loader: "ts"
@@ -49,6 +52,11 @@ after(() => {
 });
 
 const tp = (x, y) => c.chat(`/tp ${x.toFixed(2)} ${y.toFixed(2)}`, 1200);
+/** Wait until an NPC is replicated to this client, then return its entity id. */
+async function npcId(cl, defId) {
+  await cl.wait(() => cl.npc(defId), 3000, defId);
+  return cl.npc(defId).id;
+}
 const me = () => c.entities.get(c.id);
 
 test("the station deck is connected: every NPC, the pad, lifts and gate are reachable", () => {
@@ -125,7 +133,7 @@ test("the hangar sells ships and upgrades", async () => {
   await c.chat("/gold 9000");
   await c.chat("/tpnpc npc_pax");
   c.messages = [];
-  c.send({ t: "talk", id: c.npc("npc_pax").id });
+  c.send({ t: "talk", id: await npcId(c, "npc_pax") });
   await c.wait((m) => m.t === "hangar", 2000, "hangar opens");
   c.send({ t: "hangar", op: "buy", hull: "corvette" });
   await c.selfWhere((s) => s.ships.includes("corvette") && s.activeShip === "corvette", 3000, "bought a corvette");
@@ -153,10 +161,11 @@ test("the Stargate quest leads to the station and Orla", async () => {
   await d.join(`sq${run}${Date.now() % 1000}`, `Quest${run}`.slice(0, 15), "mage");
   try {
     await d.chat("/xp 2000");
+    await d.chat("/time 0.45");
     // Hand-wave the welcome quest: talk to Rin, Pip, Brunhild, Rin.
     for (const npc of ["npc_rin", "npc_pip", "npc_brunhild", "npc_rin"]) {
       await d.chat(`/tpnpc ${npc}`);
-      d.send({ t: "talk", id: d.npc(npc).id });
+      d.send({ t: "talk", id: await npcId(d, npc) });
       await sleep(400);
       const offer = d.messages.findLast?.((m) => m.t === "questOffer" && m.id === "q_welcome");
       if (offer) d.send({ t: "questAccept", id: "q_welcome" });
@@ -164,7 +173,7 @@ test("the Stargate quest leads to the station and Orla", async () => {
     }
     await d.selfWhere((s) => s.quests.done.includes("q_welcome"), 3000, "welcome done");
     await d.chat("/tpnpc npc_astra");
-    d.send({ t: "talk", id: d.npc("npc_astra").id });
+    d.send({ t: "talk", id: await npcId(d, "npc_astra") });
     await d.wait((m) => m.t === "questOffer" && m.id === "q_stargate", 2000, "stargate offer");
     d.send({ t: "questAccept", id: "q_stargate" });
     await d.selfWhere((s) => s.quests.active.some((q) => q.id === "q_stargate"), 2000, "accepted");
@@ -173,18 +182,73 @@ test("the Stargate quest leads to the station and Orla", async () => {
     await d.wait((m) => m.t === "welcome" && m.map === "station", 3000, "on station");
     await d.selfWhere((s) => s.quests.active.find((q) => q.id === "q_stargate")?.step === 1, 3000, "visit step done");
     await d.chat("/tpnpc npc_orla");
-    d.send({ t: "talk", id: d.npc("npc_orla").id });
+    d.send({ t: "talk", id: await npcId(d, "npc_orla") });
     await d.selfWhere((s) => s.quests.done.includes("q_stargate"), 3000, "quest complete");
     // Orla's next quest gives you your first ship.
     await d.wait((m) => m.t === "questOffer" && m.id === "q_wings", 2000, "wings offer");
     d.send({ t: "questAccept", id: "q_wings" });
     await d.chat("/tpnpc npc_pax");
-    d.send({ t: "talk", id: d.npc("npc_pax").id });
+    d.send({ t: "talk", id: await npcId(d, "npc_pax") });
     await sleep(400);
     await d.chat("/tpnpc npc_orla");
-    d.send({ t: "talk", id: d.npc("npc_orla").id });
+    d.send({ t: "talk", id: await npcId(d, "npc_orla") });
     await d.selfWhere((s) => s.ships.includes("skiff") && s.activeShip === "skiff", 3000, "got the skiff");
   } finally {
     d.close();
   }
+});
+
+test("planets: guides, landmarks and bosses are reachable from the landing pad", () => {
+  for (const id of ["aurelia", "icefall", "rust"]) {
+    const def = W.PLANETS[id];
+    const map = W.getMap(`planet:${id}`);
+    assert.equal(map.kind, "surface");
+    const spawns = W.planetSpawns(def);
+    assert.ok(spawns.length > 60, `${id} has ${spawns.length} creatures`);
+    const boss = spawns.find((sp) => sp.id.endsWith("_boss"));
+    const guide = W.NPCS.find((n) => n.map === `planet:${id}`);
+    for (const [label, t] of [["guide", guide], ["landmark", def.landmark], ["boss", boss]]) {
+      const path = W.findPath(map, W.PLANET_PAD.x, W.PLANET_PAD.y + 2.5, t.x, t.y, 60000);
+      assert.ok(path, `${id}: path to ${label}`);
+    }
+  }
+});
+
+test("land on Aurelia, meet Fern, gather glowwood and launch back to orbit", async () => {
+  await c.chat("/map space 290 -100", 1500);
+  await c.wait(() => me()?.sh, 3000, "flying");
+  c.messages = [];
+  c.send({ t: "dock" });
+  await c.wait((m) => m.t === "welcome" && m.map === "planet:aurelia", 3000, "landed");
+  await c.wait(() => c.npc("npc_fern"), 3000, "Fern by the pad");
+  await c.wait(() => me()?.sh === "", 3000, "on foot");
+  // Glowwood needs a hatchet and Woodcutting 8.
+  await c.chat("/prof woodcutting 10");
+  await c.chat("/time 0.45");
+  await c.chat("/tpnpc npc_bram");
+  c.send({ t: "talk", id: await npcId(c, "npc_bram") });
+  const shop = await c.wait((m) => m.t === "shop" && m.shop?.id === "tools", 3000, "tool shop");
+  c.send({ t: "buy", shop: "tools", idx: shop.shop.stock.find((e) => e.item.tpl === "tool_hatchet").idx });
+  await c.selfWhere((s) => s.inv.some((i) => i?.tpl === "tool_hatchet"), 3000, "hatchet");
+  await c.chat("/map planet:aurelia", 1500);
+  const map = W.getMap("planet:aurelia");
+  let tree = null;
+  for (let r = 10; r < 60 && !tree; r += 1) {
+    for (let a = 0; a < Math.PI * 2 && !tree; a += 0.05) {
+      const x = Math.floor(Math.cos(a) * r);
+      const y = Math.floor(Math.sin(a) * r);
+      if (map.tileAt(x + 0.5, y + 0.5) !== 20) continue; // Tile.TREE
+      if (!W.isBlockingTile(map.tileAt(x + 1.5, y + 0.5))) tree = { x, y };
+    }
+  }
+  assert.ok(tree, "a glowwood tree");
+  await c.chat(`/tp ${tree.x + 1.5} ${tree.y + 0.5}`, 1200);
+  c.messages = [];
+  c.send({ t: "gather", x: tree.x, y: tree.y });
+  await c.wait((m) => m.t === "gather" && m.state === "done", 5000, "chopped glowwood");
+  await c.selfWhere((s) => s.inv.some((i) => i?.tpl === "log_glowwood"), 3000, "glowwood log");
+  await c.chat(`/tp ${W.PLANET_PAD.x} ${W.PLANET_PAD.y}`, 1200);
+  c.messages = [];
+  c.send({ t: "launch" });
+  await c.wait((m) => m.t === "welcome" && m.map === "space", 3000, "back in orbit");
 });

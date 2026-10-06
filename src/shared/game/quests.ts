@@ -386,6 +386,104 @@ const SCIFI_QUESTS: Quest[] = [
       { type: "talk", npc: "npc_orla", text: "Return to Station Master Orla" }
     ],
     reward: { xp: 2600, gold: 900, gear: "epic" }
+  },
+  {
+    id: "q_survey",
+    name: "Planetfall",
+    giver: "npc_orla",
+    level: 9,
+    requires: ["q_first_flight"],
+    offer: "Three worlds orbit out here: Aurelia, Icefall and Rust. Fly to Aurelia, land on it (E near the planet) and say hello to Ranger Fern for me.",
+    complete: "You've walked on another world! Fern says you've got good boots.",
+    steps: [
+      { type: "visit", map: "space", x: 290, y: -150, r: 60, text: "Fly into orbit around Aurelia" },
+      { type: "talk", npc: "npc_fern", text: "Land on Aurelia and meet Ranger Fern" },
+      { type: "talk", npc: "npc_orla", text: "Return to Station Master Orla" }
+    ],
+    reward: { xp: 700, gold: 180 }
+  },
+  {
+    id: "q_aurelia",
+    name: "Too Many Teeth",
+    giver: "npc_fern",
+    level: 10,
+    offer: "Glowfangs have been circling my camp. They're pretty, but they keep eating my boots. Thin the pack: five should do.",
+    complete: "Peace and quiet at last. And my boots are safe!",
+    steps: [
+      { type: "kill", mobs: ["glowfang"], count: 5, text: "Drive off Glowfangs" },
+      { type: "talk", npc: "npc_fern", text: "Return to Ranger Fern" }
+    ],
+    reward: { xp: 950, gold: 220, gear: "uncommon" }
+  },
+  {
+    id: "q_maw",
+    name: "The Verdant Maw",
+    giver: "npc_fern",
+    level: 14,
+    requires: ["q_aurelia"],
+    offer: "Something huge lives in the south-west jungle. It swallowed a survey drone whole. Could you... get the drone back?",
+    complete: "You beat the Maw! The drone's a little slimy, but it still works.",
+    steps: [
+      { type: "kill", mobs: ["boss_maw"], count: 1, text: "Defeat the Verdant Maw" },
+      { type: "talk", npc: "npc_fern", text: "Return to Ranger Fern" }
+    ],
+    reward: { xp: 1600, gold: 420, gear: "rare" }
+  },
+  {
+    id: "q_icefall",
+    name: "Song of the Shards",
+    giver: "npc_tundra",
+    level: 14,
+    offer: "Shardlings are swarming the crystal fields, and the Blue Shardline has started humming. Clear four of them and take a reading at the Shardline.",
+    complete: "The readings are beautiful. The crystals are... singing? Science!",
+    steps: [
+      { type: "kill", mobs: ["shardling"], count: 4, text: "Shatter Shardlings" },
+      { type: "visit", map: "planet:icefall", x: -62, y: 40, r: 9, text: "Take a reading at the Blue Shardline" },
+      { type: "talk", npc: "npc_tundra", text: "Return to Surveyor Tundra" }
+    ],
+    reward: { xp: 1400, gold: 300, gear: "uncommon" }
+  },
+  {
+    id: "q_glacier",
+    name: "Heart of Ice",
+    giver: "npc_tundra",
+    level: 18,
+    requires: ["q_icefall"],
+    offer: "The Shardline's song comes from the Glacier Heart to the south-east. It's growing. Please make it stop growing.",
+    complete: "The ice is quiet again. Thank you, brave pilot.",
+    steps: [
+      { type: "kill", mobs: ["boss_glacier"], count: 1, text: "Shatter the Glacier Heart" },
+      { type: "talk", npc: "npc_tundra", text: "Return to Surveyor Tundra" }
+    ],
+    reward: { xp: 2200, gold: 520, gear: "rare" }
+  },
+  {
+    id: "q_rust",
+    name: "Ridge Signal",
+    giver: "npc_rusty",
+    level: 18,
+    offer: "The old relay ridge started pinging again. Go take a look, and clear out the skitters nesting around it while you're there.",
+    complete: "The relay's sending coordinates... to the Pirate Haven. Better tell Orla!",
+    steps: [
+      { type: "visit", map: "planet:rust", x: 82, y: -40, r: 10, text: "Scan the Relay Ridge" },
+      { type: "kill", mobs: ["dune_skitter"], count: 4, text: "Clear Dune Skitters near the relay" },
+      { type: "talk", npc: "npc_rusty", text: "Return to Prospector Rusty" }
+    ],
+    reward: { xp: 2000, gold: 420, gear: "rare" }
+  },
+  {
+    id: "q_leviathan",
+    name: "Something Under the Sand",
+    giver: "npc_rusty",
+    level: 22,
+    requires: ["q_rust"],
+    offer: "The dunes to the north-east are moving. Sand doesn't move like that on its own. It's the Leviathan. Good luck!",
+    complete: "You... beat the Leviathan? I'm naming a dune after you.",
+    steps: [
+      { type: "kill", mobs: ["boss_leviathan"], count: 1, text: "Defeat the Dune Leviathan" },
+      { type: "talk", npc: "npc_rusty", text: "Return to Prospector Rusty" }
+    ],
+    reward: { xp: 3000, gold: 700, gear: "epic" }
   }
 ];
 

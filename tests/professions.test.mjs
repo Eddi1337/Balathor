@@ -87,7 +87,7 @@ test("Bram sells tools; gathering needs them and depletes the node", async () =>
   await c.wait((m) => m.t === "gather" && m.state === "start", 2000, "chopping");
   await c.wait((m) => m.t === "gather" && m.state === "done", 4000, "chopped");
   await c.selfWhere((s) => s.inv.some((i) => i?.tpl === "log_oak") && s.professions.woodcutting.xp > 0, 3000, "log + xp");
-  await c.wait((m) => m.t === "depleted" && m.keys.includes(`${oak.x},${oak.y}`), 2000, "depletion broadcast");
+  await c.wait((m) => m.t === "depleted" && m.keys.includes(`overworld|${oak.x},${oak.y}`), 2000, "depletion broadcast");
   c.messages = [];
   c.send({ t: "gather", x: oak.x, y: oak.y });
   const regrow = await c.wait((m) => m.t === "toast", 2000, "regrow toast");
