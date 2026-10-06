@@ -37,6 +37,8 @@ export interface WorldHooks {
   shipTick(world: World, p: Player, dt: number, now: number): void;
   /** A sailing ship's hull broke. */
   sailSunk(world: World, ship: SailShip): void;
+  /** Every hit a player lands on a mob (minigame scoring). */
+  mobDamaged?(world: World, mob: Mob, by: Player | null, dmg: number): void;
 }
 
 interface Projectile {
@@ -284,6 +286,18 @@ export class World {
       const level = biome === "meadow" ? 4 : this.def.zoneLevelAt(spot.x, spot.y) + 3;
       this.addMob(`boss_${biome}`, tpl, level, spot.x, spot.y, BOSS_RESPAWN_MS);
     }
+  }
+
+  /** A mob that exists only for a while (minigames); it never respawns. */
+  spawnTemp(id: string, tplId: string, level: number, x: number, y: number): Mob | null {
+    const tpl = MOB_TEMPLATES[tplId];
+    if (!tpl || this.mobs.has(id)) return null;
+    return this.addMob(id, tpl, level, x, y, Number.POSITIVE_INFINITY);
+  }
+
+  despawn(mob: Mob): void {
+    this.mobs.delete(mob.id);
+    this.grid.remove(mob);
   }
 
   private addMob(id: string, tpl: MobTemplate, level: number, x: number, y: number, respawnMs: number): Mob {
@@ -659,9 +673,14 @@ export class World {
   }
 
   damageMob(mob: Mob, by: Player | null, amount: number, now: number): void {
-    if (mob.dead) return;
+    if (mob.dead || mob.tpl.friendly) return;
     const crit = Math.random() < 0.08;
     const dmg = Math.max(1, Math.round(crit ? amount * 1.6 : amount));
+    this.hooks.mobDamaged?.(this, mob, by, dmg);
+    if (mob.tpl.immortal) {
+      this.fx(mob.x, mob.y, crit ? { e: "hit", id: mob.id, dmg, crit: 1 } : { e: "hit", id: mob.id, dmg });
+      return;
+    }
     mob.hp -= dmg;
     if (by) {
       mob.damageBy.set(by.id, (mob.damageBy.get(by.id) ?? 0) + dmg);
@@ -803,7 +822,7 @@ export class World {
     const haste = p.buffs.get("haste");
     if (haste) speed *= 1 + haste.value;
     if (p.food?.stat === "spd") speed *= 1 + p.food.value;
-    return speed;
+    return speed * p.burden;
   }
 
   private tickPlayers(dt: number, now: number): void {

@@ -36,6 +36,8 @@ import { HousingService } from "./housingService";
 import { ProfessionService } from "./professionService";
 import { ShipService } from "./shipService";
 import { SailService } from "./sailService";
+import { MinigameService } from "./minigameService";
+import { GAMES } from "../../shared/game/minigames";
 import { SAIL_HULL_IDS } from "../../shared/game/sailing";
 import { PORT_SPAWN } from "../../shared/world/sea/ocean";
 import { freshUpgrades, HULL_IDS, UPGRADE_SLOTS } from "../../shared/game/ships";
@@ -82,6 +84,7 @@ export class Game {
   readonly professions: ProfessionService;
   readonly ships: ShipService;
   readonly sails: SailService;
+  readonly minigames: MinigameService;
 
   constructor(private store: Store) {
     this.quests = new QuestService({
@@ -107,6 +110,27 @@ export class Game {
       system: (p, text) => p.session.send({ t: "chat", from: "", name: "", text, kind: "system" })
     });
     this.housing = new HousingService(store);
+    this.minigames = new MinigameService({
+      world: (mapId) => this.worlds.get(mapId),
+      worldOf: (p) => this.worlds.get(p.mapId),
+      addToBag: (p, item) => this.addToBag(p, item),
+      awardXp: (p, xp) => this.awardXp(p, xp),
+      submitScore: (game, p, score, low) => this.store.submitScore(game, p.accountId, p.name, score, low),
+      topScores: (game, low) => this.store.topScores(game, low),
+      clock: () => {
+        const days = Date.now() / config.dayLengthMs + 0.32 + this.timeOffset;
+        return { hour: this.worldTime() * 24, day: Math.floor(days) };
+      },
+      awardProf: (p, prof, xp) => {
+        const st = p.save.professions[prof];
+        st.xp += xp;
+        while (st.lv < 30 && st.xp >= 40 + st.lv * 25) {
+          st.xp -= 40 + st.lv * 25;
+          st.lv += 1;
+        }
+        p.selfDirty = p.saveDirty = true;
+      }
+    });
     this.sails = new SailService({
       transfer: (p, mapId, x, y) => this.transfer(p, mapId, x, y),
       partyIds: (p) => this.social.membersOf(p).map((m) => m.id),
@@ -147,7 +171,8 @@ export class Game {
       shipDamage: (world, p, raw, now) => this.ships.damage(p, world, raw, now),
       shipDestroyed: (world, p) => this.ships.destroyed(p, world),
       shipTick: (world, p, dt, now) => this.ships.tick(p, world, dt, now, (pl, target) => world.turretShot(pl, target)),
-      sailSunk: (world, ship) => this.sails.sunk(world, ship)
+      sailSunk: (world, ship) => this.sails.sunk(world, ship),
+      mobDamaged: (world, mob, by, dmg) => this.minigames.onMobDamaged(world, mob, by, dmg)
     }, { id, partySize: inst ? partySize : 1 });
     w.populate();
     this.housing.loadInto(w);
@@ -289,6 +314,7 @@ export class Game {
     const p = session.player;
     if (p) {
       this.professions.cancel(p);
+      this.minigames.onLeave(p);
       this.social.onDisconnect(p);
       const w = this.worlds.get(p.mapId);
       if (w?.def.kind === "sea") {
@@ -425,6 +451,8 @@ export class Game {
         return this.sails.op(p, world, msg, now);
       case "dig":
         return this.sails.dig(p, world);
+      case "mg":
+        return this.minigames.handle(p, world, msg, now);
     }
   }
 
@@ -508,7 +536,10 @@ export class Game {
       shipUp: freshUpgrades(),
       discovered: [],
       sailShips: [],
-      activeSail: null
+      activeSail: null,
+      trophies: [],
+      title: null,
+      hollow: { night: -1, n: 0 }
     };
     this.store.saveCharacter(s.accountId, name, save);
     this.handlePlay(s);
@@ -602,7 +633,7 @@ export class Game {
       const p = world.players.get(pid);
       if (!p || dist(p.x, p.y, mob.x, mob.y) > 48) continue;
       for (const m of this.social.membersOf(p)) {
-        if (m.mapId === world.def.id && !m.dead && dist(m.x, m.y, mob.x, mob.y) <= 48) credited.add(m);
+        if (m.mapId === world.id && !m.dead && dist(m.x, m.y, mob.x, mob.y) <= 48) credited.add(m);
       }
       if (dmg > topDmg) {
         topDmg = dmg;
@@ -610,6 +641,7 @@ export class Game {
       }
     }
     const biome = world.def.biomeAt(mob.homeX, mob.homeY);
+    this.minigames.onMobKilled(world, mob, [...credited]);
     for (const p of credited) {
       this.awardXp(p, mob.xp);
       p.save.kills += 1;
@@ -1196,8 +1228,23 @@ export class Game {
       const json = JSON.stringify({ t: "depleted", keys: this.professions.depletedKeys() } satisfies S2C);
       for (const s of this.sessions.values()) if (s.player) s.sendRaw(json);
     }
+    this.minigames.tick(
+      (function* (sessions) {
+        for (const s of sessions) if (s.player) yield s.player;
+      })(this.sessions.values()),
+      now
+    );
     if (now - this.lastPartyTickAt >= 1000) {
       this.lastPartyTickAt = now;
+      for (const s of this.sessions.values()) {
+        const p = s.player;
+        if (!p) continue;
+        // Heavy loads: the fletcher's crate and cursed coins.
+        const mg = this.minigames.sessionOf(p);
+        p.burden = (mg?.game === "fletcher" ? 0.72 : 1) * (p.save.inv.some((i) => i?.tpl === "heavy_coin") ? 0.8 : 1);
+        // Arena games end if you leave their map.
+        if (mg && GAMES[mg.game].kind === "arena" && mg.mapId !== p.mapId) this.minigames.end(p, "lose", "You left the minigame area.");
+      }
       this.social.tick();
       for (const [id, w] of this.worlds) {
         if (w.ships.size) this.sails.sweep(w);
@@ -1413,6 +1460,8 @@ export class Game {
       shipUp: s.shipUp,
       discovered: s.discovered,
       sailShips: s.sailShips,
+      trophies: s.trophies,
+      title: s.title,
       activeSail: s.activeSail,
       ship: p.ship ? { hull: Math.ceil(p.ship.hull), shield: Math.ceil(p.ship.shield) } : null,
       food: p.food ? { stat: p.food.stat, value: p.food.value, ms: Math.max(0, p.food.until - Date.now()), name: p.food.name } : null
@@ -1497,6 +1546,9 @@ function normalizeSave(save: CharacterSave): CharacterSave {
   save.discovered = Array.isArray(save.discovered) ? save.discovered.filter((d) => typeof d === "string") : [];
   save.sailShips = Array.isArray(save.sailShips) ? save.sailShips.filter((h) => SAIL_HULL_IDS.includes(h)) : [];
   save.activeSail = save.activeSail && save.sailShips.includes(save.activeSail) ? save.activeSail : save.sailShips[0] ?? null;
+  save.trophies = Array.isArray(save.trophies) ? save.trophies.filter((t) => typeof t === "string") : [];
+  save.title = typeof save.title === "string" ? save.title.slice(0, 40) : null;
+  save.hollow = save.hollow && typeof save.hollow.night === "number" ? save.hollow : { night: -1, n: 0 };
   return save;
 }
 

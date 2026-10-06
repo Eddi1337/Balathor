@@ -51,6 +51,10 @@ export interface CharacterSave {
   discovered: string[];
   sailShips: SailHullId[];
   activeSail: SailHullId | null;
+  trophies: string[];
+  title: string | null;
+  /** Hollow Stone offerings: which night and how many. */
+  hollow: { night: number; n: number };
 }
 
 /** A ship being flown (players in space only). */
@@ -109,6 +113,8 @@ export class Player implements Spatial, NetCached {
   lastDoorAt = 0;
   nextDiscoverAt = 0;
   ship: ShipState | null = null;
+  /** Movement multiplier from heavy loads (fletcher's crate, cursed coins). */
+  burden = 1;
   /** Aboard a sailing ship: which one, where on its deck, and whether we're steering. */
   aboard: { shipId: string; lx: number; ly: number; helm: boolean } | null = null;
   /** Per-cannon / broadside cooldowns while aboard. */
@@ -163,7 +169,8 @@ export class Player implements Spatial, NetCached {
       ab: this.aboard ? this.aboard.shipId : "",
       lx: this.aboard ? round2(this.aboard.lx) : 0,
       ly: this.aboard ? round2(this.aboard.ly) : 0,
-      hm: this.aboard?.helm ? 1 : 0
+      hm: this.aboard?.helm ? 1 : 0,
+      tt: s.title ?? ""
     };
     this.netPass = pass;
     this.netValue = value;

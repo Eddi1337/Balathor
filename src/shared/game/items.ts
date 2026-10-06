@@ -161,6 +161,7 @@ export const ITEM_TEMPLATES: Record<string, ItemTemplate> = {
   musket_bow: { id: "musket_bow", name: "Seawind Recurve", kind: "weapon", cls: "ranger", icon: "🏹", dmg: 11, value: 120 },
   coral_staff: { id: "coral_staff", name: "Coral Staff", kind: "weapon", cls: "mage", icon: "🪄", dmg: 13, value: 125 },
   coat_captain: { id: "coat_captain", name: "Captain's Coat", kind: "armor", icon: "🧥", armor: 7, hp: 20, str: 1, value: 130 },
+  heavy_coin: { id: "heavy_coin", name: "Cursed Heavy Coin", kind: "junk", icon: "🪙", value: 1, stack: 10 },
   junk_boot: { id: "junk_boot", name: "Soggy Boot", kind: "junk", icon: "🥾", value: 1, stack: 20 },
   junk_bottle: { id: "junk_bottle", name: "Message in a Bottle", kind: "junk", icon: "🍾", value: 40, stack: 20 },
   // Cooked food & smithing tonics (heal + timed buff)

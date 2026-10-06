@@ -28,7 +28,7 @@ import { Fountains } from "./render/water";
 import { applyCurrent, isSwimming } from "../shared/game/movement";
 import { itemTemplate } from "../shared/game/items";
 import { Effects } from "./render/effects";
-import { worldUniforms } from "./render/builder";
+import { GeometryBuilder, PRIMS, sceneryMaterial, worldUniforms } from "./render/builder";
 import { JUMP_TIME, animate, attachPony, buildHumanoid, buildLoot, buildMob, detachPony, disposeModel, jumpOffset, setStunStars, type Model } from "./render/models";
 import { Landmarks } from "./render/landmarks";
 import { Labels } from "./ui/labels";
@@ -51,6 +51,8 @@ import { LAB_H, LAB_W } from "../shared/world/scifi/labs";
 import { SHIP_FLOAT, animateScifi, buildScifiMob, buildShip, isScifiModel } from "./render/scifiModels";
 import { HangarUI, WarpUI } from "./ui/hangar";
 import { HarbourUI, SailPanel } from "./ui/harbour";
+import { MinigameUI } from "./ui/minigames";
+import { GAMES, SITES, SITE_RANGE } from "../shared/game/minigames";
 import { SeaTerrain } from "./render/seaTerrain";
 import { DECK_H, animateSea, buildPlayerShip, buildSeaMob, isSeaModel, setSailOpacity } from "./render/seaModels";
 import { BOARD_RANGE, HELM, SAIL_HULLS, STATION_REACH, axes, localToWorld, stepDeck, windAngle, type SailHullId, type Transform } from "../shared/game/sailing";
@@ -100,6 +102,29 @@ const depleted = new Set<string>();
 let bobber: THREE.Mesh | null = null;
 const hangar = new HangarUI(send);
 const harbour = new HarbourUI(send);
+const mgUi = new MinigameUI(send);
+/** Signposts at minigame sites and the glowing beacon over the current checkpoint. */
+const siteGroup = new THREE.Group();
+const beacon = new THREE.Mesh(
+  new THREE.CylinderGeometry(1, 1, 30, 20, 1, true),
+  new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
+);
+beacon.visible = false;
+renderer.scene.add(siteGroup, beacon);
+
+function buildSiteMarkers(): void {
+  siteGroup.clear();
+  const b = new GeometryBuilder();
+  for (const site of SITES) {
+    if (site.map !== map.id) continue;
+    const h = groundAt(site.x, site.y);
+    b.add(PRIMS.cyl6, { x: site.x, y: h + 0.8, z: site.y, sx: 0.07, sy: 1.6, sz: 0.07, color: "#7a5234" });
+    b.add(PRIMS.box, { x: site.x, y: h + 1.45, z: site.y, sx: 1.0, sy: 0.55, sz: 0.08, color: "#ffe8c9" });
+    b.add(PRIMS.box, { x: site.x, y: h + 1.45, z: site.y + 0.05, sx: 0.85, sy: 0.4, sz: 0.02, color: "#ff8fb1", glow: 0.3 });
+    b.add(PRIMS.octa, { x: site.x, y: h + 1.95, z: site.y, sx: 0.12, sy: 0.16, sz: 0.12, color: "#ffd166", glow: 1.4 });
+  }
+  if (b.vertexCount) siteGroup.add(new THREE.Mesh(b.build(), sceneryMaterial()));
+}
 const sailPanel = new SailPanel();
 const warpUi = new WarpUI(send);
 const home = new HomeUI(send, (title, text, yes) => panels.dialog("", title, text, "", yes, undefined, "Yes", "Cancel"));
@@ -408,7 +433,7 @@ function doorLabel(door: Door): string {
   return `Visit ${info.owner}'s home${info.open ? "" : " (if invited)"}`;
 }
 
-type InteractKind = "npc" | "loot" | "waypoint" | "door" | "chest" | "station" | "gather" | "fish" | "reel" | "launch" | "dock" | "board" | "ashore" | "helm" | "dig";
+type InteractKind = "npc" | "loot" | "waypoint" | "door" | "chest" | "station" | "gather" | "fish" | "reel" | "launch" | "dock" | "board" | "ashore" | "helm" | "dig" | "site";
 
 function hasTool(tpl: string | undefined): boolean {
   return !tpl || Boolean(state.self?.inv.some((i) => i?.tpl === tpl));
@@ -479,6 +504,13 @@ function nearestInteractable(): { id: string; kind: InteractKind; label: string 
     }
   }
   if (crafting.fishing?.bite) return { id: "reel", kind: "reel", label: "E · Reel in!" };
+  if (!mgUi.view) {
+    for (const site of SITES) {
+      if (site.map !== map.id || Math.hypot(site.x - me.x, site.y - me.y) > SITE_RANGE) continue;
+      const g = GAMES[site.game];
+      return { id: site.id, kind: "site", label: `E · ${g.icon} ${g.name}${g.cost ? ` (${g.cost}g)` : ""}` };
+    }
+  }
   if (map.kind === "sea") {
     const d = selfData();
     const shipE = d?.ab ? state.entities.get(d.ab) : undefined;
@@ -601,6 +633,10 @@ function interact(): void {
     send({ t: "dig" });
     return;
   }
+  if (target.kind === "site") {
+    send({ t: "mg", op: "start", site: target.id });
+    return;
+  }
   if (target.kind === "station") {
     const st = STATIONS.find((s) => s.id === target.id);
     if (st) crafting.openStation(st);
@@ -662,6 +698,9 @@ input.onKey = (code, e) => {
     case "KeyP":
       crafting.toggleProfs();
       break;
+    case "KeyK":
+      mgUi.toggleBoards();
+      break;
     case "KeyJ":
       if (map.kind === "space") {
         warpUi.pos = { x: me.x, y: me.y };
@@ -688,7 +727,8 @@ input.onKey = (code, e) => {
       break;
     }
     case "Escape":
-      if (harbour.open) harbour.hide();
+      if (mgUi.windowOpen) mgUi.closeWindows();
+      else if (harbour.open) harbour.hide();
       else if (hangar.open) hangar.hide();
       else if (warpUi.open) warpUi.hide();
       else if (home.placing) home.placing = null;
@@ -911,6 +951,7 @@ function switchMap(id: string): void {
   }
   const house = parseHouseMapId(map.id);
   home.insideOwnHome = house && state.self?.home === house.plotId ? house.plotId : null;
+  buildSiteMarkers();
 }
 
 document.getElementById("hot-attack")!.addEventListener("click", () => tryAttack(performance.now(), me.f));
@@ -1005,6 +1046,7 @@ net.on((msg: S2C) => {
       crafting.setSelf(msg.self);
       hangar.setSelf(msg.self);
       harbour.setSelf(msg.self);
+      mgUi.setSelf(msg.self);
       warpUi.setSelf(msg.self);
       landmarks.setAttuned(msg.self.waypoints);
       {
@@ -1020,6 +1062,12 @@ net.on((msg: S2C) => {
       return;
     case "harbour":
       harbour.show();
+      return;
+    case "mg":
+      mgUi.set(msg.s);
+      return;
+    case "board":
+      mgUi.showBoard(msg.game, msg.rows);
       return;
     case "warp":
       if (msg.state === "charge") crafting.startWork(msg.ms ?? 2500, "Warp drive charging…");
@@ -1474,7 +1522,7 @@ function updateEntities(dt: number, now: number, time: number): void {
     if (d.k === "p") {
       keepPlates.add(e.id);
       labels.plate(e.id, tmpV, {
-        name: isSelf ? d.name : `${d.name} · ${d.lv}`,
+        name: (isSelf ? d.name : `${d.name} · ${d.lv}`) + (d.tt ? ` «${d.tt}»` : ""),
         kind: isSelf ? "self" : "player",
         hp: d.hp,
         mhp: d.mhp,
@@ -1604,11 +1652,12 @@ function updateHud(now: number): void {
       hud.setZone(near ? `${near.name} · lv ${map.zoneLevelAt(near.x, near.y)}` : `Open sea · lv ${map.zoneLevelAt(me.x, me.y)}`);
     } else if (map.kind === "space") {
       for (const p of POIS) dots.push({ x: p.x, y: p.y, color: p.color, size: Math.max(3, Math.min(9, p.r / 7)) });
-      hud.drawMinimap(map, me.x, me.y, me.f, dots, null, 5);
+      hud.drawMinimap(map, me.x, me.y, me.f, dots, mgUi.view?.target?.map === "space" ? mgUi.view.target : null, 5);
       const near = POIS.find((p) => Math.hypot(p.x - me.x, p.y - me.y) < p.r + 60);
       hud.setZone(near ? `${near.name} · lv ${near.level}` : `Deep space · lv ${map.zoneLevelAt(me.x, me.y)}`);
     } else {
-      hud.drawMinimap(map, me.x, me.y, me.f, dots, map.id === OVERWORLD.id ? panels.objective() : null);
+      const mgT = mgUi.view?.target && mgUi.view.target.map === map.id ? mgUi.view.target : null;
+      hud.drawMinimap(map, me.x, me.y, me.f, dots, mgT ?? (map.id === OVERWORLD.id ? panels.objective() : null));
       const biome = map.biomeAt(me.x, me.y);
       hud.setZone(map.kind !== "overworld" ? map.name : biome === "town" ? "Hearthmoor" : `${biome} · lv ${map.zoneLevelAt(me.x, me.y)}`);
     }
@@ -1666,6 +1715,15 @@ function frame(): void {
   if (map.kind === "space") space.update(time, renderer.camera);
   deck?.update(time);
   surface?.update(time);
+  // Minigame checkpoint beacon + timers.
+  mgUi.update(now);
+  const tgt = mgUi.view?.target;
+  beacon.visible = Boolean(tgt && tgt.map === map.id);
+  if (tgt && beacon.visible) {
+    beacon.position.set(tgt.x, groundAt(tgt.x, tgt.y) + 15, tgt.y);
+    beacon.scale.set(tgt.r * 0.5, 1, tgt.r * 0.5);
+    (beacon.material as THREE.MeshBasicMaterial).opacity = 0.18 + Math.sin(time * 3) * 0.06;
+  }
   lantern.intensity = renderer.env === "cave" ? 7 : 0;
   lantern.position.set(me.x, (deck0 ? DECK_H : groundAt(me.x, me.y)) + 5, me.y + 1.5);
   sea?.update(focus.x, focus.y, loadingHidden ? 2 : 6);

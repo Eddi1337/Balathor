@@ -55,6 +55,14 @@ const MIGRATIONS: string[] = [
    CREATE TABLE IF NOT EXISTS house_storage (
      plot_id TEXT PRIMARY KEY,
      data TEXT NOT NULL
+   )`,
+  `CREATE TABLE IF NOT EXISTS scores (
+     game TEXT NOT NULL,
+     account_id INTEGER NOT NULL,
+     name TEXT NOT NULL,
+     score REAL NOT NULL,
+     at INTEGER NOT NULL,
+     PRIMARY KEY (game, account_id)
    )`
 ];
 
@@ -182,6 +190,20 @@ export class Store {
     this.db
       .prepare("INSERT INTO house_storage (plot_id, data) VALUES (?, ?) ON CONFLICT(plot_id) DO UPDATE SET data = excluded.data")
       .run(plotId, JSON.stringify(data));
+  }
+
+  /** Record a minigame score if it beats the player's best. Returns true when it's a new best. */
+  submitScore(game: string, accountId: number, name: string, score: number, lowerIsBetter: boolean): boolean {
+    const row = this.db.prepare("SELECT score FROM scores WHERE game = ? AND account_id = ?").get(game, accountId) as { score: number } | undefined;
+    if (row && (lowerIsBetter ? row.score <= score : row.score >= score)) return false;
+    this.db
+      .prepare("INSERT INTO scores (game, account_id, name, score, at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(game, account_id) DO UPDATE SET name = excluded.name, score = excluded.score, at = excluded.at")
+      .run(game, accountId, name, score, Date.now());
+    return true;
+  }
+
+  topScores(game: string, lowerIsBetter: boolean, limit = 10): { name: string; score: number }[] {
+    return this.db.prepare(`SELECT name, score FROM scores WHERE game = ? ORDER BY score ${lowerIsBetter ? "ASC" : "DESC"}, at ASC LIMIT ?`).all(game, limit) as unknown as { name: string; score: number }[];
   }
 
   counts(): { accounts: number; characters: number } {

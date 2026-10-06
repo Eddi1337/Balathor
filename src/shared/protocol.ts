@@ -65,6 +65,22 @@ export interface NetPlayer {
   ly: number;
   /** 1 while at the helm. */
   hm: 0 | 1;
+  /** Chosen trophy title ("" for none). */
+  tt: string;
+}
+
+/** A running minigame, as the player sees it. */
+export interface MgView {
+  game: string;
+  site: string;
+  title: string;
+  /** Milliseconds left (0 = untimed). */
+  ms: number;
+  text: string;
+  /** Current checkpoint (courses / arenas). */
+  target?: { map: string; x: number; y: number; r: number; label: string } | null;
+  /** Game-specific state for overlay games. */
+  ui?: Record<string, unknown>;
 }
 
 /** A sailing ship (players' ships; pirate ships are mobs). */
@@ -199,6 +215,8 @@ export interface SelfState {
   /** Space points of interest you've visited (warp destinations). */
   discovered: string[];
   sailShips: SailHullId[];
+  trophies: string[];
+  title: string | null;
   activeSail: SailHullId | null;
   /** While flying: hull / shield right now. */
   ship: { hull: number; shield: number } | null;
@@ -291,6 +309,7 @@ export type C2S =
   | { t: "boost" }
   | { t: "sail"; op: "summon" | "board" | "ashore" | "helm" | "furl" | "buy" | "select"; hull?: string; id?: string }
   | { t: "dig" }
+  | { t: "mg"; op: "start" | "act" | "quit" | "board" | "title"; site?: string; action?: string; value?: number; game?: string }
   | { t: "party"; op: "invite" | "accept" | "decline" | "leave" | "kick"; target?: string }
   | { t: "trade"; op: "request" | "accept" | "decline" | "cancel" | "offer" | "unoffer" | "gold" | "ready"; target?: string; slot?: number; gold?: number }
   | { t: "ping"; c: number };
@@ -334,6 +353,8 @@ export type S2C =
   | { t: "depleted"; keys: string[] }
   | { t: "hangar"; npc: string }
   | { t: "harbour"; npc: string }
+  | { t: "mg"; s: MgView | null }
+  | { t: "board"; game: string; rows: { name: string; score: number }[] }
   | { t: "warp"; state: "charge" | "cancel" | "done"; dest: string; ms?: number; x?: number; y?: number };
 
 export type S2CType = S2C["t"];

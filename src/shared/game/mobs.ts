@@ -33,7 +33,9 @@ export type MobModel =
   | "shark"
   | "pirate_ship"
   | "kraken"
-  | "bat";
+  | "bat"
+  | "dummy"
+  | "caravan";
 
 export interface MobTemplate {
   id: string;
@@ -57,6 +59,10 @@ export interface MobTemplate {
   mineable?: boolean;
   /** Lives in the water (moves on sea tiles, can't come ashore). */
   sea?: boolean;
+  /** Can't be hurt (training dummy): damage is counted, health never drops. */
+  immortal?: boolean;
+  /** On your side: players can't hit it (the escorted caravan). */
+  friendly?: boolean;
   passive?: boolean;
   xp: number;
   gold: [number, number];
@@ -140,6 +146,10 @@ export const MOB_TEMPLATES: Record<string, MobTemplate> = {
   boss_tidecaller: t({ id: "boss_tidecaller", name: "Tidecaller Ysolde", model: "wisp", color: "#3fb8c9", accent: "#ffd1f0", scale: 2.4, hp: 2600, dmg: 32, speed: 2.6, aggro: 11, reach: 2.4, cooldownMs: 1200, ranged: { speed: 11, range: 11 }, proj: "frostbolt", xp: 900, gold: [180, 320], drops: [{ tpl: "ring_pearl", chance: 0.6 }, { tpl: "coral_staff", chance: 0.4 }, { tpl: "pearl", chance: 1 }], boss: true }),
   crypt_knight: t({ id: "crypt_knight", name: "Crypt Knight", model: "skeleton", color: "#5d6470", accent: "#9a94a6", scale: 1.15, hp: 170, dmg: 26, speed: 2.6, aggro: 9, reach: 1.5, cooldownMs: 1300, xp: 60, gold: [10, 22], drops: [{ tpl: "ancient_coin", chance: 0.6 }, { tpl: "plate", chance: 0.06 }] }),
   boss_hollow_king: t({ id: "boss_hollow_king", name: "The Hollow King", model: "skeleton", color: "#3b2f4a", accent: "#b98cff", scale: 2.4, hp: 4200, dmg: 50, speed: 2.8, aggro: 12, reach: 2.8, cooldownMs: 1200, ranged: { speed: 12, range: 11 }, proj: "arcane", xp: 1500, gold: [300, 520], drops: [{ tpl: "sword_steel", chance: 0.4 }, { tpl: "ring_quantum", chance: 0.3 }, { tpl: "ancient_coin", chance: 1 }], boss: true }),
+  // ── Minigames ──────────────────────────────────────────────────────────────
+  training_dummy: t({ id: "training_dummy", name: "Training Dummy", model: "dummy", color: "#e0c27a", accent: "#c95a3a", scale: 1, hp: 1_000_000, dmg: 0, speed: 0, aggro: 0, reach: 0, cooldownMs: 1000, passive: true, immortal: true, xp: 0, gold: [0, 0], drops: [] }),
+  caravan: t({ id: "caravan", name: "Trade Caravan", model: "caravan", color: "#c9955f", accent: "#fff1e6", scale: 1, hp: 1000, dmg: 0, speed: 0, aggro: 0, reach: 0, cooldownMs: 1000, passive: true, immortal: true, friendly: true, xp: 0, gold: [0, 0], drops: [] }),
+  bandit: t({ id: "bandit", name: "Road Bandit", model: "pirate", color: "#5a4a4a", accent: "#2b2238", scale: 1, hp: 70, dmg: 11, speed: 3.1, aggro: 14, reach: 1.4, cooldownMs: 1200, xp: 24, gold: [5, 12], drops: [{ tpl: "potion_small", chance: 0.1 }] }),
   boss_highlands: t({ id: "boss_highlands", name: "Scar Warden", model: "wolf", color: "#5d6470", accent: "#ff5c8a", scale: 2.2, hp: 1150, dmg: 30, speed: 3.4, aggro: 12, reach: 2.6, cooldownMs: 1400, xp: 400, gold: [100, 200], drops: [{ tpl: "bow_elm", chance: 0.4 }, { tpl: "sword_steel", chance: 0.4 }], boss: true })
 };
 

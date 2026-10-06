@@ -10,7 +10,7 @@ import { HELM, SAIL_HULLS, cannonSpots, deckHalfWidth, type SailHull, type SailH
 /** Height of the deck above the water line. */
 export const DECK_H = 1.0;
 
-const SEA_MOBS = new Set<MobModel>(["pirate", "skeleton", "crab", "parrot", "turtle", "shark", "pirate_ship", "kraken", "bat"]);
+const SEA_MOBS = new Set<MobModel>(["pirate", "skeleton", "crab", "parrot", "turtle", "shark", "pirate_ship", "kraken", "bat", "dummy", "caravan"]);
 export function isSeaModel(model: MobModel): boolean {
   return SEA_MOBS.has(model);
 }
@@ -197,6 +197,31 @@ export function buildSeaMob(model: MobModel, color: string, accent: string, scal
       eyes(b, 0, 0.12, 1.0, 0.22, 0.05, true);
       for (let i = 0; i < 5; i += 1) b.add(PRIMS.cone4, { x: -0.16 + i * 0.08, y: -0.06, z: 1.18, sx: 0.025, sy: 0.07, sz: 0.02, rx: Math.PI, color: "#ffffff" });
       m.height = 1.2 * scale;
+      break;
+    }
+    case "dummy": {
+      // A straw training dummy on a post, with a painted target.
+      b.add(PRIMS.cyl6, { x: 0, y: 0.6, z: 0, sx: 0.08, sy: 1.2, sz: 0.08, color: "#7a5234" });
+      b.add(PRIMS.rbox, { x: 0, y: 1.3, z: 0, sx: 0.6, sy: 0.7, sz: 0.4, color, jitter: 0.12 });
+      b.add(PRIMS.cyl6, { x: 0, y: 1.35, z: 0, sx: 1.1, sy: 0.08, sz: 0.08, rz: Math.PI / 2, color: "#7a5234" });
+      b.add(PRIMS.ico1, { x: 0, y: 1.9, z: 0, sx: 0.28, sy: 0.3, sz: 0.28, color });
+      b.add(PRIMS.cyl12, { x: 0, y: 1.35, z: 0.21, sx: 0.2, sy: 0.02, sz: 0.2, rx: Math.PI / 2, color: accent });
+      b.add(PRIMS.cyl12, { x: 0, y: 1.35, z: 0.22, sx: 0.09, sy: 0.02, sz: 0.09, rx: Math.PI / 2, color: "#fff1e6" });
+      eyes(b, 0, 1.95, 0.25, 0.08, 0.04);
+      m.height = 2.3;
+      break;
+    }
+    case "caravan": {
+      // A covered wagon pulled by a fluffy pony.
+      b.add(PRIMS.box, { x: 0, y: 0.6, z: -0.3, sx: 1.2, sy: 0.4, sz: 1.8, color });
+      b.add(PRIMS.cyl12, { x: 0, y: 1.0, z: -0.3, sx: 0.65, sy: 1.8, sz: 0.6, rx: Math.PI / 2, color: accent });
+      for (const [wx, wz] of [[-0.65, 0.3], [0.65, 0.3], [-0.65, -0.9], [0.65, -0.9]]) b.add(PRIMS.cyl12, { x: wx, y: 0.35, z: wz, sx: 0.35, sy: 0.1, sz: 0.35, rz: Math.PI / 2, color: "#7a5234" });
+      b.add(PRIMS.rbox, { x: 0, y: 0.75, z: 1.2, sx: 0.5, sy: 0.5, sz: 0.9, color: "#fff1e6" });
+      b.add(PRIMS.rbox, { x: 0, y: 1.15, z: 1.65, sx: 0.36, sy: 0.4, sz: 0.4, color: "#fff1e6" });
+      b.add(PRIMS.ico, { x: 0, y: 1.35, z: 1.55, sx: 0.14, sy: 0.18, sz: 0.25, color: "#ff9fc4" });
+      eyes(b, 0, 1.2, 1.86, 0.1, 0.04);
+      for (const [lx, lz] of [[-0.15, 1.45], [0.15, 1.45], [-0.15, 0.95], [0.15, 0.95]]) b.add(PRIMS.cyl6, { x: lx, y: 0.25, z: lz, sx: 0.06, sy: 0.5, sz: 0.06, color: "#fff1e6" });
+      m.height = 2.2;
       break;
     }
     case "bat": {
