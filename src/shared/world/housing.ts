@@ -5,6 +5,8 @@ import { CITY_HOUSES, CASTLE, TIER_H, type CityHouse } from "./city";
 import { STARGATE, STARGATE_FRONT } from "./scifi/stargate";
 import { LIFTS, STATION_ARRIVAL, STATION_GATE } from "./scifi/station";
 import { LAB_INFO, labLayout } from "./scifi/labs";
+import { SEAFARER_CAVE, SEAFARER_FRONT } from "./overworld";
+import { GROTTO, PORT_SPAWN } from "./sea/ocean";
 import { Tile } from "./tiles";
 
 export const PRICES = [0, 1200, 1800, 3000];
@@ -152,6 +154,22 @@ export const DOORS: Door[] = [
     x: STATION_GATE.x,
     y: STATION_GATE.y + 1.4,
     to: { map: "overworld", x: STARGATE.x - 2, y: STARGATE.y }
+  },
+  {
+    id: "seafarer_in",
+    label: "Enter the Seafarer Cave",
+    map: "overworld",
+    x: SEAFARER_FRONT.x,
+    y: SEAFARER_FRONT.y,
+    to: { map: "ocean", x: PORT_SPAWN.x, y: PORT_SPAWN.y }
+  },
+  {
+    id: "seafarer_out",
+    label: "Take the tunnel back to the island",
+    map: "ocean",
+    x: GROTTO.x,
+    y: GROTTO.y,
+    to: { map: "overworld", x: SEAFARER_FRONT.x + SEAFARER_CAVE.ox * 1.5, y: SEAFARER_FRONT.y + SEAFARER_CAVE.oy * 1.5 }
   },
   ...LIFTS.flatMap((l): Door[] => {
     const lab = l.lab as 1 | 2 | 3;

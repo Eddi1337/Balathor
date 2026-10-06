@@ -114,6 +114,7 @@ interface Proj {
   spd: number;
   remaining: number;
   trailT: number;
+  total: number;
 }
 
 const PROJ_COLORS: Record<ProjectileKind, string> = {
@@ -124,7 +125,9 @@ const PROJ_COLORS: Record<ProjectileKind, string> = {
   arcane: "#d9a6ff",
   laser: "#5ff6ff",
   laser_red: "#ff4f6a",
-  plasma: "#b98cff"
+  plasma: "#b98cff",
+  cannonball: "#c9c3b8",
+  shot: "#e0d6c9"
 };
 
 const ZONE_COLORS: Record<ZoneKind, string> = {
@@ -170,6 +173,11 @@ function buildProjectile(kind: ProjectileKind): THREE.Object3D {
   }
   const col = new THREE.Color(PROJ_COLORS[kind]);
   const g = new THREE.Group();
+  if (kind === "cannonball" || kind === "shot") {
+    const ball = new THREE.Mesh(new THREE.IcosahedronGeometry(kind === "cannonball" ? 0.26 : 0.08, 1), new THREE.MeshStandardMaterial({ color: 0x2b2238, roughness: 0.4, metalness: 0.6, flatShading: true }));
+    g.add(ball);
+    return g;
+  }
   if (kind === "laser" || kind === "laser_red") {
     // A bright elongated bolt pointing along +z (the flight direction).
     const bolt = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.9, 2, 6), new THREE.MeshBasicMaterial({ color: col.clone().multiplyScalar(2.4) }));
@@ -281,7 +289,7 @@ export class Effects {
     obj.position.set(x, h, y);
     obj.rotation.y = Math.PI / 2 - a;
     this.group.add(obj);
-    this.projectiles.set(pid, { obj, kind, x, y, h, dx: Math.cos(a), dy: Math.sin(a), spd, remaining: rng, trailT: 0 });
+    this.projectiles.set(pid, { obj, kind, x, y, h, dx: Math.cos(a), dy: Math.sin(a), spd, remaining: rng, trailT: 0, total: rng });
   }
 
   endProjectile(pid: number, x: number, y: number, burst: number): void {
@@ -495,8 +503,16 @@ export class Effects {
       p.remaining -= step;
       p.x += p.dx * step;
       p.y += p.dy * step;
-      p.obj.position.set(p.x, p.h, p.y);
-      if (p.kind !== "arrow") {
+      // Cannonballs fly in a lazy arc.
+      const lob = p.kind === "cannonball" ? Math.sin((1 - p.remaining / Math.max(0.01, p.total)) * Math.PI) * Math.min(3, p.total * 0.12) : 0;
+      p.obj.position.set(p.x, p.h + lob, p.y);
+      if (p.kind === "cannonball" || p.kind === "shot") {
+        p.trailT -= dt;
+        if (p.trailT <= 0) {
+          p.trailT = 0.04;
+          this.particles.emit(p.x, p.h + lob, p.y, { n: 1, color: "#e8e4dc", speed: 0.2, up: 0.4, size: p.kind === "shot" ? 0.06 : 0.14, life: 0.5, gravity: 0 });
+        }
+      } else if (p.kind !== "arrow") {
         p.trailT -= dt;
         if (p.trailT <= 0) {
           p.trailT = 0.03;

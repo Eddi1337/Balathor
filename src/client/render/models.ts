@@ -59,7 +59,7 @@ export interface Model {
   body: THREE.Group;
   parts: Partial<Record<"torso" | "head" | "armL" | "armR" | "legL" | "legR" | "weapon" | "tail" | "extra" | "pony" | "stars", THREE.Object3D>>;
   material: ModelMaterial;
-  kind: "humanoid" | MobModel | "loot" | "furniture";
+  kind: "humanoid" | MobModel | "loot" | "furniture" | "sailship";
   /** Nameplate anchor height. */
   height: number;
   phase: number;
@@ -95,7 +95,7 @@ export function shade(color: string, k: number): string {
 
 // ── humanoids ────────────────────────────────────────────────────────────────
 
-export type HatKind = "none" | "cap" | "hood" | "wizard" | "helmet" | "chef" | "bow" | "crown";
+export type HatKind = "none" | "cap" | "hood" | "wizard" | "helmet" | "chef" | "bow" | "crown" | "tricorn" | "bandana";
 
 export interface HumanoidOpts {
   look: Appearance;
@@ -262,6 +262,22 @@ function addHat(b: GeometryBuilder, hat: HatKind, look: Appearance, cls?: ClassI
         b.add(PRIMS.cone4, { x: Math.cos(a) * 0.3, y: 1.95, z: Math.sin(a) * 0.3, sx: 0.07, sy: 0.2, sz: 0.07, color: "#ffc94d", glow: 0.35 });
       }
       b.add(PRIMS.octa, { x: 0, y: 1.8, z: 0.36, sx: 0.07, sy: 0.08, sz: 0.04, color: "#ff5c8a", glow: 1.2 });
+      break;
+    case "tricorn": {
+      // Pirate captain's hat: a dark three-cornered brim with a gold trim and a feather.
+      b.add(PRIMS.cyl8, { x: 0, y: 1.66, z: 0, sx: 0.44, sy: 0.22, sz: 0.44, color: "#2b2238" });
+      for (let i = 0; i < 3; i += 1) {
+        const a = (i / 3) * Math.PI * 2 + Math.PI / 2;
+        b.add(PRIMS.box, { x: Math.cos(a) * 0.32, y: 1.62, z: Math.sin(a) * 0.32, sx: 0.5, sy: 0.12, sz: 0.2, ry: -a + Math.PI / 2, rx: 0.3, color: "#2b2238" });
+      }
+      b.add(PRIMS.cyl8, { x: 0, y: 1.58, z: 0, sx: 0.46, sy: 0.04, sz: 0.46, color: "#ffc94d" });
+      b.add(PRIMS.cone4, { x: -0.2, y: 1.9, z: -0.1, sx: 0.05, sy: 0.4, sz: 0.1, rz: 0.5, color: "#ff5c6a" });
+      break;
+    }
+    case "bandana":
+      b.add(PRIMS.rbox, { x: 0, y: 1.58, z: -0.02, sx: 0.86, sy: 0.28, sz: 0.82, color: tint === look.body ? "#ff5c6a" : tint });
+      b.add(PRIMS.cone4, { x: 0, y: 1.5, z: -0.48, sx: 0.12, sy: 0.25, sz: 0.06, rx: 2.2, color: tint === look.body ? "#ff5c6a" : tint });
+      for (let i = 0; i < 4; i += 1) b.add(PRIMS.ico, { x: -0.3 + i * 0.2, y: 1.6, z: 0.4, sx: 0.035, sy: 0.035, sz: 0.01, color: "#ffffff" });
       break;
     case "bow":
       b.add(PRIMS.cone4, { x: -0.12, y: 1.72, z: 0.05, sx: 0.12, sy: 0.18, sz: 0.06, rz: Math.PI / 2, color: "#ff8fb1" });

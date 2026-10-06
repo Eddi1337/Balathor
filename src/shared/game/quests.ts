@@ -18,7 +18,7 @@ export interface QuestReward {
   /** A random piece of class-appropriate gear of at least this rarity. */
   gear?: "uncommon" | "rare" | "epic";
   /** A ship for your hangar. */
-  ship?: "skiff" | "corvette" | "hauler" | "frigate";
+  ship?: "skiff" | "corvette" | "hauler" | "frigate" | "sloop" | "brig" | "galleon";
 }
 
 export interface Quest {
@@ -579,6 +579,128 @@ const SCIFI_QUESTS: Quest[] = [
 ];
 
 QUESTS.push(...SCIFI_QUESTS);
+
+// ── The ocean ───────────────────────────────────────────────────────────────
+
+const OCEAN_QUESTS: Quest[] = [
+  {
+    id: "q_seafarer",
+    name: "The Seafarer Cave",
+    giver: "npc_pete",
+    turnIn: "npc_marlow",
+    level: 8,
+    requires: ["q_welcome"],
+    offer: "Ye've got sea in yer eyes, I can tell. Go through the cave. At the end ye'll find Port Bilgewater. Tell Captain Marlow old Pete sent ye.",
+    complete: "Pete sent ye? Ha! Then ye must be trouble. Good. I like trouble.",
+    steps: [
+      { type: "visit", map: "ocean", x: 0, y: 0, r: 34, text: "Find Port Bilgewater through the Seafarer Cave" },
+      { type: "talk", npc: "npc_marlow", text: "Find Captain Marlow" }
+    ],
+    reward: { xp: 520, gold: 80 }
+  },
+  {
+    id: "q_sea_legs",
+    name: "Sea Legs",
+    giver: "npc_marlow",
+    level: 8,
+    requires: ["q_seafarer"],
+    offer: "A sailor without a ship is just a person standing on a pier. I've an old sloop going spare. Tell Harbourmaster Finn to ready her, then come back.",
+    complete: "The Driftwood Sloop is yours. Board her at the pier, take the wheel at the stern, and mind the wind!",
+    steps: [
+      { type: "talk", npc: "npc_finn", text: "Speak to Harbourmaster Finn at the pier" },
+      { type: "talk", npc: "npc_marlow", text: "Return to Captain Marlow" }
+    ],
+    reward: { xp: 220, gold: 0, ship: "sloop" }
+  },
+  {
+    id: "q_turtle_cove",
+    name: "Maiden Voyage",
+    giver: "npc_marlow",
+    level: 9,
+    requires: ["q_sea_legs"],
+    offer: "Take her out! Sail south-west to Turtle Cove. There's a hermit there who knows every current in these waters.",
+    complete: "A visitor! By boat! Oh, how exciting. Marlow sent you? Then you're a friend.",
+    steps: [
+      { type: "visit", map: "ocean", x: -390, y: 300, r: 40, text: "Sail to Turtle Cove" },
+      { type: "talk", npc: "npc_bo", text: "Find Hermit Bo on the island" }
+    ],
+    turnIn: "npc_bo",
+    reward: { xp: 760, gold: 160 }
+  },
+  {
+    id: "q_sink",
+    name: "Black Sails",
+    giver: "npc_marlow",
+    level: 11,
+    requires: ["q_sea_legs"],
+    offer: "Gristle's sloops have been raiding our fishing boats. Take the wheel and give 'em a broadside or three. Sink three of them.",
+    complete: "Three pirate sloops at the bottom of the sea! The fishers will sing about this.",
+    steps: [
+      { type: "kill", mobs: ["pirate_sloop"], count: 3, text: "Sink Pirate Sloops" },
+      { type: "talk", npc: "npc_marlow", text: "Return to Captain Marlow" }
+    ],
+    reward: { xp: 1100, gold: 280, gear: "rare" }
+  },
+  {
+    id: "q_xmarks",
+    name: "X Marks the Spot",
+    giver: "npc_marlow",
+    level: 12,
+    requires: ["q_sink"],
+    offer: "Pirates carry scraps of treasure maps. Collect three, and they'll point to Smuggler's Rest. Dig at the X!",
+    complete: "Ye found it! Keep the loot. Well, most of it.",
+    steps: [
+      { type: "collect", item: "treasure_map_piece", count: 3, text: "Collect Treasure Map Scraps from pirates" },
+      { type: "visit", map: "ocean", x: 306.5, y: 416.5, r: 4, text: "Find the X on Smuggler's Rest" },
+      { type: "talk", npc: "npc_marlow", text: "Return to Captain Marlow" }
+    ],
+    reward: { xp: 1300, gold: 520 }
+  },
+  {
+    id: "q_gristle",
+    name: "Dread Captain Gristle",
+    giver: "npc_marlow",
+    level: 22,
+    requires: ["q_sink"],
+    offer: "It's time. Gristle holds Skull Isle, far to the north-east. Gather a crew, sail out, and end his reign of terror.",
+    complete: "Gristle's beaten! Port Bilgewater is free! Here, take my old coat. You've earned it.",
+    steps: [
+      { type: "kill", mobs: ["boss_gristle"], count: 1, text: "Defeat Dread Captain Gristle on Skull Isle" },
+      { type: "talk", npc: "npc_marlow", text: "Return to Captain Marlow" }
+    ],
+    reward: { xp: 3200, gold: 900, gear: "epic", items: [{ tpl: "coat_captain", rarity: "rare" }] }
+  },
+  {
+    id: "q_kraken",
+    name: "Release the Kraken? No, Defeat It",
+    giver: "npc_marlow",
+    level: 24,
+    requires: ["q_gristle"],
+    offer: "One last thing. Something huge lives in the Maw, far to the north-west. It eats ships. I'd like it to stop eating ships.",
+    complete: "The Kraken! Defeated! I'll be telling this story until I'm a hundred.",
+    steps: [
+      { type: "kill", mobs: ["boss_kraken"], count: 1, text: "Defeat the Kraken in Kraken's Maw" },
+      { type: "talk", npc: "npc_marlow", text: "Return to Captain Marlow" }
+    ],
+    reward: { xp: 3800, gold: 1200, gear: "epic" }
+  },
+  {
+    id: "j_shells",
+    name: "Shells for Bo",
+    giver: "npc_bo",
+    level: 9,
+    repeatable: true,
+    offer: "I'm building a shell castle. It needs more shells. It always needs more shells. Eight, please?",
+    complete: "Ooh, that's a lovely spiral one. Here, a little something from my pearl jar.",
+    steps: [
+      { type: "collect", item: "seashell", count: 8, text: "Collect Seashells (crabs and turtles drop them)" },
+      { type: "talk", npc: "npc_bo", text: "Bring them to Hermit Bo" }
+    ],
+    reward: { xp: 380, gold: 120, items: [{ tpl: "pearl" }] }
+  }
+];
+
+QUESTS.push(...OCEAN_QUESTS);
 
 export const QUESTS_BY_ID: Record<string, Quest> = Object.fromEntries(QUESTS.map((q) => [q.id, q]));
 

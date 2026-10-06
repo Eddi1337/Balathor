@@ -57,7 +57,7 @@ const LEAF_TINTS: Partial<Record<Biome, string[]>> = {
 
 const tmpColor = new THREE.Color();
 
-function tileColor(tile: number, biome: Biome, x: number, y: number, h: number): THREE.Color {
+export function tileColor(tile: number, biome: Biome, x: number, y: number, h: number): THREE.Color {
   const ground = isProp(tile) ? (BIOME_GROUND[biome] ?? Tile.GRASS) : tile;
   tmpColor.set(TILE_COLORS[ground] ?? "#8fd16a");
   const n = hash2(x, y, 977);
@@ -76,7 +76,7 @@ function pick<T>(arr: T[], r: number): T {
   return arr[Math.floor(r * arr.length) % arr.length];
 }
 
-function addProp(b: GeometryBuilder, tile: number, biome: Biome, x: number, y: number, h: number): void {
+export function addProp(b: GeometryBuilder, tile: number, biome: Biome, x: number, y: number, h: number): void {
   const r1 = hash2(x, y, 11);
   const r2 = hash2(x, y, 23);
   const r3 = hash2(x, y, 37);

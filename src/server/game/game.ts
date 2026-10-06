@@ -35,6 +35,9 @@ import { Tile } from "../../shared/world/tiles";
 import { HousingService } from "./housingService";
 import { ProfessionService } from "./professionService";
 import { ShipService } from "./shipService";
+import { SailService } from "./sailService";
+import { SAIL_HULL_IDS } from "../../shared/game/sailing";
+import { PORT_SPAWN } from "../../shared/world/sea/ocean";
 import { freshUpgrades, HULL_IDS, UPGRADE_SLOTS } from "../../shared/game/ships";
 import { LAUNCH_PAD, STATION_ARRIVAL } from "../../shared/world/scifi/station";
 import { freshProfessions, PROF_IDS } from "../../shared/game/professions";
@@ -78,10 +81,11 @@ export class Game {
   readonly housing: HousingService;
   readonly professions: ProfessionService;
   readonly ships: ShipService;
+  readonly sails: SailService;
 
   constructor(private store: Store) {
     this.quests = new QuestService({
-      grantShip: (p, hull) => this.ships.grant(p, hull),
+      grantShip: (p, hull) => this.ships.grant(p, hull) ?? this.sails.grant(p, hull),
       awardXp: (p, xp) => this.awardXp(p, xp),
       addToBag: (p, item) => this.addToBag(p, item),
       randomGear: (p, rarity) => {
@@ -103,6 +107,12 @@ export class Game {
       system: (p, text) => p.session.send({ t: "chat", from: "", name: "", text, kind: "system" })
     });
     this.housing = new HousingService(store);
+    this.sails = new SailService({
+      transfer: (p, mapId, x, y) => this.transfer(p, mapId, x, y),
+      partyIds: (p) => this.social.membersOf(p).map((m) => m.id),
+      addToBag: (p, item) => this.addToBag(p, item),
+      randomGear: (p, rarity) => randomGear(p.save.cls, Math.max(p.save.lv, 10), rarity === "epic" ? 3 : 1.5)
+    });
     this.ships = new ShipService({
       transfer: (p, mapId, x, y) => this.transfer(p, mapId, x, y),
       world: (mapId) => this.getWorld(mapId)
@@ -134,7 +144,8 @@ export class Game {
       partyOf: (p) => this.social.membersOf(p).filter((m) => m.mapId === p.mapId),
       shipDamage: (world, p, raw, now) => this.ships.damage(p, world, raw, now),
       shipDestroyed: (world, p) => this.ships.destroyed(p, world),
-      shipTick: (world, p, dt, now) => this.ships.tick(p, world, dt, now, (pl, target) => world.turretShot(pl, target))
+      shipTick: (world, p, dt, now) => this.ships.tick(p, world, dt, now, (pl, target) => world.turretShot(pl, target)),
+      sailSunk: (world, ship) => this.sails.sunk(world, ship)
     });
     w.populate();
     this.housing.loadInto(w);
@@ -145,6 +156,7 @@ export class Game {
   /** Move a player to another map (or another spot on the same one). */
   transfer(p: Player, mapId: string, x: number, y: number): void {
     const from = this.worlds.get(p.mapId);
+    if (p.aboard) this.sails.leave(p, from?.ships.get(p.aboard.shipId));
     const to = this.getWorld(mapId);
     if (p.storageOpen) {
       this.housing.saveStorage(p.storageOpen);
@@ -152,6 +164,7 @@ export class Game {
       p.session.send({ t: "storage", items: null });
     }
     if (from !== to) {
+      if (from?.def.kind === "sea") this.sails.onLeaveMap(p, from);
       from?.removePlayer(p);
       p.x = x;
       p.y = y;
@@ -268,6 +281,14 @@ export class Game {
     if (p) {
       this.professions.cancel(p);
       this.social.onDisconnect(p);
+      const w = this.worlds.get(p.mapId);
+      if (w?.def.kind === "sea") {
+        if (p.aboard) {
+          p.x = PORT_SPAWN.x;
+          p.y = PORT_SPAWN.y;
+        }
+        this.sails.onLeaveMap(p, w);
+      }
       this.persist(p);
       this.worlds.get(p.mapId)?.removePlayer(p);
       session.player = null;
@@ -303,7 +324,9 @@ export class Game {
       }
       case "attack":
         this.professions.cancel(p);
-        if (Number.isFinite(msg.a)) world.playerAttack(p, wrapAngle(Number(msg.a)), now);
+        if (!Number.isFinite(msg.a)) return;
+        if (p.aboard && this.sails.attack(p, world, wrapAngle(Number(msg.a)), now)) return;
+        world.playerAttack(p, wrapAngle(Number(msg.a)), now);
         return;
       case "chat":
         return this.handleChat(s, p, world, String(msg.text ?? ""), now);
@@ -389,6 +412,10 @@ export class Game {
         return this.ships.warp(p, world, String(msg.dest), now);
       case "boost":
         return this.ships.boost(p, now);
+      case "sail":
+        return this.sails.op(p, world, msg, now);
+      case "dig":
+        return this.sails.dig(p, world);
     }
   }
 
@@ -470,7 +497,9 @@ export class Game {
       ships: [],
       activeShip: null,
       shipUp: freshUpgrades(),
-      discovered: []
+      discovered: [],
+      sailShips: [],
+      activeSail: null
     };
     this.store.saveCharacter(s.accountId, name, save);
     this.handlePlay(s);
@@ -729,7 +758,7 @@ export class Game {
   private pickup(p: Player, world: World, id: string, now: number): void {
     const loot = world.loot.get(id);
     if (!loot || p.dead) return;
-    if (dist(p.x, p.y, loot.x, loot.y) > PICKUP_RADIUS + (p.ship ? 3.5 : 0)) return;
+    if (dist(p.x, p.y, loot.x, loot.y) > PICKUP_RADIUS + (p.ship ? 3.5 : p.aboard ? 6 : 0)) return;
     if (loot.ownerId && loot.ownerId !== p.id && now < loot.ownerUntil) {
       return p.session.toast("That belongs to someone else for a moment", "bad");
     }
@@ -747,10 +776,10 @@ export class Game {
     for (const p of world.players.values()) {
       if (p.dead) continue;
       // Ships have a tractor beam: everything nearby (that fits in the bag) floats aboard.
-      const R = p.ship ? 4.5 : GOLD_MAGNET_RADIUS;
+      const R = p.ship ? 4.5 : p.aboard ? 7 : GOLD_MAGNET_RADIUS;
       world.grid.forEachNear(p.x, p.y, R, (e) => {
         if (e.kind !== "loot") return;
-        if (e.item ? !p.ship || !this.bagFits(p, e.item) : !e.gold) return;
+        if (e.item ? !(p.ship || p.aboard) || !this.bagFits(p, e.item) : !e.gold) return;
         if (dist(p.x, p.y, e.x, e.y) > R) return;
         if (e.ownerId && e.ownerId !== p.id && now < e.ownerUntil) return;
         this.pickup(p, world, e.id, now);
@@ -772,6 +801,7 @@ export class Game {
       p.session.send({ t: "shop", shop: this.shopView(def.shopId, npc.id) });
     }
     if (def.service === "hangar") p.session.send({ t: "hangar", npc: npc.id });
+    if (def.service === "harbour") p.session.send({ t: "harbour", npc: npc.id });
     const line = offer ? QUESTS_BY_ID[offer].offer : def.lines[Math.floor(Math.random() * def.lines.length)];
     world.fx(npc.x, npc.y, { e: "say", id: npc.id, text: line }, 20);
     p.session.send({ t: "chat", from: npc.id, name: def.name, text: line, kind: "npc" });
@@ -839,7 +869,7 @@ export class Game {
   private handleChat(s: Session, p: Player, world: World, raw: string, now: number): void {
     const text = raw.replace(/[\u0000-\u001f]/g, "").trim().slice(0, 160);
     if (!text) return;
-    if (now - p.lastChatAt < CHAT_COOLDOWN_MS) return;
+    if (!(config.devCommands && text.startsWith("/")) && now - p.lastChatAt < CHAT_COOLDOWN_MS) return;
     p.lastChatAt = now;
     if (text.startsWith("/")) return this.chatCommand(s, p, world, text);
     world.fx(p.x, p.y, { e: "say", id: p.id, text }, CHAT_RADIUS);
@@ -922,6 +952,22 @@ export class Game {
         p.save.quests.active = p.save.quests.active.filter((q) => q.id !== id);
         p.selfDirty = p.saveDirty = true;
         return sys(`Marked ${id} done`);
+      }
+      case "shiptp": {
+        if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
+        const ship = p.aboard ? world.ships.get(p.aboard.shipId) : undefined;
+        if (!ship) return sys("You're not aboard a ship");
+        const [, xs, ys] = text.trim().split(/\s+/);
+        ship.x = Number(xs) || ship.x;
+        ship.y = Number(ys) || ship.y;
+        ship.v = 0;
+        world.grid.moved(ship);
+        return sys("Ship moved");
+      }
+      case "sailship": {
+        if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
+        const name = this.sails.grant(p, text.trim().split(/\s+/)[1] ?? "sloop");
+        return sys(name ? `Granted the ${name}` : "Unknown hull");
       }
       case "ship": {
         if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
@@ -1136,6 +1182,7 @@ export class Game {
     if (now - this.lastPartyTickAt >= 1000) {
       this.lastPartyTickAt = now;
       this.social.tick();
+      for (const w of this.worlds.values()) if (w.ships.size) this.sails.sweep(w);
     }
     if (this.tickCount % this.snapEvery === 0) this.replicateAll(now);
     for (const s of this.sessions.values()) {
@@ -1340,6 +1387,8 @@ export class Game {
       activeShip: s.activeShip,
       shipUp: s.shipUp,
       discovered: s.discovered,
+      sailShips: s.sailShips,
+      activeSail: s.activeSail,
       ship: p.ship ? { hull: Math.ceil(p.ship.hull), shield: Math.ceil(p.ship.shield) } : null,
       food: p.food ? { stat: p.food.stat, value: p.food.value, ms: Math.max(0, p.food.until - Date.now()), name: p.food.name } : null
     };
@@ -1421,6 +1470,8 @@ function normalizeSave(save: CharacterSave): CharacterSave {
   for (const slot of UPGRADE_SLOTS) up[slot] = Math.max(0, Math.min(3, Number(save.shipUp?.[slot]) || 0));
   save.shipUp = up;
   save.discovered = Array.isArray(save.discovered) ? save.discovered.filter((d) => typeof d === "string") : [];
+  save.sailShips = Array.isArray(save.sailShips) ? save.sailShips.filter((h) => SAIL_HULL_IDS.includes(h)) : [];
+  save.activeSail = save.activeSail && save.sailShips.includes(save.activeSail) ? save.activeSail : save.sailShips[0] ?? null;
   return save;
 }
 

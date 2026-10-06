@@ -154,6 +154,8 @@ export const RECIPES: Recipe[] = [
   { id: "cook_snapper", station: "campfire", prof: "cooking", level: 11, inputs: [{ tpl: "fish_snapper", qty: 1 }, { tpl: "herb_sunpetal", qty: 2 }], output: { tpl: "food_seaside_platter", qty: 1 }, xp: 34 },
   { id: "cook_feast", station: "campfire", prof: "cooking", level: 15, inputs: [{ tpl: "fish_goldcarp", qty: 1 }, { tpl: "herb_cactus", qty: 2 }], output: { tpl: "food_golden_feast", qty: 1 }, xp: 46 },
   { id: "cook_glowfin", station: "campfire", prof: "cooking", level: 10, inputs: [{ tpl: "fish_glowfin", qty: 1 }, { tpl: "herb_starmoss", qty: 1 }], output: { tpl: "food_glowfin_bowl", qty: 1 }, xp: 36 },
+  { id: "cook_fish_stew", station: "campfire", prof: "cooking", level: 9, inputs: [{ tpl: "fish_snapper", qty: 1 }, { tpl: "seashell", qty: 2 }], output: { tpl: "food_fish_stew", qty: 1 }, xp: 32 },
+  { id: "ring_pearl", station: "forge", prof: "smithing", level: 14, inputs: [{ tpl: "bar_gold", qty: 1 }, { tpl: "pearl", qty: 1 }], output: { tpl: "ring_pearl", qty: 1 }, xp: 44 },
   { id: "cook_sashimi", station: "campfire", prof: "cooking", level: 18, inputs: [{ tpl: "fish_frostfin", qty: 1 }], output: { tpl: "food_frostfin_sashimi", qty: 1 }, xp: 52 },
   // Smithing
   { id: "smelt_copper", station: "forge", prof: "smithing", level: 1, inputs: [{ tpl: "ore_copper", qty: 2 }, { tpl: "log_oak", qty: 1 }], output: { tpl: "bar_copper", qty: 1 }, xp: 14 },

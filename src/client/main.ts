@@ -47,6 +47,11 @@ import { LAB_PALETTE, buildDeck, type Deck } from "./render/deck";
 import { LAB_H, LAB_W } from "../shared/world/scifi/labs";
 import { SHIP_FLOAT, animateScifi, buildScifiMob, buildShip, isScifiModel } from "./render/scifiModels";
 import { HangarUI, WarpUI } from "./ui/hangar";
+import { HarbourUI, SailPanel } from "./ui/harbour";
+import { SeaTerrain } from "./render/seaTerrain";
+import { DECK_H, animateSea, buildPlayerShip, buildSeaMob, isSeaModel, setSailOpacity } from "./render/seaModels";
+import { BOARD_RANGE, HELM, SAIL_HULLS, STATION_REACH, axes, localToWorld, stepDeck, windAngle, type SailHullId, type Transform } from "../shared/game/sailing";
+import { ISLES, isLand, treasureSpot } from "../shared/world/sea/ocean";
 import { Surface, planetSky } from "./render/surface";
 import { PAD_RADIUS, PLANET_PAD } from "../shared/world/scifi/planets";
 import { isPlanet } from "../shared/world/maps";
@@ -62,7 +67,7 @@ renderer.occluder = obstacleTopAt;
 const terrain = new TerrainStreamer(quality.msaa ? 4 : 3);
 const cityLights = marketLights();
 const effects = new Effects();
-effects.setHeightFn((x, y) => map.heightAt(x, y));
+effects.setHeightFn((x, y) => (map.kind === "sea" ? Math.max(0.3, map.heightAt(x, y)) : map.heightAt(x, y)));
 const landmarks = new Landmarks();
 const fountains = new Fountains(cityFountains());
 const space = new SpaceScene();
@@ -70,6 +75,7 @@ space.group.visible = false;
 renderer.scene.add(terrain.group, terrain.water, effects.group, landmarks.group, fountains.group, space.group, ...cityLights);
 let deck: Deck | null = null;
 let surface: Surface | null = null;
+let sea: SeaTerrain | null = null;
 /** The ship parked on the hangar pad (station only). */
 let parkedShip: { hull: string; model: Model } | null = null;
 
@@ -86,6 +92,8 @@ const crafting = new CraftingUI(send);
 const depleted = new Set<string>();
 let bobber: THREE.Mesh | null = null;
 const hangar = new HangarUI(send);
+const harbour = new HarbourUI(send);
+const sailPanel = new SailPanel();
 const warpUi = new WarpUI(send);
 const home = new HomeUI(send, (title, text, yes) => panels.dialog("", title, text, "", yes, undefined, "Yes", "Cancel"));
 
@@ -109,6 +117,7 @@ function viewSignature(d: NetEntity): string {
   if (d.k === "m") return `m|${d.tpl}`;
   if (d.k === "n") return `n|${d.npc}`;
   if (d.k === "f") return `f|${d.kind}|${d.rot}|${d.x}|${d.y}`;
+  if (d.k === "s") return `s|${d.hull}`;
   return `l|${d.tpl}|${d.rarity}|${d.gold}`;
 }
 
@@ -123,6 +132,7 @@ function buildView(d: NetEntity): Model {
   if (d.k === "m") {
     const tpl = MOB_TEMPLATES[d.tpl];
     if (tpl && isScifiModel(tpl.model)) return buildScifiMob(tpl.model, tpl.color, tpl.accent, tpl.scale, Boolean(tpl.boss));
+    if (tpl && isSeaModel(tpl.model)) return buildSeaMob(tpl.model, tpl.color, tpl.accent, tpl.scale, Boolean(tpl.boss));
     return buildMob(tpl?.model ?? "slime", tpl?.color ?? "#7fd66b", tpl?.accent ?? "#ffffff", tpl?.scale ?? 1, Boolean(tpl?.boss));
   }
   if (d.k === "n") {
@@ -130,6 +140,7 @@ function buildView(d: NetEntity): Model {
     return buildHumanoid({ look: { body: def?.body ?? "#8fc97a", accent: def?.accent ?? "#fff", skin: "#ffd9b8", hair: "#7a5234", hairStyle: (d.npc.length % 5) }, hat: def?.hat ?? "none", cls: def?.role === "guard" ? "knight" : undefined });
   }
   if (d.k === "f") return staticModel(buildFurniture(d.kind, d.rot));
+  if (d.k === "s") return buildPlayerShip((SAIL_HULLS[d.hull as SailHullId] ? d.hull : "sloop") as SailHullId);
   return buildLoot(d.gold, d.rarity);
 }
 
@@ -194,6 +205,15 @@ const me = { x: 0, y: 0, f: Math.PI / 2, moving: false, vx: 0, vy: 0, boostUntil
 let lastSent = { mx: 0, my: 0, at: 0 };
 let inputSeq = 0;
 let lastAttackAt = 0;
+/** Our predicted spot on a ship's deck while aboard. */
+let deck0: { ship: string; lx: number; ly: number } | null = null;
+let wasAboard = false;
+
+/** Ground height under a point for this map (decks, piers and the sea surface included). */
+function groundAt(x: number, y: number): number {
+  if (map.kind !== "sea") return map.heightAt(x, y);
+  return Math.max(0, map.heightAt(x, y));
+}
 let menuPreview: Model | null = null;
 let menuAngle = 0;
 
@@ -215,6 +235,46 @@ function predict(dt: number, now: number): void {
     mx = 0;
     my = 0;
   }
+  const shipE = d?.ab ? state.entities.get(d.ab) : undefined;
+  if (s && d && d.ab && shipE && shipE.data.k === "s") {
+    // Aboard a sailing ship: walk the deck (or hold the wheel); the ship carries us.
+    const hull = SAIL_HULLS[shipE.data.hull as SailHullId] ?? SAIL_HULLS.sloop;
+    if (!deck0 || deck0.ship !== d.ab) deck0 = { ship: d.ab, lx: d.lx, ly: d.ly };
+    const t: Transform = { x: shipE.rx, y: shipE.ry, f: shipE.rf };
+    me.moving = false;
+    if (d.hm) {
+      const h = HELM(hull);
+      deck0.lx = h.lx;
+      deck0.ly = h.ly;
+      me.f = t.f;
+    } else if (!d.dead && Math.hypot(mx, my) > 0.05) {
+      const a = axes(t.f);
+      me.moving = stepDeck(hull, deck0, mx * a.rx + my * a.ry, mx * a.fx + my * a.fy, s.derived.speed * 0.85, dt);
+      if (now - lastAttackAt > 350) me.f = Math.atan2(my, mx);
+    }
+    const ex = d.lx - deck0.lx;
+    const ey = d.ly - deck0.ly;
+    if (Math.hypot(ex, ey) > 1.5) {
+      deck0.lx = d.lx;
+      deck0.ly = d.ly;
+    } else if (!me.moving) {
+      const k = Math.min(1, dt * 5);
+      deck0.lx += ex * k;
+      deck0.ly += ey * k;
+    }
+    const w = localToWorld(t, deck0.lx, deck0.ly);
+    me.x = w.x;
+    me.y = w.y;
+    me.vx = me.vy = 0;
+    const changedA = Math.abs(mx - lastSent.mx) > 0.04 || Math.abs(my - lastSent.my) > 0.04;
+    if (changedA || (Math.hypot(mx, my) > 0.05 && now - lastSent.at > 200)) {
+      inputSeq += 1;
+      send({ t: "in", seq: inputSeq, mx: round(mx), my: round(my), f: round(me.f) });
+      lastSent = { mx, my, at: now };
+    }
+    return;
+  }
+  deck0 = null;
   if (s && d && d.sh && map.kind === "space") {
     // Flying: the shared flight model (turn toward the stick, thrust, drift).
     const stats = shipStats(d.sh as HullId, s.shipUp, s.lv);
@@ -262,7 +322,7 @@ function round(v: number): number {
 
 function aimAngle(): number {
   if (!input.touchMode) {
-    const g = renderer.screenToGround(input.mouseX, input.mouseY, map.heightAt(me.x, me.y) + 0.9);
+    const g = renderer.screenToGround(input.mouseX, input.mouseY, (deck0 ? DECK_H : groundAt(me.x, me.y)) + 0.9);
     if (g) return Math.atan2(g.y - me.y, g.x - me.x);
   }
   // Touch / no mouse: auto-target the nearest hostile in front-ish, else facing.
@@ -284,7 +344,7 @@ function tryAttack(now: number, angle?: number): void {
   const d = selfData();
   if (!s || !d || d.dead) return;
   const flying = Boolean(d.sh);
-  const cd = flying ? shipStats(d.sh as HullId, s.shipUp, s.lv).fireMs : CLASSES[s.cls].cooldownMs * (d.bf.includes("haste") ? 0.6 : 1);
+  const cd = d.ab ? 350 : flying ? shipStats(d.sh as HullId, s.shipUp, s.lv).fireMs : CLASSES[s.cls].cooldownMs * (d.bf.includes("haste") ? 0.6 : 1);
   if (now - lastAttackAt < cd) return;
   lastAttackAt = now;
   const a = angle ?? aimAngle();
@@ -341,7 +401,7 @@ function doorLabel(door: Door): string {
   return `Visit ${info.owner}'s home${info.open ? "" : " (if invited)"}`;
 }
 
-type InteractKind = "npc" | "loot" | "waypoint" | "door" | "chest" | "station" | "gather" | "fish" | "reel" | "launch" | "dock";
+type InteractKind = "npc" | "loot" | "waypoint" | "door" | "chest" | "station" | "gather" | "fish" | "reel" | "launch" | "dock" | "board" | "ashore" | "helm" | "dig";
 
 function hasTool(tpl: string | undefined): boolean {
   return !tpl || Boolean(state.self?.inv.some((i) => i?.tpl === tpl));
@@ -349,7 +409,7 @@ function hasTool(tpl: string | undefined): boolean {
 
 /** The nearest gatherable prop (tree, rock, flowers…) within reach, if any. */
 function nearestNode(): { x: number; y: number; label: string; locked: boolean } | null {
-  if (map.kind !== "overworld" && map.kind !== "surface") return null;
+  if (map.kind !== "overworld" && map.kind !== "surface" && map.kind !== "sea") return null;
   let best: { x: number; y: number; label: string; locked: boolean } | null = null;
   let bestD = GATHER_RANGE;
   const r = Math.ceil(GATHER_RANGE);
@@ -375,7 +435,7 @@ function nearestNode(): { x: number; y: number; label: string; locked: boolean }
 
 /** A water spot to cast into: straight ahead first, else the nearest water in range. */
 function fishingSpot(): { x: number; y: number } | null {
-  if ((map.kind !== "overworld" && map.kind !== "surface") || !hasTool("tool_rod")) return null;
+  if ((map.kind !== "overworld" && map.kind !== "surface" && map.kind !== "sea") || !hasTool("tool_rod")) return null;
   for (let d = 1.5; d <= FISH_RANGE; d += 0.5) {
     const x = me.x + Math.cos(me.f) * d;
     const y = me.y + Math.sin(me.f) * d;
@@ -412,6 +472,32 @@ function nearestInteractable(): { id: string; kind: InteractKind; label: string 
     }
   }
   if (crafting.fishing?.bite) return { id: "reel", kind: "reel", label: "E · Reel in!" };
+  if (map.kind === "sea") {
+    const d = selfData();
+    const shipE = d?.ab ? state.entities.get(d.ab) : undefined;
+    if (d?.ab && shipE?.data.k === "s" && deck0) {
+      if (d.hm) return { id: "helm", kind: "helm", label: "E · Leave the wheel" };
+      const h = HELM(SAIL_HULLS[shipE.data.hull as SailHullId] ?? SAIL_HULLS.sloop);
+      if (Math.hypot(deck0.lx - h.lx, deck0.ly - h.ly) <= STATION_REACH + 0.6) return { id: "helm", kind: "helm", label: "E · Take the wheel" };
+      for (let r = 1; r <= 3.5; r += 0.5) {
+        for (let i = 0; i < 12; i += 1) {
+          const a = (i / 12) * Math.PI * 2;
+          if (isLand(map.tileAt(me.x + Math.cos(a) * r, me.y + Math.sin(a) * r))) return { id: "ashore", kind: "ashore", label: "E · Go ashore" };
+        }
+      }
+    } else {
+      for (const e of state.entities.values()) {
+        if (e.data.k !== "s" || e.removedAt) continue;
+        const hull = SAIL_HULLS[e.data.hull as SailHullId] ?? SAIL_HULLS.sloop;
+        if (Math.hypot(e.rx - me.x, e.ry - me.y) <= hull.length / 2 + BOARD_RANGE) return { id: e.id, kind: "board", label: `E · Board ${e.data.owner}'s ${hull.name}` };
+      }
+      for (const isle of ISLES) {
+        if (isle.kind !== "treasure" && isle.kind !== "skull") continue;
+        const t = treasureSpot(isle);
+        if (Math.hypot(t.x - me.x, t.y - me.y) <= 2.2) return { id: isle.id, kind: "dig", label: "E · Dig for treasure (3 map scraps)" };
+      }
+    }
+  }
   if (map.kind === "space") {
     const dock = poiNear(me.x, me.y, ["station", "planet"], DOCK_RANGE);
     if (dock) return { id: dock.id, kind: "dock", label: dock.planet ? `E · Land on ${dock.name}` : `E · Dock at ${dock.name}` };
@@ -457,6 +543,13 @@ let lastJumpAt = 0;
 function jump(): void {
   const d = selfData();
   const now = performance.now();
+  if (d?.ab && d.hm) {
+    // At the wheel, Space raises or furls the sails.
+    if (now - lastJumpAt < 400) return;
+    lastJumpAt = now;
+    send({ t: "sail", op: "furl" });
+    return;
+  }
   if (d?.sh) {
     // In a ship, Space is the afterburner.
     if (now < me.boostReadyAt) return;
@@ -491,6 +584,14 @@ function interact(): void {
   }
   if (target.kind === "launch" || target.kind === "dock") {
     send({ t: target.kind });
+    return;
+  }
+  if (target.kind === "board" || target.kind === "ashore" || target.kind === "helm") {
+    send({ t: "sail", op: target.kind, id: target.id });
+    return;
+  }
+  if (target.kind === "dig") {
+    send({ t: "dig" });
     return;
   }
   if (target.kind === "station") {
@@ -580,7 +681,8 @@ input.onKey = (code, e) => {
       break;
     }
     case "Escape":
-      if (hangar.open) hangar.hide();
+      if (harbour.open) harbour.hide();
+      else if (hangar.open) hangar.hide();
       else if (warpUi.open) warpUi.hide();
       else if (home.placing) home.placing = null;
       else if (home.decorating) home.stopDecorating();
@@ -713,6 +815,12 @@ function switchMap(id: string): void {
     surface.dispose();
     surface = null;
   }
+  if (sea) {
+    renderer.scene.remove(sea.group);
+    sea.dispose();
+    sea = null;
+  }
+  harbour.hide();
   if (parkedShip) {
     renderer.scene.remove(parkedShip.model.root);
     disposeModel(parkedShip.model);
@@ -720,7 +828,7 @@ function switchMap(id: string): void {
   }
   map = getMap(id);
   const outdoors = map.kind === "overworld";
-  renderer.env = outdoors ? "outdoor" : map.kind === "interior" ? "indoor" : map.kind === "deck" ? "deck" : map.kind === "space" ? "space" : "planet";
+  renderer.env = outdoors || map.kind === "sea" ? "outdoor" : map.kind === "interior" ? "indoor" : map.kind === "deck" ? "deck" : map.kind === "space" ? "space" : "planet";
   renderer.occluder = outdoors ? obstacleTopAt : null;
   terrain.group.visible = terrain.water.visible = landmarks.group.visible = fountains.group.visible = outdoors;
   for (const l of cityLights) l.visible = outdoors;
@@ -730,6 +838,12 @@ function switchMap(id: string): void {
     renderer.distance = 23;
     renderer.pitch = 0.98;
     renderer.lookAbove = 0;
+  } else if (map.kind === "sea") {
+    sea = new SeaTerrain(map);
+    renderer.scene.add(sea.group);
+    renderer.distance = 17;
+    renderer.pitch = 0.62;
+    renderer.lookAbove = 1.6;
   } else if (isPlanet(map)) {
     surface = new Surface(map);
     surface.update(0, 24);
@@ -861,6 +975,7 @@ net.on((msg: S2C) => {
       home.setSelf(msg.self);
       crafting.setSelf(msg.self);
       hangar.setSelf(msg.self);
+      harbour.setSelf(msg.self);
       warpUi.setSelf(msg.self);
       landmarks.setAttuned(msg.self.waypoints);
       {
@@ -873,6 +988,9 @@ net.on((msg: S2C) => {
       return;
     case "hangar":
       hangar.show();
+      return;
+    case "harbour":
+      harbour.show();
       return;
     case "warp":
       if (msg.state === "charge") crafting.startWork(msg.ms ?? 2500, "Warp drive charging…");
@@ -1135,6 +1253,7 @@ const ABILITY_COLORS: Record<string, string> = {
 /** Surface height of the water at (x, y): river level or sea level. */
 function waterLevelAt(x: number, y: number): number {
   if (map.kind === "surface") return 0.14;
+  if (map.kind === "sea") return 0;
   const r = riverAt(x, y);
   return r ? r.level : 0;
 }
@@ -1224,12 +1343,38 @@ function updateEntities(dt: number, now: number, time: number): void {
   for (const e of state.entities.values()) {
     const v = ensureView(e);
     const isSelf = e.id === state.selfId;
-    const x = isSelf ? me.x : e.rx;
-    const y = isSelf ? me.y : e.ry;
+    let x = isSelf ? me.x : e.rx;
+    let y = isSelf ? me.y : e.ry;
     const f = isSelf ? me.f : e.rf;
     const d = e.data;
     const m = v.model;
-    m.root.position.set(x, map.heightAt(x, y), y);
+    let baseY = map.heightAt(x, y);
+    if (map.kind === "sea") {
+      baseY = groundAt(x, y);
+      if (d.k === "s") baseY = 0;
+      else if (d.k === "m" && MOB_TEMPLATES[d.tpl]?.sea) baseY = 0;
+      else if (d.k === "p" && d.ab) {
+        // Standing on a ship's deck: ride along with the (interpolated) ship.
+        const shipE = state.entities.get(d.ab);
+        if (shipE) {
+          if (isSelf && deck0) {
+            // Re-anchor to the ship's freshly interpolated pose so we never lag behind the deck.
+            const w = localToWorld({ x: shipE.rx, y: shipE.ry, f: shipE.rf }, deck0.lx, deck0.ly);
+            x = me.x = w.x;
+            y = me.y = w.y;
+          } else if (!isSelf) {
+            const sm = m.root.userData as { lx?: number; ly?: number };
+            sm.lx = sm.lx === undefined ? d.lx : sm.lx + (d.lx - sm.lx) * Math.min(1, dt * 10);
+            sm.ly = sm.ly === undefined ? d.ly : sm.ly + (d.ly - sm.ly) * Math.min(1, dt * 10);
+            const w = localToWorld({ x: shipE.rx, y: shipE.ry, f: shipE.rf }, sm.lx, sm.ly);
+            x = w.x;
+            y = w.y;
+          }
+          baseY = DECK_H;
+        }
+      }
+    }
+    m.root.position.set(x, baseY, y);
     if (d.k !== "l") m.root.rotation.y = Math.PI / 2 - f;
     const dead = "dead" in d && d.dead === 1;
     const moving = isSelf ? me.moving : "mv" in d && d.mv === 1;
@@ -1261,7 +1406,19 @@ function updateEntities(dt: number, now: number, time: number): void {
       updateAuras(v, [(d.st & 1) ? "slow" : "", (d.st & 4) ? "blind" : ""].filter(Boolean), dt, x, y);
     }
     animate(m, { moving, dead, swimming: d.k === "p" && d.sw === 1, speed: d.k === "m" ? 0.7 : 1, mounted: d.k === "p" && d.mt === 1, emote: d.k === "p" ? d.em : "" }, dt, time);
-    if (m.kind !== "humanoid" && m.kind !== "loot" && m.kind !== "furniture") {
+    if (m.kind === "sailship" || isSeaModel(m.kind as never)) {
+      animateSea(m, { moving, dead, sail: d.k === "s" ? d.sail : undefined }, dt, time);
+      if (d.k === "s") setSailOpacity(m, deck0?.ship === e.id ? 0.35 : 1);
+      // Foam at the bow and a wake behind moving ships.
+      const v2 = d.k === "s" ? d.v : moving ? 3 : 0;
+      if ((m.kind === "sailship" || m.kind === "pirate_ship") && v2 > 0.8 && Math.random() < dt * 30) {
+        const len = d.k === "s" ? (SAIL_HULLS[d.hull as SailHullId]?.length ?? 9) : 9 * (m.scale ?? 1);
+        const a = axes(f);
+        const back = Math.random() * 2 - 1;
+        effects.particles.emit(x - a.fx * len * 0.5 + a.rx * back, 0.1, y - a.fy * len * 0.5 + a.ry * back, { n: 1, color: "#ffffff", speed: 0.6, up: 0.4, size: 0.18, life: 1.2, gravity: 0, spread: 0.3 });
+        effects.particles.emit(x + a.fx * len * 0.5, 0.2, y + a.fy * len * 0.5, { n: 1, color: "#e8f8ff", speed: 1.2, up: 0.8, size: 0.12, life: 0.5, gravity: 1 });
+      }
+    } else if (m.kind !== "humanoid" && m.kind !== "loot" && m.kind !== "furniture") {
       const prevF = (m.root.userData.prevF as number | undefined) ?? f;
       let turn = f - prevF;
       if (turn > Math.PI) turn -= Math.PI * 2;
@@ -1284,7 +1441,7 @@ function updateEntities(dt: number, now: number, time: number): void {
 
     // Nameplates
     const dist = Math.hypot(x - me.x, y - me.y);
-    tmpV.set(x, map.heightAt(x, y) + m.height + 0.15, y);
+    tmpV.set(x, baseY + m.height + 0.15, y);
     if (d.k === "p") {
       keepPlates.add(e.id);
       labels.plate(e.id, tmpV, {
@@ -1299,6 +1456,11 @@ function updateEntities(dt: number, now: number, time: number): void {
       if (dist < 22) {
         keepPlates.add(e.id);
         labels.plate(e.id, tmpV, { name: npcDef(d.npc)?.name ?? "Villager", kind: "npc", showBar: false, marker: state.self?.markers[d.npc] });
+      }
+    } else if (d.k === "s") {
+      if (dist < 40) {
+        keepPlates.add(e.id);
+        labels.plate(e.id, tmpV, { name: `${d.owner}'s ${SAIL_HULLS[d.hull as SailHullId]?.name ?? "ship"}`, kind: "player", hp: d.hp, mhp: d.mhp, showBar: d.hp < d.mhp });
       }
     } else if (d.k === "m") {
       const tpl = MOB_TEMPLATES[d.tpl];
@@ -1340,6 +1502,20 @@ function updateHud(now: number): void {
     hud.setHp(d.hp, d.mhp);
     hud.setDead(d.dead === 1, map.theme === "scifi");
     hud.setShield(d.sh ? d.sd : null);
+    const shipE = d.ab ? state.entities.get(d.ab) : undefined;
+    // Boarding lifts the camera to look down on the deck; going ashore puts it back.
+    const aboardNow = Boolean(shipE);
+    if (aboardNow !== wasAboard) {
+      wasAboard = aboardNow;
+      renderer.distance = aboardNow ? 21 : 17;
+      renderer.pitch = aboardNow ? 0.9 : 0.62;
+    }
+    if (shipE && shipE.data.k === "s") {
+      // Wind arrow in screen space: world angle relative to the camera's view.
+      const wind = windAngle(Date.now());
+      const screen = wind + renderer.yaw - Math.PI / 2;
+      sailPanel.update(true, screen, shipE.data.sail, Math.abs(shipE.data.v) * 1.94, shipE.data.hp, shipE.data.mhp, d.hm === 1);
+    } else sailPanel.update(false, 0, 0, 0, 0, 1, false);
   }
   // The ship you'll launch in sits on the hangar pad.
   const wantParked = map.id === "station" ? state.self?.activeShip ?? null : null;
@@ -1392,7 +1568,12 @@ function updateHud(now: number): void {
       if (pm.id !== state.selfId) dots.push({ x: pm.x, y: pm.y, color: "#b26bff", size: 3.5 });
     }
     if (map.id === OVERWORLD.id) for (const w of WAYPOINTS) dots.push({ x: w.x, y: w.y, color: state.self?.waypoints.includes(w.id) ? "#d9a6ff" : "#9a94a6", size: 3 });
-    if (map.kind === "space") {
+    if (map.kind === "sea") {
+      for (const e of state.entities.values()) if (e.data.k === "s" && !e.removedAt) dots.push({ x: e.rx, y: e.ry, color: "#ffc94d", size: 4 });
+      hud.drawMinimap(map, me.x, me.y, me.f, dots, null, 2.5);
+      const near = ISLES.find((i) => Math.hypot(i.x - me.x, i.y - me.y) < i.r + 25);
+      hud.setZone(near ? `${near.name} · lv ${map.zoneLevelAt(near.x, near.y)}` : `Open sea · lv ${map.zoneLevelAt(me.x, me.y)}`);
+    } else if (map.kind === "space") {
       for (const p of POIS) dots.push({ x: p.x, y: p.y, color: p.color, size: Math.max(3, Math.min(9, p.r / 7)) });
       hud.drawMinimap(map, me.x, me.y, me.f, dots, null, 5);
       const near = POIS.find((p) => Math.hypot(p.x - me.x, p.y - me.y) < p.r + 60);
@@ -1419,8 +1600,8 @@ function frame(): void {
     predict(dt, now);
     // Holding F, the mouse button or the touch attack button keeps attacking on cooldown.
     if (!hud.chatFocused && (input.isDown("KeyF") || input.touchAttack || (input.mouseDown && !input.touchMode))) tryAttack(now);
-    renderer.target.set(me.x, map.heightAt(me.x, me.y), me.y);
     updateEntities(dt, now, time);
+    renderer.target.set(me.x, deck0 ? DECK_H : groundAt(me.x, me.y), me.y);
     updateHud(now);
   } else {
     // Title / creator: slowly orbit the plaza around the preview character.
@@ -1456,6 +1637,7 @@ function frame(): void {
   if (map.kind === "space") space.update(time, renderer.camera);
   deck?.update(time);
   surface?.update(time);
+  sea?.update(focus.x, focus.y, loadingHidden ? 2 : 6);
   effects.update(dt);
   landmarks.update(time);
   if (outdoors) {

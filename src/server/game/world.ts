@@ -19,7 +19,9 @@ import { LASER_RANGE, LASER_SPEED, stepShip } from "../../shared/game/ships";
 import { POIS_BY_ID, SAFE_RADIUS } from "../../shared/world/scifi/space";
 import { angleDelta, dist, dist2, rng, TAU } from "../../shared/math";
 import type { FxEvent, ProjectileKind } from "../../shared/protocol";
-import { Furn, Loot, Mob, Npc, Player, type Entity } from "./entities";
+import { Furn, Loot, Mob, Npc, Player, SailShip, type Entity } from "./entities";
+import { HELM, localToWorld, stepDeck, stepSail, windAngle, worldToLocal, axes, CANNON_RANGE, CANNON_SPEED } from "../../shared/game/sailing";
+import { isSailable } from "../../shared/world/sea/ocean";
 import { SpatialGrid } from "./spatial";
 
 export interface WorldHooks {
@@ -33,6 +35,8 @@ export interface WorldHooks {
   shipDamage(world: World, p: Player, raw: number, now: number): boolean;
   shipDestroyed(world: World, p: Player): void;
   shipTick(world: World, p: Player, dt: number, now: number): void;
+  /** A sailing ship's hull broke. */
+  sailSunk(world: World, ship: SailShip): void;
 }
 
 interface Projectile {
@@ -124,6 +128,102 @@ export class World {
   }
 
   readonly furniture = new Map<string, Furn>();
+  readonly ships = new Map<string, SailShip>();
+  /** Sea creatures move through water and treat land as walls. */
+  private seaSrc = { tileAt: (x: number, y: number) => (isSailable(this.def.tileAt(x, y)) ? Tile.GRASS : Tile.WALL) };
+
+  addShip(ship: SailShip): void {
+    this.ships.set(ship.id, ship);
+    this.grid.insert(ship);
+  }
+
+  removeShip(ship: SailShip): void {
+    this.ships.delete(ship.id);
+    this.grid.remove(ship);
+  }
+
+  /** A cannonball fired by a player's ship. */
+  fireCannon(ownerId: string, x: number, y: number, angle: number, dmg: number): void {
+    this.spawnProjectile(ownerId, "player", "cannonball", x, y, angle, CANNON_SPEED, CANNON_RANGE, dmg, { splash: 1.4 });
+  }
+
+  private hitShip(ship: SailShip, dmg: number, now: number): void {
+    if (ship.hp <= 0) return;
+    ship.hp -= dmg;
+    ship.lastHitAt = now;
+    this.fx(ship.x, ship.y, { e: "hit", id: ship.id, dmg: Math.round(dmg) }, 60);
+    for (const id of ship.crew) {
+      const p = this.players.get(id);
+      if (p) p.lastDamagedAt = now;
+    }
+    if (ship.hp <= 0) {
+      ship.hp = 0;
+      this.fx(ship.x, ship.y, { e: "boom", x: ship.x, y: ship.y, big: 1 }, 60);
+      this.hooks.sailSunk(this, ship);
+    }
+  }
+
+  private tickShips(dt: number, now: number): void {
+    const wind = windAngle(now);
+    const sailable = (x: number, y: number) => isSailable(this.def.tileAt(x, y));
+    for (const ship of [...this.ships.values()]) {
+      const def = ship.def;
+      let helm = ship.helmId ? this.players.get(ship.helmId) : undefined;
+      if (helm && (!helm.aboard?.helm || helm.aboard.shipId !== ship.id || helm.dead)) {
+        ship.helmId = null;
+        helm = undefined;
+      }
+      let want: number | null = null;
+      if (helm) {
+        const { mx, my } = helm.input;
+        if (Math.hypot(mx, my) > 0.15) {
+          want = Math.atan2(my, mx);
+          if (ship.sail === 0) ship.sail = 2;
+        }
+      }
+      const body = { x: ship.x, y: ship.y, f: ship.f, v: ship.v, sail: ship.sail };
+      const moved = stepSail(def, body, want, wind, dt, sailable);
+      ship.x = body.x;
+      ship.y = body.y;
+      ship.f = body.f;
+      ship.v = body.v;
+      if (moved || want !== null) this.grid.moved(ship);
+      // Quiet seas slowly mend the hull.
+      if (now - ship.lastHitAt > 15_000 && ship.hp < def.hp) ship.hp = Math.min(def.hp, ship.hp + def.hp * 0.004 * dt);
+      const a = axes(ship.f);
+      for (const id of ship.crew) {
+        const p = this.players.get(id);
+        if (!p?.aboard || p.aboard.shipId !== ship.id) {
+          ship.crew.delete(id);
+          continue;
+        }
+        if (p.aboard.helm) {
+          const h = HELM(def);
+          p.aboard.lx = h.lx;
+          p.aboard.ly = h.ly;
+          p.f = ship.f;
+          p.moving = false;
+        } else if (!p.dead) {
+          const { mx, my } = p.input;
+          // The stick is in world space; turn it into deck space.
+          const dlx = mx * a.rx + my * a.ry;
+          const dly = mx * a.fx + my * a.fy;
+          p.moving = stepDeck(def, p.aboard, dlx, dly, this.playerSpeed(p) * 0.85, dt);
+          if (Math.hypot(mx, my) > 0.05) p.f = Math.atan2(my, mx);
+        }
+        const w = localToWorld(ship, p.aboard.lx, p.aboard.ly);
+        p.x = w.x;
+        p.y = w.y;
+        this.grid.moved(p);
+      }
+    }
+  }
+
+  /** Is (x, y) inside this ship's hull? */
+  private inHull(ship: SailShip, x: number, y: number, pad = 0.2): boolean {
+    const l = worldToLocal(ship, x, y);
+    return Math.abs(l.ly) <= ship.def.length / 2 + pad && Math.abs(l.lx) <= ship.def.width / 2 + pad;
+  }
 
   addFurniture(f: Furn): void {
     this.furniture.set(f.id, f);
@@ -451,6 +551,20 @@ export class World {
           ended = true;
           break;
         }
+        if (pr.team === "mob" && this.ships.size) {
+          let shipHit: SailShip | null = null;
+          for (const ship of this.ships.values()) {
+            if (Math.abs(ship.x - pr.x) < 12 && Math.abs(ship.y - pr.y) < 12 && this.inHull(ship, pr.x, pr.y)) {
+              shipHit = ship;
+              break;
+            }
+          }
+          if (shipHit) {
+            this.hitShip(shipHit, pr.dmg, now);
+            ended = true;
+            break;
+          }
+        }
         let hit: Entity | null = null;
         this.grid.forEachNear(pr.x, pr.y, 3, (e) => {
           if (hit) return;
@@ -569,6 +683,14 @@ export class World {
 
   damagePlayer(p: Player, raw: number, by: Mob | null, now: number): void {
     if (p.dead) return;
+    if (p.aboard) {
+      // Blows meant for the crew land on the hull.
+      const ship = this.ships.get(p.aboard.shipId);
+      if (ship) {
+        this.hitShip(ship, raw, now);
+        return;
+      }
+    }
     if (p.ship) {
       if (this.hooks.shipDamage(this, p, raw, now)) {
         this.dropAggroOn(p.id);
@@ -644,6 +766,7 @@ export class World {
       this.awakeCells.clear();
       for (const p of this.players.values()) this.grid.cellKeysNear(p.x, p.y, MOB_WAKE_RADIUS, this.awakeCells);
     }
+    if (this.ships.size) this.tickShips(dt, now);
     this.tickPlayers(dt, now);
     if (this.def.kind === "space") this.stationDefence(now);
     for (const key of this.awakeCells) {
@@ -697,18 +820,24 @@ export class World {
         this.hooks.shipTick(this, p, dt, now);
         continue;
       }
-      const moving = Math.hypot(mx, my) > 0.05;
-      if (moving) {
-        p.moving = stepMovement(this.def, p, mx, my, this.playerSpeed(p), dt);
-        if (p.moving && p.emote) p.emote = "";
-        this.grid.moved(p);
-      } else {
-        p.moving = false;
-      }
-      p.swimming = isSwimming(this.def, p.x, p.y);
-      if (p.swimming) {
+      if (p.aboard) {
+        // Moved along with the ship in tickShips.
+        p.swimming = false;
         p.mounted = false;
-        if (applyCurrent(this.def, p, dt)) this.grid.moved(p);
+      } else {
+        const moving = Math.hypot(mx, my) > 0.05;
+        if (moving) {
+          p.moving = stepMovement(this.def, p, mx, my, this.playerSpeed(p), dt);
+          if (p.moving && p.emote) p.emote = "";
+          this.grid.moved(p);
+        } else {
+          p.moving = false;
+        }
+        p.swimming = isSwimming(this.def, p.x, p.y);
+        if (p.swimming) {
+          p.mounted = false;
+          if (applyCurrent(this.def, p, dt)) this.grid.moved(p);
+        }
       }
       // Regen: brisk out of combat, slow during.
       const outOfCombat = now - p.lastDamagedAt > 5000;
@@ -873,7 +1002,7 @@ export class World {
     const d = Math.hypot(dx, dy);
     if (speed > 0 && d > 0.15) {
       const before = mob.x + mob.y;
-      stepMovement(this.def, mob, dx / d, dy / d, speed, dt);
+      stepMovement(tpl.sea ? this.seaSrc : this.def, mob, dx / d, dy / d, speed, dt);
       mob.moving = Math.abs(mob.x + mob.y - before) > 1e-4;
       if (mob.state !== "chase") mob.f = Math.atan2(dy, dx);
       if (!mob.moving && mob.state === "wander") mob.state = "idle";

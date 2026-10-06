@@ -1,7 +1,8 @@
 // Server-side entity types. Each knows how to serialise itself for replication (`net()`),
 // cached per snapshot pass so many viewers share one object.
 
-import type { Appearance, NetEntity, NetFurniture, NetLoot, NetMob, NetNpc, NetPlayer } from "../../shared/protocol";
+import type { Appearance, NetEntity, NetFurniture, NetLoot, NetMob, NetNpc, NetPlayer, NetShip } from "../../shared/protocol";
+import { SAIL_HULLS, type SailHullId } from "../../shared/game/sailing";
 import type { ClassId } from "../../shared/game/classes";
 import type { EquipSlot, Item, Rarity } from "../../shared/game/items";
 import { RARITIES } from "../../shared/game/items";
@@ -48,6 +49,8 @@ export interface CharacterSave {
   activeShip: HullId | null;
   shipUp: ShipUpgrades;
   discovered: string[];
+  sailShips: SailHullId[];
+  activeSail: SailHullId | null;
 }
 
 /** A ship being flown (players in space only). */
@@ -106,6 +109,10 @@ export class Player implements Spatial, NetCached {
   lastDoorAt = 0;
   nextDiscoverAt = 0;
   ship: ShipState | null = null;
+  /** Aboard a sailing ship: which one, where on its deck, and whether we're steering. */
+  aboard: { shipId: string; lx: number; ly: number; helm: boolean } | null = null;
+  /** Per-cannon / broadside cooldowns while aboard. */
+  cannonReadyAt = new Map<string, number>();
   /** Self state (inventory/stats) changed and must be re-sent. */
   selfDirty = true;
   /** Persisted fields changed since the last save. */
@@ -152,7 +159,11 @@ export class Player implements Spatial, NetCached {
       bf: this.buffs.size ? [...this.buffs.keys()].join(",") : "",
       sh: this.ship ? this.ship.stats.hull : "",
       sd: this.ship ? Math.round((this.ship.shield / Math.max(1, this.ship.stats.maxShield)) * 100) : 0,
-      bo: this.ship && this.ship.boostUntil > Date.now() ? 1 : 0
+      bo: this.ship && this.ship.boostUntil > Date.now() ? 1 : 0,
+      ab: this.aboard ? this.aboard.shipId : "",
+      lx: this.aboard ? round2(this.aboard.lx) : 0,
+      ly: this.aboard ? round2(this.aboard.ly) : 0,
+      hm: this.aboard?.helm ? 1 : 0
     };
     this.netPass = pass;
     this.netValue = value;
@@ -343,4 +354,56 @@ export class Furn implements Spatial, NetCached {
   }
 }
 
-export type Entity = Player | Mob | Npc | Loot | Furn;
+/** A player's sailing ship on the ocean. */
+export class SailShip implements Spatial, NetCached {
+  readonly kind = "ship" as const;
+  cell = 0;
+  netPass = -1;
+  netValue: NetEntity | null = null;
+  f = Math.PI / 2;
+  v = 0;
+  sail = 0;
+  hp: number;
+  /** Player at the wheel. */
+  helmId: string | null = null;
+  readonly crew = new Set<string>();
+  /** Last time the hull took a hit (repairs wait for calm). */
+  lastHitAt = 0;
+
+  constructor(
+    readonly id: string,
+    readonly hull: SailHullId,
+    public ownerId: string,
+    public ownerName: string,
+    public x: number,
+    public y: number
+  ) {
+    this.hp = SAIL_HULLS[hull].hp;
+  }
+
+  get def() {
+    return SAIL_HULLS[this.hull];
+  }
+
+  net(pass: number): NetShip {
+    if (this.netPass === pass && this.netValue) return this.netValue as NetShip;
+    const value: NetShip = {
+      k: "s",
+      id: this.id,
+      x: round2(this.x),
+      y: round2(this.y),
+      f: round2(this.f),
+      hull: this.hull,
+      hp: Math.ceil(this.hp),
+      mhp: this.def.hp,
+      sail: this.sail,
+      v: round2(this.v),
+      owner: this.ownerName
+    };
+    this.netPass = pass;
+    this.netValue = value;
+    return value;
+  }
+}
+
+export type Entity = Player | Mob | Npc | Loot | Furn | SailShip;

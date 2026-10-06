@@ -4,8 +4,12 @@
 import { doorFront, nearestHouses } from "../world/city";
 import { ALCOVES, LIFTS, LAUNCH_PAD } from "../world/scifi/station";
 import { STARGATE } from "../world/scifi/stargate";
+import { ISLES_BY_ID, landNear, portDoor } from "../world/sea/ocean";
+import { SEAFARER_CAVE, SEAFARER_FRONT } from "../world/overworld";
 
 export type NpcRole = "shop" | "guide" | "guard" | "villager";
+
+const bo = landNear(ISLES_BY_ID.turtle.x + 2, ISLES_BY_ID.turtle.y + 2);
 
 /** Where an NPC wants to be during [from, to) hours (wraps past midnight). */
 export interface ScheduleEntry {
@@ -30,10 +34,10 @@ export interface NpcDef {
   wander: number;
   body: string;
   accent: string;
-  hat: "none" | "cap" | "hood" | "wizard" | "helmet" | "chef" | "bow" | "crown";
+  hat: "none" | "cap" | "hood" | "wizard" | "helmet" | "chef" | "bow" | "crown" | "tricorn" | "bandana";
   shopId?: string;
   /** Talking opens a special service window instead of a shop. */
-  service?: "hangar";
+  service?: "hangar" | "harbour";
   /** Map the NPC lives on (default: the overworld). */
   map?: string;
   lines: string[];
@@ -115,6 +119,29 @@ export const SHOPS: Record<string, ShopDef> = {
       { tpl: "food_star_latte", price: 25 },
       { tpl: "food_nebula_noodles", price: 48 },
       { tpl: "food_jelly_tart", price: 64 }
+    ]
+  },
+  tavern: {
+    id: "tavern",
+    name: "The Salty Barnacle",
+    greeting: "Arr, what'll it be? Grog for the legs, stew for the belly!",
+    stock: [
+      { tpl: "food_grog", price: 18 },
+      { tpl: "food_fish_stew", price: 46 },
+      { tpl: "potion_big", price: 40 }
+    ]
+  },
+  port_store: {
+    id: "port_store",
+    name: "Pim's Provisions",
+    greeting: "Everything a sailor needs, and a few things they don't!",
+    stock: [
+      { tpl: "cutlass", rarity: "uncommon", lvl: 12, price: 760 },
+      { tpl: "musket_bow", rarity: "uncommon", lvl: 12, price: 760 },
+      { tpl: "coral_staff", rarity: "uncommon", lvl: 12, price: 760 },
+      { tpl: "coat_captain", rarity: "uncommon", lvl: 12, price: 700 },
+      { tpl: "tool_rod", price: 40 },
+      { tpl: "potion_small", price: 10 }
     ]
   },
   stable: {
@@ -255,6 +282,24 @@ export const NPCS: NpcDef[] = [
     lines: ["Brr! Welcome to Icefall. Keep moving, it helps.", "The crystals sing when the wind blows.", "Shardlings look like snowmen. They are not snowmen."] },
   { id: "npc_rusty", name: "Prospector Rusty", role: "guide", x: 4.5, y: 7.5, wander: 1.5, body: "#e07a4a", accent: "#ffd166", hat: "cap", map: "planet:rust",
     lines: ["Rust! Red sand, titanium, and things with too many legs.", "The old relay ridge still pings now and then.", "Don't swim in the green lakes. Trust me."] },
+  // The Seafarer Cave, on the south-west beach.
+  { id: "npc_pete", name: "Old Salt Pete", role: "guide", x: SEAFARER_FRONT.x - SEAFARER_CAVE.oy * 2.5, y: SEAFARER_FRONT.y + SEAFARER_CAVE.ox * 2.5, wander: 1, body: "#3f6fb5", accent: "#fff1e6", hat: "tricorn",
+    lines: ["That cave goes right under the sea, it does. Comes out at Port Bilgewater.", "I sailed the Boundless Ocean for forty years. Kraken took my hat. Twice.", "Press E at the cave mouth, if ye dare!"] },
+  // Port Bilgewater.
+  { id: "npc_marlow", name: "Captain Marlow", role: "guide", ...portDoor("captain"), wander: 1.2, body: "#7b3fbf", accent: "#ffd166", hat: "tricorn", map: "ocean",
+    lines: ["Welcome to Port Bilgewater, the finest den of scoundrels on the sea!", "Gristle's pirates grow bolder every tide.", "Every sailor needs a ship. Every ship needs a sailor."] },
+  { id: "npc_finn", name: "Harbourmaster Finn", role: "shop", x: 4.5, y: 29.5, wander: 0.8, body: "#e0a458", accent: "#3b2f4a", hat: "cap", map: "ocean", service: "harbour",
+    lines: ["Need your ship brought round? Say the word.", "Moor at the pier, mind the barnacles.", "Hold the wheel at the stern with E. Space raises and furls the sails."] },
+  { id: "npc_moira", name: "Shipwright Moira", role: "shop", ...portDoor("shipwright"), wander: 0.8, body: "#3f6fb5", accent: "#ffd166", hat: "bandana", map: "ocean", service: "harbour",
+    lines: ["A brig's a fine ship. A galleon's a finer one!", "Every hull I build floats. Usually.", "Sail across the wind for the best speed!"] },
+  { id: "npc_salty", name: "Barkeep Salty", role: "shop", ...portDoor("tavern"), wander: 0.8, body: "#c95a3a", accent: "#fff1e6", hat: "bandana", map: "ocean", shopId: "tavern",
+    lines: ["Grog! Get yer grog!", "Heard the Kraken's been seen near the Maw again.", "Pirates pay in doubloons. Mostly fake ones."] },
+  { id: "npc_pim", name: "Provisioner Pim", role: "shop", ...portDoor("provisions"), wander: 0.8, body: "#5fae5a", accent: "#fff1e6", hat: "cap", map: "ocean", shopId: "port_store",
+    lines: ["Cutlasses, rods and captain's coats!", "A good coat keeps the spray off."] },
+  { id: "npc_bo", name: "Hermit Bo", role: "guide", x: bo.x, y: bo.y, wander: 2, body: "#9a6b4f", accent: "#7fe0a8", hat: "hood", map: "ocean",
+    lines: ["Visitors! On Turtle Cove! Mind the turtles, they're napping.", "I collect shells. You collect shells? We should be friends.", "The sea talks, if you listen. Mostly it says 'splash'."] },
+  { id: "npc_gull", name: "Dockhand Gully", role: "villager", x: -3.5, y: 34.5, wander: 3, body: "#ffd166", accent: "#3b2f4a", hat: "bandana", map: "ocean",
+    lines: ["Ships come and go, I tie the ropes.", "Walk up to your ship at the pier and press E to board."] },
   // Inside the castle.
   { id: "npc_king", name: "King Aldric the Kind", role: "villager", x: 11.5, y: 3.6, wander: 0, body: "#7b3fbf", accent: "#ffd166", hat: "crown", map: "castle:throne",
     lines: ["Welcome, welcome! Any friend of Hearthmoor is a friend of mine.", "Our island's champions grow restless. Will you help?", "Have you tried the honey elixirs? Splendid stuff."] },

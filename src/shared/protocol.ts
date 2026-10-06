@@ -12,6 +12,7 @@ import type { BuffId, ZoneKind } from "./game/talents";
 import type { QuestLog } from "./game/quests";
 import type { FoodStat, ProfLevels } from "./game/professions";
 import type { HullId, ShipUpgrades } from "./game/ships";
+import type { SailHullId } from "./game/sailing";
 
 export const PROTOCOL_VERSION = 1;
 
@@ -58,6 +59,29 @@ export interface NetPlayer {
   sd: number;
   /** 1 while boosting. */
   bo: 0 | 1;
+  /** Aboard a sailing ship: its id ("" otherwise) and our spot on its deck. */
+  ab: string;
+  lx: number;
+  ly: number;
+  /** 1 while at the helm. */
+  hm: 0 | 1;
+}
+
+/** A sailing ship (players' ships; pirate ships are mobs). */
+export interface NetShip {
+  k: "s";
+  id: string;
+  x: number;
+  y: number;
+  f: number;
+  hull: string;
+  hp: number;
+  mhp: number;
+  /** Sail level 0 (furled) - 2 (full). */
+  sail: number;
+  /** Speed (for the wake). */
+  v: number;
+  owner: string;
 }
 
 export interface NetMob {
@@ -107,7 +131,7 @@ export interface NetFurniture {
   rot: number;
 }
 
-export type NetEntity = NetPlayer | NetMob | NetNpc | NetLoot | NetFurniture;
+export type NetEntity = NetPlayer | NetMob | NetNpc | NetLoot | NetFurniture | NetShip;
 
 export interface HouseInfo {
   plot: string;
@@ -117,7 +141,7 @@ export interface HouseInfo {
 
 // ─── Combat / world effects ───────────────────────────────────────────────────
 
-export type ProjectileKind = "arrow" | "fireball" | "frostbolt" | "emberball" | "arcane" | "laser" | "laser_red" | "plasma";
+export type ProjectileKind = "arrow" | "fireball" | "frostbolt" | "emberball" | "arcane" | "laser" | "laser_red" | "plasma" | "cannonball" | "shot";
 
 export type FxEvent =
   | { e: "swing"; id: string; a: number }
@@ -174,6 +198,8 @@ export interface SelfState {
   shipUp: ShipUpgrades;
   /** Space points of interest you've visited (warp destinations). */
   discovered: string[];
+  sailShips: SailHullId[];
+  activeSail: SailHullId | null;
   /** While flying: hull / shield right now. */
   ship: { hull: number; shield: number } | null;
   professions: ProfLevels;
@@ -263,6 +289,8 @@ export type C2S =
   | { t: "dock" }
   | { t: "warp"; dest: string }
   | { t: "boost" }
+  | { t: "sail"; op: "summon" | "board" | "ashore" | "helm" | "furl" | "buy" | "select"; hull?: string; id?: string }
+  | { t: "dig" }
   | { t: "party"; op: "invite" | "accept" | "decline" | "leave" | "kick"; target?: string }
   | { t: "trade"; op: "request" | "accept" | "decline" | "cancel" | "offer" | "unoffer" | "gold" | "ready"; target?: string; slot?: number; gold?: number }
   | { t: "ping"; c: number };
@@ -305,6 +333,7 @@ export type S2C =
   | { t: "fish"; state: "cast" | "bite" | "caught" | "escaped" | "cancel"; x: number; y: number; item?: string }
   | { t: "depleted"; keys: string[] }
   | { t: "hangar"; npc: string }
+  | { t: "harbour"; npc: string }
   | { t: "warp"; state: "charge" | "cancel" | "done"; dest: string; ms?: number; x?: number; y?: number };
 
 export type S2CType = S2C["t"];

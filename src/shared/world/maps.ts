@@ -9,6 +9,7 @@ import { Tile } from "./tiles";
 import { riverCurrent } from "./rivers";
 import { STATION_ARRIVAL, STATION_W, stationTileAt } from "./scifi/station";
 import { SPACE_RADIUS, spaceSpawns, spaceTileAt, LAUNCH_POINT, type SpawnSpec } from "./scifi/space";
+import { OCEAN_RADIUS, PORT_SPAWN, isLand, oceanHeightAt, oceanLevelAt, oceanSpawns, oceanTileAt } from "./sea/ocean";
 import { LAB_INFO, LAB_W, labLayout, labSpawns, labTileAt, parseLabMapId } from "./scifi/labs";
 import { PLANETS, PLANET_PAD, parsePlanetMapId, planetHeightAt, planetLevelAt, planetSpawns, planetTileAt, type PlanetDef } from "./scifi/planets";
 
@@ -18,7 +19,7 @@ export type MapTheme = "fantasy" | "scifi" | "ocean" | "dungeon" | "interior";
  * How a map is laid out (and rendered): the open overworld, a cosy interior, a sci-fi deck
  * (station / labs), open space (you fly a ship) or a planet surface.
  */
-export type MapKind = "overworld" | "interior" | "deck" | "space" | "surface";
+export type MapKind = "overworld" | "interior" | "deck" | "space" | "surface" | "sea";
 
 export interface MapDef {
   id: string;
@@ -88,7 +89,22 @@ export const SPACE: MapDef = {
   spawns: spaceSpawns
 };
 
+export const OCEAN: MapDef = {
+  id: "ocean",
+  name: "The Boundless Ocean",
+  theme: "ocean",
+  kind: "sea",
+  bounds: OCEAN_RADIUS,
+  spawn: PORT_SPAWN,
+  tileAt: oceanTileAt,
+  heightAt: oceanHeightAt,
+  biomeAt: (x, y) => (isLand(oceanTileAt(x, y)) ? "beach" : "ocean"),
+  zoneLevelAt: oceanLevelAt,
+  spawns: oceanSpawns
+};
+
 const MAPS = new Map<string, MapDef>([
+  [OCEAN.id, OCEAN],
   [OVERWORLD.id, OVERWORLD],
   [STATION.id, STATION],
   [SPACE.id, SPACE]

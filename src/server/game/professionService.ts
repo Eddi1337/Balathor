@@ -82,7 +82,7 @@ export class ProfessionService {
   }
 
   startGather(p: Player, world: World, x: number, y: number, now: number): void {
-    if ((world.def.kind !== "overworld" && world.def.kind !== "surface") || p.dead) return;
+    if ((world.def.kind !== "overworld" && world.def.kind !== "surface" && world.def.kind !== "sea") || p.dead) return;
     const tx = Math.floor(x);
     const ty = Math.floor(y);
     if (Math.hypot(tx + 0.5 - p.x, ty + 0.5 - p.y) > GATHER_RANGE + 0.6) return;
@@ -102,7 +102,7 @@ export class ProfessionService {
   }
 
   startFishing(p: Player, world: World, x: number, y: number, now: number): void {
-    if ((world.def.kind !== "overworld" && world.def.kind !== "surface") || p.dead) return;
+    if ((world.def.kind !== "overworld" && world.def.kind !== "surface" && world.def.kind !== "sea") || p.dead) return;
     if (Math.hypot(x - p.x, y - p.y) > FISH_RANGE + 0.5) return;
     if (!isWaterTile(world.def.tileAt(x, y))) return p.session.toast("Cast into water!", "bad");
     if (!this.hasTool(p, "fishing")) return p.session.toast("You need a fishing rod. Bram sells them in the market.", "bad");

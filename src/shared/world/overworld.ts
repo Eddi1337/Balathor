@@ -62,6 +62,34 @@ export function coastRadiusAt(angle: number): number {
   return ISLAND_RADIUS * (0.86 + n * 0.22);
 }
 
+/**
+ * The Seafarer Cave: a mossy rock mound in the forest belt south-west of the city. Its tunnel runs
+ * all the way under the sea to Port Bilgewater. The mouth faces back toward the city.
+ */
+const CAVE_ANGLE = 2.25;
+const caveR = 150;
+export const SEAFARER_CAVE = {
+  x: Math.round(Math.cos(CAVE_ANGLE) * caveR) + 0.5,
+  y: Math.round(Math.sin(CAVE_ANGLE) * caveR) + 0.5,
+  /** Unit vector the mouth opens toward (the city). */
+  ox: -Math.cos(CAVE_ANGLE),
+  oy: -Math.sin(CAVE_ANGLE)
+};
+/** Where you stand to go in. */
+export const SEAFARER_FRONT = { x: SEAFARER_CAVE.x + SEAFARER_CAVE.ox * 4.2, y: SEAFARER_CAVE.y + SEAFARER_CAVE.oy * 4.2 };
+
+function caveTileAt(x: number, y: number): number | null {
+  const dx = x + 0.5 - SEAFARER_CAVE.x;
+  const dy = y + 0.5 - SEAFARER_CAVE.y;
+  const d = Math.hypot(dx, dy);
+  if (d > 6.5) return null;
+  // Rock all round except the mouth.
+  const facing = (dx * SEAFARER_CAVE.ox + dy * SEAFARER_CAVE.oy) / Math.max(0.01, d);
+  if (d < 3.6 && !(facing > 0.55 && d > 1.2)) return Tile.ROCK;
+  if (d < 6.5) return Tile.MEADOW;
+  return null;
+}
+
 export function biomeAt(x: number, y: number): Biome {
   const d = Math.hypot(x, y);
   if (d < TOWN_RADIUS + 1) return "town";
@@ -186,6 +214,8 @@ function rawTileAt(x: number, y: number): number {
   if (city !== null) return city;
   const gate = stargateTileAt(x, y);
   if (gate !== null) return gate;
+  const cave = caveTileAt(x, y);
+  if (cave !== null) return cave;
 
   const cx = x + 0.5;
   const cy = y + 0.5;

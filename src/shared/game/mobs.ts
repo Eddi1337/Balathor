@@ -23,7 +23,16 @@ export type MobModel =
   | "drone"
   | "wreck"
   | "robot"
-  | "turret";
+  | "turret"
+  // The ocean
+  | "pirate"
+  | "skeleton"
+  | "crab"
+  | "parrot"
+  | "turtle"
+  | "shark"
+  | "pirate_ship"
+  | "kraken";
 
 export interface MobTemplate {
   id: string;
@@ -45,6 +54,8 @@ export interface MobTemplate {
   proj?: ProjectileKind;
   /** Asteroids and wrecks: mined by lasers (bonus damage from mining hulls). */
   mineable?: boolean;
+  /** Lives in the water (moves on sea tiles, can't come ashore). */
+  sea?: boolean;
   passive?: boolean;
   xp: number;
   gold: [number, number];
@@ -104,6 +115,18 @@ export const MOB_TEMPLATES: Record<string, MobTemplate> = {
   overseer_1: t({ id: "overseer_1", name: "Overseer Mk I", model: "robot", color: "#ffd166", accent: "#ff4f6a", scale: 2.0, hp: 1300, dmg: 26, speed: 2.4, aggro: 10, reach: 2.4, cooldownMs: 1500, ranged: { speed: 14, range: 9 }, proj: "laser_red", xp: 480, gold: [100, 200], drops: [{ tpl: "bow_plasma", chance: 0.35 }, { tpl: "staff_ion", chance: 0.35 }, { tpl: "blade_arc", chance: 0.35 }, { tpl: "salvage_core", chance: 1 }], boss: true }),
   overseer_2: t({ id: "overseer_2", name: "Overseer Mk II", model: "robot", color: "#9fd4f5", accent: "#5ff6ff", scale: 2.3, hp: 2200, dmg: 36, speed: 2.5, aggro: 10, reach: 2.6, cooldownMs: 1300, ranged: { speed: 15, range: 10 }, proj: "plasma", xp: 760, gold: [160, 300], drops: [{ tpl: "suit_nano", chance: 0.4 }, { tpl: "ring_quantum", chance: 0.4 }, { tpl: "salvage_core", chance: 1 }], boss: true }),
   overseer_3: t({ id: "overseer_3", name: "Overseer Mk III", model: "robot", color: "#2b2238", accent: "#ff2e63", scale: 2.6, hp: 3400, dmg: 48, speed: 2.7, aggro: 11, reach: 2.8, cooldownMs: 1100, ranged: { speed: 17, range: 11 }, proj: "laser_red", xp: 1100, gold: [240, 420], drops: [{ tpl: "bow_photon", chance: 0.35 }, { tpl: "staff_nebula", chance: 0.35 }, { tpl: "blade_star", chance: 0.35 }, { tpl: "salvage_core", chance: 1 }], boss: true }),
+  // ── The ocean ──────────────────────────────────────────────────────────────
+  crab: t({ id: "crab", name: "Snippy Crab", model: "crab", color: "#ff7a5c", accent: "#ffd9c9", scale: 0.8, hp: 50, dmg: 10, speed: 2.6, aggro: 6, reach: 1.2, cooldownMs: 1200, xp: 18, gold: [2, 7], drops: [{ tpl: "seashell", chance: 0.5 }, { tpl: "pearl", chance: 0.03 }] }),
+  parrot: t({ id: "parrot", name: "Chatty Parrot", model: "parrot", color: "#3fbf6a", accent: "#ff5c6a", scale: 0.6, hp: 18, dmg: 0, speed: 3.4, aggro: 0, reach: 0, cooldownMs: 1000, passive: true, xp: 4, gold: [0, 2], drops: [{ tpl: "parrot_feather", chance: 0.6 }] }),
+  sea_turtle: t({ id: "sea_turtle", name: "Sea Turtle", model: "turtle", color: "#5fae8a", accent: "#c9a66b", scale: 0.9, hp: 60, dmg: 0, speed: 1.2, aggro: 0, reach: 0, cooldownMs: 1000, passive: true, xp: 6, gold: [0, 3], drops: [{ tpl: "seashell", chance: 0.6 }] }),
+  pirate_brute: t({ id: "pirate_brute", name: "Pirate Brute", model: "pirate", color: "#c95a3a", accent: "#3b2f4a", scale: 1, hp: 90, dmg: 14, speed: 3.0, aggro: 9, reach: 1.4, cooldownMs: 1200, xp: 30, gold: [6, 14], drops: [{ tpl: "treasure_map_piece", chance: 0.22 }, { tpl: "food_grog", chance: 0.15 }] }),
+  pirate_gunner: t({ id: "pirate_gunner", name: "Pirate Gunner", model: "pirate", color: "#3f6fb5", accent: "#ffd166", scale: 1, hp: 62, dmg: 13, speed: 2.6, aggro: 11, reach: 1.2, cooldownMs: 1700, ranged: { speed: 16, range: 10 }, proj: "shot", xp: 28, gold: [6, 14], drops: [{ tpl: "treasure_map_piece", chance: 0.22 }] }),
+  skeleton: t({ id: "skeleton", name: "Rattling Skeleton", model: "skeleton", color: "#f2ead8", accent: "#5fd6c9", scale: 1, hp: 70, dmg: 13, speed: 2.6, aggro: 8, reach: 1.3, cooldownMs: 1300, xp: 26, gold: [4, 12], drops: [{ tpl: "ancient_coin", chance: 0.5 }, { tpl: "treasure_map_piece", chance: 0.1 }] }),
+  shark: t({ id: "shark", name: "Grinning Shark", model: "shark", color: "#7d8a9b", accent: "#ffffff", scale: 1.2, hp: 80, dmg: 16, speed: 5, aggro: 12, reach: 2.2, cooldownMs: 1300, sea: true, xp: 30, gold: [2, 8], drops: [{ tpl: "shark_tooth", chance: 0.5 }] }),
+  pirate_sloop: t({ id: "pirate_sloop", name: "Pirate Sloop", model: "pirate_ship", color: "#3b2f4a", accent: "#2b2238", scale: 1, hp: 320, dmg: 26, speed: 6, aggro: 22, reach: 3, cooldownMs: 2400, ranged: { speed: 20, range: 18 }, proj: "cannonball", sea: true, xp: 75, gold: [20, 50], drops: [{ tpl: "treasure_map_piece", chance: 0.4 }, { tpl: "food_grog", chance: 0.3 }] }),
+  pirate_frigate: t({ id: "pirate_frigate", name: "Pirate Frigate", model: "pirate_ship", color: "#2b2238", accent: "#ff2e63", scale: 1.5, hp: 720, dmg: 38, speed: 5.5, aggro: 24, reach: 4, cooldownMs: 2000, ranged: { speed: 20, range: 20 }, proj: "cannonball", sea: true, xp: 150, gold: [40, 90], drops: [{ tpl: "treasure_map_piece", chance: 0.6 }, { tpl: "pearl", chance: 0.2 }] }),
+  boss_kraken: t({ id: "boss_kraken", name: "The Kraken", model: "kraken", color: "#b84a8a", accent: "#ffd1f0", scale: 3, hp: 5200, dmg: 55, speed: 3, aggro: 26, reach: 7, cooldownMs: 1700, sea: true, xp: 1700, gold: [300, 600], drops: [{ tpl: "kraken_ink", chance: 1 }, { tpl: "pearl", chance: 1 }], boss: true }),
+  boss_gristle: t({ id: "boss_gristle", name: "Dread Captain Gristle", model: "pirate", color: "#2b2238", accent: "#ff2e63", scale: 2, hp: 3300, dmg: 48, speed: 3.0, aggro: 11, reach: 2.6, cooldownMs: 1300, ranged: { speed: 16, range: 11 }, proj: "shot", xp: 1300, gold: [260, 500], drops: [{ tpl: "pearl", chance: 1 }, { tpl: "treasure_map_piece", chance: 1 }], boss: true }),
   boss_highlands: t({ id: "boss_highlands", name: "Scar Warden", model: "wolf", color: "#5d6470", accent: "#ff5c8a", scale: 2.2, hp: 1150, dmg: 30, speed: 3.4, aggro: 12, reach: 2.6, cooldownMs: 1400, xp: 400, gold: [100, 200], drops: [{ tpl: "bow_elm", chance: 0.4 }, { tpl: "sword_steel", chance: 0.4 }], boss: true })
 };
 
