@@ -2,6 +2,8 @@
 // own map ("house:<id>:<floor>"); the castle's throne room is an interior too.
 
 import { CITY_HOUSES, CASTLE, TIER_H, type CityHouse } from "./city";
+import { STARGATE, STARGATE_FRONT } from "./scifi/stargate";
+import { STATION_ARRIVAL, STATION_GATE } from "./scifi/station";
 import { Tile } from "./tiles";
 
 export const PRICES = [0, 1200, 1800, 3000];
@@ -133,6 +135,22 @@ export const DOORS: Door[] = [
     x: THRONE_ROOM.door.x + 0.5,
     y: THRONE_ROOM.door.y - 0.5,
     to: { map: "overworld", x: CASTLE_FRONT.x, y: CASTLE_FRONT.y + 0.8 }
+  },
+  {
+    id: "stargate_in",
+    label: "Step through the Stargate",
+    map: "overworld",
+    x: STARGATE_FRONT.x,
+    y: STARGATE_FRONT.y,
+    to: { map: "station", x: STATION_ARRIVAL.x, y: STATION_ARRIVAL.y }
+  },
+  {
+    id: "stargate_out",
+    label: "Return to Hearthmoor",
+    map: "station",
+    x: STATION_GATE.x,
+    y: STATION_GATE.y + 1.4,
+    to: { map: "overworld", x: STARGATE.x - 2, y: STARGATE.y }
   },
   ...PLOTS.flatMap((p): Door[] => {
     const inside = interiorLayout(p, 0);

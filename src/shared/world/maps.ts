@@ -7,13 +7,22 @@ import type { Biome } from "./overworld";
 import { PLOTS_BY_ID, THRONE_ROOM, interiorLayout, interiorTileAt, parseHouseMapId, type InteriorLayout, type Plot } from "./housing";
 import { Tile } from "./tiles";
 import { riverCurrent } from "./rivers";
+import { STATION_ARRIVAL, STATION_W, stationTileAt } from "./scifi/station";
+import { SPACE_RADIUS, spaceSpawns, spaceTileAt, LAUNCH_POINT, type SpawnSpec } from "./scifi/space";
 
 export type MapTheme = "fantasy" | "scifi" | "ocean" | "dungeon" | "interior";
+
+/**
+ * How a map is laid out (and rendered): the open overworld, a cosy interior, a sci-fi deck
+ * (station / labs), open space (you fly a ship) or a planet surface.
+ */
+export type MapKind = "overworld" | "interior" | "deck" | "space" | "surface";
 
 export interface MapDef {
   id: string;
   name: string;
   theme: MapTheme;
+  kind: MapKind;
   /** Radius beyond which nothing exists (used for culling / bounds). */
   bounds: number;
   spawn: { x: number; y: number };
@@ -23,6 +32,8 @@ export interface MapDef {
   zoneLevelAt(x: number, y: number): number;
   /** River current at a point (overworld only). */
   currentAt?(x: number, y: number): { vx: number; vy: number };
+  /** Fixed mob spawns (maps other than the overworld). */
+  spawns?(): SpawnSpec[];
 }
 
 export interface InteriorMapDef extends MapDef {
@@ -38,6 +49,7 @@ export const OVERWORLD: MapDef = {
   id: "overworld",
   name: "Verdant Isle",
   theme: "fantasy",
+  kind: "overworld",
   bounds: overworld.ISLAND_RADIUS + 60,
   spawn: overworld.OVERWORLD_SPAWN,
   tileAt: overworld.tileAt,
@@ -47,7 +59,38 @@ export const OVERWORLD: MapDef = {
   currentAt: riverCurrent
 };
 
-const MAPS = new Map<string, MapDef>([[OVERWORLD.id, OVERWORLD]]);
+export const STATION: MapDef = {
+  id: "station",
+  name: "Ringforge Station",
+  theme: "scifi",
+  kind: "deck",
+  bounds: STATION_W,
+  spawn: STATION_ARRIVAL,
+  tileAt: stationTileAt,
+  heightAt: () => 0,
+  biomeAt: () => "station",
+  zoneLevelAt: () => 1
+};
+
+export const SPACE: MapDef = {
+  id: "space",
+  name: "The Ringforge Expanse",
+  theme: "scifi",
+  kind: "space",
+  bounds: SPACE_RADIUS,
+  spawn: LAUNCH_POINT,
+  tileAt: spaceTileAt,
+  heightAt: () => 0,
+  biomeAt: () => "space",
+  zoneLevelAt: (x, y) => Math.max(1, Math.min(25, Math.round(1 + Math.hypot(x, y) / 32))),
+  spawns: spaceSpawns
+};
+
+const MAPS = new Map<string, MapDef>([
+  [OVERWORLD.id, OVERWORLD],
+  [STATION.id, STATION],
+  [SPACE.id, SPACE]
+]);
 
 function createInterior(id: string, plot: Plot | null, floor: number, layout: InteriorLayout, name: string): InteriorMapDef {
   const blockers = new Set<string>();
@@ -55,6 +98,7 @@ function createInterior(id: string, plot: Plot | null, floor: number, layout: In
     id,
     name,
     theme: "interior",
+    kind: "interior",
     bounds: Math.max(layout.w, layout.h) + 4,
     spawn: layout.spawn,
     plot,

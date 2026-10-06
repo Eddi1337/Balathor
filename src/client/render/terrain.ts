@@ -33,7 +33,7 @@ const TILE_COLORS: Record<number, string> = {
   [Tile.RIVER]: "#b9a27a"
 };
 
-const BIOME_GROUND: Record<Biome, number> = {
+const BIOME_GROUND: Partial<Record<Biome, number>> = {
   town: Tile.MEADOW,
   meadow: Tile.MEADOW,
   forest: Tile.DARK_GRASS,
@@ -58,7 +58,7 @@ const LEAF_TINTS: Partial<Record<Biome, string[]>> = {
 const tmpColor = new THREE.Color();
 
 function tileColor(tile: number, biome: Biome, x: number, y: number, h: number): THREE.Color {
-  const ground = isProp(tile) ? BIOME_GROUND[biome] : tile;
+  const ground = isProp(tile) ? (BIOME_GROUND[biome] ?? Tile.GRASS) : tile;
   tmpColor.set(TILE_COLORS[ground] ?? "#8fd16a");
   const n = hash2(x, y, 977);
   const j = 0.94 + n * 0.1;

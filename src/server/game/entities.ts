@@ -14,6 +14,7 @@ import { round2 } from "../../shared/math";
 import type { BuffId } from "../../shared/game/talents";
 import type { QuestLog } from "../../shared/game/quests";
 import type { FoodStat, ProfLevels } from "../../shared/game/professions";
+import type { HullId, ShipStats, ShipUpgrades } from "../../shared/game/ships";
 
 interface NetCached {
   netPass: number;
@@ -43,6 +44,23 @@ export interface CharacterSave {
   hasMount: boolean;
   furniture: Record<string, number>;
   professions: ProfLevels;
+  ships: HullId[];
+  activeShip: HullId | null;
+  shipUp: ShipUpgrades;
+  discovered: string[];
+}
+
+/** A ship being flown (players in space only). */
+export interface ShipState {
+  stats: ShipStats;
+  hull: number;
+  shield: number;
+  vx: number;
+  vy: number;
+  boostUntil: number;
+  boostReadyAt: number;
+  warp: { dest: string; at: number } | null;
+  nextTurretAt: number;
 }
 
 export interface ActiveBuff {
@@ -87,6 +105,7 @@ export class Player implements Spatial, NetCached {
   storageOpen: string | null = null;
   lastDoorAt = 0;
   nextDiscoverAt = 0;
+  ship: ShipState | null = null;
   /** Self state (inventory/stats) changed and must be re-sent. */
   selfDirty = true;
   /** Persisted fields changed since the last save. */
@@ -120,8 +139,8 @@ export class Player implements Spatial, NetCached {
       name: s.name,
       cls: s.cls,
       look: s.look,
-      hp: Math.ceil(this.hp),
-      mhp: this.derived.maxHp,
+      hp: Math.ceil(this.ship ? this.ship.hull : this.hp),
+      mhp: this.ship ? this.ship.stats.maxHull : this.derived.maxHp,
       lv: s.lv,
       mv: this.moving ? 1 : 0,
       sw: this.swimming ? 1 : 0,
@@ -130,7 +149,10 @@ export class Player implements Spatial, NetCached {
       ar: rarityIndex(s.equip.body?.rarity),
       mt: this.mounted ? 1 : 0,
       em: this.emote,
-      bf: this.buffs.size ? [...this.buffs.keys()].join(",") : ""
+      bf: this.buffs.size ? [...this.buffs.keys()].join(",") : "",
+      sh: this.ship ? this.ship.stats.hull : "",
+      sd: this.ship ? Math.round((this.ship.shield / Math.max(1, this.ship.stats.maxShield)) * 100) : 0,
+      bo: this.ship && this.ship.boostUntil > Date.now() ? 1 : 0
     };
     this.netPass = pass;
     this.netValue = value;

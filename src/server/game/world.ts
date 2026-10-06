@@ -15,6 +15,8 @@ import { blocksProjectile, Tile } from "../../shared/world/tiles";
 import { coastRadiusAt, MEADOW_RADIUS, type Biome } from "../../shared/world/overworld";
 import { bossSpot } from "../../shared/world/landmarks";
 import { CITY_RADIUS } from "../../shared/world/city";
+import { LASER_RANGE, LASER_SPEED, stepShip } from "../../shared/game/ships";
+import { POIS_BY_ID, SAFE_RADIUS } from "../../shared/world/scifi/space";
 import { angleDelta, dist, dist2, rng, TAU } from "../../shared/math";
 import type { FxEvent, ProjectileKind } from "../../shared/protocol";
 import { Furn, Loot, Mob, Npc, Player, type Entity } from "./entities";
@@ -27,6 +29,10 @@ export interface WorldHooks {
   hour(): number;
   /** Party members of p on this map (including p). */
   partyOf(p: Player): Player[];
+  /** Ships: soak damage (true = hull broke), tow home, per-tick upkeep. */
+  shipDamage(world: World, p: Player, raw: number, now: number): boolean;
+  shipDestroyed(world: World, p: Player): void;
+  shipTick(world: World, p: Player, dt: number, now: number): void;
 }
 
 interface Projectile {
@@ -101,16 +107,20 @@ export class World {
   // ── population ──────────────────────────────────────────────────────────────
 
   populate(): void {
-    const interior = this.def.theme === "interior";
     for (const def of NPCS) {
       if ((def.map ?? "overworld") !== this.def.id) continue;
       const npc = new Npc(def.id, def);
       this.npcs.set(npc.id, npc);
       this.grid.insert(npc);
     }
-    if (interior) return;
-    this.spawnWildlife();
-    this.spawnBosses();
+    if (this.def.kind === "overworld") {
+      this.spawnWildlife();
+      this.spawnBosses();
+    }
+    for (const sp of this.def.spawns?.() ?? []) {
+      const tpl = MOB_TEMPLATES[sp.tpl];
+      if (tpl) this.addMob(sp.id, tpl, sp.level, sp.x, sp.y, sp.respawnMs);
+    }
   }
 
   readonly furniture = new Map<string, Furn>();
@@ -229,6 +239,7 @@ export class World {
   }
 
   attackCooldown(p: Player): number {
+    if (p.ship) return p.ship.stats.fireMs;
     const haste = p.buffs.get("haste");
     return CLASSES[p.save.cls].cooldownMs * (haste ? 1 - haste.value : 1);
   }
@@ -237,6 +248,19 @@ export class World {
     const cls = CLASSES[p.save.cls];
     if (p.dead || now - p.lastAttackAt < this.attackCooldown(p) * 0.9) return false;
     p.lastAttackAt = now;
+    if (p.ship) {
+      // Ship lasers: parallel guns along the nose, aimed where you point.
+      const st = p.ship.stats;
+      const dmg = st.dmg * (p.food?.stat === "str" ? 1 + p.food.value : 1);
+      this.fx(p.x, p.y, { e: "cast", id: p.id, a: round(angle) });
+      for (let g = 0; g < st.guns; g += 1) {
+        const off = st.guns > 1 ? (g - (st.guns - 1) / 2) * 0.7 : 0;
+        const ox = p.x + Math.cos(angle + Math.PI / 2) * off;
+        const oy = p.y + Math.sin(angle + Math.PI / 2) * off;
+        this.spawnProjectile(p.id, "player", "laser", ox + Math.cos(angle) * 0.8, oy + Math.sin(angle) * 0.8, angle, LASER_SPEED, LASER_RANGE, dmg);
+      }
+      return true;
+    }
     p.f = angle;
     const dmg = this.outgoingDamage(p, 1);
     this.interrupt(p);
@@ -466,7 +490,8 @@ export class World {
           m.slowMult = 1 - pr.slow;
         }
         if (pr.stunMs) m.stunUntil = Math.max(m.stunUntil, now + pr.stunMs);
-        this.damageMob(m, owner, rollDamage(pr.dmg), now);
+        const mining = owner?.ship && m.tpl.mineable ? 1 + owner.ship.stats.mining : 1;
+        this.damageMob(m, owner, rollDamage(pr.dmg * mining), now);
       };
       if (pr.splash > 0) {
         this.grid.forEachNear(pr.x, pr.y, pr.splash + 2, (e) => {
@@ -535,8 +560,22 @@ export class World {
     }
   }
 
+  /** A drone turret on p's ship shoots at a mob. */
+  turretShot(p: Player, target: Mob): void {
+    if (!p.ship) return;
+    const a = Math.atan2(target.y - p.y, target.x - p.x);
+    this.spawnProjectile(p.id, "player", "laser", p.x, p.y, a, LASER_SPEED, LASER_RANGE, p.ship.stats.dmg * 0.45);
+  }
+
   damagePlayer(p: Player, raw: number, by: Mob | null, now: number): void {
     if (p.dead) return;
+    if (p.ship) {
+      if (this.hooks.shipDamage(this, p, raw, now)) {
+        this.dropAggroOn(p.id);
+        this.hooks.shipDestroyed(this, p);
+      }
+      return;
+    }
     p.lastDamagedAt = now;
     p.mounted = false;
     p.emote = "";
@@ -606,6 +645,7 @@ export class World {
       for (const p of this.players.values()) this.grid.cellKeysNear(p.x, p.y, MOB_WAKE_RADIUS, this.awakeCells);
     }
     this.tickPlayers(dt, now);
+    if (this.def.kind === "space") this.stationDefence(now);
     for (const key of this.awakeCells) {
       const set = this.grid.cellSet(key);
       if (!set) continue;
@@ -644,6 +684,19 @@ export class World {
         } else if (p.food.stat === "regen") this.heal(p, p.derived.maxHp * p.food.value * dt, true);
       }
       const { mx, my } = p.input;
+      if (p.ship) {
+        const boost = p.ship.boostUntil > now;
+        const body = { x: p.x, y: p.y, f: p.f, vx: p.ship.vx, vy: p.ship.vy };
+        p.moving = stepShip(this.def, body, mx, my, p.ship.stats, boost, dt);
+        p.x = body.x;
+        p.y = body.y;
+        p.f = body.f;
+        p.ship.vx = body.vx;
+        p.ship.vy = body.vy;
+        if (p.moving) this.grid.moved(p);
+        this.hooks.shipTick(this, p, dt, now);
+        continue;
+      }
       const moving = Math.hypot(mx, my) > 0.05;
       if (moving) {
         p.moving = stepMovement(this.def, p, mx, my, this.playerSpeed(p), dt);
@@ -663,6 +716,26 @@ export class World {
         p.hp = Math.min(p.derived.maxHp, p.hp + p.derived.maxHp * (outOfCombat ? 0.02 : 0.002) * dt);
       }
     }
+  }
+
+  private nextDefenceAt = 0;
+
+  /** Ringforge's guns shoot hostiles that stray inside the safe zone. */
+  private stationDefence(now: number): void {
+    if (now < this.nextDefenceAt) return;
+    this.nextDefenceAt = now + 450;
+    const st = POIS_BY_ID.ringforge;
+    this.grid.forEachNear(st.x, st.y, SAFE_RADIUS, (e) => {
+      if (e.kind !== "mob" || e.dead || e.tpl.passive) return;
+      const d = dist(st.x, st.y, e.x, e.y);
+      if (d > SAFE_RADIUS) return;
+      // Fire from the ring edge nearest the target.
+      const a = Math.atan2(e.y - st.y, e.x - st.x);
+      const ox = st.x + Math.cos(a) * st.r;
+      const oy = st.y + Math.sin(a) * st.r;
+      const aim = Math.atan2(e.y - oy, e.x - ox);
+      this.spawnProjectile("station", "player", "laser", ox, oy, aim, LASER_SPEED * 1.2, SAFE_RADIUS + 10, e.maxHp * 0.18 + 10);
+    });
   }
 
   private tickMob(mob: Mob, dt: number, now: number): void {
@@ -724,7 +797,7 @@ export class World {
         if (tpl.ranged && d <= tpl.ranged.range && d > 2.2) {
           if (!blind && now - mob.lastAttackAt >= tpl.cooldownMs) {
             mob.lastAttackAt = now;
-            const kind: ProjectileKind = tpl.model === "wisp" ? "frostbolt" : "emberball";
+            const kind: ProjectileKind = tpl.proj ?? (tpl.model === "wisp" ? "frostbolt" : "emberball");
             this.fx(mob.x, mob.y, { e: "cast", id: mob.id, a: round(mob.f) });
             this.spawnProjectile(mob.id, "mob", kind, mob.x, mob.y, mob.f, tpl.ranged.speed, tpl.ranged.range + 1, mob.dmg);
           }

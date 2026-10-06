@@ -118,8 +118,8 @@ export interface Recipe {
   prof: ProfId;
   level: number;
   inputs: { tpl: string; qty: number }[];
-  /** Output item (or a class-appropriate weapon when "weapon"). */
-  output: { tpl: string; qty: number } | "weapon";
+  /** Output item, or a class-appropriate weapon ("weapon" island gear, "scifi_weapon" plasma gear). */
+  output: { tpl: string; qty: number } | "weapon" | "scifi_weapon";
   xp: number;
 }
 
@@ -142,6 +142,12 @@ export const RECIPES: Recipe[] = [
   { id: "ring_copper", station: "forge", prof: "smithing", level: 4, inputs: [{ tpl: "bar_copper", qty: 2 }], output: { tpl: "ring_copper", qty: 1 }, xp: 22 },
   { id: "ring_gold", station: "forge", prof: "smithing", level: 12, inputs: [{ tpl: "bar_gold", qty: 2 }, { tpl: "shiny_pebble", qty: 1 }], output: { tpl: "ring_moon", qty: 1 }, xp: 40 },
   { id: "ring_ember", station: "forge", prof: "smithing", level: 20, inputs: [{ tpl: "bar_silver", qty: 2 }, { tpl: "crystal_ember", qty: 1 }], output: { tpl: "ring_ember", qty: 1 }, xp: 60 },
+  { id: "fab_repair", station: "forge", prof: "smithing", level: 5, inputs: [{ tpl: "salvage_scrap", qty: 3 }], output: { tpl: "repair_kit", qty: 2 }, xp: 20 },
+  { id: "smelt_titanium", station: "forge", prof: "smithing", level: 13, inputs: [{ tpl: "ore_titanium", qty: 2 }, { tpl: "ore_ferrite", qty: 1 }], output: { tpl: "bar_titanium", qty: 1 }, xp: 36 },
+  { id: "smelt_iridium", station: "forge", prof: "smithing", level: 19, inputs: [{ tpl: "ore_iridium", qty: 2 }, { tpl: "salvage_scrap", qty: 1 }], output: { tpl: "bar_iridium", qty: 1 }, xp: 46 },
+  { id: "ring_quantum", station: "forge", prof: "smithing", level: 17, inputs: [{ tpl: "bar_titanium", qty: 2 }, { tpl: "crystal_void", qty: 1 }], output: { tpl: "ring_quantum", qty: 1 }, xp: 55 },
+  { id: "plasma_weapon", station: "forge", prof: "smithing", level: 24, inputs: [{ tpl: "bar_iridium", qty: 3 }, { tpl: "salvage_core", qty: 2 }], output: "scifi_weapon", xp: 110 },
+  { id: "cook_jelly", station: "campfire", prof: "cooking", level: 6, inputs: [{ tpl: "jelly_glow", qty: 2 }, { tpl: "herb_grain", qty: 1 }], output: { tpl: "food_jelly_tart", qty: 1 }, xp: 26 },
   { id: "forged_weapon", station: "forge", prof: "smithing", level: 9, inputs: [{ tpl: "bar_iron", qty: 3 }, { tpl: "log_willow", qty: 1 }], output: "weapon", xp: 50 },
   { id: "masterwork_weapon", station: "forge", prof: "smithing", level: 22, inputs: [{ tpl: "bar_silver", qty: 3 }, { tpl: "ore_obsidian", qty: 2 }, { tpl: "crystal_frost", qty: 1 }], output: "weapon", xp: 90 }
 ];
@@ -154,6 +160,8 @@ export interface Station {
   name: string;
   x: number;
   y: number;
+  /** Map it stands on (default: the overworld). */
+  map?: string;
 }
 
 export const STATION_RANGE = 2.8;

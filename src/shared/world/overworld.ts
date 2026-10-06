@@ -5,6 +5,7 @@
 import { Tile, isBlockingTile } from "./tiles";
 import { cityHeightAt, cityTileAt, CITY_RADIUS, TOWN_SPAWN } from "./city";
 import { initRivers, riverAt } from "./rivers";
+import { stargateHeight, stargateTileAt } from "./scifi/stargate";
 import { clamp, fbm, hash2, lerp, smoothstep, valueNoise, TAU } from "../math";
 
 export const WORLD_SEED = 1337;
@@ -15,7 +16,24 @@ export const FIELDS_RADIUS = 128;
 const TOWN_RADIUS = CITY_RADIUS;
 export const CHUNK = 32;
 
-export type Biome = "town" | "meadow" | "forest" | "swamp" | "desert" | "frost" | "ember" | "highlands" | "beach" | "ocean";
+export type Biome =
+  | "town"
+  | "meadow"
+  | "forest"
+  | "swamp"
+  | "desert"
+  | "frost"
+  | "ember"
+  | "highlands"
+  | "beach"
+  | "ocean"
+  // Sci-fi realm
+  | "station"
+  | "space"
+  | "lab"
+  | "alien_lush"
+  | "alien_ice"
+  | "alien_rust";
 
 export const BIOMES: Biome[] = ["meadow", "forest", "swamp", "desert", "frost", "ember", "highlands"];
 
@@ -138,9 +156,14 @@ export function heightAt(x: number, y: number): number {
 
 /** Terrain height before rivers carve into it. */
 function baseHeightAt(x: number, y: number): number {
-  const d = Math.hypot(x, y);
   const city = cityHeightAt(x, y);
   if (city !== null) return city;
+  const h = naturalHeightAt(x, y);
+  return stargateHeight(x, y, h) ?? h;
+}
+
+function naturalHeightAt(x: number, y: number): number {
+  const d = Math.hypot(x, y);
   const townFlat = 0.6;
   const coast = coastRadiusAt(Math.atan2(y, x));
   const townBlend = smoothstep(TOWN_RADIUS + 1.5, TOWN_RADIUS + 34, d);
@@ -161,6 +184,8 @@ function baseHeightAt(x: number, y: number): number {
 function rawTileAt(x: number, y: number): number {
   const city = cityTileAt(x, y);
   if (city !== null) return city;
+  const gate = stargateTileAt(x, y);
+  if (gate !== null) return gate;
 
   const cx = x + 0.5;
   const cy = y + 0.5;

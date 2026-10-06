@@ -70,7 +70,7 @@ export interface Model {
   jumpT: number;
 }
 
-function part(b: GeometryBuilder, mat: THREE.Material, pivot?: [number, number, number]): THREE.Object3D {
+export function part(b: GeometryBuilder, mat: THREE.Material, pivot?: [number, number, number]): THREE.Object3D {
   const mesh = new THREE.Mesh(b.build(), mat);
   mesh.castShadow = true;
   if (!pivot) return mesh;
@@ -81,7 +81,7 @@ function part(b: GeometryBuilder, mat: THREE.Material, pivot?: [number, number, 
   return g;
 }
 
-function newModel(kind: Model["kind"], height: number, scale = 1): Model {
+export function newModel(kind: Model["kind"], height: number, scale = 1): Model {
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
@@ -89,7 +89,7 @@ function newModel(kind: Model["kind"], height: number, scale = 1): Model {
   return { root, body, parts: {}, material: modelMaterial(), kind, height: height * scale, phase: Math.random() * 10, attackT: 0, hitT: 0, scale, jumpT: 0 };
 }
 
-function shade(color: string, k: number): string {
+export function shade(color: string, k: number): string {
   return "#" + new THREE.Color(color).multiplyScalar(k).getHexString();
 }
 
@@ -275,7 +275,7 @@ function addHat(b: GeometryBuilder, hat: HatKind, look: Appearance, cls?: ClassI
 
 // ── monsters ─────────────────────────────────────────────────────────────────
 
-function eyes(b: GeometryBuilder, x: number, y: number, z: number, spread: number, size: number, angry = false): void {
+export function eyes(b: GeometryBuilder, x: number, y: number, z: number, spread: number, size: number, angry = false): void {
   for (const s of [-1, 1]) {
     b.add(PRIMS.ico, { x: x + s * spread, y, z, sx: size * 0.8, sy: size, sz: size * 0.5, color: "#2b2238" });
     b.add(PRIMS.ico, { x: x + s * spread + size * 0.25, y: y + size * 0.35, z: z + size * 0.35, sx: size * 0.3, sy: size * 0.3, sz: size * 0.2, color: "#ffffff", glow: 0.6 });

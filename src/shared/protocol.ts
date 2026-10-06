@@ -11,6 +11,7 @@ import type { StatId } from "./game/stats";
 import type { BuffId, ZoneKind } from "./game/talents";
 import type { QuestLog } from "./game/quests";
 import type { FoodStat, ProfLevels } from "./game/professions";
+import type { HullId, ShipUpgrades } from "./game/ships";
 
 export const PROTOCOL_VERSION = 1;
 
@@ -51,6 +52,12 @@ export interface NetPlayer {
   em: string;
   /** Active visible buffs, comma-separated (e.g. "shield,rage"). */
   bf: string;
+  /** Flying a ship: its hull class ("" on foot). hp/mhp are then the ship's hull. */
+  sh: string;
+  /** Ship shield 0-100. */
+  sd: number;
+  /** 1 while boosting. */
+  bo: 0 | 1;
 }
 
 export interface NetMob {
@@ -110,7 +117,7 @@ export interface HouseInfo {
 
 // ─── Combat / world effects ───────────────────────────────────────────────────
 
-export type ProjectileKind = "arrow" | "fireball" | "frostbolt" | "emberball" | "arcane";
+export type ProjectileKind = "arrow" | "fireball" | "frostbolt" | "emberball" | "arcane" | "laser" | "laser_red" | "plasma";
 
 export type FxEvent =
   | { e: "swing"; id: string; a: number }
@@ -128,7 +135,10 @@ export type FxEvent =
   | { e: "zone"; zid: number; kind: ZoneKind; x: number; y: number; r: number; dur: number }
   | { e: "buff"; id: string; buff: BuffId; dur: number }
   | { e: "jump"; id: string }
-  | { e: "work"; id: string; prof: string; x: number; y: number };
+  | { e: "work"; id: string; prof: string; x: number; y: number }
+  | { e: "warp"; id: string; x: number; y: number; out: 0 | 1 }
+  | { e: "boom"; x: number; y: number; big: 0 | 1 }
+  | { e: "shieldHit"; id: string };
 
 // ─── The local player's private state ─────────────────────────────────────────
 
@@ -159,6 +169,13 @@ export interface SelfState {
   furniture: Record<string, number>;
   /** Plot id of the home you own, if any. */
   home: string | null;
+  ships: HullId[];
+  activeShip: HullId | null;
+  shipUp: ShipUpgrades;
+  /** Space points of interest you've visited (warp destinations). */
+  discovered: string[];
+  /** While flying: hull / shield right now. */
+  ship: { hull: number; shield: number } | null;
   professions: ProfLevels;
   /** Active food/tonic buff (ms remaining when sent). */
   food: { stat: FoodStat; value: number; ms: number; name: string } | null;
@@ -241,6 +258,11 @@ export type C2S =
   | { t: "fish"; x: number; y: number }
   | { t: "reel" }
   | { t: "craft"; recipe: string; station: string }
+  | { t: "hangar"; op: "buy" | "select" | "upgrade"; hull?: HullId; slot?: keyof ShipUpgrades }
+  | { t: "launch" }
+  | { t: "dock" }
+  | { t: "warp"; dest: string }
+  | { t: "boost" }
   | { t: "party"; op: "invite" | "accept" | "decline" | "leave" | "kick"; target?: string }
   | { t: "trade"; op: "request" | "accept" | "decline" | "cancel" | "offer" | "unoffer" | "gold" | "ready"; target?: string; slot?: number; gold?: number }
   | { t: "ping"; c: number };
@@ -281,6 +303,8 @@ export type S2C =
   | { t: "storage"; items: (Item | null)[] | null }
   | { t: "gather"; state: "start" | "done" | "cancel"; x: number; y: number; ms?: number; item?: string }
   | { t: "fish"; state: "cast" | "bite" | "caught" | "escaped" | "cancel"; x: number; y: number; item?: string }
-  | { t: "depleted"; keys: string[] };
+  | { t: "depleted"; keys: string[] }
+  | { t: "hangar"; npc: string }
+  | { t: "warp"; state: "charge" | "cancel" | "done"; dest: string; ms?: number; x?: number; y?: number };
 
 export type S2CType = S2C["t"];

@@ -69,7 +69,9 @@ export class CraftingUI {
     const list = $("craft-list");
     list.replaceChildren();
     for (const r of RECIPES.filter((x) => x.station === st.kind)) {
-      const out = r.output === "weapon" ? { name: "Forged class weapon", icon: "⚔️" } : { name: itemTemplate(r.output.tpl)?.name ?? r.output.tpl, icon: itemTemplate(r.output.tpl)?.icon ?? "❔" };
+      const o = r.output;
+      const out =
+        o === "weapon" ? { name: "Forged class weapon", icon: "⚔️" } : o === "scifi_weapon" ? { name: "Plasma-forged class weapon", icon: "🔫" } : { name: itemTemplate(o.tpl)?.name ?? o.tpl, icon: itemTemplate(o.tpl)?.icon ?? "❔" };
       const lvOk = s.professions[r.prof].lv >= r.level;
       const inputs = r.inputs.map((i) => {
         const n = have(i.tpl);
@@ -78,7 +80,7 @@ export class CraftingUI {
       const can = lvOk && r.inputs.every((i) => have(i.tpl) >= i.qty);
       const row = document.createElement("div");
       row.className = "shop-item";
-      row.innerHTML = `<div class="slot">${out.icon}</div><div><div>${out.name}${r.output !== "weapon" && r.output.qty > 1 ? ` x${r.output.qty}` : ""}</div><div class="recipe-in">${inputs.join(" · ")}</div><small class="${lvOk ? "" : "no"}">${PROFESSIONS[r.prof].name} ${r.level}</small></div>`;
+      row.innerHTML = `<div class="slot">${out.icon}</div><div><div>${out.name}${typeof o === "object" && o.qty > 1 ? ` x${o.qty}` : ""}</div><div class="recipe-in">${inputs.join(" · ")}</div><small class="${lvOk ? "" : "no"}">${PROFESSIONS[r.prof].name} ${r.level}</small></div>`;
       const btn = document.createElement("button");
       btn.className = "btn";
       btn.textContent = PROFESSIONS[r.prof].verb;

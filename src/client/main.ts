@@ -39,6 +39,13 @@ import { TALENTS_BY_ID, type BuffId } from "../shared/game/talents";
 import { WAYPOINTS, WAYPOINT_USE_RADIUS, type Waypoint } from "../shared/game/waypoints";
 import { EMOTES } from "../shared/game/emotes";
 import { MOUNT_SPEED_MULT } from "../shared/game/stats";
+import { HULLS, shipStats, stepShip, BOOST_COOLDOWN_MS, BOOST_MS, type HullId } from "../shared/game/ships";
+import { DOCK_RANGE, POIS, poiNear } from "../shared/world/scifi/space";
+import { LAUNCH_PAD, STATION_H, STATION_W } from "../shared/world/scifi/station";
+import { SpaceScene } from "./render/space";
+import { buildDeck, type Deck } from "./render/deck";
+import { SHIP_FLOAT, animateScifi, buildScifiMob, buildShip, isScifiModel } from "./render/scifiModels";
+import { HangarUI, WarpUI } from "./ui/hangar";
 
 type Phase = "connecting" | "auth" | "create" | "play";
 
@@ -54,7 +61,12 @@ const effects = new Effects();
 effects.setHeightFn((x, y) => map.heightAt(x, y));
 const landmarks = new Landmarks();
 const fountains = new Fountains(cityFountains());
-renderer.scene.add(terrain.group, terrain.water, effects.group, landmarks.group, fountains.group, ...cityLights);
+const space = new SpaceScene();
+space.group.visible = false;
+renderer.scene.add(terrain.group, terrain.water, effects.group, landmarks.group, fountains.group, space.group, ...cityLights);
+let deck: Deck | null = null;
+/** The ship parked on the hangar pad (station only). */
+let parkedShip: { hull: string; model: Model } | null = null;
 
 const net = new Net(Net.defaultUrl());
 const state = new ClientState();
@@ -68,6 +80,8 @@ panels.onCast = (id) => castAbility(id, performance.now());
 const crafting = new CraftingUI(send);
 const depleted = new Set<string>();
 let bobber: THREE.Mesh | null = null;
+const hangar = new HangarUI(send);
+const warpUi = new WarpUI(send);
 const home = new HomeUI(send, (title, text, yes) => panels.dialog("", title, text, "", yes, undefined, "Yes", "Cancel"));
 
 let phase: Phase = "connecting";
@@ -86,7 +100,7 @@ interface View {
 const views = new Map<string, View>();
 
 function viewSignature(d: NetEntity): string {
-  if (d.k === "p") return `p|${d.cls}|${d.look.body}|${d.look.accent}|${d.look.skin}|${d.look.hair}|${d.look.hairStyle}|${d.wr}|${d.ar}`;
+  if (d.k === "p") return `p|${d.cls}|${d.look.body}|${d.look.accent}|${d.look.skin}|${d.look.hair}|${d.look.hairStyle}|${d.wr}|${d.ar}|${d.sh}`;
   if (d.k === "m") return `m|${d.tpl}`;
   if (d.k === "n") return `n|${d.npc}`;
   if (d.k === "f") return `f|${d.kind}|${d.rot}|${d.x}|${d.y}`;
@@ -94,9 +108,16 @@ function viewSignature(d: NetEntity): string {
 }
 
 function buildView(d: NetEntity): Model {
-  if (d.k === "p") return buildHumanoid({ look: d.look, cls: d.cls, weaponRarity: d.wr, armorRarity: d.ar });
+  if (d.k === "p") {
+    if (d.sh) {
+      const h = HULLS[d.sh as HullId] ?? HULLS.skiff;
+      return buildShip(h.id, h.color, h.accent, d.look);
+    }
+    return buildHumanoid({ look: d.look, cls: d.cls, weaponRarity: d.wr, armorRarity: d.ar });
+  }
   if (d.k === "m") {
     const tpl = MOB_TEMPLATES[d.tpl];
+    if (tpl && isScifiModel(tpl.model)) return buildScifiMob(tpl.model, tpl.color, tpl.accent, tpl.scale, Boolean(tpl.boss));
     return buildMob(tpl?.model ?? "slime", tpl?.color ?? "#7fd66b", tpl?.accent ?? "#ffffff", tpl?.scale ?? 1, Boolean(tpl?.boss));
   }
   if (d.k === "n") {
@@ -164,7 +185,7 @@ state.onAdd = (e) => {
 
 // ── local player prediction ─────────────────────────────────────────────────
 
-const me = { x: 0, y: 0, f: Math.PI / 2, moving: false };
+const me = { x: 0, y: 0, f: Math.PI / 2, moving: false, vx: 0, vy: 0, boostUntil: 0, boostReadyAt: 0 };
 let lastSent = { mx: 0, my: 0, at: 0 };
 let inputSeq = 0;
 let lastAttackAt = 0;
@@ -189,8 +210,16 @@ function predict(dt: number, now: number): void {
     mx = 0;
     my = 0;
   }
-  me.moving = Math.hypot(mx, my) > 0.05;
-  if (me.moving && s && d) {
+  if (s && d && d.sh && map.kind === "space") {
+    // Flying: the shared flight model (turn toward the stick, thrust, drift).
+    const stats = shipStats(d.sh as HullId, s.shipUp, s.lv);
+    stepShip(map, me, mx, my, stats, now < me.boostUntil, dt);
+    me.moving = Math.hypot(me.vx, me.vy) > 0.4;
+  } else {
+    me.vx = me.vy = 0;
+    me.moving = Math.hypot(mx, my) > 0.05;
+  }
+  if (me.moving && s && d && !d.sh) {
     const haste = d.bf.includes("haste") ? 1.4 : 1;
     stepMovement(map, me, mx, my, s.derived.speed * (d.mt ? MOUNT_SPEED_MULT : 1) * haste, dt);
     if (now - lastAttackAt > 350) me.f = Math.atan2(my, mx);
@@ -249,11 +278,12 @@ function tryAttack(now: number, angle?: number): void {
   const s = state.self;
   const d = selfData();
   if (!s || !d || d.dead) return;
-  const cd = CLASSES[s.cls].cooldownMs * (d.bf.includes("haste") ? 0.6 : 1);
+  const flying = Boolean(d.sh);
+  const cd = flying ? shipStats(d.sh as HullId, s.shipUp, s.lv).fireMs : CLASSES[s.cls].cooldownMs * (d.bf.includes("haste") ? 0.6 : 1);
   if (now - lastAttackAt < cd) return;
   lastAttackAt = now;
   const a = angle ?? aimAngle();
-  me.f = a;
+  if (!flying) me.f = a;
   const v = state.selfId ? views.get(state.selfId) : undefined;
   if (v) v.model.attackT = 0.3;
   send({ t: "attack", a: round(a) });
@@ -281,6 +311,7 @@ function aimPoint(angle: number): { x: number; y: number } {
 function castAbility(id: string, now: number): void {
   const d = selfData();
   if (!d || d.dead || !TALENTS_BY_ID[id]) return;
+  if (d.sh) return hud.toast("Abilities don't work from the cockpit");
   if (!panels.isReady(id)) return;
   const a = aimAngle();
   const p = aimPoint(a);
@@ -305,7 +336,7 @@ function doorLabel(door: Door): string {
   return `Visit ${info.owner}'s home${info.open ? "" : " (if invited)"}`;
 }
 
-type InteractKind = "npc" | "loot" | "waypoint" | "door" | "chest" | "station" | "gather" | "fish" | "reel";
+type InteractKind = "npc" | "loot" | "waypoint" | "door" | "chest" | "station" | "gather" | "fish" | "reel" | "launch" | "dock";
 
 function hasTool(tpl: string | undefined): boolean {
   return !tpl || Boolean(state.self?.inv.some((i) => i?.tpl === tpl));
@@ -376,8 +407,16 @@ function nearestInteractable(): { id: string; kind: InteractKind; label: string 
     }
   }
   if (crafting.fishing?.bite) return { id: "reel", kind: "reel", label: "E · Reel in!" };
-  if (!best && map.id === OVERWORLD.id) {
-    const st = stationNear(me.x, me.y, STATION_RANGE);
+  if (map.kind === "space") {
+    const dock = poiNear(me.x, me.y, ["station"], DOCK_RANGE);
+    if (dock) return { id: dock.id, kind: "dock", label: `E · Dock at ${dock.name}` };
+  }
+  if (map.id === "station" && Math.hypot(me.x - LAUNCH_PAD.x, me.y - LAUNCH_PAD.y) <= LAUNCH_PAD.r + 1) {
+    const hull = state.self?.activeShip;
+    return { id: "launch", kind: "launch", label: hull ? `E · Launch the ${HULLS[hull].name}` : "E · Launch (you need a ship first)" };
+  }
+  if (!best) {
+    const st = stationNear(me.x, me.y, STATION_RANGE, map.id);
     if (st) return { id: st.id, kind: "station", label: `E · Use ${st.name}` };
   }
   const ob = map.id === OVERWORLD.id ? nearestObelisk() : null;
@@ -410,6 +449,14 @@ let lastJumpAt = 0;
 function jump(): void {
   const d = selfData();
   const now = performance.now();
+  if (d?.sh) {
+    // In a ship, Space is the afterburner.
+    if (now < me.boostReadyAt) return;
+    me.boostUntil = now + BOOST_MS;
+    me.boostReadyAt = now + BOOST_COOLDOWN_MS;
+    send({ t: "boost" });
+    return;
+  }
   if (!d || d.dead || now - lastJumpAt < 560) return;
   lastJumpAt = now;
   const v = state.selfId ? views.get(state.selfId) : undefined;
@@ -432,6 +479,10 @@ function interact(): void {
   }
   if (target.kind === "reel") {
     send({ t: "reel" });
+    return;
+  }
+  if (target.kind === "launch" || target.kind === "dock") {
+    send({ t: target.kind });
     return;
   }
   if (target.kind === "station") {
@@ -495,6 +546,12 @@ input.onKey = (code, e) => {
     case "KeyP":
       crafting.toggleProfs();
       break;
+    case "KeyJ":
+      if (map.kind === "space") {
+        warpUi.pos = { x: me.x, y: me.y };
+        warpUi.toggle();
+      } else hud.toast("The warp drive works in open space");
+      break;
     case "KeyM":
       send({ t: "mount" });
       break;
@@ -515,7 +572,9 @@ input.onKey = (code, e) => {
       break;
     }
     case "Escape":
-      if (home.placing) home.placing = null;
+      if (hangar.open) hangar.hide();
+      else if (warpUi.open) warpUi.hide();
+      else if (home.placing) home.placing = null;
       else if (home.decorating) home.stopDecorating();
       else if (home.storageOpen) home.closeStorage();
       else if (!panels.closeAll()) hud.closeAll();
@@ -623,22 +682,49 @@ function updateGhost(): void {
 }
 
 /** Switch the scene to another map (overworld ↔ interiors). */
+let shownMap = "";
 function switchMap(id: string): void {
-  if (id === map.id && (interiorGroup !== null) === isInterior(map)) return;
+  if (id === shownMap) return;
+  shownMap = id;
   state.clear((e) => dropView(e.id));
   home.stopDecorating();
   home.closeStorage();
+  hangar.hide();
+  warpUi.hide();
+  crafting.closeStation();
   if (interiorGroup) {
     renderer.scene.remove(interiorGroup);
     interiorGroup = null;
   }
+  if (deck) {
+    renderer.scene.remove(deck.group);
+    deck = null;
+  }
+  if (parkedShip) {
+    renderer.scene.remove(parkedShip.model.root);
+    disposeModel(parkedShip.model);
+    parkedShip = null;
+  }
   map = getMap(id);
-  const indoor = isInterior(map);
-  renderer.indoor = indoor;
-  renderer.occluder = indoor ? null : obstacleTopAt;
-  terrain.group.visible = terrain.water.visible = landmarks.group.visible = fountains.group.visible = !indoor;
-  for (const l of cityLights) l.visible = !indoor;
-  if (isInterior(map)) {
+  const outdoors = map.kind === "overworld";
+  renderer.env = outdoors ? "outdoor" : map.kind === "interior" ? "indoor" : map.kind === "deck" ? "deck" : map.kind === "space" ? "space" : "planet";
+  renderer.occluder = outdoors ? obstacleTopAt : null;
+  terrain.group.visible = terrain.water.visible = landmarks.group.visible = fountains.group.visible = outdoors;
+  for (const l of cityLights) l.visible = outdoors;
+  space.group.visible = map.kind === "space";
+  me.vx = me.vy = 0;
+  if (map.kind === "space") {
+    renderer.distance = 23;
+    renderer.pitch = 0.98;
+    renderer.lookAbove = 0;
+  } else if (map.kind === "deck") {
+    deck = buildDeck(map, STATION_W, STATION_H);
+    renderer.scene.add(deck.group);
+    renderer.distance = 13;
+    renderer.pitch = 0.82;
+    renderer.lookAbove = 0.6;
+    renderer.yaw = 0;
+  } else if (isInterior(map)) {
     map.blockers.clear();
     interiorGroup = buildInterior(map);
     renderer.scene.add(interiorGroup);
@@ -722,6 +808,7 @@ net.on((msg: S2C) => {
       me.y = msg.y;
       hud.setDead(false);
       switchMap(msg.map);
+      if (map.kind === "space") me.f = Math.PI / 2;
       renderer.target.set(me.x, map.heightAt(me.x, me.y), me.y);
       renderer.snapCamera();
       if (first && menuPreview) {
@@ -744,6 +831,8 @@ net.on((msg: S2C) => {
       panels.setSelf(msg.self);
       home.setSelf(msg.self);
       crafting.setSelf(msg.self);
+      hangar.setSelf(msg.self);
+      warpUi.setSelf(msg.self);
       landmarks.setAttuned(msg.self.waypoints);
       {
         const house = parseHouseMapId(map.id);
@@ -752,6 +841,23 @@ net.on((msg: S2C) => {
       return;
     case "houses":
       home.setHouses(msg.list);
+      return;
+    case "hangar":
+      hangar.show();
+      return;
+    case "warp":
+      if (msg.state === "charge") crafting.startWork(msg.ms ?? 2500, "Warp drive charging…");
+      else crafting.stopWork();
+      if (msg.state === "done" && msg.x !== undefined && msg.y !== undefined) {
+        me.x = state.serverX = msg.x;
+        me.y = state.serverY = msg.y;
+        me.vx = 0;
+        me.vy = -2;
+        me.f = -Math.PI / 2;
+        renderer.target.set(me.x, 0, me.y);
+        renderer.snapCamera();
+        hud.toast("Warp complete!", "good");
+      }
       return;
     case "depleted":
       depleted.clear();
@@ -950,6 +1056,22 @@ function handleFx(ev: FxEvent): void {
       if (v) v.model.jumpT = JUMP_TIME;
       return;
     }
+    case "warp": {
+      effects.ring(ev.x, ev.y, 4, "#9fd8ff");
+      effects.particles.emit(ev.x, SHIP_FLOAT, ev.y, { n: 40, color: ev.out ? "#ffffff" : "#9fd8ff", speed: 7, up: 0.5, size: 0.12, life: 0.7, gravity: 0 });
+      return;
+    }
+    case "boom": {
+      effects.ring(ev.x, ev.y, ev.big ? 6 : 3, "#ff9a3c");
+      effects.particles.emit(ev.x, SHIP_FLOAT, ev.y, { n: ev.big ? 60 : 24, color: "#ffb02e", speed: ev.big ? 8 : 5, up: 1, size: 0.16, life: 0.9, gravity: 0 });
+      effects.particles.emit(ev.x, SHIP_FLOAT, ev.y, { n: ev.big ? 30 : 12, color: "#5a5f6a", speed: 3, up: 0.5, size: 0.2, life: 1.4, gravity: 0 });
+      return;
+    }
+    case "shieldHit": {
+      const pos = headPos(ev.id);
+      if (pos) effects.particles.emit(pos.x, pos.y - 0.6, pos.z, { n: 10, color: "#7fe8ff", speed: 2.5, up: 0.4, size: 0.09, life: 0.4, gravity: 0 });
+      return;
+    }
     case "buff": {
       const e = state.entities.get(ev.id);
       if (e) {
@@ -1109,6 +1231,19 @@ function updateEntities(dt: number, now: number, time: number): void {
       updateAuras(v, [(d.st & 1) ? "slow" : "", (d.st & 4) ? "blind" : ""].filter(Boolean), dt, x, y);
     }
     animate(m, { moving, dead, swimming: d.k === "p" && d.sw === 1, speed: d.k === "m" ? 0.7 : 1, mounted: d.k === "p" && d.mt === 1, emote: d.k === "p" ? d.em : "" }, dt, time);
+    if (m.kind !== "humanoid" && m.kind !== "loot" && m.kind !== "furniture") {
+      const prevF = (m.root.userData.prevF as number | undefined) ?? f;
+      let turn = f - prevF;
+      if (turn > Math.PI) turn -= Math.PI * 2;
+      if (turn < -Math.PI) turn += Math.PI * 2;
+      m.root.userData.prevF = f;
+      const boost = d.k === "p" && (isSelf ? now < me.boostUntil : d.bo === 1);
+      animateScifi(m, { moving, dead, boost, turn: dt > 0 ? turn / dt : 0 }, dt, time);
+      if (m.kind === "ship" && moving && !dead && Math.random() < dt * (boost ? 60 : 25)) {
+        const back = (m.scale ?? 1) * 1.3;
+        effects.particles.emit(x - Math.cos(f) * back, SHIP_FLOAT, y - Math.sin(f) * back, { n: 1, color: boost ? "#ffffff" : d.k === "p" ? "#7fe8ff" : "#ff8a5c", speed: 0.4, up: 0, size: boost ? 0.16 : 0.11, life: 0.5, gravity: 0, spread: 0.1 });
+      }
+    }
     m.root.position.y += jumpOffset(m, dt);
     // Fade out removed entities (and dead mobs) instead of popping.
     const fadeTarget = e.removedAt ? 0 : fadeCap;
@@ -1156,6 +1291,15 @@ function updateEntities(dt: number, now: number, time: number): void {
       labels.plate(key, tmpV, { name: info?.owner ? `🏠 ${info.owner}` : `🏷️ For sale · ${plot.price}g`, kind: "npc", showBar: false });
     }
   }
+  if (map.kind === "space") {
+    for (const p of POIS) {
+      if (Math.hypot(p.x - me.x, p.y - me.y) > p.r + 90) continue;
+      tmpV.set(p.x, p.kind === "planet" ? 4 : 7, p.y + (p.kind === "planet" ? 0 : p.r * 0.2));
+      const key = `poi_${p.id}`;
+      keepPlates.add(key);
+      labels.plate(key, tmpV, { name: `${p.name} · lv ${p.level}`, kind: "npc", showBar: false });
+    }
+  }
   labels.hidePlatesExcept(keepPlates);
 }
 
@@ -1165,6 +1309,24 @@ function updateHud(now: number): void {
   if (d) {
     hud.setHp(d.hp, d.mhp);
     hud.setDead(d.dead === 1);
+    hud.setShield(d.sh ? d.sd : null);
+  }
+  // The ship you'll launch in sits on the hangar pad.
+  const wantParked = map.id === "station" ? state.self?.activeShip ?? null : null;
+  if ((parkedShip?.hull ?? null) !== wantParked) {
+    if (parkedShip) {
+      renderer.scene.remove(parkedShip.model.root);
+      disposeModel(parkedShip.model);
+      parkedShip = null;
+    }
+    if (wantParked) {
+      const h = HULLS[wantParked];
+      const model = buildShip(h.id, h.color, h.accent, null);
+      model.root.position.set(LAUNCH_PAD.x, -0.6, LAUNCH_PAD.y);
+      model.root.rotation.y = 0;
+      renderer.scene.add(model.root);
+      parkedShip = { hull: wantParked, model };
+    }
   }
   if (s) {
     const cd = CLASSES[s.cls].cooldownMs;
@@ -1200,9 +1362,16 @@ function updateHud(now: number): void {
       if (pm.id !== state.selfId) dots.push({ x: pm.x, y: pm.y, color: "#b26bff", size: 3.5 });
     }
     if (map.id === OVERWORLD.id) for (const w of WAYPOINTS) dots.push({ x: w.x, y: w.y, color: state.self?.waypoints.includes(w.id) ? "#d9a6ff" : "#9a94a6", size: 3 });
-    hud.drawMinimap(map, me.x, me.y, me.f, dots, map.id === OVERWORLD.id ? panels.objective() : null);
-    const biome = map.biomeAt(me.x, me.y);
-    hud.setZone(isInterior(map) ? map.name : biome === "town" ? "Hearthmoor" : `${biome} · lv ${map.zoneLevelAt(me.x, me.y)}`);
+    if (map.kind === "space") {
+      for (const p of POIS) dots.push({ x: p.x, y: p.y, color: p.color, size: Math.max(3, Math.min(9, p.r / 7)) });
+      hud.drawMinimap(map, me.x, me.y, me.f, dots, null, 5);
+      const near = POIS.find((p) => Math.hypot(p.x - me.x, p.y - me.y) < p.r + 60);
+      hud.setZone(near ? `${near.name} · lv ${near.level}` : `Deep space · lv ${map.zoneLevelAt(me.x, me.y)}`);
+    } else {
+      hud.drawMinimap(map, me.x, me.y, me.f, dots, map.id === OVERWORLD.id ? panels.objective() : null);
+      const biome = map.biomeAt(me.x, me.y);
+      hud.setZone(map.kind !== "overworld" ? map.name : biome === "town" ? "Hearthmoor" : `${biome} · lv ${map.zoneLevelAt(me.x, me.y)}`);
+    }
   }
 }
 
@@ -1242,7 +1411,7 @@ function frame(): void {
 
   const focus = phase === "play" ? me : MENU_SPOT;
   updateGhost();
-  if (!isInterior(map)) terrain.update(focus.x, focus.y, loadingHidden ? 2 : 6);
+  if (map.kind === "overworld") terrain.update(focus.x, focus.y, loadingHidden ? 2 : 6);
   if (!loadingHidden && terrain.pending === 0) {
     loadingHidden = true;
     document.getElementById("loading")!.classList.add("fade");
@@ -1251,13 +1420,17 @@ function frame(): void {
   worldUniforms.uTime.value = time;
   worldUniforms.uNight.value = renderer.night;
   for (const l of cityLights) l.intensity = renderer.night * 6;
-  effects.updateBeams(map, focus.x, focus.y, renderer.sunDir, isInterior(map) ? 0 : 1 - renderer.night * 1.4, now);
-  effects.updateFireflies(focus.x, focus.y, isInterior(map) ? 0 : renderer.night, time);
+  const outdoors = map.kind === "overworld";
+  effects.updateBeams(map, focus.x, focus.y, renderer.sunDir, outdoors ? 1 - renderer.night * 1.4 : 0, now);
+  effects.updateFireflies(focus.x, focus.y, outdoors ? renderer.night : 0, time);
+  if (map.kind === "space") space.update(time, renderer.camera);
+  deck?.update(time);
   effects.update(dt);
   landmarks.update(time);
-  if (!isInterior(map)) {
+  if (outdoors) {
     fountains.update(dt, renderer.camera.position.x, renderer.camera.position.z);
     for (const st of STATIONS) {
+      if (st.map) continue;
       if (Math.hypot(st.x - me.x, st.y - me.y) > 40 || Math.random() > dt * 14) continue;
       const h = map.heightAt(st.x, st.y) + (st.kind === "campfire" ? 0.5 : 0.7);
       effects.particles.emit(st.x, h, st.y + (st.kind === "forge" ? 0.65 : 0), { n: 1, color: Math.random() < 0.5 ? "#ff9a3c" : "#ffd166", speed: 0.25, up: 1.6, size: 0.07, life: 0.8, gravity: -0.5, spread: 0.3 });

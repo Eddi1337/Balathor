@@ -9,7 +9,7 @@ export type QuestStep =
   | { type: "talk"; npc: string; text: string }
   | { type: "kill"; mobs: string[]; biome?: Biome; count: number; text: string; hint?: { x: number; y: number } }
   | { type: "collect"; item: string; count: number; text: string; hint?: { x: number; y: number } }
-  | { type: "visit"; x: number; y: number; r: number; text: string };
+  | { type: "visit"; x: number; y: number; r: number; text: string; map?: string };
 
 export interface QuestReward {
   xp: number;
@@ -17,6 +17,8 @@ export interface QuestReward {
   items?: { tpl: string; qty?: number; rarity?: "common" | "uncommon" | "rare" | "epic" }[];
   /** A random piece of class-appropriate gear of at least this rarity. */
   gear?: "uncommon" | "rare" | "epic";
+  /** A ship for your hangar. */
+  ship?: "skiff" | "corvette" | "hauler" | "frigate";
 }
 
 export interface Quest {
@@ -281,6 +283,113 @@ export const QUESTS: Quest[] = [
     reward: { xp: 2600, gold: 400, gear: "epic" }
   }
 ];
+
+// ── The sci-fi realm ────────────────────────────────────────────────────────
+
+const SCIFI_QUESTS: Quest[] = [
+  {
+    id: "q_stargate",
+    name: "Through the Stargate",
+    giver: "npc_astra",
+    turnIn: "npc_orla",
+    level: 5,
+    requires: ["q_welcome"],
+    offer: "You've got that look: the one that stares at the stars. The gate's ready. Step through, and report to Station Master Orla on the other side.",
+    complete: "A visitor from Hearthmoor! Welcome to Ringforge Station, the friendliest rock in orbit.",
+    steps: [
+      { type: "visit", map: "station", x: 32, y: 6.5, r: 6, text: "Step through the Stargate" },
+      { type: "talk", npc: "npc_orla", text: "Report to Station Master Orla" }
+    ],
+    reward: { xp: 220, gold: 60 }
+  },
+  {
+    id: "q_wings",
+    name: "Get Your Wings",
+    giver: "npc_orla",
+    level: 5,
+    requires: ["q_stargate"],
+    offer: "Nobody gets far out here on foot. Pax keeps a loaner skiff for new pilots. Go say hello, then come back and I'll sign it over.",
+    complete: "The Bumblebee Skiff is yours. She's small, but she's brave. Launch from the hangar pad to the south!",
+    steps: [
+      { type: "talk", npc: "npc_pax", text: "Ask Pax about the loaner skiff" },
+      { type: "talk", npc: "npc_orla", text: "Return to Station Master Orla" }
+    ],
+    reward: { xp: 150, gold: 0, ship: "skiff" }
+  },
+  {
+    id: "q_first_flight",
+    name: "First Flight",
+    giver: "npc_orla",
+    level: 5,
+    requires: ["q_wings"],
+    offer: "Take her out! Fly to the beacon just south of the station, then crack a few asteroids in the South Belt. Bring me 4 Ferrite Ore.",
+    complete: "Smooth flying! And look at that ore. You're a natural.",
+    steps: [
+      { type: "visit", map: "space", x: 0, y: 70, r: 14, text: "Launch and fly to the beacon south of Ringforge" },
+      { type: "collect", item: "ore_ferrite", count: 4, text: "Mine Ferrite Ore in the South Belt", hint: { x: 40, y: 230 } },
+      { type: "talk", npc: "npc_orla", text: "Return to Station Master Orla" }
+    ],
+    reward: { xp: 320, gold: 90, items: [{ tpl: "repair_kit", qty: 3 }] }
+  },
+  {
+    id: "q_pirates",
+    name: "Pirate Problem",
+    giver: "npc_orla",
+    level: 7,
+    requires: ["q_first_flight"],
+    offer: "Pirate fighters keep jumping our miners on the Kestrel lane and in the belts. Teach six of them some manners.",
+    complete: "The miners are cheering on every channel. Thank you, pilot.",
+    steps: [
+      { type: "kill", mobs: ["pirate_fighter"], count: 6, text: "Shoot down Pirate Fighters", hint: { x: -330, y: -50 } },
+      { type: "talk", npc: "npc_orla", text: "Return to Station Master Orla" }
+    ],
+    reward: { xp: 560, gold: 160, gear: "uncommon" }
+  },
+  {
+    id: "q_freight",
+    name: "Courier Run: Kestrel Harbor",
+    giver: "npc_orla",
+    level: 8,
+    requires: ["q_first_flight"],
+    offer: "I've a crate of sealed freight for Kestrel Harbor, way out west. Fly it there (warp with J once you've seen the place) and come back.",
+    complete: "Delivered and signed for. Kestrel says thanks, and so do I.",
+    steps: [
+      { type: "visit", map: "space", x: -560, y: -90, r: 24, text: "Deliver the freight to Kestrel Harbor" },
+      { type: "talk", npc: "npc_orla", text: "Return to Station Master Orla" }
+    ],
+    reward: { xp: 480, gold: 240 }
+  },
+  {
+    id: "q_salvage",
+    name: "Power to the Workshop",
+    giver: "npc_nova",
+    level: 8,
+    requires: ["q_first_flight"],
+    offer: "The fabricator's running on fumes. The wrecks drifting in the Derelict Helix still have power cores in them. Bring me two?",
+    complete: "Ooh, these are still warm! The fabricator will purr for weeks.",
+    steps: [
+      { type: "collect", item: "salvage_core", count: 2, text: "Salvage power cores in the Derelict Helix", hint: { x: -430, y: 420 } },
+      { type: "talk", npc: "npc_nova", text: "Return to Engineer Nova" }
+    ],
+    reward: { xp: 520, gold: 140, items: [{ tpl: "repair_kit", qty: 4 }] }
+  },
+  {
+    id: "q_vex",
+    name: "The Scourge of the Lanes",
+    giver: "npc_orla",
+    level: 20,
+    requires: ["q_pirates"],
+    offer: "Captain Vex runs the Pirate Haven out east. Every raid traces back to her flagship. Bring friends, and end this.",
+    complete: "Vex's flagship is space dust. The lanes are safe. Ringforge owes you everything.",
+    steps: [
+      { type: "kill", mobs: ["boss_vex"], count: 1, text: "Defeat Captain Vex at the Pirate Haven", hint: { x: 640, y: 120 } },
+      { type: "talk", npc: "npc_orla", text: "Return to Station Master Orla" }
+    ],
+    reward: { xp: 2600, gold: 900, gear: "epic" }
+  }
+];
+
+QUESTS.push(...SCIFI_QUESTS);
 
 export const QUESTS_BY_ID: Record<string, Quest> = Object.fromEntries(QUESTS.map((q) => [q.id, q]));
 

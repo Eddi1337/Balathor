@@ -2,6 +2,8 @@
 // (see town.ts). Hours are in-game hours (0-24).
 
 import { doorFront, nearestHouses } from "../world/city";
+import { ALCOVES, LIFTS, LAUNCH_PAD } from "../world/scifi/station";
+import { STARGATE } from "../world/scifi/stargate";
 
 export type NpcRole = "shop" | "guide" | "guard" | "villager";
 
@@ -30,6 +32,8 @@ export interface NpcDef {
   accent: string;
   hat: "none" | "cap" | "hood" | "wizard" | "helmet" | "chef" | "bow" | "crown";
   shopId?: string;
+  /** Talking opens a special service window instead of a shop. */
+  service?: "hangar";
   /** Map the NPC lives on (default: the overworld). */
   map?: string;
   lines: string[];
@@ -87,6 +91,30 @@ export const SHOPS: Record<string, ShopDef> = {
       { tpl: "tool_rod", price: 40 },
       { tpl: "fish_minnow", price: 6 },
       { tpl: "herb_grain", price: 4 }
+    ]
+  },
+  tech: {
+    id: "tech",
+    name: "Ix's Quartermastery",
+    greeting: "Ion edges, plasma strings, nano-weave. Field-tested on pirates, mostly.",
+    stock: [
+      { tpl: "bow_plasma", rarity: "uncommon", lvl: 10, price: 720 },
+      { tpl: "staff_ion", rarity: "uncommon", lvl: 10, price: 720 },
+      { tpl: "blade_arc", rarity: "uncommon", lvl: 10, price: 720 },
+      { tpl: "suit_flight", rarity: "uncommon", lvl: 10, price: 640 },
+      { tpl: "ring_quantum", rarity: "common", lvl: 10, price: 560 },
+      { tpl: "repair_kit", price: 30 },
+      { tpl: "potion_big", price: 40 }
+    ]
+  },
+  cafe: {
+    id: "cafe",
+    name: "Orbit Beans",
+    greeting: "Bloop! Fresh from the hydroponics deck. Snacks give you a buff, bloop.",
+    stock: [
+      { tpl: "food_star_latte", price: 25 },
+      { tpl: "food_nebula_noodles", price: 48 },
+      { tpl: "food_jelly_tart", price: 64 }
     ]
   },
   stable: {
@@ -196,6 +224,30 @@ export const NPCS: NpcDef[] = [
     id: "npc_steward", name: "Steward Willa", role: "villager", x: 4, y: 2, wander: 2, body: "#f4f8ff", accent: "#ffd166", hat: "cap",
     lines: ["The King is in the throne room. Go right in, he loves visitors.", "Isn't the White Tree beautiful?"]
   },
+  // Starfall Circle, outside the main gate.
+  {
+    id: "npc_astra", name: "Gatekeeper Astra", role: "guide", x: STARGATE.x - 3, y: STARGATE.y + 3, wander: 1.5, body: "#5b6bd6", accent: "#cfe3ff", hat: "wizard",
+    lines: ["The Stargate hums day and night. Step up to it and press E to travel to Ringforge Station.", "Up there they fly ships between the stars. Imagine!", "Pack a snack. Space is big."]
+  },
+  // Ringforge Station.
+  { id: "npc_orla", name: "Station Master Orla", role: "guide", ...ALCOVES.master, wander: 1, body: "#3f6fb5", accent: "#ffd166", hat: "cap", map: "station",
+    lines: ["Welcome aboard Ringforge! Mind the airlocks.", "Pirates have been raiding the belts again.", "Launch from the hangar pad to the south. Dock again by flying into the station ring and pressing E."] },
+  { id: "npc_pax", name: "Pax the Ship Dealer", role: "shop", ...ALCOVES.shipyard, wander: 0.8, body: "#ff8fb1", accent: "#3b2f4a", hat: "cap", map: "station", service: "hangar",
+    lines: ["Every ship on my lot is pre-loved and post-loved!", "A Comet Corvette? Excellent taste!", "The Starling Frigate comes with drones. Drones!"] },
+  { id: "npc_gears", name: "Gears the Shipwright", role: "shop", ...ALCOVES.shipwright, wander: 0.8, body: "#e0a458", accent: "#5a5f6a", hat: "helmet", map: "station", service: "hangar",
+    lines: ["Engines, shields, lasers, plating. I tune 'em all.", "Upgrades apply to every ship you own. Efficient, eh?"] },
+  { id: "npc_ix", name: "Quartermaster Ix", role: "shop", ...ALCOVES.quartermaster, wander: 0.6, body: "#7d8a9b", accent: "#5ff6ff", hat: "helmet", map: "station", shopId: "tech",
+    lines: ["Hull repair kits. Never leave the hangar without one.", "Gear from out here hits harder than anything on the island."] },
+  { id: "npc_bloop", name: "Barista Bloop", role: "shop", ...ALCOVES.cafe, wander: 0.8, body: "#9fe7ff", accent: "#ff8fb1", hat: "chef", map: "station", shopId: "cafe",
+    lines: ["Bloop! One Star Latte, extra stars!", "The jelly tarts are made from real star jellies. Ethically scooped."] },
+  { id: "npc_nova", name: "Engineer Nova", role: "villager", x: ALCOVES.workshop.x - 1.5, y: ALCOVES.workshop.y - 1, wander: 1, body: "#5fa8c9", accent: "#ffd166", hat: "helmet", map: "station",
+    lines: ["The fabricator smelts space ore into bars. Use it with E.", "Titanium from the Ember Belt, iridium from the Void Rift."] },
+  { id: "npc_rivet", name: "Dockhand Rivet", role: "villager", x: LAUNCH_PAD.x - 5, y: LAUNCH_PAD.y - 3, wander: 2, body: "#f2b950", accent: "#3b2f4a", hat: "cap", map: "station",
+    lines: ["Stand on the pad and press E to launch!", "In space: steer with WASD, fire with F or click, Space to boost, J to warp.", "Docking repairs your hull for free."] },
+  { id: "npc_quill", name: "Dr. Quill", role: "guide", x: LIFTS[1].x, y: LIFTS[1].y + 3, wander: 1, body: "#f4f8ff", accent: "#b98cff", hat: "none", map: "station",
+    lines: ["The Tech Labs below are... a little haunted by robots. My robots.", "The lifts go down to Labs I, II and III."] },
+  guard("npc_sec_1", "Security Officer Kade", 27.5, 8.5, ["Arrivals, this way.", "Keep your weapons holstered on deck."], "station"),
+  guard("npc_sec_2", "Security Officer Lin", 36.5, 8.5, ["The Stargate leads back to Hearthmoor.", "All clear."], "station"),
   // Inside the castle.
   { id: "npc_king", name: "King Aldric the Kind", role: "villager", x: 11.5, y: 3.6, wander: 0, body: "#7b3fbf", accent: "#ffd166", hat: "crown", map: "castle:throne",
     lines: ["Welcome, welcome! Any friend of Hearthmoor is a friend of mine.", "Our island's champions grow restless. Will you help?", "Have you tried the honey elixirs? Splendid stuff."] },

@@ -19,6 +19,7 @@ export interface QuestContext {
   addToBag(p: Player, item: Item): boolean;
   randomGear(p: Player, rarity: "uncommon" | "rare" | "epic"): Item;
   chat(p: Player, text: string): void;
+  grantShip(p: Player, hull: string): string | null;
 }
 
 export class QuestService {
@@ -131,7 +132,7 @@ export class QuestService {
     for (const prog of p.save.quests.active) {
       const q = QUESTS_BY_ID[prog.id];
       const step = q?.steps[prog.step];
-      if (q && step?.type === "visit" && dist(p.x, p.y, step.x, step.y) <= step.r) {
+      if (q && step?.type === "visit" && (step.map ?? "overworld") === p.mapId && dist(p.x, p.y, step.x, step.y) <= step.r) {
         this.advance(p, q, prog);
         p.session.toast(`${q.name}: ${step.text}, done!`, "good");
       }
@@ -162,6 +163,10 @@ export class QuestService {
     for (const it of r.items ?? []) {
       const item = makeItem(it.tpl, it.rarity ?? "common", Math.max(1, p.save.lv), it.qty ?? 1);
       if (this.ctx.addToBag(p, item)) gained.push(`${itemName(item)}${item.qty > 1 ? ` x${item.qty}` : ""}`);
+    }
+    if (r.ship) {
+      const name = this.ctx.grantShip(p, r.ship);
+      if (name) gained.push(name);
     }
     if (r.gear) {
       const gear = this.ctx.randomGear(p, r.gear);

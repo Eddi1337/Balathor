@@ -20,7 +20,7 @@ import {
   type Item
 } from "../../shared/game/items";
 import { deriveStats, MAX_LEVEL, STAT_IDS, xpToNext, type StatId } from "../../shared/game/stats";
-import { SHOPS } from "../../shared/game/npcs";
+import { NPCS, SHOPS } from "../../shared/game/npcs";
 import { BAR_SLOTS, TALENTS_BY_ID, canLearn, respecCost, talentPoints } from "../../shared/game/talents";
 import { QUESTS_BY_ID } from "../../shared/game/quests";
 import { WAYPOINTS, WAYPOINT_COST, WAYPOINT_DISCOVER_RADIUS, WAYPOINT_USE_RADIUS, waypointById } from "../../shared/game/waypoints";
@@ -34,6 +34,9 @@ import { circleBlocked } from "../../shared/game/movement";
 import { Tile } from "../../shared/world/tiles";
 import { HousingService } from "./housingService";
 import { ProfessionService } from "./professionService";
+import { ShipService } from "./shipService";
+import { freshUpgrades, HULL_IDS, UPGRADE_SLOTS } from "../../shared/game/ships";
+import { LAUNCH_PAD } from "../../shared/world/scifi/station";
 import { freshProfessions, PROF_IDS } from "../../shared/game/professions";
 import { findWalkableNear } from "../../shared/world/overworld";
 import { clamp, dist, wrapAngle } from "../../shared/math";
@@ -74,9 +77,11 @@ export class Game {
   readonly social: SocialService;
   readonly housing: HousingService;
   readonly professions: ProfessionService;
+  readonly ships: ShipService;
 
   constructor(private store: Store) {
     this.quests = new QuestService({
+      grantShip: (p, hull) => this.ships.grant(p, hull),
       awardXp: (p, xp) => this.awardXp(p, xp),
       addToBag: (p, item) => this.addToBag(p, item),
       randomGear: (p, rarity) => {
@@ -98,10 +103,14 @@ export class Game {
       system: (p, text) => p.session.send({ t: "chat", from: "", name: "", text, kind: "system" })
     });
     this.housing = new HousingService(store);
+    this.ships = new ShipService({
+      transfer: (p, mapId, x, y) => this.transfer(p, mapId, x, y),
+      world: (mapId) => this.getWorld(mapId)
+    });
     this.professions = new ProfessionService({
       addToBag: (p, item) => this.addToBag(p, item),
-      randomWeapon: (p, rarity, level) => {
-        const weapons = Object.values(ITEM_TEMPLATES).filter((t) => t.kind === "weapon" && t.cls === p.save.cls);
+      randomWeapon: (p, rarity, level, scifi) => {
+        const weapons = Object.values(ITEM_TEMPLATES).filter((t) => t.kind === "weapon" && t.cls === p.save.cls && (scifi ? t.realm === "scifi" : !t.realm));
         const tpl = weapons[weapons.length - 1] ?? weapons[0];
         return makeItem(tpl.id, rarity, level);
       }
@@ -122,7 +131,10 @@ export class Game {
       onMobKilled: (world, mob) => this.onMobKilled(world, mob),
       onPlayerDied: (world, p) => this.onPlayerDied(world, p),
       hour: () => this.worldTime() * 24,
-      partyOf: (p) => this.social.membersOf(p).filter((m) => m.mapId === p.mapId)
+      partyOf: (p) => this.social.membersOf(p).filter((m) => m.mapId === p.mapId),
+      shipDamage: (world, p, raw, now) => this.ships.damage(p, world, raw, now),
+      shipDestroyed: (world, p) => this.ships.destroyed(p, world),
+      shipTick: (world, p, dt, now) => this.ships.tick(p, world, dt, now, (pl, target) => world.turretShot(pl, target))
     });
     w.populate();
     this.housing.loadInto(w);
@@ -144,8 +156,11 @@ export class Game {
       p.x = x;
       p.y = y;
       p.mounted = false;
+      if (to.def.kind === "space") this.ships.board(p);
+      else p.ship = null;
       to.addPlayer(p);
       p.session.known.clear();
+      p.selfDirty = true;
     } else {
       p.x = x;
       p.y = y;
@@ -336,7 +351,7 @@ export class Game {
       case "emote":
         return world.setEmote(p, String(msg.id), now);
       case "jump":
-        if (p.dead || now - p.lastJumpAt < 550) return;
+        if (p.dead || p.ship || now - p.lastJumpAt < 550) return;
         p.lastJumpAt = now;
         p.emote = "";
         // Everyone else nearby sees the hop; the jumper already predicted it.
@@ -364,6 +379,16 @@ export class Game {
         return this.professions.reel(p, world, now);
       case "craft":
         return this.professions.craft(p, String(msg.recipe), String(msg.station));
+      case "hangar":
+        return this.ships.hangar(p, world, msg);
+      case "launch":
+        return this.ships.launch(p, world);
+      case "dock":
+        return this.ships.dock(p, world);
+      case "warp":
+        return this.ships.warp(p, world, String(msg.dest), now);
+      case "boost":
+        return this.ships.boost(p, now);
     }
   }
 
@@ -441,7 +466,11 @@ export class Game {
       waypoints: ["wp_hearthmoor"],
       hasMount: false,
       furniture: {},
-      professions: freshProfessions()
+      professions: freshProfessions(),
+      ships: [],
+      activeShip: null,
+      shipUp: freshUpgrades(),
+      discovered: []
     };
     this.store.saveCharacter(s.accountId, name, save);
     this.handlePlay(s);
@@ -459,6 +488,12 @@ export class Game {
       save.map = OVERWORLD.id;
       save.x = plot?.front.x ?? OVERWORLD.spawn.x;
       save.y = plot?.front.y ?? OVERWORLD.spawn.y;
+    }
+    // Pilots who logged out mid-flight wake up in Ringforge's hangar.
+    if (save.map === "space") {
+      save.map = "station";
+      save.x = LAUNCH_PAD.x;
+      save.y = LAUNCH_PAD.y + LAUNCH_PAD.r + 1;
     }
     const world = this.getWorld(save.map);
     save.map = world.def.id;
@@ -502,6 +537,7 @@ export class Game {
     }
     if (leveled) {
       this.recompute(p);
+      this.ships.refresh(p);
       p.hp = p.derived.maxHp;
       world?.fx(p.x, p.y, { e: "lvl", id: p.id, lv: s.lv });
       p.session.toast(`Level up! You are now level ${s.lv}. +3 stat points and a talent point`, "good");
@@ -549,7 +585,7 @@ export class Game {
     const rolls = tpl.boss ? 2 : Math.random() < 0.05 ? 1 : 0;
     const killer = topId ? world.players.get(topId) : undefined;
     for (let i = 0; i < rolls; i += 1) {
-      world.spawnLoot(mob.x, mob.y, randomGear(killer?.save.cls, mob.level, tpl.boss ? 3 : 0.3), 0, topId, now);
+      world.spawnLoot(mob.x, mob.y, randomGear(killer?.save.cls, mob.level, tpl.boss ? 3 : 0.3, world.def.theme === "scifi"), 0, topId, now);
     }
   }
 
@@ -576,6 +612,12 @@ export class Game {
   }
 
   // ── inventory ───────────────────────────────────────────────────────────────
+
+  private bagFits(p: Player, item: Item): boolean {
+    if (p.save.inv.includes(null)) return true;
+    const stack = itemTemplate(item.tpl)?.stack ?? 0;
+    return stack > 0 && p.save.inv.some((o) => o && o.tpl === item.tpl && o.rarity === item.rarity && o.qty < stack);
+  }
 
   private addToBag(p: Player, item: Item): boolean {
     const inv = p.save.inv;
@@ -646,6 +688,15 @@ export class Game {
       p.selfDirty = p.saveDirty = true;
       return;
     }
+    if (tpl.repair) {
+      if (!p.ship) return p.session.toast("Use repair kits while flying your ship");
+      if (!this.ships.repair(p, tpl.repair)) return p.session.toast("Your hull is already in perfect shape");
+      world.fx(p.x, p.y, { e: "heal", id: p.id, amt: Math.round(p.ship.stats.maxHull * tpl.repair) });
+      item.qty -= 1;
+      if (item.qty <= 0) p.save.inv[slot] = null;
+      p.selfDirty = p.saveDirty = true;
+      return;
+    }
     if (tpl.kind === "potion" && tpl.heal) {
       if (p.hp >= p.derived.maxHp) return p.session.toast("Already at full health");
       const amt = Math.min(p.derived.maxHp - p.hp, tpl.heal);
@@ -677,7 +728,7 @@ export class Game {
   private pickup(p: Player, world: World, id: string, now: number): void {
     const loot = world.loot.get(id);
     if (!loot || p.dead) return;
-    if (dist(p.x, p.y, loot.x, loot.y) > PICKUP_RADIUS) return;
+    if (dist(p.x, p.y, loot.x, loot.y) > PICKUP_RADIUS + (p.ship ? 3.5 : 0)) return;
     if (loot.ownerId && loot.ownerId !== p.id && now < loot.ownerUntil) {
       return p.session.toast("That belongs to someone else for a moment", "bad");
     }
@@ -694,9 +745,12 @@ export class Game {
   private magnetGold(world: World, now: number): void {
     for (const p of world.players.values()) {
       if (p.dead) continue;
-      world.grid.forEachNear(p.x, p.y, GOLD_MAGNET_RADIUS, (e) => {
-        if (e.kind !== "loot" || e.item || !e.gold) return;
-        if (dist(p.x, p.y, e.x, e.y) > GOLD_MAGNET_RADIUS) return;
+      // Ships have a tractor beam: everything nearby (that fits in the bag) floats aboard.
+      const R = p.ship ? 4.5 : GOLD_MAGNET_RADIUS;
+      world.grid.forEachNear(p.x, p.y, R, (e) => {
+        if (e.kind !== "loot") return;
+        if (e.item ? !p.ship || !this.bagFits(p, e.item) : !e.gold) return;
+        if (dist(p.x, p.y, e.x, e.y) > R) return;
         if (e.ownerId && e.ownerId !== p.id && now < e.ownerUntil) return;
         this.pickup(p, world, e.id, now);
       });
@@ -716,6 +770,7 @@ export class Game {
     if (def.shopId && SHOPS[def.shopId]) {
       p.session.send({ t: "shop", shop: this.shopView(def.shopId, npc.id) });
     }
+    if (def.service === "hangar") p.session.send({ t: "hangar", npc: npc.id });
     const line = offer ? QUESTS_BY_ID[offer].offer : def.lines[Math.floor(Math.random() * def.lines.length)];
     world.fx(npc.x, npc.y, { e: "say", id: npc.id, text: line }, 20);
     p.session.send({ t: "chat", from: npc.id, name: def.name, text: line, kind: "npc" });
@@ -829,21 +884,39 @@ export class Game {
         // Developer-only teleport (DEV_COMMANDS=1), used for testing distant biomes.
         if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
         const [, xs, ys] = text.trim().split(/\s+/);
-        const spot = findWalkableNear(Number(xs) || 0, Number(ys) || 0, 10);
-        this.transfer(p, OVERWORLD.id, spot.x, spot.y);
+        // Within the current map (from a house interior: out onto the overworld).
+        const def = world.def.kind === "interior" ? OVERWORLD : world.def;
+        const spot = def.id === OVERWORLD.id ? findWalkableNear(Number(xs) || 0, Number(ys) || 0, 10) : safeSpot(def, Number(xs) || 0, Number(ys) || 0);
+        this.transfer(p, def.id, spot.x, spot.y);
         return sys(`Teleported to ${p.x.toFixed(0)}, ${p.y.toFixed(0)}`);
       }
       case "tpnpc": {
         if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
         const id = text.trim().split(/\s+/)[1] ?? "";
-        for (const w of this.worlds.values()) {
-          const npc = w.npcs.get(id);
-          if (!npc) continue;
-          const spot = w.def.id === OVERWORLD.id ? findWalkableNear(npc.x, npc.y + 1, 4) : { x: npc.x, y: npc.y + 1 };
-          this.transfer(p, w.def.id, spot.x, spot.y);
-          return sys(`Teleported to ${npc.def.name}`);
-        }
-        return sys(`No NPC ${id}`);
+        const def = NPCS.find((n) => n.id === id);
+        if (!def) return sys(`No NPC ${id}`);
+        const w = this.getWorld(def.map ?? OVERWORLD.id);
+        const npc = w.npcs.get(id);
+        if (!npc) return sys(`No NPC ${id}`);
+        const spot = w.def.id === OVERWORLD.id ? findWalkableNear(npc.x, npc.y + 1, 4) : safeSpot(w.def, npc.x, npc.y + 1);
+        this.transfer(p, w.def.id, spot.x, spot.y);
+        return sys(`Teleported to ${npc.def.name}`);
+      }
+      case "map": {
+        if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
+        const [, id, xs, ys] = text.trim().split(/\s+/);
+        const def = getMap(id ?? "");
+        if (def.id !== id) return sys(`No map ${id}`);
+        const x = Number(xs);
+        const y = Number(ys);
+        const spot = Number.isFinite(x) && Number.isFinite(y) ? { x, y } : def.spawn;
+        this.transfer(p, def.id, spot.x, spot.y);
+        return sys(`Moved to ${def.name}`);
+      }
+      case "ship": {
+        if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
+        const name = this.ships.grant(p, text.trim().split(/\s+/)[1] ?? "skiff");
+        return sys(name ? `Granted the ${name}` : "Unknown hull");
       }
       case "prof": {
         if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
@@ -904,6 +977,7 @@ export class Game {
   private castAbility(p: Player, world: World, id: string, a: number, x: number, y: number, now: number): void {
     const t = TALENTS_BY_ID[id];
     if (!t || !p.save.talents.includes(id) || p.dead || !Number.isFinite(a)) return;
+    if (p.ship) return p.session.toast("Abilities don't work from the cockpit", "bad");
     if ((p.cooldowns.get(id) ?? 0) > now) return;
     if (!world.castAbility(p, t, wrapAngle(a), x, y, now)) return;
     p.cooldowns.set(id, now + t.cooldownMs);
@@ -1033,12 +1107,9 @@ export class Game {
       for (const s of this.sessions.values()) {
         const p = s.player;
         if (!p || p.dead) continue;
-        if (p.mapId === OVERWORLD.id) {
-          this.discoverWaypoints(p);
-          this.quests.checkVisits(p);
-        } else {
-          this.checkStairs(p, now);
-        }
+        this.quests.checkVisits(p);
+        if (p.mapId === OVERWORLD.id) this.discoverWaypoints(p);
+        else this.checkStairs(p, now);
       }
     }
     const depleted = this.professions.tick(
@@ -1255,6 +1326,11 @@ export class Game {
       furniture: s.furniture,
       home: this.housing.homeOf(p.accountId),
       professions: s.professions,
+      ships: s.ships,
+      activeShip: s.activeShip,
+      shipUp: s.shipUp,
+      discovered: s.discovered,
+      ship: p.ship ? { hull: Math.ceil(p.ship.hull), shield: Math.ceil(p.ship.shield) } : null,
       food: p.food ? { stat: p.food.stat, value: p.food.value, ms: Math.max(0, p.food.until - Date.now()), name: p.food.name } : null
     };
     p.session.send({ t: "self", self });
@@ -1329,13 +1405,20 @@ function normalizeSave(save: CharacterSave): CharacterSave {
   const profs = freshProfessions();
   for (const id of PROF_IDS) if (save.professions?.[id]) profs[id] = { lv: Math.max(1, Number(save.professions[id].lv) || 1), xp: Math.max(0, Number(save.professions[id].xp) || 0) };
   save.professions = profs;
+  save.ships = Array.isArray(save.ships) ? save.ships.filter((h) => HULL_IDS.includes(h)) : [];
+  save.activeShip = save.activeShip && save.ships.includes(save.activeShip) ? save.activeShip : save.ships[0] ?? null;
+  const up = freshUpgrades();
+  for (const slot of UPGRADE_SLOTS) up[slot] = Math.max(0, Math.min(3, Number(save.shipUp?.[slot]) || 0));
+  save.shipUp = up;
+  save.discovered = Array.isArray(save.discovered) ? save.discovered.filter((d) => typeof d === "string") : [];
   return save;
 }
 
-function randomGear(cls: keyof typeof CLASSES | undefined, level: number, luck: number): Item {
-  const weapons = Object.values(ITEM_TEMPLATES).filter((t) => t.kind === "weapon" && (!cls || t.cls === cls));
-  const armor = Object.values(ITEM_TEMPLATES).filter((t) => t.kind === "armor");
-  const rings = Object.values(ITEM_TEMPLATES).filter((t) => t.kind === "ring");
+function randomGear(cls: keyof typeof CLASSES | undefined, level: number, luck: number, scifi = false): Item {
+  const ok = (t: (typeof ITEM_TEMPLATES)[string]) => (scifi ? t.realm === "scifi" : !t.realm);
+  const weapons = Object.values(ITEM_TEMPLATES).filter((t) => t.kind === "weapon" && (!cls || t.cls === cls) && ok(t));
+  const armor = Object.values(ITEM_TEMPLATES).filter((t) => t.kind === "armor" && ok(t));
+  const rings = Object.values(ITEM_TEMPLATES).filter((t) => t.kind === "ring" && ok(t));
   const roll = Math.random();
   const pool = roll < 0.45 ? weapons : roll < 0.8 ? armor : rings;
   const tpl = pool[Math.floor(Math.random() * pool.length)];
@@ -1344,7 +1427,15 @@ function randomGear(cls: keyof typeof CLASSES | undefined, level: number, luck: 
 
 /** A walkable spot near (x, y) on any map. */
 function safeSpot(map: MapDef, x: number, y: number): { x: number; y: number } {
-  if (!isInterior(map)) return findWalkableNear(x, y, 6);
+  if (map.id === OVERWORLD.id) return findWalkableNear(x, y, 6);
   if (!circleBlocked(map, x, y)) return { x, y };
+  for (let r = 1; r <= 8; r += 1) {
+    for (let i = 0; i < r * 8; i += 1) {
+      const a = (i / (r * 8)) * Math.PI * 2;
+      const px = x + Math.cos(a) * r;
+      const py = y + Math.sin(a) * r;
+      if (!circleBlocked(map, px, py)) return { x: px, y: py };
+    }
+  }
   return { ...map.spawn };
 }

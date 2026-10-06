@@ -49,7 +49,7 @@ interface FishSession {
 
 export interface ProfessionContext {
   addToBag(p: Player, item: Item): boolean;
-  randomWeapon(p: Player, rarity: "rare" | "epic", level: number): Item;
+  randomWeapon(p: Player, rarity: "rare" | "epic", level: number, scifi?: boolean): Item;
 }
 
 export class ProfessionService {
@@ -146,7 +146,7 @@ export class ProfessionService {
   craft(p: Player, recipeId: string, stationId: string): void {
     const r = RECIPES_BY_ID[recipeId];
     const st = STATIONS.find((s) => s.id === stationId);
-    if (!r || !st || st.kind !== r.station || p.mapId !== "overworld") return;
+    if (!r || !st || st.kind !== r.station || p.mapId !== (st.map ?? "overworld")) return;
     if (Math.hypot(st.x - p.x, st.y - p.y) > STATION_RANGE + 0.6) return p.session.toast(`Stand by the ${r.station}`, "bad");
     if (p.save.professions[r.prof].lv < r.level) return p.session.toast(`Requires ${PROFESSIONS[r.prof].name} ${r.level}`, "bad");
     for (const inp of r.inputs) {
@@ -154,8 +154,8 @@ export class ProfessionService {
       if (have < inp.qty) return p.session.toast(`You need ${inp.qty} ${itemTemplate(inp.tpl)?.name ?? inp.tpl}`, "bad");
     }
     const out =
-      r.output === "weapon"
-        ? this.ctx.randomWeapon(p, r.level >= 20 ? "epic" : "rare", Math.max(p.save.lv, r.level))
+      r.output === "weapon" || r.output === "scifi_weapon"
+        ? this.ctx.randomWeapon(p, r.level >= 20 ? "epic" : "rare", Math.max(p.save.lv, r.level), r.output === "scifi_weapon")
         : makeItem(r.output.tpl, "common", 1, r.output.qty);
     // Consume inputs first (frees bag space), roll back if the result doesn't fit.
     const backup = p.save.inv.map((i) => (i ? { ...i } : null));

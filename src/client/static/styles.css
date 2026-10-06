@@ -343,3 +343,17 @@ label { display: grid; gap: 6px; font-weight: 500; font-size: 14px; color: var(-
 .recipe-in { font-size: 12px; color: var(--ink-soft); }
 .recipe-in .ok { color: #2fa784; }
 .recipe-in .no { color: #e0607e; }
+
+/* ── Sci-fi ──────────────────────────────────────────────────── */
+#win-hangar { width: 470px; left: 50%; right: auto; transform: translateX(-50%); max-height: 78vh; overflow: auto; }
+#win-warp { width: 380px; max-height: 72vh; overflow: auto; }
+.hangar-h { margin: 8px 0 6px; }
+.ship-row.active { border-color: var(--gold); }
+.ship-swatch { color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+.pips { display: inline-flex; gap: 3px; vertical-align: middle; }
+.pip { width: 10px; height: 10px; border-radius: 3px; background: var(--paper-2); border: 1px solid var(--line); }
+.pip.on { background: #7fe8ff; border-color: #3fb8d9; }
+.shop-item.unknown { opacity: .55; }
+.bar.shield { height: 8px; margin-top: 4px; }
+.bar.shield > div { background: linear-gradient(90deg, #7fe8ff, #5fb4ff); }
+.hud-portrait.flying .bar.hp > div { background: linear-gradient(90deg, #ffd166, #ff9a3c); }

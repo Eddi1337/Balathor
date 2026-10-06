@@ -37,6 +37,10 @@ export interface ItemTemplate {
   stack?: number;
   /** Food / tonic buff: stat, value (fraction or flat armour), duration. */
   buff?: { stat: "str" | "def" | "spd" | "regen"; value: number; ms: number };
+  /** Gear that only drops / sells in the sci-fi realm. */
+  realm?: "scifi";
+  /** Repair kits: restore this fraction of your ship's hull. */
+  repair?: number;
 }
 
 export interface Item {
@@ -65,6 +69,16 @@ export const ITEM_TEMPLATES: Record<string, ItemTemplate> = {
   leather: { id: "leather", name: "Leather Jerkin", kind: "armor", icon: "🦺", armor: 4, hp: 10, value: 30 },
   robe: { id: "robe", name: "Moonthread Robe", kind: "armor", icon: "🥋", armor: 2, hp: 14, str: 1, value: 34 },
   plate: { id: "plate", name: "Knightly Plate", kind: "armor", icon: "🛡️", armor: 7, hp: 8, value: 48 },
+  // Sci-fi gear (Quartermaster Ix, pirates, tech labs)
+  bow_plasma: { id: "bow_plasma", name: "Plasma Bow", kind: "weapon", cls: "ranger", icon: "🏹", dmg: 10, value: 90, realm: "scifi" },
+  staff_ion: { id: "staff_ion", name: "Ion Staff", kind: "weapon", cls: "mage", icon: "🔮", dmg: 12, value: 95, realm: "scifi" },
+  blade_arc: { id: "blade_arc", name: "Arc Blade", kind: "weapon", cls: "knight", icon: "🗡️", dmg: 11, value: 92, realm: "scifi" },
+  bow_photon: { id: "bow_photon", name: "Photon Longbow", kind: "weapon", cls: "ranger", icon: "🏹", dmg: 15, value: 180, realm: "scifi" },
+  staff_nebula: { id: "staff_nebula", name: "Nebula Scepter", kind: "weapon", cls: "mage", icon: "🔮", dmg: 17, value: 190, realm: "scifi" },
+  blade_star: { id: "blade_star", name: "Starforged Greatsword", kind: "weapon", cls: "knight", icon: "⚔️", dmg: 16, value: 185, realm: "scifi" },
+  suit_flight: { id: "suit_flight", name: "Flight Suit", kind: "armor", icon: "🧑‍🚀", armor: 5, hp: 18, value: 80, realm: "scifi" },
+  suit_nano: { id: "suit_nano", name: "Nano Plate", kind: "armor", icon: "🦾", armor: 10, hp: 22, value: 170, realm: "scifi" },
+  ring_quantum: { id: "ring_quantum", name: "Quantum Band", kind: "ring", icon: "💫", str: 2, hp: 14, value: 120, realm: "scifi" },
   // Rings
   ring_copper: { id: "ring_copper", name: "Copper Ring", kind: "ring", icon: "💍", str: 1, value: 20 },
   ring_moon: { id: "ring_moon", name: "Moonstone Ring", kind: "ring", icon: "💍", hp: 12, value: 36 },
@@ -72,6 +86,7 @@ export const ITEM_TEMPLATES: Record<string, ItemTemplate> = {
   // Consumables
   potion_small: { id: "potion_small", name: "Berry Tonic", kind: "potion", icon: "🧃", heal: 45, value: 8, stack: 20 },
   potion_big: { id: "potion_big", name: "Honey Elixir", kind: "potion", icon: "🍯", heal: 120, value: 24, stack: 20 },
+  repair_kit: { id: "repair_kit", name: "Hull Repair Kit", kind: "potion", icon: "🔧", repair: 0.4, value: 20, stack: 20 },
   // Mounts (unlock on purchase; never enter the bag)
   mount_pony: { id: "mount_pony", name: "Fluffy Pony", kind: "mount", icon: "🐴", value: 100 },
   // Tools (needed to gather)
@@ -112,6 +127,23 @@ export const ITEM_TEMPLATES: Record<string, ItemTemplate> = {
   fish_tuna: { id: "fish_tuna", name: "Bluefin Tuna", kind: "material", icon: "🐟", value: 22, stack: 30 },
   fish_frostfin: { id: "fish_frostfin", name: "Frostfin", kind: "material", icon: "🐡", value: 24, stack: 30 },
   fish_goldcarp: { id: "fish_goldcarp", name: "Golden Carp", kind: "material", icon: "🐠", value: 26, stack: 30 },
+  // Space materials
+  ore_ferrite: { id: "ore_ferrite", name: "Ferrite Ore", kind: "material", icon: "🪨", value: 6, stack: 50 },
+  ore_titanium: { id: "ore_titanium", name: "Titanium Ore", kind: "material", icon: "🩶", value: 14, stack: 50 },
+  ore_iridium: { id: "ore_iridium", name: "Iridium Ore", kind: "material", icon: "🔷", value: 24, stack: 50 },
+  crystal_void: { id: "crystal_void", name: "Void Crystal", kind: "material", icon: "🔮", value: 40, stack: 50 },
+  crystal_bloom: { id: "crystal_bloom", name: "Bloomstone", kind: "material", icon: "💚", value: 18, stack: 50 },
+  log_glowwood: { id: "log_glowwood", name: "Glowwood Log", kind: "material", icon: "🪵", value: 12, stack: 50 },
+  herb_starmoss: { id: "herb_starmoss", name: "Starmoss", kind: "material", icon: "🌱", value: 10, stack: 50 },
+  bar_titanium: { id: "bar_titanium", name: "Titanium Bar", kind: "material", icon: "🧱", value: 40, stack: 50 },
+  bar_iridium: { id: "bar_iridium", name: "Iridium Bar", kind: "material", icon: "🧱", value: 64, stack: 50 },
+  salvage_scrap: { id: "salvage_scrap", name: "Salvage Scrap", kind: "material", icon: "🔩", value: 7, stack: 50 },
+  salvage_core: { id: "salvage_core", name: "Salvaged Power Core", kind: "material", icon: "🔋", value: 35, stack: 20 },
+  jelly_glow: { id: "jelly_glow", name: "Glowing Jelly", kind: "material", icon: "🫧", value: 6, stack: 50 },
+  // Station café
+  food_star_latte: { id: "food_star_latte", name: "Star Latte", kind: "food", icon: "☕", heal: 40, value: 12, stack: 20, buff: { stat: "spd", value: 0.1, ms: 240_000 } },
+  food_nebula_noodles: { id: "food_nebula_noodles", name: "Nebula Noodles", kind: "food", icon: "🍜", heal: 120, value: 24, stack: 20, buff: { stat: "str", value: 0.12, ms: 240_000 } },
+  food_jelly_tart: { id: "food_jelly_tart", name: "Jelly Tart", kind: "food", icon: "🥧", heal: 160, value: 30, stack: 20, buff: { stat: "regen", value: 0.02, ms: 240_000 } },
   junk_boot: { id: "junk_boot", name: "Soggy Boot", kind: "junk", icon: "🥾", value: 1, stack: 20 },
   junk_bottle: { id: "junk_bottle", name: "Message in a Bottle", kind: "junk", icon: "🍾", value: 40, stack: 20 },
   // Cooked food & smithing tonics (heal + timed buff)

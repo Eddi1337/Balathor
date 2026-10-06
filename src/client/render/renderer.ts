@@ -76,8 +76,17 @@ export class Renderer {
   /** 0 at noon … 1 at midnight; drives window glow and lamps. */
   night = 0;
   sunDir = new THREE.Vector3(0, 1, -1).normalize();
-  /** Indoors: no sky, warm light from above, no god rays. */
-  indoor = false;
+  /**
+   * Lighting environment: open sky with the day cycle; cosy indoors; a sci-fi deck (cool light,
+   * stars beyond the windows); open space (fixed distant sun, nebula); or a planet with its own
+   * sky palette.
+   */
+  env: "outdoor" | "indoor" | "deck" | "space" | "planet" = "outdoor";
+  /** Planet sky palette (env "planet"). */
+  planetSky = { top: new THREE.Color("#3fb8c9"), horizon: new THREE.Color("#ffc9e8"), fog: new THREE.Color("#e8c9ef"), sun: new THREE.Color("#fff1d6"), ground: new THREE.Color("#5a7a6a"), sunI: 2.4, hemiI: 1.0 };
+  get indoor(): boolean {
+    return this.env === "indoor";
+  }
 
   // Camera rig (orbit around the target).
   yaw = 0;
@@ -368,7 +377,56 @@ export class Renderer {
     }
     if (this.bloom) this.bloom.intensity = 0.7 + this.night * 0.9;
 
-    if (this.indoor) {
+    if (this.env === "space" || this.env === "deck") {
+      // A distant star lights everything from a fixed direction; no sky, no clouds.
+      this.sky.visible = this.moonDisc.visible = this.stars.visible = this.clouds.visible = false;
+      const space = this.env === "space";
+      this.scene.background = new THREE.Color(space ? 0x060716 : 0x05060f);
+      (this.scene.fog as THREE.Fog).color.set(0x0b0d26);
+      (this.scene.fog as THREE.Fog).near = space ? 260 : 200;
+      (this.scene.fog as THREE.Fog).far = space ? 460 : 400;
+      this.hemi.color.set(space ? 0x9fb4ff : 0xd6e6ff);
+      this.hemi.groundColor.set(space ? 0x3a2a5a : 0x4a5a7a);
+      this.hemi.intensity = space ? 0.95 : 1.25;
+      this.sun.color.set(space ? 0xfff4e0 : 0xeaf2ff);
+      this.sun.intensity = space ? 2.6 : 1.1;
+      this.sunDir.set(space ? 0.45 : 0.2, space ? 0.8 : 1, space ? -0.4 : 0.3).normalize();
+      this.sun.position.copy(center).addScaledVector(this.sunDir, 60);
+      this.sunDisc.visible = space;
+      this.sunDisc.position.copy(this.camera.position).addScaledVector(new THREE.Vector3(0.75, 0.25, -0.62).normalize(), 300);
+      this.sunDisc.lookAt(this.camera.position);
+      (this.sunDisc.material as THREE.MeshBasicMaterial).color.set(0xfff6e0);
+      this.night = 0.6;
+      if (this.godRays) this.godRays.godRaysMaterial.uniforms.weight.value = space ? 0.28 : 0;
+      if (this.bloom) this.bloom.intensity = space ? 1.25 : 1.1;
+    } else if (this.env === "planet") {
+      const ps = this.planetSky;
+      this.sky.visible = this.sunDisc.visible = true;
+      this.stars.visible = true;
+      (this.stars.material as THREE.PointsMaterial).opacity = 0.35;
+      this.moonDisc.visible = this.clouds.visible = false;
+      this.scene.background = null;
+      this.skyUniforms.top.value.copy(ps.top);
+      this.skyUniforms.horizon.value.copy(ps.horizon);
+      this.skyUniforms.sunColor.value.copy(ps.sun);
+      this.skyUniforms.night.value = 0.15;
+      (this.scene.fog as THREE.Fog).color.copy(ps.fog);
+      (this.scene.fog as THREE.Fog).near = 60;
+      (this.scene.fog as THREE.Fog).far = 165;
+      this.hemi.color.copy(ps.horizon).lerp(new THREE.Color(0xffffff), 0.35);
+      this.hemi.groundColor.copy(ps.ground);
+      this.hemi.intensity = ps.hemiI;
+      this.sun.color.copy(ps.sun);
+      this.sun.intensity = ps.sunI;
+      this.sunDir.copy(dirSun.set(0.55, 0.62, 0.55).normalize());
+      this.skyUniforms.sunDir.value.copy(this.sunDir);
+      this.sun.position.copy(center).addScaledVector(this.sunDir, 80);
+      this.sunDisc.position.copy(this.camera.position).addScaledVector(this.sunDir, 300);
+      this.sunDisc.lookAt(this.camera.position);
+      (this.sunDisc.material as THREE.MeshBasicMaterial).color.copy(ps.sun).lerp(new THREE.Color(0xffffff), 0.4);
+      this.night = 0.15;
+      if (this.godRays) this.godRays.godRaysMaterial.uniforms.weight.value = 0.45;
+    } else if (this.env === "indoor") {
       this.sky.visible = this.sunDisc.visible = this.moonDisc.visible = this.stars.visible = this.clouds.visible = false;
       this.scene.background = new THREE.Color(0x2b2238);
       (this.scene.fog as THREE.Fog).near = 200;

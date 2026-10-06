@@ -25,7 +25,19 @@ const MINIMAP_COLORS: Record<number, [number, number, number]> = {
   [Tile.PLAZA]: [240, 226, 207],
   [Tile.WALL]: [150, 140, 130],
   [Tile.BUILDING]: [229, 122, 90],
-  [Tile.FOUNTAIN]: [143, 227, 255]
+  [Tile.FOUNTAIN]: [143, 227, 255],
+  [Tile.FLOOR]: [216, 180, 138],
+  [Tile.FIELD]: [185, 143, 94],
+  [Tile.RIVER]: [102, 205, 230],
+  [Tile.VOID]: [14, 16, 42],
+  [Tile.FORCEFIELD]: [60, 70, 140],
+  [Tile.METAL_FLOOR]: [200, 208, 222],
+  [Tile.METAL_WALL]: [70, 80, 104],
+  [Tile.GLASS]: [127, 200, 240],
+  [Tile.PAD]: [127, 232, 255],
+  [Tile.CONSOLE]: [106, 116, 136],
+  [Tile.PLANTER]: [127, 224, 168],
+  [Tile.GATE]: [185, 140, 255]
 };
 const PROP_COLOR: [number, number, number] = [70, 140, 80];
 
@@ -153,6 +165,13 @@ export class Hud {
     this.renderBag();
     this.renderChar();
     if (this.shop) this.renderShop();
+  }
+
+  /** While flying: the hull uses the HP bar and shields get their own bar. */
+  setShield(pct: number | null): void {
+    $("hud-shield").classList.toggle("hidden", pct === null);
+    document.querySelector(".hud-portrait")!.classList.toggle("flying", pct !== null);
+    if (pct !== null) $("hud-shield-fill").style.transform = `scaleX(${Math.max(0, Math.min(1, pct / 100))})`;
   }
 
   setHp(hp: number, mhp: number): void {
@@ -394,12 +413,16 @@ export class Hud {
     this.renderBag();
   }
 
-  drawMinimap(map: MapDef, px: number, py: number, facing: number, dots: MinimapDot[], objective: { x: number; y: number } | null = null): void {
+  private minimapKey = "";
+
+  drawMinimap(map: MapDef, px: number, py: number, facing: number, dots: MinimapDot[], objective: { x: number; y: number } | null = null, scale = 1.25): void {
     const ctx = this.minimapCtx;
     const size = 168;
     const half = size / 2;
-    const scale = 1.25; // tiles per pixel
-    if (!this.minimapBase || Math.hypot(px - this.minimapCenter.x, py - this.minimapCenter.y) > 6) {
+    // scale = tiles per pixel
+    const key = `${map.id}|${scale}`;
+    if (!this.minimapBase || this.minimapKey !== key || Math.hypot(px - this.minimapCenter.x, py - this.minimapCenter.y) > 6 * scale) {
+      this.minimapKey = key;
       this.minimapCenter = { x: Math.round(px), y: Math.round(py) };
       const img = ctx.createImageData(size, size);
       for (let j = 0; j < size; j += 1) {

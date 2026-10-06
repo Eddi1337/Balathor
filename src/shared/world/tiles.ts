@@ -39,7 +39,22 @@ export const Tile = {
   DOORMAT: 14,
   STAIRS: 15,
   /** A cell occupied by solid furniture. */
-  FURNITURE: 33
+  FURNITURE: 33,
+  // Sci-fi realm
+  /** Open space (flyable). */
+  VOID: 40,
+  METAL_FLOOR: 41,
+  METAL_WALL: 42,
+  /** Window wall onto the stars (blocking). */
+  GLASS: 43,
+  /** Glowing pad: stargate arrival, hangar launch, lift. */
+  PAD: 44,
+  CONSOLE: 45,
+  PLANTER: 46,
+  /** Stargate ring frame (overworld & station). */
+  GATE: 47,
+  /** Edge of the playable space map. */
+  FORCEFIELD: 48
 } as const;
 
 export type TileId = (typeof Tile)[keyof typeof Tile];
@@ -59,7 +74,13 @@ const BLOCKING = new Set<number>([
   Tile.FOUNTAIN,
   Tile.WILLOW,
   Tile.CRYSTAL,
-  Tile.FURNITURE
+  Tile.FURNITURE,
+  Tile.METAL_WALL,
+  Tile.GLASS,
+  Tile.CONSOLE,
+  Tile.PLANTER,
+  Tile.GATE,
+  Tile.FORCEFIELD
 ]);
 
 export function isBlockingTile(tile: number): boolean {
@@ -76,7 +97,11 @@ const PROJECTILE_BLOCKING = new Set<number>([
   Tile.WALL,
   Tile.BUILDING,
   Tile.WILLOW,
-  Tile.CRYSTAL
+  Tile.CRYSTAL,
+  Tile.METAL_WALL,
+  Tile.GLASS,
+  Tile.GATE,
+  Tile.FORCEFIELD
 ]);
 
 export function blocksProjectile(tile: number): boolean {

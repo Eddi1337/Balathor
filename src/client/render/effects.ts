@@ -121,7 +121,10 @@ const PROJ_COLORS: Record<ProjectileKind, string> = {
   fireball: "#ff9a3c",
   frostbolt: "#9fe7ff",
   emberball: "#ff6a3c",
-  arcane: "#d9a6ff"
+  arcane: "#d9a6ff",
+  laser: "#5ff6ff",
+  laser_red: "#ff4f6a",
+  plasma: "#b98cff"
 };
 
 const ZONE_COLORS: Record<ZoneKind, string> = {
@@ -167,6 +170,18 @@ function buildProjectile(kind: ProjectileKind): THREE.Object3D {
   }
   const col = new THREE.Color(PROJ_COLORS[kind]);
   const g = new THREE.Group();
+  if (kind === "laser" || kind === "laser_red") {
+    // A bright elongated bolt pointing along +z (the flight direction).
+    const bolt = new THREE.Mesh(new THREE.CapsuleGeometry(0.07, 0.9, 2, 6), new THREE.MeshBasicMaterial({ color: col.clone().multiplyScalar(2.4) }));
+    bolt.rotation.x = Math.PI / 2;
+    const glow = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.18, 1.0, 2, 6),
+      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending })
+    );
+    glow.rotation.x = Math.PI / 2;
+    g.add(bolt, glow);
+    return g;
+  }
   const core = new THREE.Mesh(new THREE.IcosahedronGeometry(kind === "fireball" ? 0.26 : 0.2, 1), new THREE.MeshBasicMaterial({ color: col.clone().multiplyScalar(2.2) }));
   const halo = new THREE.Mesh(
     new THREE.IcosahedronGeometry(kind === "fireball" ? 0.45 : 0.34, 1),
