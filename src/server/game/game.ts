@@ -27,7 +27,7 @@ import { WAYPOINTS, WAYPOINT_COST, WAYPOINT_DISCOVER_RADIUS, WAYPOINT_USE_RADIUS
 import { EMOTES } from "../../shared/game/emotes";
 import { QuestService } from "./questService";
 import { SocialService } from "./socialService";
-import { OVERWORLD, getMap, isInterior, type MapDef } from "../../shared/world/maps";
+import { OVERWORLD, baseMapId, getMap, isInterior, type MapDef } from "../../shared/world/maps";
 import { DOORS_BY_ID, DOOR_RADIUS, PLOTS_BY_ID, parseHouseMapId, houseMapId } from "../../shared/world/housing";
 import { HOUSE_STORAGE_SIZE } from "../../shared/game/furniture";
 import { circleBlocked } from "../../shared/game/movement";
@@ -131,11 +131,13 @@ export class Game {
   }
 
   /** Maps are simulated as separate worlds, created the first time someone goes there. */
-  getWorld(mapId: string): World {
+  getWorld(mapId: string, partySize = 1): World {
     let w = this.worlds.get(mapId);
     if (w) return w;
     const def = getMap(mapId);
-    w = this.worlds.get(def.id);
+    const inst = def.instanced && mapId.includes("#") ? mapId.slice(mapId.indexOf("#")) : "";
+    const id = def.id + inst;
+    w = this.worlds.get(id);
     if (w) return w;
     w = new World(def, {
       onMobKilled: (world, mob) => this.onMobKilled(world, mob),
@@ -146,10 +148,10 @@ export class Game {
       shipDestroyed: (world, p) => this.ships.destroyed(p, world),
       shipTick: (world, p, dt, now) => this.ships.tick(p, world, dt, now, (pl, target) => world.turretShot(pl, target)),
       sailSunk: (world, ship) => this.sails.sunk(world, ship)
-    });
+    }, { id, partySize: inst ? partySize : 1 });
     w.populate();
     this.housing.loadInto(w);
-    this.worlds.set(def.id, w);
+    this.worlds.set(id, w);
     return w;
   }
 
@@ -157,7 +159,14 @@ export class Game {
   transfer(p: Player, mapId: string, x: number, y: number): void {
     const from = this.worlds.get(p.mapId);
     if (p.aboard) this.sails.leave(p, from?.ships.get(p.aboard.shipId));
-    const to = this.getWorld(mapId);
+    // Dungeons: each party gets its own copy, scaled to how many of you there are.
+    const target = getMap(mapId);
+    let partySize = 1;
+    if (target.instanced && !mapId.includes("#")) {
+      mapId = `${target.id}#${p.partyId ?? p.id}`;
+      partySize = this.social.membersOf(p).length || 1;
+    }
+    const to = this.getWorld(mapId, partySize);
     if (p.storageOpen) {
       this.housing.saveStorage(p.storageOpen);
       p.storageOpen = null;
@@ -524,6 +533,13 @@ export class Game {
       save.x = LAUNCH_PAD.x;
       save.y = LAUNCH_PAD.y + LAUNCH_PAD.r + 1;
     }
+    // Logged out inside a dungeon instance: start outside its entrance.
+    const saved = getMap(save.map);
+    if (saved.instanced && saved.exit) {
+      save.map = saved.exit.map;
+      save.x = saved.exit.x;
+      save.y = saved.exit.y;
+    }
     const world = this.getWorld(save.map);
     save.map = world.def.id;
     const safe = safeSpot(world.def, save.x, save.y);
@@ -629,8 +645,9 @@ export class Game {
     p.dead = false;
     p.mounted = false;
     p.hp = p.derived.maxHp;
-    // Fall in the sci-fi realm and you wake up in Ringforge's medbay.
-    if (world.def.theme === "scifi") this.transfer(p, "station", STATION_ARRIVAL.x, STATION_ARRIVAL.y);
+    // Fall in a dungeon: wake up at its entrance. In the sci-fi realm: Ringforge's medbay.
+    if (world.def.exit) this.transfer(p, world.def.exit.map, world.def.exit.x, world.def.exit.y);
+    else if (world.def.theme === "scifi") this.transfer(p, "station", STATION_ARRIVAL.x, STATION_ARRIVAL.y);
     else this.transfer(p, OVERWORLD.id, OVERWORLD.spawn.x, OVERWORLD.spawn.y);
   }
 
@@ -1182,7 +1199,15 @@ export class Game {
     if (now - this.lastPartyTickAt >= 1000) {
       this.lastPartyTickAt = now;
       this.social.tick();
-      for (const w of this.worlds.values()) if (w.ships.size) this.sails.sweep(w);
+      for (const [id, w] of this.worlds) {
+        if (w.ships.size) this.sails.sweep(w);
+        // Empty dungeon instances close after two minutes.
+        if (w.id.includes("#")) {
+          if (w.players.size) w.emptySince = 0;
+          else if (!w.emptySince) w.emptySince = now;
+          else if (now - w.emptySince > 120_000) this.worlds.delete(id);
+        }
+      }
     }
     if (this.tickCount % this.snapEvery === 0) this.replicateAll(now);
     for (const s of this.sessions.values()) {
@@ -1399,7 +1424,7 @@ export class Game {
     p.save.x = p.x;
     p.save.y = p.y;
     p.save.hp = Math.max(1, Math.round(p.hp));
-    p.save.map = p.mapId;
+    p.save.map = baseMapId(p.mapId);
     try {
       this.store.saveCharacter(p.accountId, p.name, p.save);
       p.saveDirty = false;
@@ -1417,7 +1442,7 @@ export class Game {
       p.save.x = p.x;
       p.save.y = p.y;
       p.save.hp = Math.max(1, Math.round(p.hp));
-      p.save.map = p.mapId;
+      p.save.map = baseMapId(p.mapId);
       rows.push({ accountId: p.accountId, name: p.name, data: p.save });
       saved.push(p);
     }

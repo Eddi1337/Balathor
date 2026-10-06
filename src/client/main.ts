@@ -43,7 +43,10 @@ import { HULLS, shipStats, stepShip, BOOST_COOLDOWN_MS, BOOST_MS, type HullId } 
 import { DOCK_RANGE, POIS, poiNear } from "../shared/world/scifi/space";
 import { LAUNCH_PAD, STATION_H, STATION_W } from "../shared/world/scifi/station";
 import { SpaceScene } from "./render/space";
-import { LAB_PALETTE, buildDeck, type Deck } from "./render/deck";
+import { CRYPT_PALETTE, LAB_PALETTE, TEMPLE_PALETTE, buildDeck, type Deck } from "./render/deck";
+import { CAVE_LOOKS, buildCave } from "./render/cave";
+import { parseCaveMapId } from "../shared/world/dungeons/caves";
+import { DUNGEON_H, DUNGEON_W } from "../shared/world/dungeons/group";
 import { LAB_H, LAB_W } from "../shared/world/scifi/labs";
 import { SHIP_FLOAT, animateScifi, buildScifiMob, buildShip, isScifiModel } from "./render/scifiModels";
 import { HangarUI, WarpUI } from "./ui/hangar";
@@ -76,6 +79,10 @@ renderer.scene.add(terrain.group, terrain.water, effects.group, landmarks.group,
 let deck: Deck | null = null;
 let surface: Surface | null = null;
 let sea: SeaTerrain | null = null;
+let caveGroup: THREE.Group | null = null;
+/** A soft lantern glow around you underground. */
+const lantern = new THREE.PointLight(0xffd9a0, 0, 20, 1.4);
+renderer.scene.add(lantern);
 /** The ship parked on the hangar pad (station only). */
 let parkedShip: { hull: string; model: Model } | null = null;
 
@@ -820,6 +827,11 @@ function switchMap(id: string): void {
     sea.dispose();
     sea = null;
   }
+  if (caveGroup) {
+    renderer.scene.remove(caveGroup);
+    caveGroup.traverse((o) => (o as THREE.Mesh).isMesh && (o as THREE.Mesh).geometry.dispose());
+    caveGroup = null;
+  }
   harbour.hide();
   if (parkedShip) {
     renderer.scene.remove(parkedShip.model.root);
@@ -828,7 +840,7 @@ function switchMap(id: string): void {
   }
   map = getMap(id);
   const outdoors = map.kind === "overworld";
-  renderer.env = outdoors || map.kind === "sea" ? "outdoor" : map.kind === "interior" ? "indoor" : map.kind === "deck" ? "deck" : map.kind === "space" ? "space" : "planet";
+  renderer.env = map.kind === "cave" || map.theme === "dungeon" ? "cave" : outdoors || map.kind === "sea" ? "outdoor" : map.kind === "interior" ? "indoor" : map.kind === "deck" ? "deck" : map.kind === "space" ? "space" : "planet";
   renderer.occluder = outdoors ? obstacleTopAt : null;
   terrain.group.visible = terrain.water.visible = landmarks.group.visible = fountains.group.visible = outdoors;
   for (const l of cityLights) l.visible = outdoors;
@@ -838,6 +850,16 @@ function switchMap(id: string): void {
     renderer.distance = 23;
     renderer.pitch = 0.98;
     renderer.lookAbove = 0;
+  } else if (map.kind === "cave") {
+    const caveId = parseCaveMapId(map.id)!;
+    caveGroup = buildCave(map, caveId);
+    renderer.scene.add(caveGroup);
+    const look = CAVE_LOOKS[caveId];
+    renderer.caveTint.fog.set(look.fog);
+    renderer.caveTint.light.set(look.light);
+    renderer.distance = 15;
+    renderer.pitch = 0.75;
+    renderer.lookAbove = 1;
   } else if (map.kind === "sea") {
     sea = new SeaTerrain(map);
     renderer.scene.add(sea.group);
@@ -861,7 +883,14 @@ function switchMap(id: string): void {
     renderer.pitch = 0.5;
     renderer.lookAbove = 2.2;
   } else if (map.kind === "deck") {
-    deck = map.id === "station" ? buildDeck(map, STATION_W, STATION_H) : buildDeck(map, LAB_W, LAB_H, LAB_PALETTE);
+    if (map.id === "station") deck = buildDeck(map, STATION_W, STATION_H);
+    else if (map.id === "dungeon:sunken") deck = buildDeck(map, DUNGEON_W, DUNGEON_H, TEMPLE_PALETTE);
+    else if (map.id === "dungeon:crypt") deck = buildDeck(map, DUNGEON_W, DUNGEON_H, CRYPT_PALETTE);
+    else deck = buildDeck(map, LAB_W, LAB_H, LAB_PALETTE);
+    if (map.theme === "dungeon") {
+      renderer.caveTint.fog.set(map.id === "dungeon:crypt" ? "#140f1e" : "#0f2226");
+      renderer.caveTint.light.set(map.id === "dungeon:crypt" ? "#c9a6ff" : "#9ff0e8");
+    }
     renderer.scene.add(deck.group);
     renderer.distance = 13;
     renderer.pitch = 0.82;
@@ -1637,6 +1666,8 @@ function frame(): void {
   if (map.kind === "space") space.update(time, renderer.camera);
   deck?.update(time);
   surface?.update(time);
+  lantern.intensity = renderer.env === "cave" ? 7 : 0;
+  lantern.position.set(me.x, (deck0 ? DECK_H : groundAt(me.x, me.y)) + 5, me.y + 1.5);
   sea?.update(focus.x, focus.y, loadingHidden ? 2 : 6);
   effects.update(dt);
   landmarks.update(time);

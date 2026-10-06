@@ -5,7 +5,9 @@ import { CITY_HOUSES, CASTLE, TIER_H, type CityHouse } from "./city";
 import { STARGATE, STARGATE_FRONT } from "./scifi/stargate";
 import { LIFTS, STATION_ARRIVAL, STATION_GATE } from "./scifi/station";
 import { LAB_INFO, labLayout } from "./scifi/labs";
-import { SEAFARER_CAVE, SEAFARER_FRONT } from "./overworld";
+import { CAVE_MOUTHS_BY_ID, SEAFARER_CAVE, SEAFARER_FRONT, mouthFront } from "./overworld";
+import { CAVES, caveLayout, type CaveId } from "./dungeons/caves";
+import { DUNGEON_DOORS, GROUP_DUNGEONS, dungeonLayout, type GroupDungeonId } from "./dungeons/group";
 import { GROTTO, PORT_SPAWN } from "./sea/ocean";
 import { Tile } from "./tiles";
 
@@ -171,6 +173,24 @@ export const DOORS: Door[] = [
     y: GROTTO.y,
     to: { map: "overworld", x: SEAFARER_FRONT.x + SEAFARER_CAVE.ox * 1.5, y: SEAFARER_FRONT.y + SEAFARER_CAVE.oy * 1.5 }
   },
+  ...(Object.keys(CAVES) as CaveId[]).flatMap((id): Door[] => {
+    const m = CAVE_MOUTHS_BY_ID[id];
+    const front = mouthFront(m);
+    const L = caveLayout(id);
+    return [
+      { id: `cave_${id}_in`, label: `Enter ${CAVES[id].name} (lv ${CAVES[id].level})`, map: "overworld", x: front.x, y: front.y, to: { map: `cave:${id}`, x: L.entry.x + 1, y: L.entry.y } },
+      { id: `cave_${id}_out`, label: "Climb back out into the daylight", map: `cave:${id}`, x: L.entry.x, y: L.entry.y, to: { map: "overworld", x: front.x + m.ox * 1.5, y: front.y + m.oy * 1.5 } }
+    ];
+  }),
+  ...(Object.keys(GROUP_DUNGEONS) as GroupDungeonId[]).flatMap((id): Door[] => {
+    const def = GROUP_DUNGEONS[id];
+    const at = DUNGEON_DOORS[id];
+    const L = dungeonLayout(id);
+    return [
+      { id: `dungeon_${id}_in`, label: `Enter ${def.name} (group, lv ${def.level})`, map: def.from.map, x: at.x, y: at.y, to: { map: `dungeon:${id}`, x: L.pad.x, y: L.pad.y + 1.5 } },
+      { id: `dungeon_${id}_out`, label: "Leave the dungeon", map: `dungeon:${id}`, x: L.pad.x, y: L.pad.y, to: { map: def.from.map, x: def.from.x, y: def.from.y } }
+    ];
+  }),
   ...LIFTS.flatMap((l): Door[] => {
     const lab = l.lab as 1 | 2 | 3;
     const L = labLayout(lab);

@@ -10,7 +10,7 @@ import { HELM, SAIL_HULLS, cannonSpots, deckHalfWidth, type SailHull, type SailH
 /** Height of the deck above the water line. */
 export const DECK_H = 1.0;
 
-const SEA_MOBS = new Set<MobModel>(["pirate", "skeleton", "crab", "parrot", "turtle", "shark", "pirate_ship", "kraken"]);
+const SEA_MOBS = new Set<MobModel>(["pirate", "skeleton", "crab", "parrot", "turtle", "shark", "pirate_ship", "kraken", "bat"]);
 export function isSeaModel(model: MobModel): boolean {
   return SEA_MOBS.has(model);
 }
@@ -140,7 +140,7 @@ export function buildSeaMob(model: MobModel, color: string, accent: string, scal
     const skeleton = model === "skeleton";
     const m = buildHumanoid({
       look: { body: color, accent, skin: skeleton ? "#f2ead8" : "#f2c9a8", hair: skeleton ? "#f2ead8" : "#3b2f4a", hairStyle: skeleton ? 0 : 2 },
-      hat: skeleton ? "none" : boss ? "tricorn" : "bandana",
+      hat: skeleton ? (boss ? "crown" : scale > 1.1 ? "helmet" : "none") : boss ? "tricorn" : "bandana",
       cls: "knight"
     });
     m.body.scale.setScalar(scale);
@@ -197,6 +197,24 @@ export function buildSeaMob(model: MobModel, color: string, accent: string, scal
       eyes(b, 0, 0.12, 1.0, 0.22, 0.05, true);
       for (let i = 0; i < 5; i += 1) b.add(PRIMS.cone4, { x: -0.16 + i * 0.08, y: -0.06, z: 1.18, sx: 0.025, sy: 0.07, sz: 0.02, rx: Math.PI, color: "#ffffff" });
       m.height = 1.2 * scale;
+      break;
+    }
+    case "bat": {
+      b.add(PRIMS.ico1, { x: 0, y: 0, z: 0, sx: 0.3, sy: 0.32, sz: 0.28, color });
+      eyes(b, 0, 0.06, 0.24, 0.1, 0.045);
+      for (const sd of [-1, 1]) b.add(PRIMS.cone4, { x: sd * 0.14, y: 0.33, z: 0, sx: 0.07, sy: 0.18, sz: 0.06, color });
+      b.add(PRIMS.cone4, { x: 0, y: -0.12, z: 0.26, sx: 0.03, sy: 0.06, sz: 0.02, rx: Math.PI, color: "#ffffff" });
+      m.height = 1.8 * scale;
+      // Wings as their own parts so they can flap.
+      for (const sd of [-1, 1]) {
+        const wb = new GeometryBuilder();
+        wb.add(PRIMS.box, { x: sd * 0.4, y: 0, z: 0, sx: 0.55, sy: 0.04, sz: 0.4, color: shade(color, 0.8) });
+        wb.add(PRIMS.cone4, { x: sd * 0.7, y: 0, z: -0.12, sx: 0.12, sy: 0.3, sz: 0.04, rz: sd * Math.PI / 2, color: accent });
+        const wing = part(wb, m.material, [sd * 0.15, 0, 0]);
+        m.body.add(wing);
+        if (sd < 0) m.parts.armL = wing;
+        else m.parts.armR = wing;
+      }
       break;
     }
     case "kraken": {
@@ -263,6 +281,12 @@ export function animateSea(m: Model, o: { moving: boolean; dead: boolean; sail?:
         }
       }
       if (m.attackT > 0 && p.tail) for (const t of p.tail.children) t.rotation.x -= m.attackT * 2;
+      break;
+    case "bat":
+      if (o.dead) return;
+      m.body.position.y = 1.2 + Math.sin(time * 4 + m.phase) * 0.2;
+      if (p.armL) p.armL.rotation.z = Math.sin(time * 18 + m.phase) * 0.7;
+      if (p.armR) p.armR.rotation.z = -Math.sin(time * 18 + m.phase) * 0.7;
       break;
     case "parrot":
       if (o.dead) return;

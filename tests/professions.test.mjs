@@ -37,6 +37,8 @@ before(async () => {
   srv = await startServer({ DEV_COMMANDS: "1" });
   c = new Client(srv.port);
   await c.join(`pr${run}${Date.now() % 1000}`, `Prof${run}`.slice(0, 15), "ranger");
+  // Midday, so the shopkeepers are at their stalls (not home in bed).
+  await c.chat("/time 0.45");
 });
 
 after(() => {

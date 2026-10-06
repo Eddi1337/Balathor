@@ -32,7 +32,8 @@ export type MobModel =
   | "turtle"
   | "shark"
   | "pirate_ship"
-  | "kraken";
+  | "kraken"
+  | "bat";
 
 export interface MobTemplate {
   id: string;
@@ -127,6 +128,18 @@ export const MOB_TEMPLATES: Record<string, MobTemplate> = {
   pirate_frigate: t({ id: "pirate_frigate", name: "Pirate Frigate", model: "pirate_ship", color: "#2b2238", accent: "#ff2e63", scale: 1.5, hp: 720, dmg: 38, speed: 5.5, aggro: 24, reach: 4, cooldownMs: 2000, ranged: { speed: 20, range: 20 }, proj: "cannonball", sea: true, xp: 150, gold: [40, 90], drops: [{ tpl: "treasure_map_piece", chance: 0.6 }, { tpl: "pearl", chance: 0.2 }] }),
   boss_kraken: t({ id: "boss_kraken", name: "The Kraken", model: "kraken", color: "#b84a8a", accent: "#ffd1f0", scale: 3, hp: 5200, dmg: 55, speed: 3, aggro: 26, reach: 7, cooldownMs: 1700, sea: true, xp: 1700, gold: [300, 600], drops: [{ tpl: "kraken_ink", chance: 1 }, { tpl: "pearl", chance: 1 }], boss: true }),
   boss_gristle: t({ id: "boss_gristle", name: "Dread Captain Gristle", model: "pirate", color: "#2b2238", accent: "#ff2e63", scale: 2, hp: 3300, dmg: 48, speed: 3.0, aggro: 11, reach: 2.6, cooldownMs: 1300, ranged: { speed: 16, range: 11 }, proj: "shot", xp: 1300, gold: [260, 500], drops: [{ tpl: "pearl", chance: 1 }, { tpl: "treasure_map_piece", chance: 1 }], boss: true }),
+  // ── Caves & dungeons ───────────────────────────────────────────────────────
+  cave_bat: t({ id: "cave_bat", name: "Squeaky Bat", model: "bat", color: "#7a6a9a", accent: "#ffb3c7", scale: 0.7, hp: 30, dmg: 7, speed: 4.2, aggro: 8, reach: 1.2, cooldownMs: 1000, xp: 12, gold: [1, 5], drops: [{ tpl: "potion_small", chance: 0.08 }] }),
+  fire_bat: t({ id: "fire_bat", name: "Cinder Bat", model: "bat", color: "#b5543a", accent: "#ffd166", scale: 0.8, hp: 55, dmg: 13, speed: 4.4, aggro: 9, reach: 1.2, cooldownMs: 1000, xp: 24, gold: [3, 9], drops: [{ tpl: "crystal_ember", chance: 0.05 }] }),
+  frost_bat: t({ id: "frost_bat", name: "Rime Bat", model: "bat", color: "#9fd4f5", accent: "#ffffff", scale: 0.8, hp: 60, dmg: 15, speed: 4.4, aggro: 9, reach: 1.2, cooldownMs: 1000, xp: 28, gold: [3, 10], drops: [{ tpl: "crystal_frost", chance: 0.05 }] }),
+  boss_mossbloom: t({ id: "boss_mossbloom", name: "Mother Mossbloom", model: "mushroom", color: "#7fae5a", accent: "#ffb3c7", scale: 2.4, hp: 650, dmg: 16, speed: 1.8, aggro: 9, reach: 2.4, cooldownMs: 1500, ranged: { speed: 9, range: 9 }, proj: "plasma", xp: 220, gold: [50, 100], drops: [{ tpl: "ring_moon", chance: 0.5 }, { tpl: "potion_big", chance: 0.8 }], boss: true }),
+  boss_magma: t({ id: "boss_magma", name: "Magmaw the Molten", model: "golem", color: "#ff7a45", accent: "#ffd166", scale: 2.6, hp: 1900, dmg: 34, speed: 2.0, aggro: 10, reach: 3.0, cooldownMs: 1700, xp: 600, gold: [130, 240], drops: [{ tpl: "ring_ember", chance: 0.7 }, { tpl: "crystal_ember", chance: 1 }], boss: true }),
+  boss_frost_queen: t({ id: "boss_frost_queen", name: "The Frost Queen", model: "wisp", color: "#e8f6ff", accent: "#5fb4ff", scale: 2.6, hp: 2400, dmg: 38, speed: 2.6, aggro: 11, reach: 2.4, cooldownMs: 1300, ranged: { speed: 11, range: 11 }, xp: 760, gold: [150, 280], drops: [{ tpl: "staff_star", chance: 0.5 }, { tpl: "crystal_frost", chance: 1 }], boss: true }),
+  temple_guardian: t({ id: "temple_guardian", name: "Temple Guardian", model: "golem", color: "#d9b07a", accent: "#5fd6c9", scale: 1.2, hp: 150, dmg: 20, speed: 2.2, aggro: 8, reach: 1.7, cooldownMs: 1600, xp: 46, gold: [8, 18], drops: [{ tpl: "ancient_coin", chance: 0.5 }] }),
+  drowned_priest: t({ id: "drowned_priest", name: "Drowned Priest", model: "wisp", color: "#5fd6c9", accent: "#e8fff9", scale: 1.0, hp: 85, dmg: 19, speed: 2.6, aggro: 11, reach: 1.2, cooldownMs: 1500, ranged: { speed: 10, range: 10 }, proj: "frostbolt", xp: 40, gold: [7, 16], drops: [{ tpl: "pearl", chance: 0.1 }] }),
+  boss_tidecaller: t({ id: "boss_tidecaller", name: "Tidecaller Ysolde", model: "wisp", color: "#3fb8c9", accent: "#ffd1f0", scale: 2.4, hp: 2600, dmg: 32, speed: 2.6, aggro: 11, reach: 2.4, cooldownMs: 1200, ranged: { speed: 11, range: 11 }, proj: "frostbolt", xp: 900, gold: [180, 320], drops: [{ tpl: "ring_pearl", chance: 0.6 }, { tpl: "coral_staff", chance: 0.4 }, { tpl: "pearl", chance: 1 }], boss: true }),
+  crypt_knight: t({ id: "crypt_knight", name: "Crypt Knight", model: "skeleton", color: "#5d6470", accent: "#9a94a6", scale: 1.15, hp: 170, dmg: 26, speed: 2.6, aggro: 9, reach: 1.5, cooldownMs: 1300, xp: 60, gold: [10, 22], drops: [{ tpl: "ancient_coin", chance: 0.6 }, { tpl: "plate", chance: 0.06 }] }),
+  boss_hollow_king: t({ id: "boss_hollow_king", name: "The Hollow King", model: "skeleton", color: "#3b2f4a", accent: "#b98cff", scale: 2.4, hp: 4200, dmg: 50, speed: 2.8, aggro: 12, reach: 2.8, cooldownMs: 1200, ranged: { speed: 12, range: 11 }, proj: "arcane", xp: 1500, gold: [300, 520], drops: [{ tpl: "sword_steel", chance: 0.4 }, { tpl: "ring_quantum", chance: 0.3 }, { tpl: "ancient_coin", chance: 1 }], boss: true }),
   boss_highlands: t({ id: "boss_highlands", name: "Scar Warden", model: "wolf", color: "#5d6470", accent: "#ff5c8a", scale: 2.2, hp: 1150, dmg: 30, speed: 3.4, aggro: 12, reach: 2.6, cooldownMs: 1400, xp: 400, gold: [100, 200], drops: [{ tpl: "bow_elm", chance: 0.4 }, { tpl: "sword_steel", chance: 0.4 }], boss: true })
 };
 

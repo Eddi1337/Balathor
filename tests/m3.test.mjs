@@ -42,6 +42,7 @@ before(async () => {
   await a.join(`ha${run}${Date.now() % 1000}`, `Home${run}`.slice(0, 15), "mage");
   b = new Client(srv.port);
   await b.join(`hb${run}${Date.now() % 1000}`, `Guest${run}`.slice(0, 15), "knight");
+  await a.chat("/time 0.45");
 });
 
 after(() => {

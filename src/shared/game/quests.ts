@@ -702,6 +702,80 @@ const OCEAN_QUESTS: Quest[] = [
 
 QUESTS.push(...OCEAN_QUESTS);
 
+// ── Caves & group dungeons ──────────────────────────────────────────────────
+
+QUESTS.push(
+  {
+    id: "q_grotto",
+    name: "Spores in the Grotto",
+    giver: "npc_oswin",
+    level: 5,
+    requires: ["q_welcome"],
+    offer: "There's a cave in the forest north-west of the city, the Mossy Grotto. Something down there is puffing out spores. Find Mother Mossbloom and put a stop to it.",
+    complete: "No more sneezing in the guild hall! Well done, adventurer.",
+    steps: [
+      { type: "kill", mobs: ["boss_mossbloom"], count: 1, text: "Defeat Mother Mossbloom in the Mossy Grotto" },
+      { type: "talk", npc: "npc_oswin", text: "Return to Guildmaster Oswin" }
+    ],
+    reward: { xp: 600, gold: 140, gear: "uncommon" }
+  },
+  {
+    id: "q_ember_depths",
+    name: "Into the Ember Depths",
+    giver: "npc_oswin",
+    level: 15,
+    requires: ["q_grotto"],
+    offer: "The Ember Depths, east of the city, have started to glow brighter. Magmaw the Molten is stirring. Cool him off. Permanently.",
+    complete: "The Depths have dimmed. The guild is proud of you.",
+    steps: [
+      { type: "kill", mobs: ["boss_magma"], count: 1, text: "Defeat Magmaw in the Ember Depths" },
+      { type: "talk", npc: "npc_oswin", text: "Return to Guildmaster Oswin" }
+    ],
+    reward: { xp: 1800, gold: 420, gear: "rare" }
+  },
+  {
+    id: "q_frostbite",
+    name: "The Frost Queen's Court",
+    giver: "npc_oswin",
+    level: 20,
+    requires: ["q_ember_depths"],
+    offer: "Far to the north lie the Frostbite Caverns. Its queen has frozen three of our scouts solid. Thaw them out by defeating her.",
+    complete: "The scouts are back, shivering but grateful. You're a legend!",
+    steps: [
+      { type: "kill", mobs: ["boss_frost_queen"], count: 1, text: "Defeat the Frost Queen in the Frostbite Caverns" },
+      { type: "talk", npc: "npc_oswin", text: "Return to Guildmaster Oswin" }
+    ],
+    reward: { xp: 2600, gold: 600, gear: "epic" }
+  },
+  {
+    id: "q_sunken",
+    name: "The Sunken Temple",
+    giver: "npc_bo",
+    level: 16,
+    requires: ["q_turtle_cove"],
+    offer: "Under my island there's a temple the sea swallowed long ago. Lately the tide sings at night. Tidecaller Ysolde has woken. Bring friends: it's no place to go alone.",
+    complete: "The tide is quiet again. And look, a pearl the size of my fist!",
+    steps: [
+      { type: "kill", mobs: ["boss_tidecaller"], count: 1, text: "Defeat Tidecaller Ysolde in the Sunken Temple (group)" },
+      { type: "talk", npc: "npc_bo", text: "Return to Hermit Bo" }
+    ],
+    reward: { xp: 2400, gold: 600, gear: "epic" }
+  },
+  {
+    id: "q_crypt",
+    name: "The Hollow King",
+    giver: "npc_king",
+    level: 24,
+    offer: "Long ago a cruel king was buried in the western highlands. Now he walks again, and his knights with him. Gather your bravest friends and lay him to rest.",
+    complete: "The Hollow King sleeps once more. The kingdom thanks you, champion.",
+    steps: [
+      { type: "kill", mobs: ["boss_hollow_king"], count: 1, text: "Defeat the Hollow King in his crypt (group)" },
+      { type: "talk", npc: "npc_king", text: "Return to King Aldric" }
+    ],
+    reward: { xp: 4200, gold: 1200, gear: "epic" }
+  }
+);
+
 export const QUESTS_BY_ID: Record<string, Quest> = Object.fromEntries(QUESTS.map((q) => [q.id, q]));
 
 export interface QuestProgress {

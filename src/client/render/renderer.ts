@@ -81,7 +81,9 @@ export class Renderer {
    * stars beyond the windows); open space (fixed distant sun, nebula); or a planet with its own
    * sky palette.
    */
-  env: "outdoor" | "indoor" | "deck" | "space" | "planet" = "outdoor";
+  env: "outdoor" | "indoor" | "deck" | "space" | "planet" | "cave" = "outdoor";
+  /** Cave fog / light tint (env "cave"). */
+  caveTint = { fog: new THREE.Color("#1a2a22"), light: new THREE.Color("#9dffc9") };
   /** Planet sky palette (env "planet"). */
   planetSky = { top: new THREE.Color("#3fb8c9"), horizon: new THREE.Color("#ffc9e8"), fog: new THREE.Color("#e8c9ef"), sun: new THREE.Color("#fff1d6"), ground: new THREE.Color("#5a7a6a"), sunI: 2.4, hemiI: 1.0 };
   get indoor(): boolean {
@@ -399,6 +401,22 @@ export class Renderer {
       this.night = 0.6;
       if (this.godRays) this.godRays.godRaysMaterial.uniforms.weight.value = space ? 0.28 : 0;
       if (this.bloom) this.bloom.intensity = space ? 1.25 : 1.1;
+    } else if (this.env === "cave") {
+      this.sky.visible = this.sunDisc.visible = this.moonDisc.visible = this.stars.visible = this.clouds.visible = false;
+      this.scene.background = this.caveTint.fog.clone();
+      (this.scene.fog as THREE.Fog).color.copy(this.caveTint.fog);
+      (this.scene.fog as THREE.Fog).near = 16;
+      (this.scene.fog as THREE.Fog).far = 52;
+      this.hemi.color.copy(this.caveTint.light).lerp(new THREE.Color(0xffffff), 0.5);
+      this.hemi.groundColor.copy(this.caveTint.fog);
+      this.hemi.intensity = 0.85;
+      this.sun.color.copy(this.caveTint.light);
+      this.sun.intensity = 0.55;
+      this.sunDir.set(0.2, 1, 0.3).normalize();
+      this.sun.position.copy(center).addScaledVector(this.sunDir, 40);
+      this.night = 0.85;
+      if (this.godRays) this.godRays.godRaysMaterial.uniforms.weight.value = 0;
+      if (this.bloom) this.bloom.intensity = 1.4;
     } else if (this.env === "planet") {
       const ps = this.planetSky;
       this.sky.visible = this.sunDisc.visible = true;

@@ -10,6 +10,10 @@ import { riverCurrent } from "./rivers";
 import { STATION_ARRIVAL, STATION_W, stationTileAt } from "./scifi/station";
 import { SPACE_RADIUS, spaceSpawns, spaceTileAt, LAUNCH_POINT, type SpawnSpec } from "./scifi/space";
 import { OCEAN_RADIUS, PORT_SPAWN, isLand, oceanHeightAt, oceanLevelAt, oceanSpawns, oceanTileAt } from "./sea/ocean";
+import { CAVES, caveLayout, caveSpawns, caveTileAt, parseCaveMapId } from "./dungeons/caves";
+import { DUNGEON_W, GROUP_DUNGEONS, dungeonLayout, dungeonSpawns, dungeonTileAt, parseDungeonMapId } from "./dungeons/group";
+import { LIFTS } from "./scifi/station";
+import { CAVE_MOUTHS_BY_ID, mouthFront } from "./overworld";
 import { LAB_INFO, LAB_W, labLayout, labSpawns, labTileAt, parseLabMapId } from "./scifi/labs";
 import { PLANETS, PLANET_PAD, parsePlanetMapId, planetHeightAt, planetLevelAt, planetSpawns, planetTileAt, type PlanetDef } from "./scifi/planets";
 
@@ -19,7 +23,7 @@ export type MapTheme = "fantasy" | "scifi" | "ocean" | "dungeon" | "interior";
  * How a map is laid out (and rendered): the open overworld, a cosy interior, a sci-fi deck
  * (station / labs), open space (you fly a ship) or a planet surface.
  */
-export type MapKind = "overworld" | "interior" | "deck" | "space" | "surface" | "sea";
+export type MapKind = "overworld" | "interior" | "deck" | "space" | "surface" | "sea" | "cave";
 
 export interface MapDef {
   id: string;
@@ -37,6 +41,16 @@ export interface MapDef {
   currentAt?(x: number, y: number): { vx: number; vy: number };
   /** Fixed mob spawns (maps other than the overworld). */
   spawns?(): SpawnSpec[];
+  /** Each party gets its own copy ("<id>#<party>") with monsters scaled to the party. */
+  instanced?: boolean;
+  /** Where you end up when you leave (or log back in after leaving mid-run). */
+  exit?: { map: string; x: number; y: number };
+}
+
+/** "lab:1#p12" → "lab:1". */
+export function baseMapId(id: string): string {
+  const i = id.indexOf("#");
+  return i < 0 ? id : id.slice(0, i);
 }
 
 export interface InteriorMapDef extends MapDef {
@@ -135,9 +149,54 @@ function createInterior(id: string, plot: Plot | null, floor: number, layout: In
 }
 
 /** Look up (or lazily create) a map. Unknown ids fall back to the overworld. */
-export function getMap(id: string): MapDef {
+export function getMap(rawId: string): MapDef {
+  const id = baseMapId(rawId);
   const hit = MAPS.get(id);
   if (hit) return hit;
+  const cave = parseCaveMapId(id);
+  if (cave) {
+    const def = CAVES[cave];
+    const L = caveLayout(cave);
+    const front = mouthFront(CAVE_MOUTHS_BY_ID[cave]);
+    const map: MapDef = {
+      id,
+      name: def.name,
+      theme: "dungeon",
+      kind: "cave",
+      bounds: Math.max(def.w, def.h),
+      spawn: { x: L.entry.x + 1, y: L.entry.y },
+      tileAt: (x, y) => caveTileAt(cave, x, y),
+      heightAt: () => 0,
+      biomeAt: () => def.biome,
+      zoneLevelAt: () => def.level,
+      spawns: () => caveSpawns(cave),
+      exit: { map: "overworld", x: front.x, y: front.y }
+    };
+    MAPS.set(id, map);
+    return map;
+  }
+  const dungeon = parseDungeonMapId(id);
+  if (dungeon) {
+    const def = GROUP_DUNGEONS[dungeon];
+    const L = dungeonLayout(dungeon);
+    const map: MapDef = {
+      id,
+      name: def.name,
+      theme: "dungeon",
+      kind: "deck",
+      bounds: DUNGEON_W,
+      spawn: { x: L.pad.x, y: L.pad.y + 1.5 },
+      tileAt: (x, y) => dungeonTileAt(dungeon, x, y),
+      heightAt: () => 0,
+      biomeAt: () => def.biome,
+      zoneLevelAt: () => def.level,
+      spawns: () => dungeonSpawns(dungeon),
+      instanced: true,
+      exit: def.from
+    };
+    MAPS.set(id, map);
+    return map;
+  }
   const house = parseHouseMapId(id);
   if (house) {
     const plot = PLOTS_BY_ID[house.plotId];
@@ -161,7 +220,9 @@ export function getMap(id: string): MapDef {
       heightAt: () => 0,
       biomeAt: () => "lab",
       zoneLevelAt: () => LAB_INFO[lab].level,
-      spawns: () => labSpawns(lab)
+      spawns: () => labSpawns(lab),
+      instanced: true,
+      exit: { map: "station", x: LIFTS[lab - 1].x, y: LIFTS[lab - 1].y + 1.6 }
     };
     MAPS.set(id, map);
     return map;

@@ -63,32 +63,54 @@ export function coastRadiusAt(angle: number): number {
 }
 
 /**
- * The Seafarer Cave: a mossy rock mound in the forest belt south-west of the city. Its tunnel runs
- * all the way under the sea to Port Bilgewater. The mouth faces back toward the city.
+ * Rocky cave mouths on the island: the Seafarer Cave (a tunnel under the sea to Port Bilgewater),
+ * three cave dungeons and the Hollow King's Crypt. Each mouth faces back toward the city.
  */
-const CAVE_ANGLE = 2.25;
-const caveR = 150;
-export const SEAFARER_CAVE = {
-  x: Math.round(Math.cos(CAVE_ANGLE) * caveR) + 0.5,
-  y: Math.round(Math.sin(CAVE_ANGLE) * caveR) + 0.5,
-  /** Unit vector the mouth opens toward (the city). */
-  ox: -Math.cos(CAVE_ANGLE),
-  oy: -Math.sin(CAVE_ANGLE)
-};
+export interface CaveMouth {
+  id: string;
+  x: number;
+  y: number;
+  /** Unit vector the mouth opens toward. */
+  ox: number;
+  oy: number;
+  rock: string;
+  moss: string;
+}
+
+function mouth(id: string, angle: number, radius: number, rock: string, moss: string): CaveMouth {
+  return { id, x: Math.round(Math.cos(angle) * radius) + 0.5, y: Math.round(Math.sin(angle) * radius) + 0.5, ox: -Math.cos(angle), oy: -Math.sin(angle), rock, moss };
+}
+
+export const CAVE_MOUTHS: CaveMouth[] = [
+  mouth("seafarer", 2.25, 150, "#8a8f9a", "#6fae5a"),
+  mouth("grotto", -2.35, 182, "#7d8a7a", "#5fae5a"),
+  mouth("ember", -0.5, 330, "#6a5a5e", "#ff8a5c"),
+  mouth("frost", -1.66, 420, "#c9d6e6", "#f4f8ff"),
+  mouth("crypt", -2.75, 430, "#5d6470", "#9a94a6")
+];
+export const CAVE_MOUTHS_BY_ID: Record<string, CaveMouth> = Object.fromEntries(CAVE_MOUTHS.map((m) => [m.id, m]));
+export const SEAFARER_CAVE = CAVE_MOUTHS_BY_ID.seafarer;
+
 /** Where you stand to go in. */
-export const SEAFARER_FRONT = { x: SEAFARER_CAVE.x + SEAFARER_CAVE.ox * 4.2, y: SEAFARER_CAVE.y + SEAFARER_CAVE.oy * 4.2 };
+export function mouthFront(m: CaveMouth): { x: number; y: number } {
+  return { x: m.x + m.ox * 4.2, y: m.y + m.oy * 4.2 };
+}
 
 function caveTileAt(x: number, y: number): number | null {
-  const dx = x + 0.5 - SEAFARER_CAVE.x;
-  const dy = y + 0.5 - SEAFARER_CAVE.y;
-  const d = Math.hypot(dx, dy);
-  if (d > 6.5) return null;
-  // Rock all round except the mouth.
-  const facing = (dx * SEAFARER_CAVE.ox + dy * SEAFARER_CAVE.oy) / Math.max(0.01, d);
-  if (d < 3.6 && !(facing > 0.55 && d > 1.2)) return Tile.ROCK;
-  if (d < 6.5) return Tile.MEADOW;
+  for (const m of CAVE_MOUTHS) {
+    const dx = x + 0.5 - m.x;
+    const dy = y + 0.5 - m.y;
+    const d = Math.hypot(dx, dy);
+    if (d > 6.5) continue;
+    // Rock all round except the mouth.
+    const facing = (dx * m.ox + dy * m.oy) / Math.max(0.01, d);
+    if (d < 3.6 && !(facing > 0.55 && d > 1.2)) return Tile.ROCK;
+    return Tile.MEADOW;
+  }
   return null;
 }
+
+export const SEAFARER_FRONT = mouthFront(SEAFARER_CAVE);
 
 export function biomeAt(x: number, y: number): Biome {
   const d = Math.hypot(x, y);

@@ -132,7 +132,7 @@ export class QuestService {
     for (const prog of p.save.quests.active) {
       const q = QUESTS_BY_ID[prog.id];
       const step = q?.steps[prog.step];
-      if (q && step?.type === "visit" && (step.map ?? "overworld") === p.mapId && dist(p.x, p.y, step.x, step.y) <= step.r) {
+      if (q && step?.type === "visit" && (step.map ?? "overworld") === p.mapId.split("#")[0] && dist(p.x, p.y, step.x, step.y) <= step.r) {
         this.advance(p, q, prog);
         p.session.toast(`${q.name}: ${step.text}, done!`, "good");
       }

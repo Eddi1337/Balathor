@@ -106,7 +106,20 @@ export class World {
   private awakeCells = new Set<number>();
   private awakeRefreshAt = 0;
 
-  constructor(readonly def: MapDef, private hooks: WorldHooks) {}
+  /** This world's id: the map id, plus "#<party>" for dungeon instances. */
+  readonly id: string;
+  /** Monster toughness for instances (scaled to the party that opened it). */
+  readonly hpScale: number;
+  readonly dmgScale: number;
+  /** Instances close a while after the last player leaves. */
+  emptySince = 0;
+
+  constructor(readonly def: MapDef, private hooks: WorldHooks, opts: { id?: string; partySize?: number } = {}) {
+    this.id = opts.id ?? def.id;
+    const extra = Math.max(0, (opts.partySize ?? 1) - 1);
+    this.hpScale = 1 + extra * 0.6;
+    this.dmgScale = 1 + extra * 0.12;
+  }
 
   // ── population ──────────────────────────────────────────────────────────────
 
@@ -274,7 +287,8 @@ export class World {
   }
 
   private addMob(id: string, tpl: MobTemplate, level: number, x: number, y: number, respawnMs: number): Mob {
-    const mob = new Mob(id, tpl, level, x, y, mobStats(tpl, level), respawnMs);
+    const stats = mobStats(tpl, level);
+    const mob = new Mob(id, tpl, level, x, y, { hp: Math.round(stats.hp * this.hpScale), dmg: Math.round(stats.dmg * this.dmgScale), xp: stats.xp }, respawnMs);
     mob.nextThinkAt = Date.now() + Math.random() * 4000;
     this.mobs.set(id, mob);
     this.grid.insert(mob);
@@ -284,7 +298,7 @@ export class World {
   // ── players ─────────────────────────────────────────────────────────────────
 
   addPlayer(p: Player): void {
-    p.mapId = this.def.id;
+    p.mapId = this.id;
     this.players.set(p.id, p);
     this.grid.insert(p);
   }
@@ -879,7 +893,7 @@ export class World {
     }
     const blind = now < mob.blindUntil;
     let target: Player | null = mob.targetId ? this.players.get(mob.targetId) ?? null : null;
-    if (target && (target.dead || target.mapId !== this.def.id || target.buffs.has("camo"))) {
+    if (target && (target.dead || target.mapId !== this.id || target.buffs.has("camo"))) {
       target = null;
       mob.targetId = null;
       if (mob.state === "chase") mob.state = "return";

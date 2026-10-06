@@ -37,7 +37,8 @@ const MINIMAP_COLORS: Record<number, [number, number, number]> = {
   [Tile.PAD]: [127, 232, 255],
   [Tile.CONSOLE]: [106, 116, 136],
   [Tile.PLANTER]: [127, 224, 168],
-  [Tile.GATE]: [185, 140, 255]
+  [Tile.GATE]: [185, 140, 255],
+  [Tile.ROCK]: [70, 72, 84]
 };
 const PROP_COLOR: [number, number, number] = [70, 140, 80];
 

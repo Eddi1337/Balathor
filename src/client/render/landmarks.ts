@@ -7,7 +7,7 @@ import { heightAt } from "../../shared/world/overworld";
 import { GeometryBuilder, PRIMS, sceneryMaterial } from "./builder";
 import { buildStargate } from "./stargate";
 import { GATE_RING, STARGATE } from "../../shared/world/scifi/stargate";
-import { SEAFARER_CAVE } from "../../shared/world/overworld";
+import { CAVE_MOUTHS } from "../../shared/world/overworld";
 
 interface Obelisk {
   id: string;
@@ -60,12 +60,11 @@ export class Landmarks {
       stone.add(PRIMS.octa, { x, y: heightAt(x, y) + 1.05, z: y, sx: 0.12, sy: 0.18, sz: 0.12, color: "#b98cff", glow: -1.6 });
     }
     // The Seafarer Cave: a mossy rock mound with a dark mouth facing the sea and a lantern.
-    {
-      const c = SEAFARER_CAVE;
+    for (const c of CAVE_MOUTHS) {
       const h = heightAt(c.x, c.y);
       const ang = Math.atan2(c.oy, c.ox);
-      stone.add(PRIMS.dodeca, { x: c.x, y: h + 1.3, z: c.y, sx: 4.2, sy: 3.0, sz: 4.0, ry: ang, color: "#8a8f9a", jitter: 0.18 });
-      stone.add(PRIMS.ico, { x: c.x - c.ox * 0.6, y: h + 3.6, z: c.y - c.oy * 0.6, sx: 2.8, sy: 0.6, sz: 2.6, color: "#6fae5a", jitter: 0.15 });
+      stone.add(PRIMS.dodeca, { x: c.x, y: h + 1.3, z: c.y, sx: 4.2, sy: 3.0, sz: 4.0, ry: ang, color: c.rock, jitter: 0.18 });
+      stone.add(PRIMS.ico, { x: c.x - c.ox * 0.6, y: h + 3.6, z: c.y - c.oy * 0.6, sx: 2.8, sy: 0.6, sz: 2.6, color: c.moss, jitter: 0.15 });
       stone.add(PRIMS.box, { x: c.x + c.ox * 3.5, y: h + 1.1, z: c.y + c.oy * 3.5, sx: 2.0, sy: 2.2, sz: 0.3, ry: -ang + Math.PI / 2, color: "#1a1626" });
       const lx = c.x + c.ox * 3.9 - c.oy * 1.6;
       const lz = c.y + c.oy * 3.9 + c.ox * 1.6;

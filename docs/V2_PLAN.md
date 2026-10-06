@@ -138,11 +138,17 @@ Legend: ✅ in v2 · 🔜 planned milestone
 | Tech dungeons I–III | ✅ Seeded room-and-corridor labs below Ringforge (levels 10/18/26) with security bots, turrets, sentinels and Overseers Mk I–III. Instancing for groups comes with M5 |
 | Orbital courier runs | ✅ Courier Run quest plus repeatable jobs (Kestrel freight, pirate bounty, titanium order) |
 
-### Milestone 5: oceans and dungeons 🔜
+### Milestone 5: oceans and dungeons ✅
 
-Seafarer Cave → Boundless Ocean (100+ islands, Port Bilgewater, sailing ships with walkable
-decks, cannons, docking, pirate crews and the pirate quest line); cave dungeons; group dungeon
-instances with parties.
+| v1 feature | v2 |
+|---|---|
+| Seafarer Cave → Boundless Ocean | ✅ A cave mouth in the forest belt south-west of the city (Old Salt Pete) tunnels under the sea to Port Bilgewater; the ocean is its own map with 126 seeded islands (palm, jungle, rocky, ruins, pirate camps, treasure isles, Turtle Cove, Smuggler's Rest, Skull Isle) |
+| Port Bilgewater | ✅ Tavern, shipwright, provisioner, harbourmaster, Captain Marlow's house, lighthouse, long pier and jetties |
+| Sailing ships with walkable decks | ✅ Sloop, brig and galleon. Crews walk the planks while she sails (deck-local coordinates, predicted on the client), take the wheel at the stern, raise or furl the sails; wind and points of sail; running aground; summon at the harbour; sinking washes you ashore |
+| Cannons, docking | ✅ Broadsides from the helm or single cannons at the rails; board from the pier or any shore, step ashore next to land; party members can crew your ship |
+| Pirate crews and the pirate quest line | ✅ Pirate sloops and frigates that shoot hulls, brutes, gunners, skeletons, sharks, the Kraken and Dread Captain Gristle; treasure map scraps and digging at the X; Marlow's seven-quest line and Hermit Bo's shell job |
+| Cave dungeons | ✅ The Mossy Grotto (lv 5), Ember Depths (lv 15) and Frostbite Caverns (lv 20): cellular-automaton caverns with themed walls, glowing props, pools or lava, bats, bosses and Guildmaster Oswin's quests |
+| Group dungeon instances | ✅ Every party gets its own copy of the Sunken Temple (lv 16, under Turtle Cove), the Hollow King's Crypt (lv 24, western highlands) and Tech Labs I–III, with monsters scaled to the party's size; instances close two minutes after the last player leaves; dying or logging out inside returns you to the entrance |
 
 ### Milestone 6: minigames and polish 🔜
 

@@ -9,6 +9,7 @@ import { hash2 } from "../../shared/math";
 import { GROTTO, ISLES, PIER_H, PORT_BUILDINGS, treasureSpot } from "../../shared/world/sea/ocean";
 import { GeometryBuilder, PRIMS, sceneryMaterial } from "./builder";
 import { addProp, tileColor } from "./terrain";
+import { DUNGEON_DOORS } from "../../shared/world/dungeons/group";
 import { stillWaterMaterial, withStillFlow } from "./water";
 
 const CHUNK = 32;
@@ -112,6 +113,20 @@ function buildSeaChunk(map: MapDef, cx: number, cy: number): THREE.BufferGeometr
     b.add(PRIMS.dodeca, { x: GROTTO.x, y: h + 1.4, z: GROTTO.y - 4.2, sx: 3.6, sy: 2.8, sz: 3, color: "#8a8f9a", jitter: 0.15 });
     b.add(PRIMS.box, { x: GROTTO.x, y: h + 0.9, z: GROTTO.y - 1.45, sx: 1.6, sy: 1.8, sz: 0.2, color: "#1a1626" });
     b.add(PRIMS.octa, { x: GROTTO.x - 1.2, y: h + 1.9, z: GROTTO.y - 1.4, sx: 0.12, sy: 0.18, sz: 0.12, color: "#ffd166", glow: 1.4 });
+  }
+  {
+    // The Sunken Temple's entrance: a mossy stone archway with stairs down into the dark.
+    const t = DUNGEON_DOORS.sunken;
+    if (Math.floor(t.x / CHUNK) === cx && Math.floor((t.y - 2) / CHUNK) === cy) {
+      const h = map.heightAt(t.x, t.y);
+      for (const s of [-1, 1]) {
+        b.add(PRIMS.box, { x: t.x + s * 1.4, y: h + 1.4, z: t.y - 1.6, sx: 0.7, sy: 2.8, sz: 0.7, color: "#cfc6a8", jitter: 0.1 });
+        b.add(PRIMS.ico, { x: t.x + s * 1.4, y: h + 2.9, z: t.y - 1.6, sx: 0.4, sy: 0.2, sz: 0.4, color: "#6fae5a" });
+      }
+      b.add(PRIMS.box, { x: t.x, y: h + 2.95, z: t.y - 1.6, sx: 3.6, sy: 0.5, sz: 0.8, color: "#bfa880" });
+      b.add(PRIMS.box, { x: t.x, y: h + 1.2, z: t.y - 1.75, sx: 2.1, sy: 2.4, sz: 0.2, color: "#10202a" });
+      b.add(PRIMS.box, { x: t.x, y: h + 3.0, z: t.y - 1.15, sx: 0.4, sy: 0.25, sz: 0.04, color: "#5fd6c9", glow: 1.6 });
+    }
   }
   for (const isle of ISLES) {
     if (isle.kind !== "treasure" && isle.kind !== "skull") continue;

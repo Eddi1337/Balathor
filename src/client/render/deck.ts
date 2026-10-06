@@ -12,6 +12,9 @@ import { HOLO_FOUNTAIN, LAUNCH_PAD, LIFTS, STATION_GATE } from "../../shared/wor
 import { STATIONS } from "../../shared/world/stations";
 
 export interface DeckPalette {
+  /** What the corner "planters" become: plants, specimen tanks, statues or coffins. */
+  style?: "station" | "lab" | "temple" | "crypt";
+  stars?: boolean;
   floorA: string;
   floorB: string;
   seam: string;
@@ -21,7 +24,31 @@ export interface DeckPalette {
   plant: string[];
 }
 
+export const TEMPLE_PALETTE: DeckPalette = {
+  style: "temple",
+  floorA: "#d9c4a0",
+  floorB: "#c9b08a",
+  seam: "#8a7a5a",
+  wall: "#bfa880",
+  wallTop: "#7d8a6a",
+  strip: "#5fd6c9",
+  plant: ["#5fd6c9", "#9dffb8"]
+};
+
+export const CRYPT_PALETTE: DeckPalette = {
+  style: "crypt",
+  floorA: "#5d6470",
+  floorB: "#4f5562",
+  seam: "#2b2238",
+  wall: "#4a4560",
+  wallTop: "#2b2238",
+  strip: "#b98cff",
+  plant: ["#b98cff"]
+};
+
 export const LAB_PALETTE: DeckPalette = {
+  style: "lab",
+  stars: true,
   floorA: "#8f8aa8",
   floorB: "#7f7a98",
   seam: "#4a4560",
@@ -32,6 +59,8 @@ export const LAB_PALETTE: DeckPalette = {
 };
 
 export const STATION_PALETTE: DeckPalette = {
+  style: "station",
+  stars: true,
   floorA: "#cfd6e2",
   floorB: "#bfc7d6",
   seam: "#8f9ab0",
@@ -99,7 +128,12 @@ export function buildDeck(map: MapDef, w: number, h: number, pal: DeckPalette = 
       } else if (t === Tile.CONSOLE) {
         if (inHolo(x, y)) continue;
         if (stationSpots.some((s) => Math.floor(s.x) === x && Math.abs(s.y - cz) < 1.2)) continue;
-        if (map.id === "station" && y >= 32) {
+        if (pal.style === "temple" || pal.style === "crypt") {
+          // A stone brazier with a magical flame.
+          b.add(PRIMS.cyl8, { x: cx, y: 0.45, z: cz, sx: 0.32, sy: 0.9, sz: 0.32, color: pal.wall });
+          b.add(PRIMS.cyl8, { x: cx, y: 0.95, z: cz, sx: 0.45, sy: 0.2, sz: 0.45, color: pal.wallTop });
+          b.add(PRIMS.cone6, { x: cx, y: 1.3, z: cz, sx: 0.22, sy: 0.55, sz: 0.22, color: pal.strip, glow: 2.2 });
+        } else if (map.id === "station" && y >= 32) {
           // Hangar crates
           b.add(PRIMS.box, { x: cx, y: 0.4, z: cz, sx: 0.85, sy: 0.8, sz: 0.85, ry: n * 0.4, color: n > 0.5 ? "#ffb02e" : "#7d8a9b", jitter: 0.1 });
           b.add(PRIMS.box, { x: cx, y: 0.82, z: cz, sx: 0.88, sy: 0.06, sz: 0.88, ry: n * 0.4, color: "#3b2f4a" });
@@ -108,6 +142,18 @@ export function buildDeck(map: MapDef, w: number, h: number, pal: DeckPalette = 
           b.add(PRIMS.box, { x: cx, y: 1.05, z: cz, sx: 0.7, sy: 0.4, sz: 0.06, rx: -0.3, color: n > 0.5 ? "#5ff6ff" : "#9dffb8", glow: 1.6 });
           b.add(PRIMS.box, { x: cx, y: 0.92, z: cz + 0.12, sx: 0.7, sy: 0.05, sz: 0.3, color: "#3b4a6a" });
         }
+      } else if (t === Tile.PLANTER && pal.style === "temple") {
+        // A mossy guardian statue on a plinth.
+        b.add(PRIMS.box, { x: cx, y: 0.3, z: cz, sx: 0.9, sy: 0.6, sz: 0.9, color: pal.wall });
+        b.add(PRIMS.rbox, { x: cx, y: 1.1, z: cz, sx: 0.5, sy: 1.0, sz: 0.45, color: "#cfc6a8", jitter: 0.1 });
+        b.add(PRIMS.rbox, { x: cx, y: 1.8, z: cz, sx: 0.42, sy: 0.4, sz: 0.4, color: "#cfc6a8" });
+        b.add(PRIMS.box, { x: cx, y: 1.82, z: cz + 0.21, sx: 0.25, sy: 0.06, sz: 0.02, color: pal.strip, glow: 1.6 });
+        b.add(PRIMS.ico, { x: cx + 0.2, y: 2.05, z: cz, sx: 0.2, sy: 0.08, sz: 0.2, color: "#6fae5a" });
+      } else if (t === Tile.PLANTER && pal.style === "crypt") {
+        // A stone coffin with a purple glow seeping out.
+        b.add(PRIMS.box, { x: cx, y: 0.35, z: cz, sx: 0.7, sy: 0.7, sz: 0.95, color: "#5d6470", jitter: 0.08 });
+        b.add(PRIMS.box, { x: cx, y: 0.74, z: cz, sx: 0.78, sy: 0.1, sz: 1.0, ry: 0.15, color: "#6a707c" });
+        b.add(PRIMS.box, { x: cx, y: 0.7, z: cz, sx: 0.72, sy: 0.04, sz: 0.97, color: pal.strip, glow: 1.4 });
       } else if (t === Tile.PLANTER && map.id !== "station") {
         // Lab specimen tank: a glowing cylinder with something wriggly inside.
         const c = pal.plant[Math.floor(n * pal.plant.length)];
@@ -168,6 +214,7 @@ export function buildDeck(map: MapDef, w: number, h: number, pal: DeckPalette = 
   }
 
   // A starfield all around so the windows look out into space.
+  if (pal.stars) {
   const starPos: number[] = [];
   for (let i = 0; i < 900; i += 1) {
     const a = Math.random() * Math.PI * 2;
@@ -177,6 +224,7 @@ export function buildDeck(map: MapDef, w: number, h: number, pal: DeckPalette = 
   const sg = new THREE.BufferGeometry();
   sg.setAttribute("position", new THREE.Float32BufferAttribute(starPos, 3));
   group.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xffffff, size: 1.8, sizeAttenuation: false, fog: false })));
+  }
 
   // The station's stargate, set into the north wall.
   if (map.id === "station") {
