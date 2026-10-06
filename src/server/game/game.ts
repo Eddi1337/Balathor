@@ -36,7 +36,7 @@ import { HousingService } from "./housingService";
 import { ProfessionService } from "./professionService";
 import { ShipService } from "./shipService";
 import { freshUpgrades, HULL_IDS, UPGRADE_SLOTS } from "../../shared/game/ships";
-import { LAUNCH_PAD } from "../../shared/world/scifi/station";
+import { LAUNCH_PAD, STATION_ARRIVAL } from "../../shared/world/scifi/station";
 import { freshProfessions, PROF_IDS } from "../../shared/game/professions";
 import { findWalkableNear } from "../../shared/world/overworld";
 import { clamp, dist, wrapAngle } from "../../shared/math";
@@ -600,8 +600,9 @@ export class Game {
     p.dead = false;
     p.mounted = false;
     p.hp = p.derived.maxHp;
-    void world;
-    this.transfer(p, OVERWORLD.id, OVERWORLD.spawn.x, OVERWORLD.spawn.y);
+    // Fall in the sci-fi realm and you wake up in Ringforge's medbay.
+    if (world.def.theme === "scifi") this.transfer(p, "station", STATION_ARRIVAL.x, STATION_ARRIVAL.y);
+    else this.transfer(p, OVERWORLD.id, OVERWORLD.spawn.x, OVERWORLD.spawn.y);
   }
 
   private spendStat(p: Player, stat: StatId): void {
@@ -912,6 +913,15 @@ export class Game {
         const spot = Number.isFinite(x) && Number.isFinite(y) ? { x, y } : def.spawn;
         this.transfer(p, def.id, spot.x, spot.y);
         return sys(`Moved to ${def.name}`);
+      }
+      case "questdone": {
+        if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
+        const id = text.trim().split(/\s+/)[1] ?? "";
+        if (!QUESTS_BY_ID[id]) return sys(`No quest ${id}`);
+        if (!p.save.quests.done.includes(id)) p.save.quests.done.push(id);
+        p.save.quests.active = p.save.quests.active.filter((q) => q.id !== id);
+        p.selfDirty = p.saveDirty = true;
+        return sys(`Marked ${id} done`);
       }
       case "ship": {
         if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);

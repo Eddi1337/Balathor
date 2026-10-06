@@ -183,8 +183,12 @@ export class Hud {
     $("hot-attack-cd").style.transform = `scaleY(${Math.max(0, Math.min(1, frac))})`;
   }
 
-  setDead(dead: boolean): void {
+  setDead(dead: boolean, scifi = false): void {
     $("death").classList.toggle("hidden", !dead);
+    if (dead) {
+      $("death-text").textContent = scifi ? "Ringforge's medics will patch you right up." : "Hearthmoor's healers will patch you right up.";
+      $("respawn").textContent = scifi ? "Wake up on Ringforge" : "Wake up in town";
+    }
   }
 
   setZone(text: string): void {

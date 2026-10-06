@@ -125,11 +125,18 @@ Legend: ✅ in v2 · 🔜 planned milestone
 | Fishing minigame | ✅ cast → bobber → bite → press E within the window to reel in; biome and river fish tables |
 | Food buffs | ✅ cooked food heals and grants a timed damage / armour / speed / regen buff; smithing makes bars, rings, whetstone tonics and forged class weapons |
 
-### Milestone 4: the sci-fi realm 🔜
+### Milestone 4: the sci-fi realm ✅
 
-Stargate → Orbital Station map; flyable ships (combat lanes, warp, docking), asteroid corridors,
-procedural planet surfaces with mining rigs, station defences, tech dungeons I–III, orbital
-courier runs.
+| v1 feature | v2 |
+|---|---|
+| Stargate → orbital station | ✅ Starfall Circle outside the main gate (Gatekeeper Astra) → Ringforge Station, a walkable deck: stargate hall, concourse with holo-fountain, shipyard, shipwright, quartermaster, café, workshop (fabricator + galley), hangar bay, lifts to the labs. Its own map, so there are no "which world is this?" lookups |
+| Flyable ships | ✅ Four hulls (Bumblebee Skiff, Comet Corvette, Puffin Hauler, Starling Frigate) with a tiny pilot in the cockpit; shared, predicted flight model (turn, thrust, drift, afterburner); multi-gun lasers, frigate drone turrets, mining-laser bonus; four upgrade tracks (engines, shields, lasers, plating) shared by all your ships |
+| Combat lanes, station defences | ✅ Shields soak hits before the hull; disabled ships get towed home; repair kits; Ringforge's guns protect a safe zone; pirate fighters, gunships, scrap drones, void wraiths and Captain Vex |
+| Warp, docking | ✅ Warp drive (J) to any discovered place, interrupted by enemy fire; dock with E in the station ring (free repairs) |
+| Asteroid corridors | ✅ South Belt, Ember Belt and Void Rift with ferrite, titanium and iridium asteroids, plus the Derelict Helix wreck field; a tractor beam scoops up loot |
+| Procedural planets with mining | ✅ Aurelia, Icefall and Rust are their own maps: land from orbit, launch from the pad; alien flora and ore for the gathering professions, creatures, bosses and guide NPCs with quests |
+| Tech dungeons I–III | ✅ Seeded room-and-corridor labs below Ringforge (levels 10/18/26) with security bots, turrets, sentinels and Overseers Mk I–III. Instancing for groups comes with M5 |
+| Orbital courier runs | ✅ Courier Run quest plus repeatable jobs (Kestrel freight, pirate bounty, titanium order) |
 
 ### Milestone 5: oceans and dungeons 🔜
 

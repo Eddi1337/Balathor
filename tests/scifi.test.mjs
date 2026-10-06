@@ -23,6 +23,8 @@ await build({
       export { getMap } from "./src/shared/world/maps";
       export { PLANETS, PLANET_PAD, planetSpawns } from "./src/shared/world/scifi/planets";
       export { isBlockingTile } from "./src/shared/world/tiles";
+      export { labLayout, LAB_IDS } from "./src/shared/world/scifi/labs";
+      export { LIFTS } from "./src/shared/world/scifi/station";
     `,
     resolveDir: process.cwd(),
     loader: "ts"
@@ -251,4 +253,52 @@ test("land on Aurelia, meet Fern, gather glowwood and launch back to orbit", asy
   c.messages = [];
   c.send({ t: "launch" });
   await c.wait((m) => m.t === "welcome" && m.map === "space", 3000, "back in orbit");
+});
+
+test("tech labs: every room connects the lift pad to the Overseer", () => {
+  for (const id of W.LAB_IDS) {
+    const L = W.labLayout(id);
+    const map = W.getMap(`lab:${id}`);
+    assert.equal(map.kind, "deck");
+    for (const rm of L.rooms) {
+      const path = W.findPath(map, L.pad.x, L.pad.y + 1.5, rm.x + rm.w / 2, rm.y + rm.h / 2, 60000);
+      assert.ok(path, `lab ${id}: room at ${rm.x},${rm.y}`);
+    }
+  }
+});
+
+test("the lift takes you down to Tech Lab I, where the Overseer waits", async () => {
+  const lift = W.LIFTS[0];
+  await c.chat(`/map station ${lift.x} ${lift.y + 1}`, 1500);
+  await sleep(700);
+  c.messages = [];
+  c.send({ t: "door", id: "lift_1" });
+  await c.wait((m) => m.t === "welcome" && m.map === "lab:1", 3000, "in the lab");
+  const L = W.labLayout(1);
+  await c.chat(`/tp ${L.boss.x - 6} ${L.boss.y}`, 1500);
+  await c.wait(() => [...c.entities.values()].some((e) => e.k === "m" && e.tpl === "overseer_1"), 3000, "Overseer Mk I");
+  await c.chat(`/tp ${L.pad.x} ${L.pad.y + 1}`, 1500);
+  c.messages = [];
+  c.send({ t: "door", id: "lift_1_up" });
+  await c.wait((m) => m.t === "welcome" && m.map === "station", 3000, "back on the station");
+});
+
+test("jobs are repeatable: Orla offers the freight job again after you hand it in", async () => {
+  await c.chat("/xp 20000");
+  await c.chat("/questdone q_freight");
+  for (let round = 0; round < 2; round += 1) {
+    await c.chat("/tpnpc npc_orla", 1200);
+    c.messages = [];
+    c.send({ t: "talk", id: await npcId(c, "npc_orla") });
+    const offer = await c.wait((m) => m.t === "questOffer", 3000, `freight offer #${round + 1}`);
+    assert.equal(offer.id, "j_freight");
+    c.send({ t: "questAccept", id: "j_freight" });
+    await c.selfWhere((s) => s.quests.active.some((q) => q.id === "j_freight"), 2000, "accepted");
+    await c.chat("/map space -560 -80", 1500);
+    await c.selfWhere((s) => s.quests.active.find((q) => q.id === "j_freight")?.step === 1, 4000, "delivered");
+    await c.chat("/tpnpc npc_orla", 1200);
+    c.send({ t: "talk", id: await npcId(c, "npc_orla") });
+    await c.selfWhere((s) => !s.quests.active.some((q) => q.id === "j_freight"), 3000, "handed in");
+  }
+  assert.ok(c.self.quests.done.includes("j_freight"));
 });

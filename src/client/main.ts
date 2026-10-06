@@ -43,7 +43,8 @@ import { HULLS, shipStats, stepShip, BOOST_COOLDOWN_MS, BOOST_MS, type HullId } 
 import { DOCK_RANGE, POIS, poiNear } from "../shared/world/scifi/space";
 import { LAUNCH_PAD, STATION_H, STATION_W } from "../shared/world/scifi/station";
 import { SpaceScene } from "./render/space";
-import { buildDeck, type Deck } from "./render/deck";
+import { LAB_PALETTE, buildDeck, type Deck } from "./render/deck";
+import { LAB_H, LAB_W } from "../shared/world/scifi/labs";
 import { SHIP_FLOAT, animateScifi, buildScifiMob, buildShip, isScifiModel } from "./render/scifiModels";
 import { HangarUI, WarpUI } from "./ui/hangar";
 import { Surface, planetSky } from "./render/surface";
@@ -746,7 +747,7 @@ function switchMap(id: string): void {
     renderer.pitch = 0.5;
     renderer.lookAbove = 2.2;
   } else if (map.kind === "deck") {
-    deck = buildDeck(map, STATION_W, STATION_H);
+    deck = map.id === "station" ? buildDeck(map, STATION_W, STATION_H) : buildDeck(map, LAB_W, LAB_H, LAB_PALETTE);
     renderer.scene.add(deck.group);
     renderer.distance = 13;
     renderer.pitch = 0.82;
@@ -1337,7 +1338,7 @@ function updateHud(now: number): void {
   const s = state.self;
   if (d) {
     hud.setHp(d.hp, d.mhp);
-    hud.setDead(d.dead === 1);
+    hud.setDead(d.dead === 1, map.theme === "scifi");
     hud.setShield(d.sh ? d.sd : null);
   }
   // The ship you'll launch in sits on the hangar pad.

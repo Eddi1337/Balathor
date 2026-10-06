@@ -21,6 +21,16 @@ export interface DeckPalette {
   plant: string[];
 }
 
+export const LAB_PALETTE: DeckPalette = {
+  floorA: "#8f8aa8",
+  floorB: "#7f7a98",
+  seam: "#4a4560",
+  wall: "#5a5470",
+  wallTop: "#3b3550",
+  strip: "#ff5c8a",
+  plant: ["#9dff5c", "#5ff6ff", "#b98cff"]
+};
+
 export const STATION_PALETTE: DeckPalette = {
   floorA: "#cfd6e2",
   floorB: "#bfc7d6",
@@ -52,7 +62,7 @@ export function buildDeck(map: MapDef, w: number, h: number, pal: DeckPalette = 
     for (let dy = -1; dy <= 1; dy += 1) for (let dx = -1; dx <= 1; dx += 1) if (isWalkable(at(x + dx, y + dy))) return true;
     return false;
   };
-  const inHolo = (x: number, y: number) => Math.hypot(x + 0.5 - HOLO_FOUNTAIN.x, y + 0.5 - HOLO_FOUNTAIN.y) <= HOLO_FOUNTAIN.r + 0.2;
+  const inHolo = (x: number, y: number) => map.id === "station" && Math.hypot(x + 0.5 - HOLO_FOUNTAIN.x, y + 0.5 - HOLO_FOUNTAIN.y) <= HOLO_FOUNTAIN.r + 0.2;
   const stationSpots = STATIONS.filter((s) => s.map === map.id);
 
   for (let y = -1; y <= h; y += 1) {
@@ -89,7 +99,7 @@ export function buildDeck(map: MapDef, w: number, h: number, pal: DeckPalette = 
       } else if (t === Tile.CONSOLE) {
         if (inHolo(x, y)) continue;
         if (stationSpots.some((s) => Math.floor(s.x) === x && Math.abs(s.y - cz) < 1.2)) continue;
-        if (y >= 32) {
+        if (map.id === "station" && y >= 32) {
           // Hangar crates
           b.add(PRIMS.box, { x: cx, y: 0.4, z: cz, sx: 0.85, sy: 0.8, sz: 0.85, ry: n * 0.4, color: n > 0.5 ? "#ffb02e" : "#7d8a9b", jitter: 0.1 });
           b.add(PRIMS.box, { x: cx, y: 0.82, z: cz, sx: 0.88, sy: 0.06, sz: 0.88, ry: n * 0.4, color: "#3b2f4a" });
@@ -98,6 +108,13 @@ export function buildDeck(map: MapDef, w: number, h: number, pal: DeckPalette = 
           b.add(PRIMS.box, { x: cx, y: 1.05, z: cz, sx: 0.7, sy: 0.4, sz: 0.06, rx: -0.3, color: n > 0.5 ? "#5ff6ff" : "#9dffb8", glow: 1.6 });
           b.add(PRIMS.box, { x: cx, y: 0.92, z: cz + 0.12, sx: 0.7, sy: 0.05, sz: 0.3, color: "#3b4a6a" });
         }
+      } else if (t === Tile.PLANTER && map.id !== "station") {
+        // Lab specimen tank: a glowing cylinder with something wriggly inside.
+        const c = pal.plant[Math.floor(n * pal.plant.length)];
+        b.add(PRIMS.cyl8, { x: cx, y: 0.15, z: cz, sx: 0.42, sy: 0.3, sz: 0.42, color: pal.wallTop });
+        b.add(PRIMS.cyl8, { x: cx, y: 1.0, z: cz, sx: 0.38, sy: 1.4, sz: 0.38, color: c, glow: 0.7 });
+        b.add(PRIMS.ico, { x: cx, y: 1.0 + n * 0.3, z: cz, sx: 0.16, sy: 0.2, sz: 0.16, color: "#2b2238" });
+        b.add(PRIMS.cyl8, { x: cx, y: 1.8, z: cz, sx: 0.42, sy: 0.2, sz: 0.42, color: pal.wallTop });
       } else if (t === Tile.PLANTER) {
         b.add(PRIMS.rbox, { x: cx, y: 0.3, z: cz, sx: 0.92, sy: 0.6, sz: 0.92, color: "#e8ecf4" });
         b.add(PRIMS.box, { x: cx, y: 0.6, z: cz, sx: 0.8, sy: 0.04, sz: 0.8, color: "#6a4a3a" });
@@ -111,7 +128,8 @@ export function buildDeck(map: MapDef, w: number, h: number, pal: DeckPalette = 
     }
   }
 
-  // Launch pad ring + lift pads
+  // Launch pad ring + lift pads (station only)
+  if (map.id === "station") {
   b.add(PRIMS.cyl12, { x: LAUNCH_PAD.x, y: 0.02, z: LAUNCH_PAD.y, sx: LAUNCH_PAD.r + 0.3, sy: 0.04, sz: LAUNCH_PAD.r + 0.3, color: "#3b4a6a" });
   for (let i = 0; i < 16; i += 1) {
     const a = (i / 16) * Math.PI * 2;
@@ -121,6 +139,7 @@ export function buildDeck(map: MapDef, w: number, h: number, pal: DeckPalette = 
     b.add(PRIMS.cyl12, { x: l.x, y: 0.04, z: l.y, sx: 0.75, sy: 0.08, sz: 0.75, color: "#b98cff", glow: 1.4 });
     b.add(PRIMS.box, { x: l.x, y: 2.8, z: l.y - 0.2, sx: 0.8, sy: 0.4, sz: 0.1, color: "#3b2f4a" });
     for (let i = 0; i < l.lab; i += 1) b.add(PRIMS.box, { x: l.x - (l.lab - 1) * 0.12 + i * 0.24, y: 2.8, z: l.y - 0.14, sx: 0.08, sy: 0.25, sz: 0.04, color: "#ffffff", glow: 2 });
+  }
   }
   // Crafting stations
   for (const st of stationSpots) {
@@ -135,9 +154,9 @@ export function buildDeck(map: MapDef, w: number, h: number, pal: DeckPalette = 
     }
   }
   // Holo-fountain basin
-  b.add(PRIMS.cyl12, { x: HOLO_FOUNTAIN.x, y: 0.3, z: HOLO_FOUNTAIN.y, sx: HOLO_FOUNTAIN.r, sy: 0.6, sz: HOLO_FOUNTAIN.r, color: "#e8ecf4" });
-  b.add(PRIMS.cyl12, { x: HOLO_FOUNTAIN.x, y: 0.62, z: HOLO_FOUNTAIN.y, sx: HOLO_FOUNTAIN.r - 0.25, sy: 0.04, sz: HOLO_FOUNTAIN.r - 0.25, color: "#5ff6ff", glow: 1.2 });
-  b.add(PRIMS.cyl8, { x: HOLO_FOUNTAIN.x, y: 0.9, z: HOLO_FOUNTAIN.y, sx: 0.35, sy: 0.6, sz: 0.35, color: "#9aa6b8" });
+  if (map.id === "station") b.add(PRIMS.cyl12, { x: HOLO_FOUNTAIN.x, y: 0.3, z: HOLO_FOUNTAIN.y, sx: HOLO_FOUNTAIN.r, sy: 0.6, sz: HOLO_FOUNTAIN.r, color: "#e8ecf4" });
+  if (map.id === "station") b.add(PRIMS.cyl12, { x: HOLO_FOUNTAIN.x, y: 0.62, z: HOLO_FOUNTAIN.y, sx: HOLO_FOUNTAIN.r - 0.25, sy: 0.04, sz: HOLO_FOUNTAIN.r - 0.25, color: "#5ff6ff", glow: 1.2 });
+  if (map.id === "station") b.add(PRIMS.cyl8, { x: HOLO_FOUNTAIN.x, y: 0.9, z: HOLO_FOUNTAIN.y, sx: 0.35, sy: 0.6, sz: 0.35, color: "#9aa6b8" });
 
   const mesh = new THREE.Mesh(b.build(), sceneryMaterial());
   mesh.receiveShadow = true;

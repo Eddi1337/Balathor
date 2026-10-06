@@ -3,7 +3,8 @@
 
 import { CITY_HOUSES, CASTLE, TIER_H, type CityHouse } from "./city";
 import { STARGATE, STARGATE_FRONT } from "./scifi/stargate";
-import { STATION_ARRIVAL, STATION_GATE } from "./scifi/station";
+import { LIFTS, STATION_ARRIVAL, STATION_GATE } from "./scifi/station";
+import { LAB_INFO, labLayout } from "./scifi/labs";
 import { Tile } from "./tiles";
 
 export const PRICES = [0, 1200, 1800, 3000];
@@ -152,6 +153,14 @@ export const DOORS: Door[] = [
     y: STATION_GATE.y + 1.4,
     to: { map: "overworld", x: STARGATE.x - 2, y: STARGATE.y }
   },
+  ...LIFTS.flatMap((l): Door[] => {
+    const lab = l.lab as 1 | 2 | 3;
+    const L = labLayout(lab);
+    return [
+      { id: `lift_${lab}`, label: `Take the lift to ${LAB_INFO[lab].name} (lv ${LAB_INFO[lab].level})`, map: "station", x: l.x, y: l.y, to: { map: `lab:${lab}`, x: L.pad.x, y: L.pad.y + 1.5 } },
+      { id: `lift_${lab}_up`, label: "Take the lift back up to Ringforge", map: `lab:${lab}`, x: L.pad.x, y: L.pad.y, to: { map: "station", x: l.x, y: l.y + 1.6 } }
+    ];
+  }),
   ...PLOTS.flatMap((p): Door[] => {
     const inside = interiorLayout(p, 0);
     return [

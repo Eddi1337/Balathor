@@ -32,6 +32,8 @@ export interface Quest {
   complete: string;
   steps: QuestStep[];
   reward: QuestReward;
+  /** Jobs can be taken again after you hand them in. */
+  repeatable?: boolean;
 }
 
 const BOSS_SPOTS = {
@@ -484,6 +486,95 @@ const SCIFI_QUESTS: Quest[] = [
       { type: "talk", npc: "npc_rusty", text: "Return to Prospector Rusty" }
     ],
     reward: { xp: 3000, gold: 700, gear: "epic" }
+  },
+  // ── Tech Labs ─────────────────────────────────────────────────────────────
+  {
+    id: "q_lab1",
+    name: "Lab I: Unplug the Overseer",
+    giver: "npc_quill",
+    level: 10,
+    requires: ["q_stargate"],
+    offer: "My security robots got a teeny bit... sentient. Take the first lift down to the Robotics lab and switch off Overseer Mk I. Gently!",
+    complete: "It's off! Ooh, it left a power core. Keep it, you earned it.",
+    steps: [
+      { type: "kill", mobs: ["overseer_1"], count: 1, text: "Defeat Overseer Mk I in Tech Lab I" },
+      { type: "talk", npc: "npc_quill", text: "Return to Dr. Quill" }
+    ],
+    reward: { xp: 1300, gold: 320, gear: "rare" }
+  },
+  {
+    id: "q_lab2",
+    name: "Lab II: Cold Logic",
+    giver: "npc_quill",
+    level: 18,
+    requires: ["q_lab1"],
+    offer: "Overseer Mk II has frozen the cryo vaults solid, with my lunch inside. Lift two, please. Hurry, it's a sandwich.",
+    complete: "My sandwich! And the vaults are thawing. You're a hero.",
+    steps: [
+      { type: "kill", mobs: ["overseer_2"], count: 1, text: "Defeat Overseer Mk II in Tech Lab II" },
+      { type: "talk", npc: "npc_quill", text: "Return to Dr. Quill" }
+    ],
+    reward: { xp: 2400, gold: 560, gear: "rare" }
+  },
+  {
+    id: "q_lab3",
+    name: "Lab III: The Core",
+    giver: "npc_quill",
+    level: 26,
+    requires: ["q_lab2"],
+    offer: "Mk III is in the Core, rewriting itself faster than I can read. This is the big one. Bring friends, and bring snacks.",
+    complete: "The Core is quiet. I'll... maybe stick to toasters from now on.",
+    steps: [
+      { type: "kill", mobs: ["overseer_3"], count: 1, text: "Defeat Overseer Mk III in Tech Lab III" },
+      { type: "talk", npc: "npc_quill", text: "Return to Dr. Quill" }
+    ],
+    reward: { xp: 4200, gold: 1000, gear: "epic" }
+  },
+  // ── Orla's job board (repeatable) ─────────────────────────────────────────
+  {
+    id: "j_freight",
+    name: "Job: Kestrel Freight",
+    giver: "npc_orla",
+    level: 9,
+    requires: ["q_freight"],
+    repeatable: true,
+    offer: "Another crate for Kestrel Harbor. Same deal as before: fly it out, come back, get paid.",
+    complete: "Signed, sealed, delivered. Here's your fee.",
+    steps: [
+      { type: "visit", map: "space", x: -560, y: -90, r: 24, text: "Deliver freight to Kestrel Harbor" },
+      { type: "talk", npc: "npc_orla", text: "Collect your fee from Orla" }
+    ],
+    reward: { xp: 320, gold: 170 }
+  },
+  {
+    id: "j_bounty",
+    name: "Job: Pirate Bounty",
+    giver: "npc_orla",
+    level: 9,
+    requires: ["q_pirates"],
+    repeatable: true,
+    offer: "Standing bounty: five pirate fighters, any lane. The miners chip in for this one.",
+    complete: "Bounty verified. The miners send their thanks (and coin).",
+    steps: [
+      { type: "kill", mobs: ["pirate_fighter"], count: 5, text: "Shoot down Pirate Fighters" },
+      { type: "talk", npc: "npc_orla", text: "Collect your bounty from Orla" }
+    ],
+    reward: { xp: 420, gold: 210 }
+  },
+  {
+    id: "j_titanium",
+    name: "Job: Titanium Order",
+    giver: "npc_nova",
+    level: 12,
+    requires: ["q_salvage"],
+    repeatable: true,
+    offer: "The fabricator always needs titanium. Six ore from the Ember Belt or Rust, and I'll pay above market.",
+    complete: "Lovely shiny ore. Pleasure doing business!",
+    steps: [
+      { type: "collect", item: "ore_titanium", count: 6, text: "Mine Titanium Ore (Ember Belt or Rust)" },
+      { type: "talk", npc: "npc_nova", text: "Bring it to Engineer Nova" }
+    ],
+    reward: { xp: 520, gold: 320 }
   }
 ];
 
@@ -519,7 +610,7 @@ export function availableFrom(npcId: string, log: QuestLog, level: number): Ques
     (q) =>
       q.giver === npcId &&
       level >= q.level &&
-      !log.done.includes(q.id) &&
+      (q.repeatable || !log.done.includes(q.id)) &&
       !log.active.some((a) => a.id === q.id) &&
       (q.requires ?? []).every((r) => log.done.includes(r))
   );

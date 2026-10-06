@@ -9,6 +9,7 @@ import { Tile } from "./tiles";
 import { riverCurrent } from "./rivers";
 import { STATION_ARRIVAL, STATION_W, stationTileAt } from "./scifi/station";
 import { SPACE_RADIUS, spaceSpawns, spaceTileAt, LAUNCH_POINT, type SpawnSpec } from "./scifi/space";
+import { LAB_INFO, LAB_W, labLayout, labSpawns, labTileAt, parseLabMapId } from "./scifi/labs";
 import { PLANETS, PLANET_PAD, parsePlanetMapId, planetHeightAt, planetLevelAt, planetSpawns, planetTileAt, type PlanetDef } from "./scifi/planets";
 
 export type MapTheme = "fantasy" | "scifi" | "ocean" | "dungeon" | "interior";
@@ -129,6 +130,25 @@ export function getMap(id: string): MapDef {
       MAPS.set(id, map);
       return map;
     }
+  }
+  const lab = parseLabMapId(id);
+  if (lab) {
+    const L = labLayout(lab);
+    const map: MapDef = {
+      id,
+      name: LAB_INFO[lab].name,
+      theme: "scifi",
+      kind: "deck",
+      bounds: LAB_W,
+      spawn: { x: L.pad.x, y: L.pad.y + 1.5 },
+      tileAt: (x, y) => labTileAt(lab, x, y),
+      heightAt: () => 0,
+      biomeAt: () => "lab",
+      zoneLevelAt: () => LAB_INFO[lab].level,
+      spawns: () => labSpawns(lab)
+    };
+    MAPS.set(id, map);
+    return map;
   }
   const planet = parsePlanetMapId(id);
   if (planet) {
