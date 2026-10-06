@@ -20,7 +20,7 @@ export async function startServer(extraEnv = {}) {
   const port = await freePort();
   const dataDir = mkdtempSync(join(tmpdir(), "balathor-v2-test-"));
   const proc = spawn(process.execPath, ["dist/server/main.js"], {
-    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1", DATA_DIR: dataDir, ...extraEnv },
+    env: { ...process.env, PORT: String(port), HOST: "127.0.0.1", DATA_DIR: dataDir, AI_NPC_ENABLED: "false", ...extraEnv },
     stdio: ["ignore", "pipe", "pipe"]
   });
   for (let i = 0; i < 100; i += 1) {

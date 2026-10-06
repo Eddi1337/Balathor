@@ -1,0 +1,27 @@
+{
+  "name": "balathor-v2-desktop",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Balathor v2 desktop client (Electron).",
+  "author": "Balathor",
+  "main": "main.cjs",
+  "scripts": {
+    "dev": "electron .",
+    "build:win": "electron-builder --win nsis",
+    "build:linux": "electron-builder --linux AppImage",
+    "build:mac": "electron-builder --mac dmg"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "game.balathor.v2",
+    "productName": "Balathor",
+    "files": ["main.cjs", "preload.cjs", "offline.html"],
+    "directories": { "output": "dist" },
+    "win": { "target": "nsis" },
+    "linux": { "target": "AppImage", "category": "Game" },
+    "mac": { "target": "dmg", "category": "public.app-category.games" }
+  }
+}

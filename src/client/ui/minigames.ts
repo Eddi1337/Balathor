@@ -140,7 +140,7 @@ export class MinigameUI {
     }
     cancelAnimationFrame(this.raf);
     this.canvas = null;
-    body.replaceChildren();
+    if (v.game !== "memory") body.replaceChildren();
     if (v.game === "holdem") {
       const card = (c: string) => `<span class="pcard ${c === "?" ? "back" : /[♥♦]/.test(c) ? "red" : ""}">${c === "?" ? "🂠" : c.replace("T", "10")}</span>`;
       body.innerHTML = `
@@ -162,6 +162,18 @@ export class MinigameUI {
       return;
     }
     if (v.game === "memory") {
+      // Update the board in place so clicks never land on a tile that's being replaced.
+      const existing = body.querySelector(".memory-grid");
+      if (existing && !first) {
+        (ui.shown as string[]).forEach((icon, i) => {
+          const b = existing.children[i] as HTMLElement;
+          b.textContent = icon || "❔";
+          b.classList.toggle("up", Boolean(icon));
+        });
+        (body.querySelector(".tip") as HTMLElement).textContent = `Flips: ${ui.flips ?? 0}`;
+        return;
+      }
+      body.replaceChildren();
       const grid = el("div", "memory-grid");
       (ui.shown as string[]).forEach((icon, i) => {
         const b = el("button", `memory-tile${icon ? " up" : ""}`, icon || "❔");

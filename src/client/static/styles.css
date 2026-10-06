@@ -300,12 +300,12 @@ label { display: grid; gap: 6px; font-weight: 500; font-size: 14px; color: var(-
   #party-frames { top: 92px; left: 8px; width: 150px; }
 }
 
-.menu-dock { position: absolute; right: 14px; bottom: 14px; display: flex; gap: 6px; padding: 7px; }
-.menu-dock .hot { width: 46px; height: 46px; }
-.menu-dock .hot .ico { font-size: 22px; }
+.menu-dock { position: absolute; right: 14px; bottom: 14px; display: grid; grid-template-columns: repeat(4, 42px); gap: 5px; padding: 6px; }
+.menu-dock .hot { width: 42px; height: 42px; }
+.menu-dock .hot .ico { font-size: 20px; }
 .emote-menu { left: auto; right: 14px; transform: none; bottom: 80px; }
 @media (max-width: 1100px) {
-  .menu-dock { flex-direction: column; bottom: 90px; }
+  .menu-dock { grid-template-columns: repeat(2, 42px); bottom: 90px; }
   .emote-menu { right: 76px; bottom: 90px; }
 }
 @media (max-width: 720px) {
@@ -396,3 +396,13 @@ label { display: grid; gap: 6px; font-weight: 500; font-size: 14px; color: var(-
 .board-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
 .board-rows { margin: 0; padding-left: 22px; }
 .board-rows li { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px dashed var(--line); }
+
+/* ── Settings ────────────────────────────────────────────────── */
+#win-settings { width: 360px; left: 50%; right: auto; transform: translateX(-50%); max-height: 80vh; overflow: auto; }
+.settings h4 { margin: 10px 0 4px; }
+.settings label { display: grid; grid-template-columns: 110px 1fr; align-items: center; gap: 8px; font-size: 13px; margin: 4px 0; }
+.settings label.row { display: flex; }
+.settings select { font: inherit; padding: 4px; border-radius: 8px; border: 2px solid var(--line); }
+.settings .keys { line-height: 1.6; }
+.fps { position: fixed; bottom: 4px; left: 50%; transform: translateX(-50%); font: 11px monospace; color: #fff; background: #0006; padding: 2px 6px; border-radius: 6px; z-index: 50; }
+body.no-plates .plate { display: none; }

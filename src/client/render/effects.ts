@@ -430,7 +430,7 @@ export class Effects {
    * Place sunbeams near the camera target: slanted along the sun, favouring spots beside
    * trees (light falling through the canopy) and the town plaza.
    */
-  updateBeams(map: MapDef, cx: number, cy: number, sunDir: THREE.Vector3, daylight: number, now: number): void {
+  updateBeams(map: MapDef, cx: number, cy: number, sunDir: THREE.Vector3, daylight: number, now: number, cam?: THREE.Vector3): void {
     const strength = Math.max(0, daylight) * 0.42;
     if (now >= this.beamRefreshAt) {
       this.beamRefreshAt = now + 1800;
@@ -464,8 +464,17 @@ export class Effects {
       beam.rotation.set(0, 0, 0);
       beam.rotateY(az);
       beam.rotateX(Math.min(0.7, tilt));
+      // Fade a beam out as the camera nears it: from the inside, it would wash out the screen.
+      let fade = 1;
+      if (cam) {
+        const dir = new THREE.Vector3(0, 1, 0).applyQuaternion(beam.quaternion);
+        const v = cam.clone().sub(beam.position);
+        const t = Math.max(0, Math.min(14, v.dot(dir)));
+        const d = v.sub(dir.multiplyScalar(t)).length();
+        fade = Math.min(1, Math.max(0, (d - 2.2) / 3));
+      }
       const mat = beam.material as THREE.ShaderMaterial;
-      mat.uniforms.uStrength.value = strength * (beam.userData.base ?? 1);
+      mat.uniforms.uStrength.value = strength * (beam.userData.base ?? 1) * fade;
       mat.uniforms.uTime.value = now / 1000;
     }
   }

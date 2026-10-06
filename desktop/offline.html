@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Balathor</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; height: 100vh; display: grid; place-items: center; background: linear-gradient(#cfe9ff, #fff1e6); font: 16px system-ui, sans-serif; color: #3b2f4a; }
+  .card { background: #fffaf3; border: 3px solid #f0dcc8; border-radius: 22px; padding: 28px 34px; text-align: center; max-width: 420px; box-shadow: 0 6px 0 #f0dcc8; }
+  h1 { margin: 0 0 6px; font-size: 26px; }
+  p { margin: 8px 0; color: #6a5a7a; }
+  small { color: #9a8aa8; word-break: break-all; }
+  button { margin-top: 14px; font: inherit; font-weight: 700; color: #fff; background: #ff8fb1; border: 0; border-radius: 14px; padding: 10px 26px; cursor: pointer; box-shadow: 0 4px 0 #e0607e; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>🌧️ Can't reach Balathor</h1>
+    <p>The game server isn't answering right now. Check your connection, then try again.</p>
+    <small id="why"></small>
+    <div><button id="retry">Try again</button></div>
+  </div>
+  <script>
+    const q = new URLSearchParams(location.search);
+    document.getElementById("why").textContent = (q.get("reason") || "") + " · " + (q.get("url") || "");
+    document.getElementById("retry").addEventListener("click", () => { location.href = q.get("url"); });
+  </script>
+</body>
+</html>

@@ -47,7 +47,11 @@ after(() => {
   srv?.stop();
 });
 
-const at = (id) => c.chat(`/tp ${W.SITES_BY_ID[id].x} ${W.SITES_BY_ID[id].y}`, 1200);
+// Each game starts clean: quit anything a previous test left running, then walk over.
+const at = async (id) => {
+  c.send({ t: "mg", op: "quit" });
+  await c.chat(`/tp ${W.SITES_BY_ID[id].x} ${W.SITES_BY_ID[id].y}`, 1200);
+};
 const mg = () => c.messages.filter((m) => m.t === "mg").at(-1)?.s;
 
 test("hand evaluator ranks poker hands", () => {
@@ -99,7 +103,7 @@ test("memory tiles: a perfect-memory solver clears the board", async () => {
     if (seen.get(j) === icon) {
       solved.add(i);
       solved.add(j);
-    } else await sleep(900);
+    } else await sleep(1300); // mismatches flip back after ~1.1s
     if (!s2) break;
   }
   await c.wait((m) => m.t === "toast" && /All pairs/.test(m.text), 4000, "memory cleared");
@@ -161,4 +165,16 @@ test("bounty board: a bandit camp appears; clearing it pays out", async () => {
   await c.wait((m) => m.t === "mg" && m.s === null, 2000, "quit");
   await sleep(500);
   assert.equal([...c.entities.values()].filter((e) => e.k === "m" && e.tpl === "bandit" && !e.dead).length, 0, "camp cleaned up");
+});
+
+test("chatting with a villager after talking to them gets an answer", async () => {
+  await c.chat("/time 0.45");
+  await c.chat("/tpnpc npc_rin", 1200);
+  await c.wait(() => c.npc("npc_rin"), 3000, "Rin");
+  c.send({ t: "talk", id: c.npc("npc_rin").id });
+  await sleep(500);
+  c.messages = [];
+  c.send({ t: "chat", text: "hello there!" });
+  const reply = await c.wait((m) => m.t === "chat" && m.kind === "npc" && m.name === "Guide Rin", 4000, "Rin answers");
+  assert.match(reply.text, /Gamer/);
 });

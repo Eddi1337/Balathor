@@ -408,7 +408,7 @@ export class MinigameService {
           if (tiles[up[0]] === tiles[up[1]]) {
             matched.push(...up);
             s.data.up = [];
-          } else s.data.hideAt = now + 800;
+          } else s.data.hideAt = now + 1100;
         }
         if (matched.length === 16) {
           const flips = s.data.flips as number;
@@ -649,7 +649,8 @@ export class MinigameService {
           break;
         }
       }
-      if (s.dirty || (now - s.startedAt) % 1000 < 50) this.push(p, s, now);
+      // Overlay games update on actions; everything else gets a gentle once-a-second refresh.
+      if (s.dirty || (GAMES[s.game].kind !== "overlay" && (now - s.startedAt) % 1000 < 50)) this.push(p, s, now);
     }
   }
 

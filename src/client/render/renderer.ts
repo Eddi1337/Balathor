@@ -27,7 +27,13 @@ export interface Quality {
 
 export function detectQuality(): Quality {
   const mobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || matchMedia("(pointer: coarse)").matches;
-  const override = new URLSearchParams(location.search).get("quality");
+  let saved: string | null = null;
+  try {
+    saved = localStorage.getItem("balathor.v2.quality");
+  } catch {
+    // storage blocked
+  }
+  const override = new URLSearchParams(location.search).get("quality") ?? (saved && saved !== "auto" ? saved : null);
   if (override === "low" || (mobile && override !== "high")) {
     return { shadows: true, shadowSize: 1024, godRays: false, bloom: true, msaa: 0, pixelRatio: Math.min(devicePixelRatio, 1.5) };
   }

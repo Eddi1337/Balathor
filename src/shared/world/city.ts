@@ -430,7 +430,9 @@ export function obstacleTopAt(x: number, y: number): number {
     if (d >= WALL_R[k] - WALL_THICK && d <= WALL_R[k]) {
       const g = gateAt(norm(Math.atan2(cy, cx)), d);
       const top = k === 0 ? TIER_H[0] + 7 : TIER_H[k] + 1.9;
-      return g && g.wall === k ? top - 2 : top;
+      // Gate openings: the arch overhead reaches above the wall top, so the camera must stop
+      // short of it too (otherwise it ends up inside the arch, seeing only stone).
+      return g && g.wall === k ? top + 0.8 : top;
     }
   }
   const k = tierOf(d);

@@ -150,10 +150,13 @@ Legend: ✅ in v2 · 🔜 planned milestone
 | Cave dungeons | ✅ The Mossy Grotto (lv 5), Ember Depths (lv 15) and Frostbite Caverns (lv 20): cellular-automaton caverns with themed walls, glowing props, pools or lava, bats, bosses and Guildmaster Oswin's quests |
 | Group dungeon instances | ✅ Every party gets its own copy of the Sunken Temple (lv 16, under Turtle Cove), the Hollow King's Crypt (lv 24, western highlands) and Tech Labs I–III, with monsters scaled to the party's size; instances close two minutes after the last player leaves; dying or logging out inside returns you to the entrance |
 
-### Milestone 6: minigames and polish 🔜
+### Milestone 6: minigames and polish ✅
 
-The ~20 minigames (darts, Balathor Hold'em, memory tiles, training dummy, consecration ring,
-perimeter relay, river swim trial, wayfarer's board, caravan escort, courier/fletcher runs, town
-vault, appraiser, hollow stone, trophy pedestal, bounty boards, turret defence, asteroid lane,
-orbital courier), AI-driven NPC chat, leaderboards, audio and music, settings menu, desktop
-(Electron) build.
+| v1 feature | v2 |
+|---|---|
+| ~20 minigames | ✅ 21, spread across every realm: darts, Balathor Hold'em (a real 7-card hand evaluator), memory tiles, the appraiser, training dummy, Ring of Trials, Perimeter Relay, Silverrun swim trial, Wayfarer's Board, caravan escort, courier and fletcher runs, bounty camps, Town Vault (cursed Heavy Coins slow you), the Hollow Stone (nights only), trophy pedestal, Ringforge defence pad, Asteroid Lane, orbital courier, the Rust mining rig and Port Bilgewater hull patching. Overlay games run in a little window; courses show a beacon and the minimap points at the next checkpoint; arenas spawn (and tidy up) their own monsters |
+| Leaderboards, trophies | ✅ Personal bests in SQLite, top-10 boards (K); first clears earn trophies that become titles under your name |
+| AI-driven NPC chat | ✅ Talk to a villager (E), then chat normally: they answer in character via the local Ollama model (OLLAMA_URL / OLLAMA_MODEL, default qwen2.5:3b, about 2.5s warm), with scripted replies when it's unreachable or disabled (AI_NPC_ENABLED=false) |
+| Audio and music | ✅ Everything synthesised with WebAudio (no assets): effects for combat, loot, magic, lasers, cannons, warp, splashes and UI, plus generative music whose mood follows where you are (town, wilds, night, space, ocean, caves, dungeons) |
+| Settings menu | ✅ Master/music/effects volume, mute, graphics quality, FPS counter, camera speed, interface size, nameplates, key reference; saved per browser |
+| Desktop (Electron) build | ✅ `desktop/`: a thin window onto the hosted game (always the server's version), F11 fullscreen, a friendly offline/retry page, Windows/Linux/macOS installers via electron-builder |

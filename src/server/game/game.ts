@@ -37,6 +37,7 @@ import { ProfessionService } from "./professionService";
 import { ShipService } from "./shipService";
 import { SailService } from "./sailService";
 import { MinigameService } from "./minigameService";
+import { NpcChatService } from "./npcChatService";
 import { GAMES } from "../../shared/game/minigames";
 import { SAIL_HULL_IDS } from "../../shared/game/sailing";
 import { PORT_SPAWN } from "../../shared/world/sea/ocean";
@@ -85,6 +86,7 @@ export class Game {
   readonly ships: ShipService;
   readonly sails: SailService;
   readonly minigames: MinigameService;
+  readonly npcChat: NpcChatService;
 
   constructor(private store: Store) {
     this.quests = new QuestService({
@@ -110,6 +112,14 @@ export class Game {
       system: (p, text) => p.session.send({ t: "chat", from: "", name: "", text, kind: "system" })
     });
     this.housing = new HousingService(store);
+    this.npcChat = new NpcChatService({
+      hour: () => this.worldTime() * 24,
+      reply: (world, npc, p, text) => {
+        if (p.session.closed) return;
+        world.fx(npc.x, npc.y, { e: "say", id: npc.id, text }, 20);
+        p.session.send({ t: "chat", from: npc.id, name: npc.def.name, text, kind: "npc" });
+      }
+    });
     this.minigames = new MinigameService({
       world: (mapId) => this.worlds.get(mapId),
       worldOf: (p) => this.worlds.get(p.mapId),
@@ -315,6 +325,7 @@ export class Game {
     if (p) {
       this.professions.cancel(p);
       this.minigames.onLeave(p);
+      this.npcChat.forget(p);
       this.social.onDisconnect(p);
       const w = this.worlds.get(p.mapId);
       if (w?.def.kind === "sea") {
@@ -843,6 +854,7 @@ export class Game {
     if (!npc || dist(p.x, p.y, npc.x, npc.y) > TALK_RADIUS) return;
     npc.talkUntil = now + 4000;
     npc.f = Math.atan2(p.y - npc.y, p.x - npc.x);
+    this.npcChat.startListening(p, npc, now);
     const def = npc.def;
     const offer = this.quests.onTalk(p, npc.id);
     if (offer) p.session.send({ t: "questOffer", npc: npc.id, id: offer });
@@ -923,6 +935,8 @@ export class Game {
     if (text.startsWith("/")) return this.chatCommand(s, p, world, text);
     world.fx(p.x, p.y, { e: "say", id: p.id, text }, CHAT_RADIUS);
     this.broadcastNear(world, p.x, p.y, CHAT_RADIUS, { t: "chat", from: p.id, name: p.name, text, kind: "say" });
+    // Mid-conversation with a villager? They answer.
+    this.npcChat.heard(p, world, text, now);
   }
 
   private chatCommand(s: Session, p: Player, world: World, text: string): void {

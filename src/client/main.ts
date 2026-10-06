@@ -52,6 +52,8 @@ import { SHIP_FLOAT, animateScifi, buildScifiMob, buildShip, isScifiModel } from
 import { HangarUI, WarpUI } from "./ui/hangar";
 import { HarbourUI, SailPanel } from "./ui/harbour";
 import { MinigameUI } from "./ui/minigames";
+import { Audio, type Mood, type Sfx } from "./audio";
+import { SettingsUI } from "./ui/settings";
 import { GAMES, SITES, SITE_RANGE } from "../shared/game/minigames";
 import { SeaTerrain } from "./render/seaTerrain";
 import { DECK_H, animateSea, buildPlayerShip, buildSeaMob, isSeaModel, setSailOpacity } from "./render/seaModels";
@@ -103,6 +105,31 @@ let bobber: THREE.Mesh | null = null;
 const hangar = new HangarUI(send);
 const harbour = new HarbourUI(send);
 const mgUi = new MinigameUI(send);
+const audio = new Audio();
+const settings = new SettingsUI(audio);
+document.getElementById("hot-settings")!.addEventListener("click", () => settings.toggle());
+document.getElementById("hot-boards")!.addEventListener("click", () => mgUi.toggleBoards());
+// Every button gives a soft little click.
+document.addEventListener("click", (e) => {
+  if ((e.target as HTMLElement).closest("button")) audio.play("click");
+});
+
+/** Play a sound at a world position (fades with distance from you). */
+function sfxAt(s: Sfx, x: number, y: number): void {
+  const d = Math.hypot(x - me.x, y - me.y);
+  if (d < 40) audio.play(s, 1 - d / 45);
+}
+
+function currentMood(): Mood {
+  if (phase !== "play") return "menu";
+  if (map.kind === "space" || map.kind === "surface" || map.id === "station") return "space";
+  if (map.kind === "sea") return "ocean";
+  if (map.kind === "cave") return "cave";
+  if (map.theme === "dungeon" || map.id.startsWith("lab:")) return "dungeon";
+  if (map.kind === "interior") return "town";
+  if (renderer.night > 0.6) return "night";
+  return map.biomeAt(me.x, me.y) === "town" ? "town" : "wild";
+}
 /** Signposts at minigame sites and the glowing beacon over the current checkpoint. */
 const siteGroup = new THREE.Group();
 const beacon = new THREE.Mesh(
@@ -505,8 +532,17 @@ function nearestInteractable(): { id: string; kind: InteractKind; label: string 
   }
   if (crafting.fishing?.bite) return { id: "reel", kind: "reel", label: "E · Reel in!" };
   if (!mgUi.view) {
-    for (const site of SITES) {
-      if (site.map !== map.id || Math.hypot(site.x - me.x, site.y - me.y) > SITE_RANGE) continue;
+    // The nearest minigame site in reach (some sit side by side, like the inn's tables).
+    let site: (typeof SITES)[number] | null = null;
+    let bestSite = SITE_RANGE;
+    for (const st of SITES) {
+      const d = Math.hypot(st.x - me.x, st.y - me.y);
+      if (st.map === map.id && d <= bestSite) {
+        bestSite = d;
+        site = st;
+      }
+    }
+    if (site) {
       const g = GAMES[site.game];
       return { id: site.id, kind: "site", label: `E · ${g.icon} ${g.name}${g.cost ? ` (${g.cost}g)` : ""}` };
     }
@@ -580,6 +616,7 @@ function nearestInteractable(): { id: string; kind: InteractKind; label: string 
 
 let lastJumpAt = 0;
 function jump(): void {
+  audio.play("jump", 0.7);
   const d = selfData();
   const now = performance.now();
   if (d?.ab && d.hm) {
@@ -727,7 +764,8 @@ input.onKey = (code, e) => {
       break;
     }
     case "Escape":
-      if (mgUi.windowOpen) mgUi.closeWindows();
+      if (settings.open) settings.hide();
+      else if (mgUi.windowOpen) mgUi.closeWindows();
       else if (harbour.open) harbour.hide();
       else if (hangar.open) hangar.hide();
       else if (warpUi.open) warpUi.hide();
@@ -1020,6 +1058,7 @@ net.on((msg: S2C) => {
       me.x = msg.x;
       me.y = msg.y;
       hud.setDead(false);
+      if (msg.map !== map.id) audio.play("door");
       switchMap(msg.map);
       if (map.kind === "space") me.f = Math.PI / 2;
       renderer.target.set(me.x, map.heightAt(me.x, me.y), me.y);
@@ -1039,6 +1078,7 @@ net.on((msg: S2C) => {
       state.applySnapshot(msg);
       return;
     case "self":
+      if (state.self && msg.self.gold > state.self.gold) audio.play("coin", 0.7);
       state.self = msg.self;
       hud.setSelf(msg.self);
       panels.setSelf(msg.self);
@@ -1098,6 +1138,7 @@ net.on((msg: S2C) => {
       }
       return;
     case "fish":
+      if (msg.state === "bite") audio.play("bite");
       if (msg.state === "cast" || msg.state === "bite") {
         crafting.fishing = { x: msg.x, y: msg.y, bite: msg.state === "bite" };
         me.f = Math.atan2(msg.y - me.y, msg.x - me.x);
@@ -1130,6 +1171,7 @@ net.on((msg: S2C) => {
       panels.offerQuest(msg.npc, msg.id);
       return;
     case "questDone": {
+      audio.play("quest");
       const pos = state.selfId ? headPos(state.selfId) : null;
       if (pos) effects.sparkleColumn(pos.x, pos.z, "#8fe3ff");
       return;
@@ -1180,7 +1222,45 @@ function headPos(id: string): THREE.Vector3 | null {
   return new THREE.Vector3(x, map.heightAt(x, y) + (v?.model.height ?? 1.5) + 0.2, y);
 }
 
+function fxSound(ev: FxEvent): void {
+  const e = "id" in ev ? state.entities.get(ev.id) : undefined;
+  const ex = e ? e.rx : "x" in ev ? (ev as { x: number }).x : me.x;
+  const ey = e ? e.ry : "y" in ev ? (ev as { y: number }).y : me.y;
+  switch (ev.e) {
+    case "swing":
+      return sfxAt("swing", ex, ey);
+    case "cast":
+      if (e?.data.k === "p") return sfxAt(e.data.sh ? "laser" : e.data.cls === "mage" ? "magic" : "arrow", ex, ey);
+      return sfxAt("magic", ex, ey);
+    case "proj":
+      if (ev.kind === "cannonball") sfxAt("cannon", ev.x, ev.y);
+      else if (ev.kind === "laser_red" || ev.kind === "plasma") sfxAt("laser", ev.x, ev.y);
+      return;
+    case "hit":
+      if (ev.id === state.selfId) return audio.play(ev.block ? "click" : "hurt", 0.8);
+      return sfxAt(ev.crit ? "crit" : "hit", ex, ey);
+    case "die":
+      return sfxAt("die", ex, ey);
+    case "lvl":
+      return sfxAt("levelup", ex, ey);
+    case "loot":
+      if (e?.data.k === "l") return audio.play(e.data.gold && !e.data.tpl ? "coin" : "loot", 0.8);
+      return;
+    case "heal":
+      return sfxAt("heal", ex, ey);
+    case "warp":
+      return sfxAt("warp", ev.x, ev.y);
+    case "boom":
+      return sfxAt(ev.big ? "boom" : "cannon", ev.x, ev.y);
+    case "work":
+      return sfxAt("chop", ev.x, ev.y);
+    case "ability":
+      return sfxAt("magic", ex, ey);
+  }
+}
+
 function handleFx(ev: FxEvent): void {
+  fxSound(ev);
   switch (ev.e) {
     case "swing": {
       const e = state.entities.get(ev.id);
@@ -1463,6 +1543,7 @@ function updateEntities(dt: number, now: number, time: number): void {
         v.model.root.userData.swim = swim;
         // Splash on entering (or climbing out of) the water.
         effects.particles.emit(x, map.heightAt(x, y) + 0.5, y, { n: swim ? 22 : 10, color: "#d9f6ff", speed: 2.2, up: 3, size: 0.07, life: 0.7 });
+        if (swim) sfxAt("splash", x, y);
         fountains.addRipple(x, waterLevelAt(x, y), y, 1.2);
       }
       if (swim) {
@@ -1674,7 +1755,7 @@ function frame(): void {
 
   const drag = input.consumeDrag();
   if (phase === "play") {
-    renderer.orbit(drag.dx, drag.dy, drag.wheel);
+    renderer.orbit(drag.dx * settings.s.camSpeed, drag.dy * settings.s.camSpeed, drag.wheel);
     predict(dt, now);
     // Holding F, the mouse button or the touch attack button keeps attacking on cooldown.
     if (!hud.chatFocused && (input.isDown("KeyF") || input.touchAttack || (input.mouseDown && !input.touchMode))) tryAttack(now);
@@ -1710,13 +1791,16 @@ function frame(): void {
   worldUniforms.uNight.value = renderer.night;
   for (const l of cityLights) l.intensity = renderer.night * 6;
   const outdoors = map.kind === "overworld";
-  effects.updateBeams(map, focus.x, focus.y, renderer.sunDir, outdoors ? 1 - renderer.night * 1.4 : 0, now);
+  effects.updateBeams(map, focus.x, focus.y, renderer.sunDir, outdoors ? 1 - renderer.night * 1.4 : 0, now, renderer.camera.position);
   effects.updateFireflies(focus.x, focus.y, outdoors ? renderer.night : 0, time);
   if (map.kind === "space") space.update(time, renderer.camera);
   deck?.update(time);
   surface?.update(time);
   // Minigame checkpoint beacon + timers.
   mgUi.update(now);
+  audio.setMood(currentMood());
+  audio.update();
+  settings.tick(now);
   const tgt = mgUi.view?.target;
   beacon.visible = Boolean(tgt && tgt.map === map.id);
   if (tgt && beacon.visible) {
@@ -1753,5 +1837,5 @@ net.connect();
 requestAnimationFrame(frame);
 
 // Debug handle for tests / console tinkering.
-(globalThis as unknown as { balathor: unknown }).balathor = { state, me, renderer, map, Tile, send, views };
+(globalThis as unknown as { balathor: unknown }).balathor = { state, me, renderer, map, Tile, send, views, siteGroup, beacon, lantern, effects };
 

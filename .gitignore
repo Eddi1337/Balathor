@@ -4,3 +4,5 @@ data/
 *.sqlite
 *.sqlite-*
 .DS_Store
+desktop/node_modules/
+desktop/dist/
