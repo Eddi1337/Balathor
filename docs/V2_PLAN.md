@@ -111,11 +111,19 @@ Legend: ✅ in v2 · 🔜 planned milestone
 | Player trading | ✅ request → offer items + gold → both ready → atomic swap; any change un-readies |
 | Emotes | ✅ wave, dance, cheer, bow, sit, laugh, cry, love (menu or /commands) |
 
-### Milestone 3: housing and professions 🔜
+### Milestone 3: the White City, housing and professions ✅
 
-Buyable houses with interiors as their own maps (deeds, house chests, furniture and decorate
-mode, two-storey homes and the sky promenade); six professions (fishing, woodcutting, herbalism,
-mining, cooking, smithing) with resource nodes, tools, crafting stations and food buffs.
+| v1 feature | v2 |
+|---|---|
+| Starting town | ✅ Hearthmoor became a grand White City: five walled tiers climbing a hill, about 10x the area; terraced streets of joined two-storey houses, archways over the roads, gatehouses, the market, the White Tree and a citadel castle with the King in his throne room; forests and farmland outside the walls |
+| Water | ✅ Rivers (Silverrun, Frostbrook) with bridges, flowing water whose current carries swimmers (shared server/client physics), fountain spray with droplet physics and ripples, swim splashes |
+| Movement | ✅ Jumping (Space); characters are soft cubes |
+| Buyable houses with interiors | ✅ 24 plots on tiers 1-3 (1200 / 1800 / 3000g), each interior is its own map; tier-3 manors have two floors; sell back for half; lock, or open to everyone (party members can always enter) |
+| Furniture + decorate mode | ✅ 15 pieces from Marta's Furnishings; H to decorate, R to rotate, placement rules (no overlap, door kept clear, 40 per floor) |
+| House chests | ✅ 30-slot storage in any placed chest, shared across your home |
+| Six professions | ✅ Woodcutting, Mining, Herbalism and Fishing gather from the world's own trees, rocks, flowers, bushes, fields and water (tools from Bram, biome-tiered nodes with level requirements, nodes regrow after 60s); Cooking at campfires and Smithing at the market forge; levels 1-30 (P panel) |
+| Fishing minigame | ✅ cast → bobber → bite → press E within the window to reel in; biome and river fish tables |
+| Food buffs | ✅ cooked food heals and grants a timed damage / armour / speed / regen buff; smithing makes bars, rings, whetstone tonics and forged class weapons |
 
 ### Milestone 4: the sci-fi realm 🔜
 

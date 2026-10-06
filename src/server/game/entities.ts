@@ -13,6 +13,7 @@ import type { Session } from "./session";
 import { round2 } from "../../shared/math";
 import type { BuffId } from "../../shared/game/talents";
 import type { QuestLog } from "../../shared/game/quests";
+import type { FoodStat, ProfLevels } from "../../shared/game/professions";
 
 interface NetCached {
   netPass: number;
@@ -41,6 +42,7 @@ export interface CharacterSave {
   waypoints: string[];
   hasMount: boolean;
   furniture: Record<string, number>;
+  professions: ProfLevels;
 }
 
 export interface ActiveBuff {
@@ -79,6 +81,8 @@ export class Player implements Spatial, NetCached {
   cooldowns = new Map<string, number>();
   partyId: string | null = null;
   tradeId: string | null = null;
+  /** Active food/tonic buff. */
+  food: { stat: FoodStat; value: number; until: number; name: string } | null = null;
   /** Plot whose storage chest this player has open. */
   storageOpen: string | null = null;
   lastDoorAt = 0;

@@ -223,6 +223,7 @@ export class World {
     let dmg = p.derived.damage * mult;
     const rage = p.buffs.get("rage");
     if (rage) dmg *= 1 + rage.value;
+    if (p.food?.stat === "str") dmg *= 1 + p.food.value;
     if (p.buffs.has("camo")) dmg *= 2; // ambush bonus; camo then breaks
     return dmg;
   }
@@ -545,7 +546,7 @@ export class World {
       this.fx(p.x, p.y, { e: "hit", id: p.id, dmg: 0, block: 1 });
       return;
     }
-    let dmg = mitigate(raw, p.derived.armor);
+    let dmg = mitigate(raw, p.derived.armor + (p.food?.stat === "def" ? p.food.value : 0));
     const fort = p.buffs.get("fortify");
     if (fort) dmg = Math.max(1, Math.round(dmg * (1 - fort.value)));
     const shield = p.buffs.get("shield");
@@ -624,6 +625,7 @@ export class World {
     if (p.mounted) speed *= MOUNT_SPEED_MULT;
     const haste = p.buffs.get("haste");
     if (haste) speed *= 1 + haste.value;
+    if (p.food?.stat === "spd") speed *= 1 + p.food.value;
     return speed;
   }
 
@@ -635,6 +637,12 @@ export class World {
         else if (id === "regen") this.heal(p, p.derived.maxHp * b.value * dt, true);
       }
       if (p.emote && now >= p.emoteUntil) p.emote = "";
+      if (p.food) {
+        if (now >= p.food.until) {
+          p.food = null;
+          p.selfDirty = true;
+        } else if (p.food.stat === "regen") this.heal(p, p.derived.maxHp * p.food.value * dt, true);
+      }
       const { mx, my } = p.input;
       const moving = Math.hypot(mx, my) > 0.05;
       if (moving) {

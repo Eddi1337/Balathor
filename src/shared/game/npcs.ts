@@ -76,6 +76,19 @@ export const SHOPS: Record<string, ShopDef> = {
       price: ({ bed: 120, table: 70, chair: 30, sofa: 140, rug: 50, bookshelf: 110, fireplace: 220, plant: 25, lantern: 45, painting: 90, cabinet: 80, weapon_rack: 130, trophy: 160, chest: 150, cat: 300 } as Record<string, number>)[id]
     }))
   },
+  tools: {
+    id: "tools",
+    name: "Bram's Tackle & Tools",
+    greeting: "Everything a gatherer needs! Tools go in your bag; gather with E near trees, rocks, flowers or water.",
+    stock: [
+      { tpl: "tool_hatchet", price: 40 },
+      { tpl: "tool_pickaxe", price: 40 },
+      { tpl: "tool_sickle", price: 40 },
+      { tpl: "tool_rod", price: 40 },
+      { tpl: "fish_minnow", price: 6 },
+      { tpl: "herb_grain", price: 4 }
+    ]
+  },
   stable: {
     id: "stable",
     name: "Holt's Stables",

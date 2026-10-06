@@ -76,6 +76,7 @@
         <button class="hot" id="hot-char" title="Character (C)"><span class="ico">🧝</span><span class="key">C</span><span class="badge hidden" id="hot-char-badge">!</span></button>
         <button class="hot" id="hot-talents" title="Talents (T)"><span class="ico">🌟</span><span class="key">T</span><span class="badge hidden" id="hot-talent-badge">!</span></button>
         <button class="hot" id="hot-quests" title="Quests (L)"><span class="ico">📜</span><span class="key">L</span></button>
+        <button class="hot" id="hot-profs" title="Professions (P)"><span class="ico">🛠️</span><span class="key">P</span></button>
         <button class="hot" id="hot-emote" title="Emotes"><span class="ico">😊</span></button>
       </div>
       <div id="emote-menu" class="emote-menu card hidden"></div>
@@ -84,6 +85,8 @@
         <form id="chat-form"><input id="chat-input" maxlength="160" placeholder="Press Enter to chat" autocomplete="off" /></form>
       </div>
       <div id="interact-hint" class="hint hidden"></div>
+      <div id="work-bar" class="work-bar hidden"><div id="work-fill"></div><span id="work-text"></span></div>
+      <div id="food-chip" class="food-chip hidden"></div>
 
       <div id="win-bag" class="window card hidden">
         <header><h3>Bag</h3><button class="x" data-close="win-bag">✕</button></header>
@@ -150,6 +153,17 @@
           <label class="toggle"><input type="checkbox" id="home-open" /> Open to visitors</label>
           <button id="home-sell" class="btn small">Sell home</button>
         </div>
+      </div>
+
+      <div id="win-profs" class="window card hidden">
+        <header><h3>Professions</h3><button class="x" data-close="win-profs">✕</button></header>
+        <div id="prof-list" class="prof-list"></div>
+        <p class="tip">Gather with tools from Bram's Tackle &amp; Tools. Cook at campfires, smith at the forge.</p>
+      </div>
+
+      <div id="win-craft" class="window card hidden">
+        <header><h3 id="craft-title">Crafting</h3><button class="x" data-close="win-craft">✕</button></header>
+        <div id="craft-list" class="shop-stock"></div>
       </div>
 
       <div id="win-storage" class="window card hidden">

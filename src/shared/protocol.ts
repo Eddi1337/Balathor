@@ -10,6 +10,7 @@ import type { EquipSlot, Item } from "./game/items";
 import type { StatId } from "./game/stats";
 import type { BuffId, ZoneKind } from "./game/talents";
 import type { QuestLog } from "./game/quests";
+import type { FoodStat, ProfLevels } from "./game/professions";
 
 export const PROTOCOL_VERSION = 1;
 
@@ -126,7 +127,8 @@ export type FxEvent =
   | { e: "nova"; id: string; ab: string; x: number; y: number; r: number }
   | { e: "zone"; zid: number; kind: ZoneKind; x: number; y: number; r: number; dur: number }
   | { e: "buff"; id: string; buff: BuffId; dur: number }
-  | { e: "jump"; id: string };
+  | { e: "jump"; id: string }
+  | { e: "work"; id: string; prof: string; x: number; y: number };
 
 // ─── The local player's private state ─────────────────────────────────────────
 
@@ -157,6 +159,9 @@ export interface SelfState {
   furniture: Record<string, number>;
   /** Plot id of the home you own, if any. */
   home: string | null;
+  professions: ProfLevels;
+  /** Active food/tonic buff (ms remaining when sent). */
+  food: { stat: FoodStat; value: number; ms: number; name: string } | null;
 }
 
 export interface PartyMember {
@@ -232,6 +237,10 @@ export type C2S =
   | { t: "furn"; op: "place"; kind: string; x: number; y: number; rot: number }
   | { t: "furn"; op: "pickup"; id: string }
   | { t: "storage"; op: "open" | "close" | "deposit" | "withdraw"; slot: number }
+  | { t: "gather"; x: number; y: number }
+  | { t: "fish"; x: number; y: number }
+  | { t: "reel" }
+  | { t: "craft"; recipe: string; station: string }
   | { t: "party"; op: "invite" | "accept" | "decline" | "leave" | "kick"; target?: string }
   | { t: "trade"; op: "request" | "accept" | "decline" | "cancel" | "offer" | "unoffer" | "gold" | "ready"; target?: string; slot?: number; gold?: number }
   | { t: "ping"; c: number };
@@ -269,6 +278,9 @@ export type S2C =
   | { t: "tradeRequest"; from: string; name: string }
   | { t: "trade"; trade: TradeView | null }
   | { t: "houses"; list: HouseInfo[] }
-  | { t: "storage"; items: (Item | null)[] | null };
+  | { t: "storage"; items: (Item | null)[] | null }
+  | { t: "gather"; state: "start" | "done" | "cancel"; x: number; y: number; ms?: number; item?: string }
+  | { t: "fish"; state: "cast" | "bite" | "caught" | "escaped" | "cancel"; x: number; y: number; item?: string }
+  | { t: "depleted"; keys: string[] };
 
 export type S2CType = S2C["t"];

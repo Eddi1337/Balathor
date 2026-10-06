@@ -33,6 +33,8 @@ import { HOUSE_STORAGE_SIZE } from "../../shared/game/furniture";
 import { circleBlocked } from "../../shared/game/movement";
 import { Tile } from "../../shared/world/tiles";
 import { HousingService } from "./housingService";
+import { ProfessionService } from "./professionService";
+import { freshProfessions, PROF_IDS } from "../../shared/game/professions";
 import { findWalkableNear } from "../../shared/world/overworld";
 import { clamp, dist, wrapAngle } from "../../shared/math";
 import { CHARACTER_NAME_RE, hashPassword, validateCredentials, verifyPassword } from "../auth";
@@ -71,6 +73,7 @@ export class Game {
   readonly quests: QuestService;
   readonly social: SocialService;
   readonly housing: HousingService;
+  readonly professions: ProfessionService;
 
   constructor(private store: Store) {
     this.quests = new QuestService({
@@ -95,6 +98,14 @@ export class Game {
       system: (p, text) => p.session.send({ t: "chat", from: "", name: "", text, kind: "system" })
     });
     this.housing = new HousingService(store);
+    this.professions = new ProfessionService({
+      addToBag: (p, item) => this.addToBag(p, item),
+      randomWeapon: (p, rarity, level) => {
+        const weapons = Object.values(ITEM_TEMPLATES).filter((t) => t.kind === "weapon" && t.cls === p.save.cls);
+        const tpl = weapons[weapons.length - 1] ?? weapons[0];
+        return makeItem(tpl.id, rarity, level);
+      }
+    });
     this.getWorld(OVERWORLD.id);
     this.tickMs = 1000 / config.tickRate;
     this.snapEvery = Math.max(1, Math.round(config.tickRate / config.snapRate));
@@ -240,6 +251,7 @@ export class Game {
     }
     const p = session.player;
     if (p) {
+      this.professions.cancel(p);
       this.social.onDisconnect(p);
       this.persist(p);
       this.worlds.get(p.mapId)?.removePlayer(p);
@@ -275,6 +287,7 @@ export class Game {
         return;
       }
       case "attack":
+        this.professions.cancel(p);
         if (Number.isFinite(msg.a)) world.playerAttack(p, wrapAngle(Number(msg.a)), now);
         return;
       case "chat":
@@ -343,6 +356,14 @@ export class Game {
         return this.furnOp(p, world, msg);
       case "storage":
         return this.storageOp(p, world, msg);
+      case "gather":
+        return this.professions.startGather(p, world, Number(msg.x), Number(msg.y), now);
+      case "fish":
+        return this.professions.startFishing(p, world, Number(msg.x), Number(msg.y), now);
+      case "reel":
+        return this.professions.reel(p, world, now);
+      case "craft":
+        return this.professions.craft(p, String(msg.recipe), String(msg.station));
     }
   }
 
@@ -419,7 +440,8 @@ export class Game {
       quests: { active: [], done: [] },
       waypoints: ["wp_hearthmoor"],
       hasMount: false,
-      furniture: {}
+      furniture: {},
+      professions: freshProfessions()
     };
     this.store.saveCharacter(s.accountId, name, save);
     this.handlePlay(s);
@@ -451,6 +473,7 @@ export class Game {
     world.addPlayer(p);
     s.send({ t: "welcome", id: p.id, map: world.def.id, x: p.x, y: p.y, time: this.worldTime(), dayLength: config.dayLengthMs });
     s.send({ t: "houses", list: this.housing.list() });
+    s.send({ t: "depleted", keys: this.professions.depletedKeys() });
     this.sendSelf(p);
     s.send({ t: "chat", from: "", name: "", text: `Welcome to Balathor v2, ${save.name}! Press Enter to chat, /help for commands.`, kind: "system" });
     this.broadcastNear(world, p.x, p.y, 60, { t: "chat", from: "", name: "", text: `${save.name} arrived in Hearthmoor.`, kind: "system" }, p.id);
@@ -608,6 +631,21 @@ export class Game {
     if (!item || p.dead) return;
     const tpl = itemTemplate(item.tpl);
     if (!tpl) return;
+    if (tpl.kind === "food") {
+      const amt = Math.min(p.derived.maxHp - p.hp, tpl.heal ?? 0);
+      if (amt > 0) {
+        p.hp += amt;
+        world.fx(p.x, p.y, { e: "heal", id: p.id, amt: Math.round(amt) });
+      }
+      if (tpl.buff) {
+        p.food = { stat: tpl.buff.stat, value: tpl.buff.value, until: Date.now() + tpl.buff.ms, name: tpl.name };
+        p.session.toast(`${tpl.name}: ${tpl.buff.stat === "def" ? `+${tpl.buff.value} armour` : `+${Math.round(tpl.buff.value * 100)}% ${tpl.buff.stat === "str" ? "damage" : tpl.buff.stat === "spd" ? "speed" : "regen/s"}`} for ${Math.round(tpl.buff.ms / 60000)} min`, "good");
+      }
+      item.qty -= 1;
+      if (item.qty <= 0) p.save.inv[slot] = null;
+      p.selfDirty = p.saveDirty = true;
+      return;
+    }
     if (tpl.kind === "potion" && tpl.heal) {
       if (p.hp >= p.derived.maxHp) return p.session.toast("Already at full health");
       const amt = Math.min(p.derived.maxHp - p.hp, tpl.heal);
@@ -807,6 +845,16 @@ export class Game {
         }
         return sys(`No NPC ${id}`);
       }
+      case "prof": {
+        if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
+        const [, id, lvRaw] = text.trim().split(/\s+/);
+        const st = p.save.professions[id as keyof typeof p.save.professions];
+        if (!st) return sys(`Professions: ${PROF_IDS.join(", ")}`);
+        st.lv = Math.max(1, Math.min(30, Number(lvRaw) || 1));
+        st.xp = 0;
+        p.selfDirty = p.saveDirty = true;
+        return sys(`${id} is now level ${st.lv}`);
+      }
       case "xp":
       case "gold": {
         if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
@@ -992,6 +1040,17 @@ export class Game {
           this.checkStairs(p, now);
         }
       }
+    }
+    const depleted = this.professions.tick(
+      (function* (sessions) {
+        for (const s of sessions) if (s.player) yield s.player;
+      })(this.sessions.values()),
+      (p) => this.worlds.get(p.mapId),
+      now
+    );
+    if (depleted.length) {
+      const json = JSON.stringify({ t: "depleted", keys: this.professions.depletedKeys() } satisfies S2C);
+      for (const s of this.sessions.values()) if (s.player?.mapId === OVERWORLD.id) s.sendRaw(json);
     }
     if (now - this.lastPartyTickAt >= 1000) {
       this.lastPartyTickAt = now;
@@ -1194,7 +1253,9 @@ export class Game {
       waypoints: s.waypoints,
       hasMount: s.hasMount,
       furniture: s.furniture,
-      home: this.housing.homeOf(p.accountId)
+      home: this.housing.homeOf(p.accountId),
+      professions: s.professions,
+      food: p.food ? { stat: p.food.stat, value: p.food.value, ms: Math.max(0, p.food.until - Date.now()), name: p.food.name } : null
     };
     p.session.send({ t: "self", self });
   }
@@ -1265,6 +1326,9 @@ function normalizeSave(save: CharacterSave): CharacterSave {
   if (!save.waypoints.includes("wp_hearthmoor")) save.waypoints.push("wp_hearthmoor");
   save.hasMount = Boolean(save.hasMount);
   save.furniture = save.furniture && typeof save.furniture === "object" ? save.furniture : {};
+  const profs = freshProfessions();
+  for (const id of PROF_IDS) if (save.professions?.[id]) profs[id] = { lv: Math.max(1, Number(save.professions[id].lv) || 1), xp: Math.max(0, Number(save.professions[id].xp) || 0) };
+  save.professions = profs;
   return save;
 }
 

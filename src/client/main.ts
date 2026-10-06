@@ -12,6 +12,10 @@ import { DOOR_RADIUS, PLOTS_BY_ID, doorsOn, parseHouseMapId, type Door } from ".
 import { FURNITURE, cellsOf, placementError, type PlacedPiece } from "../shared/game/furniture";
 import { buildFurniture, buildInterior } from "./render/interior";
 import { HomeUI } from "./ui/home";
+import { CraftingUI } from "./ui/crafting";
+import { STATIONS, stationNear } from "../shared/world/stations";
+import { FISH_RANGE, GATHER_RANGE, PROFESSIONS, STATION_RANGE, gatherNode } from "../shared/game/professions";
+import { isWaterTile } from "../shared/world/tiles";
 import { stepMovement } from "../shared/game/movement";
 import { Tile } from "../shared/world/tiles";
 import { Net } from "./net";
@@ -22,6 +26,7 @@ import { TerrainStreamer } from "./render/terrain";
 import { cityFountains, marketLights } from "./render/city";
 import { Fountains } from "./render/water";
 import { applyCurrent, isSwimming } from "../shared/game/movement";
+import { itemTemplate } from "../shared/game/items";
 import { Effects } from "./render/effects";
 import { worldUniforms } from "./render/builder";
 import { JUMP_TIME, animate, attachPony, buildHumanoid, buildLoot, buildMob, detachPony, disposeModel, jumpOffset, setStunStars, type Model } from "./render/models";
@@ -60,6 +65,9 @@ const hud = new Hud(send);
 const screens = new Screens(send);
 const panels = new Panels(send, (t, k) => hud.toast(t, k));
 panels.onCast = (id) => castAbility(id, performance.now());
+const crafting = new CraftingUI(send);
+const depleted = new Set<string>();
+let bobber: THREE.Mesh | null = null;
 const home = new HomeUI(send, (title, text, yes) => panels.dialog("", title, text, "", yes, undefined, "Yes", "Cancel"));
 
 let phase: Phase = "connecting";
@@ -297,7 +305,55 @@ function doorLabel(door: Door): string {
   return `Visit ${info.owner}'s home${info.open ? "" : " (if invited)"}`;
 }
 
-type InteractKind = "npc" | "loot" | "waypoint" | "door" | "chest";
+type InteractKind = "npc" | "loot" | "waypoint" | "door" | "chest" | "station" | "gather" | "fish" | "reel";
+
+function hasTool(tpl: string | undefined): boolean {
+  return !tpl || Boolean(state.self?.inv.some((i) => i?.tpl === tpl));
+}
+
+/** The nearest gatherable prop (tree, rock, flowers…) within reach, if any. */
+function nearestNode(): { x: number; y: number; label: string; locked: boolean } | null {
+  if (map.id !== OVERWORLD.id) return null;
+  let best: { x: number; y: number; label: string; locked: boolean } | null = null;
+  let bestD = GATHER_RANGE;
+  const r = Math.ceil(GATHER_RANGE);
+  for (let dy = -r; dy <= r; dy += 1) {
+    for (let dx = -r; dx <= r; dx += 1) {
+      const tx = Math.floor(me.x) + dx;
+      const ty = Math.floor(me.y) + dy;
+      const d = Math.hypot(tx + 0.5 - me.x, ty + 0.5 - me.y);
+      if (d > GATHER_RANGE || depleted.has(`${tx},${ty}`)) continue;
+      const node = gatherNode(map.tileAt(tx, ty), map.biomeAt(tx + 0.5, ty + 0.5));
+      if (!node || !hasTool(PROFESSIONS[node.prof].tool)) continue;
+      // Nodes you can't work yet only show when nothing workable is in reach.
+      const locked = (state.self?.professions[node.prof].lv ?? 1) < node.level;
+      if (locked && best && !best.locked) continue;
+      if (!locked && best?.locked) bestD = GATHER_RANGE;
+      if (d > bestD) continue;
+      bestD = d;
+      best = { x: tx, y: ty, locked, label: `${PROFESSIONS[node.prof].verb} ${node.name} (${PROFESSIONS[node.prof].name} ${node.level})` };
+    }
+  }
+  return best;
+}
+
+/** A water spot to cast into: straight ahead first, else the nearest water in range. */
+function fishingSpot(): { x: number; y: number } | null {
+  if (map.id !== OVERWORLD.id || !hasTool("tool_rod")) return null;
+  for (let d = 1.5; d <= FISH_RANGE; d += 0.5) {
+    const x = me.x + Math.cos(me.f) * d;
+    const y = me.y + Math.sin(me.f) * d;
+    if (isWaterTile(map.tileAt(x, y))) return { x, y };
+  }
+  for (let d = 1.5; d <= FISH_RANGE; d += 0.75) {
+    for (let a = 0; a < Math.PI * 2; a += Math.PI / 8) {
+      const x = me.x + Math.cos(a) * d;
+      const y = me.y + Math.sin(a) * d;
+      if (isWaterTile(map.tileAt(x, y))) return { x, y };
+    }
+  }
+  return null;
+}
 
 function nearestInteractable(): { id: string; kind: InteractKind; label: string } | null {
   let best: { id: string; kind: InteractKind; label: string } | null = null;
@@ -319,6 +375,11 @@ function nearestInteractable(): { id: string; kind: InteractKind; label: string 
       }
     }
   }
+  if (crafting.fishing?.bite) return { id: "reel", kind: "reel", label: "E · Reel in!" };
+  if (!best && map.id === OVERWORLD.id) {
+    const st = stationNear(me.x, me.y, STATION_RANGE);
+    if (st) return { id: st.id, kind: "station", label: `E · Use ${st.name}` };
+  }
   const ob = map.id === OVERWORLD.id ? nearestObelisk() : null;
   if (ob) {
     best = { id: ob.id, kind: "waypoint", label: state.self?.waypoints.includes(ob.id) ? `E · Travel from ${ob.name}` : `E · Attune to ${ob.name}` };
@@ -335,6 +396,12 @@ function nearestInteractable(): { id: string; kind: InteractKind; label: string 
       bestD = d;
       best = { id: e.id, kind: "loot", label: e.data.gold && !e.data.tpl ? `E · Pick up ${e.data.gold} gold` : "E · Pick up loot" };
     }
+  }
+  if (!best && !crafting.fishing && !crafting.working) {
+    const node = nearestNode();
+    if (node) return { id: `${node.x},${node.y}`, kind: "gather", label: `E · ${node.label}` };
+    const spot = fishingSpot();
+    if (spot) return { id: `${spot.x},${spot.y}`, kind: "fish", label: "E · Cast your line" };
   }
   return best;
 }
@@ -361,6 +428,20 @@ function interact(): void {
       return;
     }
     send({ t: "door", id: target.id });
+    return;
+  }
+  if (target.kind === "reel") {
+    send({ t: "reel" });
+    return;
+  }
+  if (target.kind === "station") {
+    const st = STATIONS.find((s) => s.id === target.id);
+    if (st) crafting.openStation(st);
+    return;
+  }
+  if (target.kind === "gather" || target.kind === "fish") {
+    const [x, y] = target.id.split(",").map(Number);
+    send(target.kind === "gather" ? { t: "gather", x, y } : { t: "fish", x, y });
     return;
   }
   if (target.kind === "chest") {
@@ -410,6 +491,9 @@ input.onKey = (code, e) => {
       break;
     case "KeyL":
       panels.toggle("win-quests");
+      break;
+    case "KeyP":
+      crafting.toggleProfs();
       break;
     case "KeyM":
       send({ t: "mount" });
@@ -659,6 +743,7 @@ net.on((msg: S2C) => {
       hud.setSelf(msg.self);
       panels.setSelf(msg.self);
       home.setSelf(msg.self);
+      crafting.setSelf(msg.self);
       landmarks.setAttuned(msg.self.waypoints);
       {
         const house = parseHouseMapId(map.id);
@@ -667,6 +752,42 @@ net.on((msg: S2C) => {
       return;
     case "houses":
       home.setHouses(msg.list);
+      return;
+    case "depleted":
+      depleted.clear();
+      for (const k of msg.keys) depleted.add(k);
+      return;
+    case "gather":
+      if (msg.state === "start") {
+        crafting.startWork(msg.ms ?? 2000, "Working…");
+        me.f = Math.atan2(msg.y + 0.5 - me.y, msg.x + 0.5 - me.x);
+      } else {
+        crafting.stopWork();
+        if (msg.state === "done") depleted.add(`${msg.x},${msg.y}`);
+        if (msg.state === "done" && msg.item) hud.toast(`+1 ${itemTemplate(msg.item)?.name ?? msg.item}`, "good");
+      }
+      return;
+    case "fish":
+      if (msg.state === "cast" || msg.state === "bite") {
+        crafting.fishing = { x: msg.x, y: msg.y, bite: msg.state === "bite" };
+        me.f = Math.atan2(msg.y - me.y, msg.x - me.x);
+        if (!bobber) {
+          bobber = new THREE.Mesh(new THREE.IcosahedronGeometry(0.14, 1), new THREE.MeshStandardMaterial({ color: 0xff5c6a, emissive: 0x551018, flatShading: true }));
+          renderer.scene.add(bobber);
+        }
+        bobber.position.set(msg.x, waterLevelAt(msg.x, msg.y) + 0.06, msg.y);
+        fountains.addRipple(msg.x, waterLevelAt(msg.x, msg.y), msg.y, msg.state === "bite" ? 1.2 : 0.7);
+      } else {
+        crafting.fishing = null;
+        if (bobber) {
+          renderer.scene.remove(bobber);
+          bobber = null;
+        }
+        if (msg.state === "caught" && msg.item) {
+          hud.toast(`Caught a ${itemTemplate(msg.item)?.name ?? msg.item}!`, "good");
+          effects.particles.emit(msg.x, waterLevelAt(msg.x, msg.y) + 0.3, msg.y, { n: 16, color: "#d9f6ff", speed: 2, up: 3, size: 0.07, life: 0.7 });
+        } else if (msg.state === "escaped") hud.toast("It got away…");
+      }
       return;
     case "storage":
       home.openStorage(msg.items);
@@ -816,6 +937,14 @@ function handleFx(ev: FxEvent): void {
     case "zone":
       effects.zone(ev.zid, ev.kind, ev.x, ev.y, ev.r, ev.dur);
       return;
+    case "work": {
+      const v = views.get(ev.id);
+      if (v) v.model.attackT = 0.3;
+      const h = map.heightAt(ev.x, ev.y);
+      const color = ev.prof === "woodcutting" ? "#c9955f" : ev.prof === "mining" ? "#c9c3b8" : ev.prof === "herbalism" ? "#ff9fc4" : "#d9f6ff";
+      effects.particles.emit(ev.x, h + 0.8, ev.y, { n: 14, color, speed: 2, up: 2.5, size: 0.08, life: 0.7 });
+      return;
+    }
     case "jump": {
       const v = views.get(ev.id);
       if (v) v.model.jumpT = JUMP_TIME;
@@ -1042,6 +1171,16 @@ function updateHud(now: number): void {
     hud.setCooldown(1 - (now - lastAttackAt) / cd);
   }
   panels.updateCooldowns(now);
+  crafting.update(now);
+  if (crafting.station && Math.hypot(crafting.station.x - me.x, crafting.station.y - me.y) > STATION_RANGE + 2) crafting.closeStation();
+  if (crafting.working && state.selfId) {
+    const v = views.get(state.selfId);
+    if (v && v.model.attackT <= 0) v.model.attackT = 0.3;
+  }
+  if (bobber && crafting.fishing) {
+    const base = waterLevelAt(crafting.fishing.x, crafting.fishing.y) + 0.06;
+    bobber.position.y = crafting.fishing.bite ? base - 0.12 + Math.sin(now / 60) * 0.06 : base + Math.sin(now / 400) * 0.03;
+  }
   document.getElementById("hot-mount")!.classList.toggle("mounted", Boolean(d?.mt));
   const target = nearestInteractable();
   hud.setHint(target && !input.touchMode ? target.label : target ? target.label.replace("E · ", "") : null);
@@ -1116,7 +1255,14 @@ function frame(): void {
   effects.updateFireflies(focus.x, focus.y, isInterior(map) ? 0 : renderer.night, time);
   effects.update(dt);
   landmarks.update(time);
-  if (!isInterior(map)) fountains.update(dt, renderer.camera.position.x, renderer.camera.position.z);
+  if (!isInterior(map)) {
+    fountains.update(dt, renderer.camera.position.x, renderer.camera.position.z);
+    for (const st of STATIONS) {
+      if (Math.hypot(st.x - me.x, st.y - me.y) > 40 || Math.random() > dt * 14) continue;
+      const h = map.heightAt(st.x, st.y) + (st.kind === "campfire" ? 0.5 : 0.7);
+      effects.particles.emit(st.x, h, st.y + (st.kind === "forge" ? 0.65 : 0), { n: 1, color: Math.random() < 0.5 ? "#ff9a3c" : "#ffd166", speed: 0.25, up: 1.6, size: 0.07, life: 0.8, gravity: -0.5, spread: 0.3 });
+    }
+  }
   labels.update(now);
   renderer.render(dt);
 }

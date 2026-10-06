@@ -18,7 +18,7 @@ export const RARITY_INFO: Record<Rarity, { color: string; mult: number; weight: 
 export type EquipSlot = "weapon" | "body" | "ring1" | "ring2";
 export const EQUIP_SLOTS: EquipSlot[] = ["weapon", "body", "ring1", "ring2"];
 
-export type ItemKind = "weapon" | "armor" | "ring" | "potion" | "junk" | "mount" | "furniture";
+export type ItemKind = "weapon" | "armor" | "ring" | "potion" | "junk" | "mount" | "furniture" | "tool" | "material" | "food";
 
 export interface ItemTemplate {
   id: string;
@@ -35,6 +35,8 @@ export interface ItemTemplate {
   heal?: number;
   value: number;
   stack?: number;
+  /** Food / tonic buff: stat, value (fraction or flat armour), duration. */
+  buff?: { stat: "str" | "def" | "spd" | "regen"; value: number; ms: number };
 }
 
 export interface Item {
@@ -72,6 +74,56 @@ export const ITEM_TEMPLATES: Record<string, ItemTemplate> = {
   potion_big: { id: "potion_big", name: "Honey Elixir", kind: "potion", icon: "🍯", heal: 120, value: 24, stack: 20 },
   // Mounts (unlock on purchase; never enter the bag)
   mount_pony: { id: "mount_pony", name: "Fluffy Pony", kind: "mount", icon: "🐴", value: 100 },
+  // Tools (needed to gather)
+  tool_hatchet: { id: "tool_hatchet", name: "Trusty Hatchet", kind: "tool", icon: "🪓", value: 20 },
+  tool_pickaxe: { id: "tool_pickaxe", name: "Sturdy Pickaxe", kind: "tool", icon: "⛏️", value: 20 },
+  tool_sickle: { id: "tool_sickle", name: "Little Sickle", kind: "tool", icon: "🌾", value: 20 },
+  tool_rod: { id: "tool_rod", name: "Bamboo Fishing Rod", kind: "tool", icon: "🎣", value: 20 },
+  // Gathered materials
+  log_oak: { id: "log_oak", name: "Oak Log", kind: "material", icon: "🪵", value: 3, stack: 50 },
+  log_pine: { id: "log_pine", name: "Pine Log", kind: "material", icon: "🪵", value: 5, stack: 50 },
+  log_willow: { id: "log_willow", name: "Willow Log", kind: "material", icon: "🪵", value: 8, stack: 50 },
+  log_palm: { id: "log_palm", name: "Palm Log", kind: "material", icon: "🪵", value: 9, stack: 50 },
+  log_frost: { id: "log_frost", name: "Frost Pine Log", kind: "material", icon: "🪵", value: 14, stack: 50 },
+  log_ash: { id: "log_ash", name: "Ashwood Log", kind: "material", icon: "🪵", value: 18, stack: 50 },
+  ore_copper: { id: "ore_copper", name: "Copper Ore", kind: "material", icon: "🟤", value: 4, stack: 50 },
+  ore_iron: { id: "ore_iron", name: "Iron Ore", kind: "material", icon: "⚫", value: 7, stack: 50 },
+  ore_gold: { id: "ore_gold", name: "Gold Ore", kind: "material", icon: "🟡", value: 12, stack: 50 },
+  ore_silver: { id: "ore_silver", name: "Silver Ore", kind: "material", icon: "⚪", value: 15, stack: 50 },
+  ore_obsidian: { id: "ore_obsidian", name: "Obsidian Shard", kind: "material", icon: "🖤", value: 20, stack: 50 },
+  crystal_frost: { id: "crystal_frost", name: "Frost Crystal", kind: "material", icon: "💠", value: 22, stack: 50 },
+  crystal_ember: { id: "crystal_ember", name: "Ember Crystal", kind: "material", icon: "🔶", value: 26, stack: 50 },
+  bar_copper: { id: "bar_copper", name: "Copper Bar", kind: "material", icon: "🧱", value: 12, stack: 50 },
+  bar_iron: { id: "bar_iron", name: "Iron Bar", kind: "material", icon: "🧱", value: 20, stack: 50 },
+  bar_gold: { id: "bar_gold", name: "Gold Bar", kind: "material", icon: "🧱", value: 32, stack: 50 },
+  bar_silver: { id: "bar_silver", name: "Silver Bar", kind: "material", icon: "🧱", value: 40, stack: 50 },
+  herb_sunpetal: { id: "herb_sunpetal", name: "Sunpetal", kind: "material", icon: "🌼", value: 3, stack: 50 },
+  herb_grain: { id: "herb_grain", name: "Golden Grain", kind: "material", icon: "🌾", value: 2, stack: 50 },
+  herb_berries: { id: "herb_berries", name: "Wild Berries", kind: "material", icon: "🫐", value: 4, stack: 50 },
+  herb_bogmoss: { id: "herb_bogmoss", name: "Bogmoss", kind: "material", icon: "🍀", value: 8, stack: 50 },
+  herb_cactus: { id: "herb_cactus", name: "Cactus Fruit", kind: "material", icon: "🌵", value: 11, stack: 50 },
+  fish_minnow: { id: "fish_minnow", name: "Minnow", kind: "material", icon: "🐟", value: 3, stack: 30 },
+  fish_trout: { id: "fish_trout", name: "River Trout", kind: "material", icon: "🐟", value: 8, stack: 30 },
+  fish_salmon: { id: "fish_salmon", name: "Silver Salmon", kind: "material", icon: "🐟", value: 16, stack: 30 },
+  fish_pike: { id: "fish_pike", name: "Lake Pike", kind: "material", icon: "🐟", value: 12, stack: 30 },
+  fish_catfish: { id: "fish_catfish", name: "Whiskery Catfish", kind: "material", icon: "🐟", value: 10, stack: 30 },
+  fish_eel: { id: "fish_eel", name: "Bog Eel", kind: "material", icon: "🐍", value: 14, stack: 30 },
+  fish_snapper: { id: "fish_snapper", name: "Red Snapper", kind: "material", icon: "🐠", value: 12, stack: 30 },
+  fish_tuna: { id: "fish_tuna", name: "Bluefin Tuna", kind: "material", icon: "🐟", value: 22, stack: 30 },
+  fish_frostfin: { id: "fish_frostfin", name: "Frostfin", kind: "material", icon: "🐡", value: 24, stack: 30 },
+  fish_goldcarp: { id: "fish_goldcarp", name: "Golden Carp", kind: "material", icon: "🐠", value: 26, stack: 30 },
+  junk_boot: { id: "junk_boot", name: "Soggy Boot", kind: "junk", icon: "🥾", value: 1, stack: 20 },
+  junk_bottle: { id: "junk_bottle", name: "Message in a Bottle", kind: "junk", icon: "🍾", value: 40, stack: 20 },
+  // Cooked food & smithing tonics (heal + timed buff)
+  food_grilled_minnow: { id: "food_grilled_minnow", name: "Grilled Minnow", kind: "food", icon: "🍢", heal: 40, value: 8, stack: 20 },
+  food_bread: { id: "food_bread", name: "Crusty Bread", kind: "food", icon: "🍞", heal: 50, value: 9, stack: 20, buff: { stat: "regen", value: 0.01, ms: 120_000 } },
+  food_berry_pie: { id: "food_berry_pie", name: "Berry Pie", kind: "food", icon: "🥧", heal: 90, value: 16, stack: 20, buff: { stat: "regen", value: 0.015, ms: 180_000 } },
+  food_trout_supper: { id: "food_trout_supper", name: "Trout Supper", kind: "food", icon: "🍱", heal: 110, value: 22, stack: 20, buff: { stat: "str", value: 0.1, ms: 180_000 } },
+  food_bog_stew: { id: "food_bog_stew", name: "Hearty Bog Stew", kind: "food", icon: "🍲", heal: 130, value: 26, stack: 20, buff: { stat: "def", value: 6, ms: 180_000 } },
+  food_seaside_platter: { id: "food_seaside_platter", name: "Seaside Platter", kind: "food", icon: "🍤", heal: 150, value: 30, stack: 20, buff: { stat: "spd", value: 0.1, ms: 180_000 } },
+  food_golden_feast: { id: "food_golden_feast", name: "Golden Feast", kind: "food", icon: "🍛", heal: 220, value: 48, stack: 20, buff: { stat: "spd", value: 0.15, ms: 240_000 } },
+  food_frostfin_sashimi: { id: "food_frostfin_sashimi", name: "Frostfin Sashimi", kind: "food", icon: "🍣", heal: 200, value: 50, stack: 20, buff: { stat: "str", value: 0.18, ms: 240_000 } },
+  food_whetstone: { id: "food_whetstone", name: "Whetstone Tonic", kind: "food", icon: "🧪", heal: 0, value: 14, stack: 20, buff: { stat: "str", value: 0.08, ms: 180_000 } },
   // Junk (sold to vendors)
   slime_gel: { id: "slime_gel", name: "Slime Gel", kind: "junk", icon: "🟢", value: 3, stack: 50 },
   fluffy_tail: { id: "fluffy_tail", name: "Fluffy Tail", kind: "junk", icon: "🦊", value: 5, stack: 50 },

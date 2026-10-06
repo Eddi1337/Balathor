@@ -70,7 +70,7 @@ export class Panels {
 
   closeAll(): boolean {
     let closed = false;
-    for (const id of ["win-talents", "win-quests", "win-waypoints", "emote-menu", "player-menu"]) {
+    for (const id of ["win-talents", "win-quests", "win-waypoints", "win-profs", "win-craft", "emote-menu", "player-menu"]) {
       if (!$(id).classList.contains("hidden")) {
         $(id).classList.add("hidden");
         closed = true;
