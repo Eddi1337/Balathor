@@ -467,6 +467,9 @@ export class Game {
         return this.sails.dig(p, world);
       case "mg":
         return this.minigames.handle(p, world, msg, now);
+      case "mod":
+        if (msg.op === "tp") return this.modTeleport(p, world, Number(msg.x), Number(msg.y));
+        return;
     }
   }
 
@@ -591,6 +594,8 @@ export class Game {
     save.x = safe.x;
     save.y = safe.y;
     const p = new Player(`p${s.accountId}`, s.accountId, s, save);
+    p.mod = config.moderators.has((s.username ?? "").toLowerCase()) || config.moderators.has(save.name.toLowerCase());
+    if (p.mod) this.applyModPerks(p);
     this.recompute(p);
     if (p.hp <= 0) p.hp = p.derived.maxHp;
     s.player = p;
@@ -933,7 +938,7 @@ export class Game {
   private handleChat(s: Session, p: Player, world: World, raw: string, now: number): void {
     const text = raw.replace(/[\u0000-\u001f]/g, "").trim().slice(0, 160);
     if (!text) return;
-    if (!(config.devCommands && text.startsWith("/")) && now - p.lastChatAt < CHAT_COOLDOWN_MS) return;
+    if (!(this.canDev(p) && text.startsWith("/")) && now - p.lastChatAt < CHAT_COOLDOWN_MS) return;
     p.lastChatAt = now;
     if (text.startsWith("/")) return this.chatCommand(s, p, world, text);
     world.fx(p.x, p.y, { e: "say", id: p.id, text }, CHAT_RADIUS);
@@ -942,12 +947,121 @@ export class Game {
     this.npcChat.heard(p, world, text, now);
   }
 
+  /** Dev / moderator chat commands: everyone on a dev server, moderators everywhere. */
+  private canDev(p: Player): boolean {
+    return config.devCommands || p.mod;
+  }
+
+  /** Moderators: bottomless purse, every ship and boat (fully upgraded) and a pony. */
+  private applyModPerks(p: Player): void {
+    const s = p.save;
+    if (s.gold < 5_000_000) s.gold = 10_000_000;
+    for (const h of HULL_IDS) if (!s.ships.includes(h)) s.ships.push(h);
+    for (const h of SAIL_HULL_IDS) if (!s.sailShips.includes(h)) s.sailShips.push(h);
+    s.activeShip ??= "frigate";
+    s.activeSail ??= "galleon";
+    for (const slot of UPGRADE_SLOTS) s.shipUp[slot] = 3;
+    s.hasMount = true;
+    p.selfDirty = p.saveDirty = true;
+  }
+
+  /** Find an online player by (case-insensitive) character name. */
+  private findOnline(name: string): Player | null {
+    const n = name.trim().toLowerCase();
+    if (!n) return null;
+    for (const s of this.sessions.values()) if (s.player && s.player.name.toLowerCase() === n) return s.player;
+    return null;
+  }
+
+  /** Moderator: click the (mini)map to teleport within the current map. */
+  private modTeleport(p: Player, world: World, x: number, y: number): void {
+    if (!p.mod || p.dead || !Number.isFinite(x) || !Number.isFinite(y)) return;
+    const R = world.def.bounds;
+    x = clamp(x, -R, R);
+    y = clamp(y, -R, R);
+    if (p.ship || p.aboard) return p.session.toast("Land (or step off the ship) before teleporting", "bad");
+    const spot = p.god ? { x, y } : world.def.id === OVERWORLD.id ? findWalkableNear(x, y, 10) : safeSpot(world.def, x, y);
+    this.transfer(p, world.id, spot.x, spot.y);
+  }
+
   private chatCommand(s: Session, p: Player, world: World, text: string): void {
     const [cmd] = text.slice(1).split(/\s+/);
     const sys = (t: string) => s.send({ t: "chat", from: "", name: "", text: t, kind: "system" });
     switch ((cmd ?? "").toLowerCase()) {
       case "help":
-        return sys("Commands: /who, /roll, /home, /where, /invite name, /leave, /kick name, /p message, /trade name, /mount, emotes: /" + Object.keys(EMOTES).join(" /"));
+        sys("Commands: /who, /roll, /home, /where, /invite name, /leave, /kick name, /p message, /trade name, /mount, emotes: /" + Object.keys(EMOTES).join(" /"));
+        if (p.mod) sys("Moderator: type /mod for your commands. Click the minimap (or press N for the world map) to teleport.");
+        return;
+      case "mod":
+      case "modhelp":
+        if (!p.mod) return sys(`Unknown command /${cmd}. Try /help`);
+        return sys(
+          "Moderator commands: /godmode (fly through anything, can't be hurt) · /teleport name · /summon name · /boot name · /announce text · /heal · " +
+            "/tp x y · /map id [x y] · /time 0-1 · /xp n · /gold n · /ship hull · /sailship hull · /prof id lv · /tpnpc id · /questdone id · /shiptp x y. " +
+            "Click the minimap or the world map (N) to teleport."
+        );
+      case "godmode":
+      case "god": {
+        if (!p.mod) return sys(`Unknown command /${cmd}. Try /help`);
+        p.god = !p.god;
+        if (p.god) {
+          p.hp = p.derived.maxHp;
+          p.mounted = false;
+          world.fx(p.x, p.y, { e: "buff", id: p.id, buff: "shield", dur: 1500 });
+        } else {
+          // Land somewhere you can actually stand.
+          const spot = world.def.id === OVERWORLD.id ? findWalkableNear(p.x, p.y, 12) : safeSpot(world.def, p.x, p.y);
+          p.x = spot.x;
+          p.y = spot.y;
+          world.grid.moved(p);
+          s.send({ t: "welcome", id: p.id, map: world.def.id, x: p.x, y: p.y, time: this.worldTime(), dayLength: config.dayLengthMs });
+        }
+        p.selfDirty = true;
+        return sys(p.god ? "God mode ON: you fly through anything and can't be hurt. Shift flies faster. /godmode again to land." : "God mode OFF. Back on solid ground.");
+      }
+      case "teleport":
+      case "goto": {
+        if (!p.mod) return sys(`Unknown command /${cmd}. Try /help`);
+        const target = this.findOnline(text.trim().split(/\s+/).slice(1).join(" "));
+        if (!target) return sys("No player online by that name.");
+        if (target === p) return sys("You're already here!");
+        this.transfer(p, target.mapId, target.x + 1, target.y);
+        return sys(`Teleported to ${target.name}.`);
+      }
+      case "summon": {
+        if (!p.mod) return sys(`Unknown command /${cmd}. Try /help`);
+        const target = this.findOnline(text.trim().split(/\s+/).slice(1).join(" "));
+        if (!target) return sys("No player online by that name.");
+        if (target === p) return sys("You can't summon yourself.");
+        this.transfer(target, p.mapId, p.x + 1, p.y);
+        target.session.toast(`A moderator (${p.name}) summoned you.`, "info");
+        return sys(`Summoned ${target.name}.`);
+      }
+      case "boot": {
+        if (!p.mod) return sys(`Unknown command /${cmd}. Try /help`);
+        const target = this.findOnline(text.trim().split(/\s+/).slice(1).join(" "));
+        if (!target) return sys("No player online by that name.");
+        if (target.mod) return sys("You can't boot another moderator.");
+        target.session.send({ t: "toast", text: "You were disconnected by a moderator.", kind: "bad" });
+        setTimeout(() => target.session.ws.close(4000, "booted"), 200);
+        return sys(`Booted ${target.name}.`);
+      }
+      case "announce": {
+        if (!p.mod) return sys(`Unknown command /${cmd}. Try /help`);
+        const msg = text.trim().split(/\s+/).slice(1).join(" ").slice(0, 200);
+        if (!msg) return sys("Usage: /announce your message");
+        const json = JSON.stringify({ t: "chat", from: "", name: "", text: `📢 ${p.name}: ${msg}`, kind: "system" } satisfies S2C);
+        for (const o of this.sessions.values()) if (o.player) o.sendRaw(json);
+        for (const o of this.sessions.values()) if (o.player) o.toast(`📢 ${msg}`, "info");
+        return;
+      }
+      case "heal": {
+        if (!p.mod) return sys(`Unknown command /${cmd}. Try /help`);
+        p.hp = p.derived.maxHp;
+        p.food = null;
+        world.fx(p.x, p.y, { e: "heal", id: p.id, amt: p.derived.maxHp });
+        return sys("Fully healed.");
+      }
       case "invite":
         return this.social.invite(p, text.trim().split(/\s+/).slice(1).join(" "));
       case "leave":
@@ -979,7 +1093,7 @@ export class Game {
       }
       case "tp": {
         // Developer-only teleport (DEV_COMMANDS=1), used for testing distant biomes.
-        if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
+        if (!this.canDev(p)) return sys(`Unknown command /${cmd}. Try /help`);
         const [, xs, ys] = text.trim().split(/\s+/);
         // Within the current map (from a house interior: out onto the overworld).
         const def = world.def.kind === "interior" ? OVERWORLD : world.def;
@@ -988,7 +1102,7 @@ export class Game {
         return sys(`Teleported to ${p.x.toFixed(0)}, ${p.y.toFixed(0)}`);
       }
       case "tpnpc": {
-        if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
+        if (!this.canDev(p)) return sys(`Unknown command /${cmd}. Try /help`);
         const id = text.trim().split(/\s+/)[1] ?? "";
         const def = NPCS.find((n) => n.id === id);
         if (!def) return sys(`No NPC ${id}`);
@@ -1000,7 +1114,7 @@ export class Game {
         return sys(`Teleported to ${npc.def.name}`);
       }
       case "map": {
-        if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
+        if (!this.canDev(p)) return sys(`Unknown command /${cmd}. Try /help`);
         const [, id, xs, ys] = text.trim().split(/\s+/);
         const def = getMap(id ?? "");
         if (def.id !== id) return sys(`No map ${id}`);
@@ -1011,7 +1125,7 @@ export class Game {
         return sys(`Moved to ${def.name}`);
       }
       case "questdone": {
-        if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
+        if (!this.canDev(p)) return sys(`Unknown command /${cmd}. Try /help`);
         const id = text.trim().split(/\s+/)[1] ?? "";
         if (!QUESTS_BY_ID[id]) return sys(`No quest ${id}`);
         if (!p.save.quests.done.includes(id)) p.save.quests.done.push(id);
@@ -1020,7 +1134,7 @@ export class Game {
         return sys(`Marked ${id} done`);
       }
       case "shiptp": {
-        if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
+        if (!this.canDev(p)) return sys(`Unknown command /${cmd}. Try /help`);
         const ship = p.aboard ? world.ships.get(p.aboard.shipId) : undefined;
         if (!ship) return sys("You're not aboard a ship");
         const [, xs, ys] = text.trim().split(/\s+/);
@@ -1031,17 +1145,17 @@ export class Game {
         return sys("Ship moved");
       }
       case "sailship": {
-        if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
+        if (!this.canDev(p)) return sys(`Unknown command /${cmd}. Try /help`);
         const name = this.sails.grant(p, text.trim().split(/\s+/)[1] ?? "sloop");
         return sys(name ? `Granted the ${name}` : "Unknown hull");
       }
       case "ship": {
-        if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
+        if (!this.canDev(p)) return sys(`Unknown command /${cmd}. Try /help`);
         const name = this.ships.grant(p, text.trim().split(/\s+/)[1] ?? "skiff");
         return sys(name ? `Granted the ${name}` : "Unknown hull");
       }
       case "prof": {
-        if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
+        if (!this.canDev(p)) return sys(`Unknown command /${cmd}. Try /help`);
         const [, id, lvRaw] = text.trim().split(/\s+/);
         const st = p.save.professions[id as keyof typeof p.save.professions];
         if (!st) return sys(`Professions: ${PROF_IDS.join(", ")}`);
@@ -1052,7 +1166,7 @@ export class Game {
       }
       case "xp":
       case "gold": {
-        if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
+        if (!this.canDev(p)) return sys(`Unknown command /${cmd}. Try /help`);
         const n = Math.max(0, Math.min(1_000_000, Number(text.trim().split(/\s+/)[1]) || 0));
         if (cmd === "xp") this.awardXp(p, n);
         else {
@@ -1062,7 +1176,7 @@ export class Game {
         return sys(`Granted ${n} ${cmd}`);
       }
       case "time": {
-        if (!config.devCommands) return sys(`Unknown command /${cmd}. Try /help`);
+        if (!this.canDev(p)) return sys(`Unknown command /${cmd}. Try /help`);
         const t = Number(text.trim().split(/\s+/)[1]);
         if (Number.isFinite(t)) this.timeOffset = (((t - this.worldTime()) % 1) + 1) % 1 + this.timeOffset;
         const json = JSON.stringify({ t: "time", time: this.worldTime() } satisfies S2C);
@@ -1256,6 +1370,10 @@ export class Game {
       for (const s of this.sessions.values()) {
         const p = s.player;
         if (!p) continue;
+        if (p.mod && p.save.gold < 5_000_000) {
+          p.save.gold = 10_000_000;
+          p.selfDirty = p.saveDirty = true;
+        }
         // Heavy loads: the fletcher's crate and cursed coins.
         const mg = this.minigames.sessionOf(p);
         p.burden = (mg?.game === "fletcher" ? 0.72 : 1) * (p.save.inv.some((i) => i?.tpl === "heavy_coin") ? 0.8 : 1);
@@ -1481,6 +1599,8 @@ export class Game {
       discovered: s.discovered,
       sailShips: s.sailShips,
       trophies: s.trophies,
+      mod: p.mod,
+      god: p.god,
       title: s.title,
       activeSail: s.activeSail,
       ship: p.ship ? { hull: Math.ceil(p.ship.hull), shield: Math.ceil(p.ship.shield) } : null,

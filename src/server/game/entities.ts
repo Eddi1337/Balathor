@@ -113,6 +113,9 @@ export class Player implements Spatial, NetCached {
   lastDoorAt = 0;
   nextDiscoverAt = 0;
   ship: ShipState | null = null;
+  /** Moderator powers (from config.moderators) and god mode (fly through anything, can't be hurt). */
+  mod = false;
+  god = false;
   /** Movement multiplier from heavy loads (fletcher's crate, cursed coins). */
   burden = 1;
   /** Aboard a sailing ship: which one, where on its deck, and whether we're steering. */
@@ -171,7 +174,9 @@ export class Player implements Spatial, NetCached {
       ly: this.aboard ? round2(this.aboard.ly) : 0,
       hm: this.aboard?.helm ? 1 : 0,
       tt: s.title ?? "",
-      sp: this.input.sprint && this.moving && !this.mounted && !this.ship && !this.aboard ? 1 : 0
+      sp: this.input.sprint && this.moving && !this.mounted && !this.ship && !this.aboard ? 1 : 0,
+      md: this.mod ? 1 : 0,
+      gd: this.god ? 1 : 0
     };
     this.netPass = pass;
     this.netValue = value;

@@ -9,7 +9,7 @@ import { Tile } from "./tiles";
 import { riverCurrent } from "./rivers";
 import { STATION_ARRIVAL, STATION_W, stationTileAt } from "./scifi/station";
 import { SPACE_RADIUS, spaceSpawns, spaceTileAt, LAUNCH_POINT, type SpawnSpec } from "./scifi/space";
-import { OCEAN_RADIUS, PORT_SPAWN, isLand, oceanHeightAt, oceanLevelAt, oceanSpawns, oceanTileAt } from "./sea/ocean";
+import { OCEAN_RADIUS, PORT_SPAWN, isLand, oceanHeightAt, oceanLevelAt, oceanSpawns, oceanTileAt, sampleOceanTileAt } from "./sea/ocean";
 import { CAVES, caveLayout, caveSpawns, caveTileAt, parseCaveMapId } from "./dungeons/caves";
 import { DUNGEON_W, GROUP_DUNGEONS, dungeonLayout, dungeonSpawns, dungeonTileAt, parseDungeonMapId } from "./dungeons/group";
 import { LIFTS } from "./scifi/station";
@@ -41,6 +41,8 @@ export interface MapDef {
   currentAt?(x: number, y: number): { vx: number; vy: number };
   /** Fixed mob spawns (maps other than the overworld). */
   spawns?(): SpawnSpec[];
+  /** Cheap single-tile lookup for overview maps (skips chunk generation). */
+  sampleTile?(x: number, y: number): number;
   /** Each party gets its own copy ("<id>#<party>") with monsters scaled to the party. */
   instanced?: boolean;
   /** Where you end up when you leave (or log back in after leaving mid-run). */
@@ -73,7 +75,8 @@ export const OVERWORLD: MapDef = {
   heightAt: overworld.heightAt,
   biomeAt: overworld.biomeAt,
   zoneLevelAt: overworld.zoneLevelAt,
-  currentAt: riverCurrent
+  currentAt: riverCurrent,
+  sampleTile: overworld.sampleTileAt
 };
 
 export const STATION: MapDef = {
@@ -114,7 +117,8 @@ export const OCEAN: MapDef = {
   heightAt: oceanHeightAt,
   biomeAt: (x, y) => (isLand(oceanTileAt(x, y)) ? "beach" : "ocean"),
   zoneLevelAt: oceanLevelAt,
-  spawns: oceanSpawns
+  spawns: oceanSpawns,
+  sampleTile: sampleOceanTileAt
 };
 
 const MAPS = new Map<string, MapDef>([

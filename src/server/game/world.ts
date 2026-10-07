@@ -6,8 +6,8 @@ import type { MapDef } from "../../shared/world/maps";
 import { BIOME_BOSSES, BIOME_SPAWNS, MOB_TEMPLATES, mobStats, type MobTemplate } from "../../shared/game/mobs";
 import { NPCS, scheduleAt } from "../../shared/game/npcs";
 import { CLASSES } from "../../shared/game/classes";
-import { MOUNT_SPEED_MULT, SPRINT_SPEED_MULT, mitigate } from "../../shared/game/stats";
-import { applyCurrent, circleBlocked, isSwimming, stepMovement } from "../../shared/game/movement";
+import { GOD_SPEED_MULT, MOUNT_SPEED_MULT, SPRINT_SPEED_MULT, mitigate } from "../../shared/game/stats";
+import { applyCurrent, circleBlocked, isSwimming, stepFly, stepMovement } from "../../shared/game/movement";
 import { findPath } from "../../shared/game/pathfind";
 import type { BuffId, Talent, ZoneKind } from "../../shared/game/talents";
 import { EMOTES } from "../../shared/game/emotes";
@@ -715,7 +715,7 @@ export class World {
   }
 
   damagePlayer(p: Player, raw: number, by: Mob | null, now: number): void {
-    if (p.dead) return;
+    if (p.dead || p.god) return;
     if (p.aboard) {
       // Blows meant for the crew land on the hull.
       const ship = this.ships.get(p.aboard.shipId);
@@ -818,6 +818,7 @@ export class World {
 
   playerSpeed(p: Player): number {
     let speed = p.derived.speed;
+    if (p.god) return speed * GOD_SPEED_MULT * (p.input.sprint ? SPRINT_SPEED_MULT : 1);
     if (p.mounted) speed *= MOUNT_SPEED_MULT;
     else if (p.input.sprint) speed *= SPRINT_SPEED_MULT;
     const haste = p.buffs.get("haste");
@@ -858,6 +859,11 @@ export class World {
         // Moved along with the ship in tickShips.
         p.swimming = false;
         p.mounted = false;
+      } else if (p.god) {
+        p.moving = stepFly(p, mx, my, this.playerSpeed(p), dt);
+        p.swimming = false;
+        p.mounted = false;
+        if (p.moving) this.grid.moved(p);
       } else {
         const moving = Math.hypot(mx, my) > 0.05;
         if (moving) {
@@ -913,7 +919,7 @@ export class World {
     }
     const blind = now < mob.blindUntil;
     let target: Player | null = mob.targetId ? this.players.get(mob.targetId) ?? null : null;
-    if (target && (target.dead || target.mapId !== this.id || target.buffs.has("camo"))) {
+    if (target && (target.dead || target.god || target.mapId !== this.id || target.buffs.has("camo"))) {
       target = null;
       mob.targetId = null;
       if (mob.state === "chase") mob.state = "return";
@@ -924,7 +930,7 @@ export class World {
       let best: Player | null = null;
       let bestD = tpl.aggro + mob.level * 0.15;
       this.grid.forEachNear(mob.x, mob.y, bestD, (e) => {
-        if (e.kind !== "player" || e.dead || e.buffs.has("camo")) return;
+        if (e.kind !== "player" || e.dead || e.god || e.buffs.has("camo")) return;
         const d = dist(mob.x, mob.y, e.x, e.y);
         if (d < bestD) {
           bestD = d;

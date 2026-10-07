@@ -16,7 +16,7 @@ import { CraftingUI } from "./ui/crafting";
 import { STATIONS, stationNear } from "../shared/world/stations";
 import { FISH_RANGE, GATHER_RANGE, PROFESSIONS, STATION_RANGE, gatherNode } from "../shared/game/professions";
 import { isWaterTile } from "../shared/world/tiles";
-import { stepMovement } from "../shared/game/movement";
+import { stepFly, stepMovement } from "../shared/game/movement";
 import { Tile } from "../shared/world/tiles";
 import { Net } from "./net";
 import { Input } from "./input";
@@ -38,7 +38,7 @@ import { Panels } from "./ui/panels";
 import { TALENTS_BY_ID, type BuffId } from "../shared/game/talents";
 import { WAYPOINTS, WAYPOINT_USE_RADIUS, type Waypoint } from "../shared/game/waypoints";
 import { EMOTES } from "../shared/game/emotes";
-import { MOUNT_SPEED_MULT, SPRINT_SPEED_MULT } from "../shared/game/stats";
+import { GOD_SPEED_MULT, MOUNT_SPEED_MULT, SPRINT_SPEED_MULT } from "../shared/game/stats";
 import { HULLS, shipStats, stepShip, BOOST_COOLDOWN_MS, BOOST_MS, type HullId } from "../shared/game/ships";
 import { DOCK_RANGE, POIS, poiNear } from "../shared/world/scifi/space";
 import { LAUNCH_PAD, STATION_H, STATION_W } from "../shared/world/scifi/station";
@@ -54,6 +54,7 @@ import { HarbourUI, SailPanel } from "./ui/harbour";
 import { MinigameUI } from "./ui/minigames";
 import { Audio, type Mood, type Sfx } from "./audio";
 import { SettingsUI } from "./ui/settings";
+import { WorldMap } from "./ui/worldmap";
 import { GAMES, SITES, SITE_RANGE } from "../shared/game/minigames";
 import { SeaTerrain } from "./render/seaTerrain";
 import { DECK_H, animateSea, buildPlayerShip, buildSeaMob, isSeaModel, setSailOpacity } from "./render/seaModels";
@@ -107,6 +108,15 @@ const harbour = new HarbourUI(send);
 const mgUi = new MinigameUI(send);
 const audio = new Audio();
 const settings = new SettingsUI(audio);
+const worldMap = new WorldMap();
+/** Moderators teleport by clicking the minimap or the world map. */
+function modPick(x: number, y: number): void {
+  if (!state.self?.mod) return;
+  send({ t: "mod", op: "tp", x: round(x), y: round(y) });
+  audio.play("warp", 0.6);
+}
+hud.onMinimapClick = (x, y) => modPick(x, y);
+worldMap.onPick = (x, y) => modPick(x, y);
 document.getElementById("hot-settings")!.addEventListener("click", () => settings.toggle());
 document.getElementById("hot-boards")!.addEventListener("click", () => mgUi.toggleBoards());
 // Every button gives a soft little click.
@@ -343,13 +353,17 @@ function predict(dt: number, now: number): void {
     me.vx = me.vy = 0;
     me.moving = Math.hypot(mx, my) > 0.05;
   }
-  if (me.moving && s && d && !d.sh) {
+  if (s && d && d.gd && !d.sh) {
+    // Moderator god mode: fly straight through everything.
+    me.moving = stepFly(me, mx, my, s.derived.speed * GOD_SPEED_MULT * (sprint ? SPRINT_SPEED_MULT : 1), dt);
+    if (me.moving) me.f = Math.atan2(my, mx);
+  } else if (me.moving && s && d && !d.sh) {
     const haste = d.bf.includes("haste") ? 1.4 : 1;
     stepMovement(map, me, mx, my, s.derived.speed * (d.mt ? MOUNT_SPEED_MULT : sprint ? SPRINT_SPEED_MULT : 1) * haste, dt);
     if (now - lastAttackAt > 350) me.f = Math.atan2(my, mx);
   }
   // Rivers carry swimmers downstream (same shared rule as the server).
-  if (d && !d.dead && isSwimming(map, me.x, me.y)) applyCurrent(map, me, dt);
+  if (d && !d.dead && !d.gd && isSwimming(map, me.x, me.y)) applyCurrent(map, me, dt);
   // Reconcile with the authoritative position.
   const ex = state.serverX - me.x;
   const ey = state.serverY - me.y;
@@ -740,6 +754,9 @@ input.onKey = (code, e) => {
     case "KeyK":
       mgUi.toggleBoards();
       break;
+    case "KeyN":
+      worldMap.toggle();
+      break;
     case "KeyJ":
       if (map.kind === "space") {
         warpUi.pos = { x: me.x, y: me.y };
@@ -766,7 +783,8 @@ input.onKey = (code, e) => {
       break;
     }
     case "Escape":
-      if (settings.open) settings.hide();
+      if (worldMap.open) worldMap.hide();
+      else if (settings.open) settings.hide();
       else if (mgUi.windowOpen) mgUi.closeWindows();
       else if (harbour.open) harbour.hide();
       else if (hangar.open) hangar.hide();
@@ -1534,6 +1552,11 @@ function updateEntities(dt: number, now: number, time: number): void {
         }
       }
     }
+    if (d.k === "p" && d.gd) {
+      // Flying moderator: hover above the ground with a soft sparkle trail.
+      baseY = Math.max(baseY, groundAt(x, y)) + 1.6 + Math.sin(time * 2.2) * 0.15;
+      if (Math.random() < dt * 12) effects.particles.emit(x, baseY + 0.2, y, { n: 1, color: "#ffd166", speed: 0.3, up: -0.4, size: 0.08, life: 0.7, gravity: 0 });
+    }
     m.root.position.set(x, baseY, y);
     if (d.k !== "l") m.root.rotation.y = Math.PI / 2 - f;
     const dead = "dead" in d && d.dead === 1;
@@ -1610,7 +1633,7 @@ function updateEntities(dt: number, now: number, time: number): void {
     if (d.k === "p") {
       keepPlates.add(e.id);
       labels.plate(e.id, tmpV, {
-        name: (isSelf ? d.name : `${d.name} · ${d.lv}`) + (d.tt ? ` «${d.tt}»` : ""),
+        name: (d.md ? "🛡️ " : "") + (isSelf ? d.name : `${d.name} · ${d.lv}`) + (d.tt ? ` «${d.tt}»` : ""),
         kind: isSelf ? "self" : "player",
         hp: d.hp,
         mhp: d.mhp,
@@ -1767,7 +1790,7 @@ function frame(): void {
     // Holding F, the mouse button or the touch attack button keeps attacking on cooldown.
     if (!hud.chatFocused && (input.isDown("KeyF") || input.touchAttack || (input.mouseDown && !input.touchMode))) tryAttack(now);
     updateEntities(dt, now, time);
-    renderer.target.set(me.x, deck0 ? DECK_H : groundAt(me.x, me.y), me.y);
+    renderer.target.set(me.x, deck0 ? DECK_H : groundAt(me.x, me.y) + (selfData()?.gd ? 1.6 : 0), me.y);
     updateHud(now);
   } else {
     // Title / creator: slowly orbit the plaza around the preview character.
@@ -1805,6 +1828,10 @@ function frame(): void {
   surface?.update(time);
   // Minigame checkpoint beacon + timers.
   mgUi.update(now);
+  if (worldMap.open && phase === "play") {
+    const wmDots = [...state.entities.values()].filter((e) => e.data.k === "p" && e.id !== state.selfId).map((e) => ({ x: e.rx, y: e.ry, color: "#5b8def", size: 3 }));
+    worldMap.update(map, me, wmDots, Boolean(state.self?.mod));
+  }
   audio.setMood(currentMood());
   audio.update();
   settings.tick(now);

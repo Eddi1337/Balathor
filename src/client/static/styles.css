@@ -406,3 +406,8 @@ label { display: grid; gap: 6px; font-weight: 500; font-size: 14px; color: var(-
 .settings .keys { line-height: 1.6; }
 .fps { position: fixed; bottom: 4px; left: 50%; transform: translateX(-50%); font: 11px monospace; color: #fff; background: #0006; padding: 2px 6px; border-radius: 6px; z-index: 50; }
 body.no-plates .plate { display: none; }
+
+/* ── World map ───────────────────────────────────────────────── */
+#win-worldmap { width: min(560px, calc(100vw - 28px)); left: 50%; right: auto; transform: translateX(-50%); top: 60px; }
+#win-worldmap canvas { width: 100%; aspect-ratio: 1; border-radius: 12px; display: block; image-rendering: pixelated; }
+.mod-flying .hud-portrait { box-shadow: 0 0 0 3px #ffd166; }

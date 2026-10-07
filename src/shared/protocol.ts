@@ -69,6 +69,9 @@ export interface NetPlayer {
   tt: string;
   /** 1 while sprinting. */
   sp: 0 | 1;
+  /** Moderator (1) and flying god mode (1). */
+  md: 0 | 1;
+  gd: 0 | 1;
 }
 
 /** A running minigame, as the player sees it. */
@@ -219,6 +222,9 @@ export interface SelfState {
   sailShips: SailHullId[];
   trophies: string[];
   title: string | null;
+  /** Moderator powers / god mode on. */
+  mod: boolean;
+  god: boolean;
   activeSail: SailHullId | null;
   /** While flying: hull / shield right now. */
   ship: { hull: number; shield: number } | null;
@@ -311,6 +317,7 @@ export type C2S =
   | { t: "boost" }
   | { t: "sail"; op: "summon" | "board" | "ashore" | "helm" | "furl" | "buy" | "select"; hull?: string; id?: string }
   | { t: "dig" }
+  | { t: "mod"; op: "tp"; x: number; y: number }
   | { t: "mg"; op: "start" | "act" | "quit" | "board" | "title"; site?: string; action?: string; value?: number; game?: string }
   | { t: "party"; op: "invite" | "accept" | "decline" | "leave" | "kick"; target?: string }
   | { t: "trade"; op: "request" | "accept" | "decline" | "cancel" | "offer" | "unoffer" | "gold" | "ready"; target?: string; slot?: number; gold?: number }

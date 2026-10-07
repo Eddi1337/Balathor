@@ -58,6 +58,10 @@ export class Hud {
   private minimapCtx = $<HTMLCanvasElement>("minimap").getContext("2d")!;
   private minimapBase: ImageData | null = null;
   private minimapCenter = { x: 1e9, y: 1e9 };
+  /** Where the minimap was last centred (player position) and its tiles-per-pixel. */
+  private minimapView = { px: 0, py: 0, scale: 1.25 };
+  /** Clicked a spot on the minimap (world coordinates). */
+  onMinimapClick: ((x: number, y: number) => void) | null = null;
   chatFocused = false;
   /** When set (e.g. during a trade), bag clicks go here instead of use/equip. */
   bagClickOverride: ((slot: number) => void) | null = null;
@@ -70,6 +74,15 @@ export class Hud {
         if (btn.dataset.close === "win-shop") this.shop = null;
       })
     );
+    $("minimap").addEventListener("click", (e) => {
+      if (!this.onMinimapClick) return;
+      const c = $<HTMLCanvasElement>("minimap");
+      const r = c.getBoundingClientRect();
+      const cx = ((e.clientX - r.left) / r.width) * c.width;
+      const cy = ((e.clientY - r.top) / r.height) * c.height;
+      const v = this.minimapView;
+      this.onMinimapClick(v.px + (cx - c.width / 2) * v.scale, v.py + (cy - c.height / 2) * v.scale);
+    });
     $("hot-bag").addEventListener("click", () => this.toggle("win-bag"));
     $("hot-char").addEventListener("click", () => this.toggle("win-char"));
     $("hot-potion").addEventListener("click", () => this.drinkPotion());
@@ -424,6 +437,7 @@ export class Hud {
     const ctx = this.minimapCtx;
     const size = 168;
     const half = size / 2;
+    this.minimapView = { px, py, scale };
     // scale = tiles per pixel
     const key = `${map.id}|${scale}`;
     if (!this.minimapBase || this.minimapKey !== key || Math.hypot(px - this.minimapCenter.x, py - this.minimapCenter.y) > 6 * scale) {

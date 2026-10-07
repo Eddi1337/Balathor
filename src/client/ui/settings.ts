@@ -63,7 +63,7 @@ export class SettingsUI {
         <label>Interface size <input type="range" min="0.75" max="1.3" step="0.05" data-k="uiScale"></label>
         <label class="row"><input type="checkbox" data-k="nameplates"> Show nameplates</label>
         <h4>Keys</h4>
-        <p class="tip keys">WASD move · Shift sprint · Space jump · F / click attack · 1-5 abilities · Q potion · E interact · I bag · C character · T talents · L quests · P professions · K leaderboards · M mount · H decorate (home) · J warp (space) · Enter chat · Esc close</p>
+        <p class="tip keys">WASD move · Shift sprint · Space jump · F / click attack · 1-5 abilities · Q potion · E interact · I bag · C character · T talents · L quests · P professions · K leaderboards · N world map · M mount · H decorate (home) · J warp (space) · Enter chat · Esc close</p>
       </div>`;
     document.getElementById("hud")!.appendChild(this.root);
     this.fpsEl = document.createElement("div");

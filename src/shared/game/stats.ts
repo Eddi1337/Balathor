@@ -19,6 +19,8 @@ export const SWIM_SPEED_MULT = 0.45;
 export const MOUNT_SPEED_MULT = 1.6;
 /** Holding Shift (or the joystick pushed all the way) on foot. */
 export const SPRINT_SPEED_MULT = 1.55;
+/** Moderator god mode: flying, through walls and over water. */
+export const GOD_SPEED_MULT = 2.4;
 
 export function xpToNext(level: number): number {
   return Math.round(60 + level * 45 + level * level * 6);

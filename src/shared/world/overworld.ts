@@ -225,6 +225,11 @@ function naturalHeightAt(x: number, y: number): number {
   return Math.max(-1.8, beach - (d - (coast - 1.5)) * 0.38);
 }
 
+/** One tile without generating (and caching) its whole chunk: for overview maps. */
+export function sampleTileAt(x: number, y: number): number {
+  return rawTileAt(Math.floor(x), Math.floor(y));
+}
+
 function rawTileAt(x: number, y: number): number {
   const city = cityTileAt(x, y);
   if (city !== null) return city;

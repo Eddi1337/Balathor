@@ -85,3 +85,13 @@ export function stepMovement(
   }
   return moved;
 }
+
+/** God-mode flight: straight through walls, water and everything else. */
+export function stepFly(pos: { x: number; y: number }, mx: number, my: number, speed: number, dt: number): boolean {
+  const len = Math.hypot(mx, my);
+  if (len < 0.01) return false;
+  const k = (Math.min(1, len) / len) * speed * dt;
+  pos.x += mx * k;
+  pos.y += my * k;
+  return true;
+}

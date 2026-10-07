@@ -20,6 +20,11 @@ export const config = {
   discordWebhookUrl: process.env.DISCORD_WEBHOOK_URL || "",
   /** Enables /tp and /time chat commands. Never set in production. */
   devCommands: process.env.DEV_COMMANDS === "1",
+  /**
+   * Moderators: account usernames or character names (comma-separated, case-insensitive). Mods get
+   * unlimited gold, every ship, map-click teleport, /godmode, /teleport, /summon and the dev commands.
+   */
+  moderators: new Set((process.env.MODERATORS ?? "Eddi").split(",").map((n) => n.trim().toLowerCase()).filter(Boolean)),
   /** Real milliseconds per in-game day. */
   dayLengthMs: int("DAY_LENGTH_MS", 24 * 60 * 1000, 60_000, 24 * 60 * 60 * 1000)
 };

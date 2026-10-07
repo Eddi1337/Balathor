@@ -164,6 +164,11 @@ function portTile(x: number, y: number, s: number): number | null {
   return r < 0.15 ? Tile.FLOWERS : Tile.GRASS;
 }
 
+/** One tile without generating its whole chunk: for overview maps. */
+export function sampleOceanTileAt(x: number, y: number): number {
+  return rawTile(Math.floor(x), Math.floor(y));
+}
+
 function rawTile(x: number, y: number): number {
   const cx = x + 0.5;
   const cy = y + 0.5;
