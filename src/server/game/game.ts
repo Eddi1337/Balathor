@@ -54,6 +54,8 @@ import { Mob, Player, type CharacterSave } from "./entities";
 import { Session } from "./session";
 import { World } from "./world";
 
+/** Squared distance beyond which other entities replicate at half rate. */
+const FAR_SQ = 18 * 18;
 const CHAT_RADIUS = 32;
 const CHAT_COOLDOWN_MS = 700;
 const TALK_RADIUS = 3.6;
@@ -1297,6 +1299,7 @@ export class Game {
   }
 
   /** Send this client only what changed in its area of interest since its last snapshot. */
+  // (FAR_SQ: beyond this squared distance, entities update every other snapshot.)
   private replicate(s: Session, p: Player, world: World, now: number): void {
     const R = config.aoiRadius;
     const add: NetEntity[] = [];
@@ -1312,6 +1315,8 @@ export class Game {
       if (!prev) {
         add.push(net);
       } else if (prev !== net) {
+        // Far-away entities update at half rate (their changes simply accumulate into the next diff).
+        if (e !== p && dx * dx + dy * dy > FAR_SQ && (this.pass + (net.id.length & 1)) % 2 === 1) return;
         let diff: Record<string, unknown> | null = null;
         for (const key in net) {
           const v = (net as unknown as Record<string, unknown>)[key];
