@@ -5,8 +5,6 @@ import { WAYPOINTS } from "../../shared/game/waypoints";
 import { STATIONS } from "../../shared/world/stations";
 import { heightAt } from "../../shared/world/overworld";
 import { GeometryBuilder, PRIMS, sceneryMaterial } from "./builder";
-import { buildStargate } from "./stargate";
-import { GATE_RING, STARGATE } from "../../shared/world/scifi/stargate";
 import { CAVE_MOUTHS } from "../../shared/world/overworld";
 
 interface Obelisk {
@@ -45,21 +43,7 @@ export class Landmarks {
       this.group.add(crystal);
       this.obelisks.push({ id: w.id, crystal, mat, baseY: h + 2.9, attuned: false });
     }
-    // The Stargate at Starfall Circle, facing west toward the road.
-    const gate = buildStargate("stone", GATE_RING.radius);
-    gate.position.set(GATE_RING.x, heightAt(GATE_RING.x, GATE_RING.y), GATE_RING.y);
-    gate.rotation.y = -Math.PI / 2;
-    this.group.add(gate);
-    for (let i = 0; i < 10; i += 1) {
-      const a = (i / 10) * Math.PI * 2;
-      const r = STARGATE.r - 0.6;
-      const x = STARGATE.x + Math.cos(a) * r;
-      const y = STARGATE.y + Math.sin(a) * r;
-      if (Math.abs(a - Math.PI) < 0.4) continue; // leave the path open
-      stone.add(PRIMS.taper6, { x, y: heightAt(x, y) + 0.45, z: y, sx: 0.22, sy: 0.9, sz: 0.22, color: "#d9d2e0" });
-      stone.add(PRIMS.octa, { x, y: heightAt(x, y) + 1.05, z: y, sx: 0.12, sy: 0.18, sz: 0.12, color: "#b98cff", glow: -1.6 });
-    }
-    // The Seafarer Cave: a mossy rock mound with a dark mouth facing the sea and a lantern.
+    // Cave mouths: mossy rock mounds with a dark opening and a lantern.
     for (const c of CAVE_MOUTHS) {
       const h = heightAt(c.x, c.y);
       const ang = Math.atan2(c.oy, c.ox);

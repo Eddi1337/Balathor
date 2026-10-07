@@ -6,6 +6,8 @@ export interface InputSnapshot {
   ix: number;
   iy: number;
   attackHeld: boolean;
+  /** Shift held (or the touch joystick pushed all the way out). */
+  sprint: boolean;
 }
 
 export class Input {
@@ -165,7 +167,8 @@ export class Input {
       ix /= len;
       iy /= len;
     }
-    return { ix, iy, attackHeld: this.keys.has("Space") || this.mouseDown || this.touchAttack };
+    const sprint = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight") || (this.joy.active && Math.hypot(this.joy.x, this.joy.y) > 0.95);
+    return { ix, iy, attackHeld: this.keys.has("Space") || this.mouseDown || this.touchAttack, sprint };
   }
 
   consumeDrag(): { dx: number; dy: number; wheel: number } {

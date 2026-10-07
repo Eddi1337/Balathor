@@ -146,3 +146,45 @@ test("rivers: swimmers are carried downstream by the current", async () => {
   assert.ok(along > 1.5, `drifted ${along.toFixed(2)} tiles downstream`);
   assert.equal(a.entities.get(a.id)?.sw, 1, "swimming");
 });
+
+test("the castle's Hall of Portals: both portals and their keepers are reachable from the door", async () => {
+  const dir2 = mkdtempSync(join(tmpdir(), "balathor-v2-hall-"));
+  await build({
+    stdin: {
+      contents: `
+        export { CASTLE_PORTALS, THRONE_ROOM } from "./src/shared/world/housing";
+        export { getMap } from "./src/shared/world/maps";
+        export { findPath } from "./src/shared/game/pathfind";
+        export { NPCS } from "./src/shared/game/npcs";
+      `,
+      resolveDir: process.cwd(),
+      loader: "ts"
+    },
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    outfile: join(dir2, "h.mjs"),
+    logLevel: "silent"
+  });
+  const H = await import(pathToFileURL(join(dir2, "h.mjs")).href);
+  rmSync(dir2, { recursive: true, force: true });
+  const hall = H.getMap("castle:throne");
+  const from = H.THRONE_ROOM.spawn;
+  const spots = [H.CASTLE_PORTALS.station, H.CASTLE_PORTALS.ocean, ...H.NPCS.filter((n) => n.map === "castle:throne")];
+  for (const t of spots) assert.ok(H.findPath(hall, from.x, from.y, t.x, t.y), `path to ${t.id ?? `${t.x},${t.y}`}`);
+});
+
+test("sprinting (Shift) covers more ground than walking", async () => {
+  const run = async (sp) => {
+    await a.chat("/tp 0.5 140", 1200);
+    const y0 = a.pos.y;
+    a.send({ t: "in", seq: 1, mx: 0, my: 1, f: Math.PI / 2, sp });
+    await sleep(1500);
+    a.send({ t: "in", seq: 2, mx: 0, my: 0, f: Math.PI / 2, sp: 0 });
+    await sleep(300);
+    return a.pos.y - y0;
+  };
+  const walk = await run(0);
+  const sprint = await run(1);
+  assert.ok(sprint > walk * 1.35, `sprint ${sprint.toFixed(1)} vs walk ${walk.toFixed(1)}`);
+});

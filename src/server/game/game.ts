@@ -367,6 +367,7 @@ export class Game {
         p.input.seq = Number(msg.seq) || 0;
         p.input.mx = clamp(Number(msg.mx) || 0, -1, 1);
         p.input.my = clamp(Number(msg.my) || 0, -1, 1);
+        p.input.sprint = msg.sp === 1;
         if (Number.isFinite(msg.f)) p.f = wrapAngle(Number(msg.f));
         return;
       }

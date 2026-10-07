@@ -7,6 +7,8 @@ import type { InteriorMapDef } from "../../shared/world/maps";
 import { FURNITURE, footprint } from "../../shared/game/furniture";
 import { hash2 } from "../../shared/math";
 import { GeometryBuilder, PRIMS, sceneryMaterial } from "./builder";
+import { buildStargate } from "./stargate";
+import { CASTLE_PORTALS } from "../../shared/world/housing";
 
 const WALL_H = 3.2;
 
@@ -62,32 +64,34 @@ export function buildInterior(map: InteriorMapDef): THREE.Group {
     // Royal carpet from the door to the throne.
     b.add(PRIMS.box, { x: L.door.x + 0.5, y: 0.03, z: L.h / 2, sx: 2.2, sy: 0.04, sz: L.h - 3, color: "#b23a48" });
     b.add(PRIMS.box, { x: L.door.x + 0.5, y: 0.035, z: L.h / 2, sx: 1.6, sy: 0.04, sz: L.h - 3.2, color: "#d94a5e" });
+    const cx = L.door.x + 0.5;
     // Pillars.
     for (const key of L.solid) {
       const [x, y] = key.split(",").map(Number);
-      if (y <= 2) continue;
+      if (y <= 2 || x <= 1 || x >= L.w - 2) continue;
       b.add(PRIMS.cyl12, { x: x + 0.5, y: WALL_H / 2 + 0.6, z: y + 0.5, sx: 0.42, sy: WALL_H + 1.2, sz: 0.42, color: "#f6f2ec" });
       b.add(PRIMS.box, { x: x + 0.5, y: 0.15, z: y + 0.5, sx: 1, sy: 0.3, sz: 1, color: "#d9d1c6" });
       b.add(PRIMS.box, { x: x + 0.5, y: WALL_H + 1.15, z: y + 0.5, sx: 1, sy: 0.3, sz: 1, color: "#d9c27a" });
     }
     // Dais + throne.
-    b.add(PRIMS.box, { x: 11.5, y: 0.15, z: 2, sx: 6, sy: 0.3, sz: 3, color: "#d9d1c6" });
-    b.add(PRIMS.box, { x: 11.5, y: 0.35, z: 1.6, sx: 4.6, sy: 0.25, sz: 2, color: "#e9dccb" });
-    b.add(PRIMS.box, { x: 11.5, y: 0.95, z: 1.4, sx: 1.4, sy: 0.6, sz: 1.1, color: "#ffc94d", glow: 0.2 });
-    b.add(PRIMS.box, { x: 11.5, y: 2.1, z: 0.95, sx: 1.4, sy: 2.4, sz: 0.25, color: "#ffc94d", glow: 0.2 });
-    b.add(PRIMS.box, { x: 11.5, y: 1.3, z: 1.4, sx: 1.1, sy: 0.15, sz: 0.9, color: "#7b3fbf" });
-    b.add(PRIMS.octa, { x: 11.5, y: 3.5, z: 0.95, sx: 0.35, sy: 0.4, sz: 0.1, color: "#ff5c8a", glow: 1.2 });
+    b.add(PRIMS.box, { x: cx, y: 0.15, z: 2, sx: 6, sy: 0.3, sz: 3, color: "#d9d1c6" });
+    b.add(PRIMS.box, { x: cx, y: 0.35, z: 1.6, sx: 4.6, sy: 0.25, sz: 2, color: "#e9dccb" });
+    b.add(PRIMS.box, { x: cx, y: 0.95, z: 1.4, sx: 1.4, sy: 0.6, sz: 1.1, color: "#ffc94d", glow: 0.2 });
+    b.add(PRIMS.box, { x: cx, y: 2.1, z: 0.95, sx: 1.4, sy: 2.4, sz: 0.25, color: "#ffc94d", glow: 0.2 });
+    b.add(PRIMS.box, { x: cx, y: 1.3, z: 1.4, sx: 1.1, sy: 0.15, sz: 0.9, color: "#7b3fbf" });
+    b.add(PRIMS.octa, { x: cx, y: 3.5, z: 0.95, sx: 0.35, sy: 0.4, sz: 0.1, color: "#ff5c8a", glow: 1.2 });
     // Banners along the back wall.
-    for (const x of [3, 7, 16, 20]) {
-      b.add(PRIMS.box, { x: x + 0.5, y: 2.2, z: 1.05, sx: 1.2, sy: 2.2, sz: 0.05, color: x < 11 ? "#7b3fbf" : "#5b8def" });
+    for (const off of [-8.5, -4.5, 4.5, 8.5]) {
+      const x = cx - 0.5 + off;
+      b.add(PRIMS.box, { x: x + 0.5, y: 2.2, z: 1.05, sx: 1.2, sy: 2.2, sz: 0.05, color: off < 0 ? "#7b3fbf" : "#5b8def" });
       b.add(PRIMS.octa, { x: x + 0.5, y: 2.4, z: 1.1, sx: 0.3, sy: 0.3, sz: 0.06, color: "#ffd166", glow: 0.5 });
     }
     // Chandeliers.
     for (const z of [5.5, 11]) {
-      b.add(PRIMS.torus, { x: 11.5, y: WALL_H + 0.3, z, sx: 1.1, sy: 1.1, sz: 1.1, rx: Math.PI / 2, color: "#ffc94d" });
+      b.add(PRIMS.torus, { x: cx, y: WALL_H + 0.3, z, sx: 1.1, sy: 1.1, sz: 1.1, rx: Math.PI / 2, color: "#ffc94d" });
       for (let i = 0; i < 6; i += 1) {
         const a = (i / 6) * Math.PI * 2;
-        b.add(PRIMS.ico, { x: 11.5 + Math.cos(a) * 1.1, y: WALL_H + 0.5, z: z + Math.sin(a) * 1.1, sx: 0.08, sy: 0.12, sz: 0.08, color: "#ffe2a0", glow: 2.5 });
+        b.add(PRIMS.ico, { x: cx + Math.cos(a) * 1.1, y: WALL_H + 0.5, z: z + Math.sin(a) * 1.1, sx: 0.08, sy: 0.12, sz: 0.08, color: "#ffe2a0", glow: 2.5 });
       }
     }
   } else {
@@ -104,6 +108,21 @@ export function buildInterior(map: InteriorMapDef): THREE.Group {
   const light = new THREE.PointLight(0xffd9a0, royal ? 26 : 14, royal ? 22 : 14, 1.4);
   light.position.set(L.w / 2, 2.8, L.h / 2);
   group.add(light);
+  if (royal) {
+    // The Hall of Portals: the Stargate (west wall) and the sea portal (east wall), each facing
+    // into the hall, with a little plaque-coloured rug in front.
+    const R = 1.75;
+    for (const [style, at, ry] of [["stone", CASTLE_PORTALS.station, Math.PI / 2], ["sea", CASTLE_PORTALS.ocean, -Math.PI / 2]] as const) {
+      const ring = buildStargate(style, R);
+      const wx = style === "stone" ? 1.6 : L.w - 1.6;
+      ring.position.set(wx, 0, at.y);
+      ring.rotation.y = ry;
+      group.add(ring);
+      const rug = new THREE.Mesh(new THREE.CircleGeometry(1.3, 24).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: style === "stone" ? 0x7b3fbf : 0x3f8fb0, roughness: 0.9 }));
+      rug.position.set(at.x, 0.03, at.y);
+      group.add(rug);
+    }
+  }
   return group;
 }
 

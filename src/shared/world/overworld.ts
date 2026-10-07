@@ -5,7 +5,6 @@
 import { Tile, isBlockingTile } from "./tiles";
 import { cityHeightAt, cityTileAt, CITY_RADIUS, TOWN_SPAWN } from "./city";
 import { initRivers, riverAt } from "./rivers";
-import { stargateHeight, stargateTileAt } from "./scifi/stargate";
 import { clamp, fbm, hash2, lerp, smoothstep, valueNoise, TAU } from "../math";
 
 export const WORLD_SEED = 1337;
@@ -63,8 +62,7 @@ export function coastRadiusAt(angle: number): number {
 }
 
 /**
- * Rocky cave mouths on the island: the Seafarer Cave (a tunnel under the sea to Port Bilgewater),
- * three cave dungeons and the Hollow King's Crypt. Each mouth faces back toward the city.
+ * Rocky cave mouths on the island: three cave dungeons and the Hollow King's Crypt. Each mouth faces back toward the city.
  */
 export interface CaveMouth {
   id: string;
@@ -82,14 +80,12 @@ function mouth(id: string, angle: number, radius: number, rock: string, moss: st
 }
 
 export const CAVE_MOUTHS: CaveMouth[] = [
-  mouth("seafarer", 2.25, 150, "#8a8f9a", "#6fae5a"),
   mouth("grotto", -2.35, 182, "#7d8a7a", "#5fae5a"),
   mouth("ember", -0.5, 330, "#6a5a5e", "#ff8a5c"),
   mouth("frost", -1.66, 420, "#c9d6e6", "#f4f8ff"),
   mouth("crypt", -2.75, 430, "#5d6470", "#9a94a6")
 ];
 export const CAVE_MOUTHS_BY_ID: Record<string, CaveMouth> = Object.fromEntries(CAVE_MOUTHS.map((m) => [m.id, m]));
-export const SEAFARER_CAVE = CAVE_MOUTHS_BY_ID.seafarer;
 
 /** Where you stand to go in. */
 export function mouthFront(m: CaveMouth): { x: number; y: number } {
@@ -110,7 +106,6 @@ function caveTileAt(x: number, y: number): number | null {
   return null;
 }
 
-export const SEAFARER_FRONT = mouthFront(SEAFARER_CAVE);
 
 export function biomeAt(x: number, y: number): Biome {
   const d = Math.hypot(x, y);
@@ -208,8 +203,7 @@ export function heightAt(x: number, y: number): number {
 function baseHeightAt(x: number, y: number): number {
   const city = cityHeightAt(x, y);
   if (city !== null) return city;
-  const h = naturalHeightAt(x, y);
-  return stargateHeight(x, y, h) ?? h;
+  return naturalHeightAt(x, y);
 }
 
 function naturalHeightAt(x: number, y: number): number {
@@ -234,8 +228,6 @@ function naturalHeightAt(x: number, y: number): number {
 function rawTileAt(x: number, y: number): number {
   const city = cityTileAt(x, y);
   if (city !== null) return city;
-  const gate = stargateTileAt(x, y);
-  if (gate !== null) return gate;
   const cave = caveTileAt(x, y);
   if (cave !== null) return cave;
 

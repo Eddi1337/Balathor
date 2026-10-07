@@ -37,12 +37,12 @@ function horizonMaterial(): THREE.ShaderMaterial {
  * A stargate standing on the ground at the origin, ring plane = local XY (it faces ±z). Rotate
  * the returned group to face where you want.
  */
-export function buildStargate(style: "stone" | "metal", radius = 2.9): THREE.Group {
+export function buildStargate(style: "stone" | "metal" | "sea", radius = 2.9): THREE.Group {
   const g = new THREE.Group();
   const b = new GeometryBuilder();
-  const ringColor = style === "stone" ? "#c9c0d4" : "#9aa6b8";
-  const trim = style === "stone" ? "#a99fb8" : "#5a6478";
-  const glow = style === "stone" ? "#b98cff" : "#5ff6ff";
+  const ringColor = style === "stone" ? "#c9c0d4" : style === "sea" ? "#ff9f8a" : "#9aa6b8";
+  const trim = style === "stone" ? "#a99fb8" : style === "sea" ? "#3f8fb0" : "#5a6478";
+  const glow = style === "stone" ? "#b98cff" : style === "sea" ? "#9ff0e8" : "#5ff6ff";
   const segs = 18;
   const cy = radius + 0.25;
   for (let i = 0; i < segs; i += 1) {
@@ -68,7 +68,7 @@ export function buildStargate(style: "stone" | "metal", radius = 2.9): THREE.Gro
   const horizon = new THREE.Mesh(new THREE.CircleGeometry(radius - 0.32, 40), horizonMaterial());
   horizon.position.set(0, cy, 0);
   g.add(horizon);
-  const light = new THREE.PointLight(style === "stone" ? 0x9fb8ff : 0x7fe8ff, 6, 12, 1.6);
+  const light = new THREE.PointLight(style === "stone" ? 0x9fb8ff : style === "sea" ? 0x7fffe0 : 0x7fe8ff, 6, 12, 1.6);
   light.position.set(0, cy, 1.2);
   g.add(light);
   return g;

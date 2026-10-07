@@ -3,9 +3,8 @@
 
 import { doorFront, nearestHouses } from "../world/city";
 import { ALCOVES, LIFTS, LAUNCH_PAD } from "../world/scifi/station";
-import { STARGATE } from "../world/scifi/stargate";
 import { ISLES_BY_ID, landNear, portDoor } from "../world/sea/ocean";
-import { SEAFARER_CAVE, SEAFARER_FRONT } from "../world/overworld";
+import { CASTLE_PORTALS, THRONE_ROOM } from "../world/housing";
 
 export type NpcRole = "shop" | "guide" | "guard" | "villager";
 
@@ -203,6 +202,7 @@ export const NPCS: NpcDef[] = [
     lines: [
       "Welcome to Hearthmoor, the White City! WASD to walk, click to attack, Space to jump.",
       "The streets climb the hill ring by ring. The King's castle sits at the very top!",
+      "The portals to other worlds are in the castle: a Stargate to the stars and a sea portal to Port Bilgewater.",
       "The fields and forests outside the walls are gentle. The further you roam, the tougher things get!",
       "Press I for your bag, C for your character, T for talents and L for quests."
     ],
@@ -251,9 +251,9 @@ export const NPCS: NpcDef[] = [
     id: "npc_steward", name: "Steward Willa", role: "villager", x: 4, y: 2, wander: 2, body: "#f4f8ff", accent: "#ffd166", hat: "cap",
     lines: ["The King is in the throne room. Go right in, he loves visitors.", "Isn't the White Tree beautiful?"]
   },
-  // Starfall Circle, outside the main gate.
+  // The castle's Hall of Portals: a keeper beside each portal.
   {
-    id: "npc_astra", name: "Gatekeeper Astra", role: "guide", x: STARGATE.x - 3, y: STARGATE.y + 3, wander: 1.5, body: "#5b6bd6", accent: "#cfe3ff", hat: "wizard",
+    id: "npc_astra", name: "Gatekeeper Astra", role: "guide", x: CASTLE_PORTALS.station.x + 2.5, y: CASTLE_PORTALS.station.y + 4.5, wander: 1, body: "#5b6bd6", accent: "#cfe3ff", hat: "wizard", map: "castle:throne",
     lines: ["The Stargate hums day and night. Step up to it and press E to travel to Ringforge Station.", "Up there they fly ships between the stars. Imagine!", "Pack a snack. Space is big."]
   },
   // Ringforge Station.
@@ -282,9 +282,8 @@ export const NPCS: NpcDef[] = [
     lines: ["Brr! Welcome to Icefall. Keep moving, it helps.", "The crystals sing when the wind blows.", "Shardlings look like snowmen. They are not snowmen."] },
   { id: "npc_rusty", name: "Prospector Rusty", role: "guide", x: 4.5, y: 7.5, wander: 1.5, body: "#e07a4a", accent: "#ffd166", hat: "cap", map: "planet:rust",
     lines: ["Rust! Red sand, titanium, and things with too many legs.", "The old relay ridge still pings now and then.", "Don't swim in the green lakes. Trust me."] },
-  // The Seafarer Cave, on the south-west beach.
-  { id: "npc_pete", name: "Old Salt Pete", role: "guide", x: SEAFARER_FRONT.x - SEAFARER_CAVE.oy * 2.5, y: SEAFARER_FRONT.y + SEAFARER_CAVE.ox * 2.5, wander: 1, body: "#3f6fb5", accent: "#fff1e6", hat: "tricorn",
-    lines: ["That cave goes right under the sea, it does. Comes out at Port Bilgewater.", "I sailed the Boundless Ocean for forty years. Kraken took my hat. Twice.", "Press E at the cave mouth, if ye dare!"] },
+  { id: "npc_pete", name: "Old Salt Pete", role: "guide", x: CASTLE_PORTALS.ocean.x - 2.5, y: CASTLE_PORTALS.ocean.y + 4.5, wander: 1, body: "#3f6fb5", accent: "#fff1e6", hat: "tricorn", map: "castle:throne",
+    lines: ["That portal smells of salt, it does. Comes out right in Port Bilgewater.", "I sailed the Boundless Ocean for forty years. Kraken took my hat. Twice.", "Press E at the sea portal, if ye dare!"] },
   // Port Bilgewater.
   { id: "npc_marlow", name: "Captain Marlow", role: "guide", ...portDoor("captain"), wander: 1.2, body: "#7b3fbf", accent: "#ffd166", hat: "tricorn", map: "ocean",
     lines: ["Welcome to Port Bilgewater, the finest den of scoundrels on the sea!", "Gristle's pirates grow bolder every tide.", "Every sailor needs a ship. Every ship needs a sailor."] },
@@ -301,10 +300,10 @@ export const NPCS: NpcDef[] = [
   { id: "npc_gull", name: "Dockhand Gully", role: "villager", x: -3.5, y: 34.5, wander: 3, body: "#ffd166", accent: "#3b2f4a", hat: "bandana", map: "ocean",
     lines: ["Ships come and go, I tie the ropes.", "Walk up to your ship at the pier and press E to board."] },
   // Inside the castle.
-  { id: "npc_king", name: "King Aldric the Kind", role: "villager", x: 11.5, y: 3.6, wander: 0, body: "#7b3fbf", accent: "#ffd166", hat: "crown", map: "castle:throne",
+  { id: "npc_king", name: "King Aldric the Kind", role: "villager", x: THRONE_ROOM.door.x + 0.5, y: 3.6, wander: 0, body: "#7b3fbf", accent: "#ffd166", hat: "crown", map: "castle:throne",
     lines: ["Welcome, welcome! Any friend of Hearthmoor is a friend of mine.", "Our island's champions grow restless. Will you help?", "Have you tried the honey elixirs? Splendid stuff."] },
-  guard("npc_royal_1", "Royal Guard", 8.5, 5.5, ["Long live the King!"], "castle:throne"),
-  guard("npc_royal_2", "Royal Guard", 14.5, 5.5, ["The King's bounties are posted daily."], "castle:throne")
+  guard("npc_royal_1", "Royal Guard", THRONE_ROOM.door.x - 2.5, 5.5, ["Long live the King!", "The portals? West for the stars, east for the sea."], "castle:throne"),
+  guard("npc_royal_2", "Royal Guard", THRONE_ROOM.door.x + 3.5, 5.5, ["The King's bounties are posted daily."], "castle:throne")
 ];
 
 /** The schedule entry active at a given in-game hour, if any. */

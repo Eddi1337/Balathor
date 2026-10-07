@@ -2,10 +2,9 @@
 // own map ("house:<id>:<floor>"); the castle's throne room is an interior too.
 
 import { CITY_HOUSES, CASTLE, TIER_H, type CityHouse } from "./city";
-import { STARGATE, STARGATE_FRONT } from "./scifi/stargate";
 import { LIFTS, STATION_ARRIVAL, STATION_GATE } from "./scifi/station";
 import { LAB_INFO, labLayout } from "./scifi/labs";
-import { CAVE_MOUTHS_BY_ID, SEAFARER_CAVE, SEAFARER_FRONT, mouthFront } from "./overworld";
+import { CAVE_MOUTHS_BY_ID, mouthFront } from "./overworld";
 import { CAVES, caveLayout, type CaveId } from "./dungeons/caves";
 import { DUNGEON_DOORS, GROUP_DUNGEONS, dungeonLayout, type GroupDungeonId } from "./dungeons/group";
 import { GROTTO, PORT_SPAWN } from "./sea/ocean";
@@ -78,15 +77,32 @@ export function interiorLayout(plot: Plot, floor: number): InteriorLayout {
   return { style, w, h, door, stairs, spawn: { x: door.x + 0.5, y: door.y - 1.2 }, solid: new Set() };
 }
 
+/**
+ * The castle: the King's throne room is also the Hall of Portals. The court fills the middle; the
+ * Stargate to Ringforge Station stands against the west wall and the sea portal to Port Bilgewater
+ * against the east wall.
+ */
 export const THRONE_ROOM: InteriorLayout = (() => {
-  const w = 23;
+  const w = 35;
   const h = 17;
+  const cx = 17;
   const solid = new Set<string>();
-  for (const px of [4, 18]) for (const py of [4, 8, 12]) solid.add(`${px},${py}`);
-  for (let x = 9; x <= 13; x += 1) solid.add(`${x},1`);
-  solid.add("11,2");
-  return { style: "throne", w, h, door: { x: 11, y: h - 1 }, stairs: null, spawn: { x: 11.5, y: h - 2.4 }, solid };
+  for (const px of [cx - 7, cx + 7]) for (const py of [4, 8, 12]) solid.add(`${px},${py}`);
+  for (let x = cx - 2; x <= cx + 2; x += 1) solid.add(`${x},1`);
+  solid.add(`${cx},2`);
+  // Portal frames against the side walls.
+  for (let y = 6; y <= 10; y += 1) {
+    solid.add(`1,${y}`);
+    solid.add(`${w - 2},${y}`);
+  }
+  return { style: "throne", w, h, door: { x: cx, y: h - 1 }, stairs: null, spawn: { x: cx + 0.5, y: h - 2.4 }, solid };
 })();
+
+/** Where you stand to step through each castle portal (and where you arrive back). */
+export const CASTLE_PORTALS = {
+  station: { x: 3.4, y: 8.5 },
+  ocean: { x: THRONE_ROOM.w - 3.4, y: 8.5 }
+};
 
 export function interiorTileAt(layout: InteriorLayout, x: number, y: number): number {
   const tx = Math.floor(x);
@@ -141,37 +157,38 @@ export const DOORS: Door[] = [
     y: THRONE_ROOM.door.y - 0.5,
     to: { map: "overworld", x: CASTLE_FRONT.x, y: CASTLE_FRONT.y + 0.8 }
   },
+  // The castle's Hall of Portals: the other worlds are reached from here, and lead back here.
   {
     id: "stargate_in",
-    label: "Step through the Stargate",
-    map: "overworld",
-    x: STARGATE_FRONT.x,
-    y: STARGATE_FRONT.y,
+    label: "Step through the Stargate to Ringforge Station",
+    map: "castle:throne",
+    x: CASTLE_PORTALS.station.x,
+    y: CASTLE_PORTALS.station.y,
     to: { map: "station", x: STATION_ARRIVAL.x, y: STATION_ARRIVAL.y }
   },
   {
     id: "stargate_out",
-    label: "Return to Hearthmoor",
+    label: "Return to Hearthmoor Castle",
     map: "station",
     x: STATION_GATE.x,
     y: STATION_GATE.y + 1.4,
-    to: { map: "overworld", x: STARGATE.x - 2, y: STARGATE.y }
+    to: { map: "castle:throne", x: CASTLE_PORTALS.station.x + 1.2, y: CASTLE_PORTALS.station.y }
   },
   {
     id: "seafarer_in",
-    label: "Enter the Seafarer Cave",
-    map: "overworld",
-    x: SEAFARER_FRONT.x,
-    y: SEAFARER_FRONT.y,
+    label: "Step through the sea portal to Port Bilgewater",
+    map: "castle:throne",
+    x: CASTLE_PORTALS.ocean.x,
+    y: CASTLE_PORTALS.ocean.y,
     to: { map: "ocean", x: PORT_SPAWN.x, y: PORT_SPAWN.y }
   },
   {
     id: "seafarer_out",
-    label: "Take the tunnel back to the island",
+    label: "Step through the portal back to Hearthmoor Castle",
     map: "ocean",
     x: GROTTO.x,
     y: GROTTO.y,
-    to: { map: "overworld", x: SEAFARER_FRONT.x + SEAFARER_CAVE.ox * 1.5, y: SEAFARER_FRONT.y + SEAFARER_CAVE.oy * 1.5 }
+    to: { map: "castle:throne", x: CASTLE_PORTALS.ocean.x - 1.2, y: CASTLE_PORTALS.ocean.y }
   },
   ...(Object.keys(CAVES) as CaveId[]).flatMap((id): Door[] => {
     const m = CAVE_MOUTHS_BY_ID[id];

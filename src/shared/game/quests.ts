@@ -296,7 +296,7 @@ const SCIFI_QUESTS: Quest[] = [
     turnIn: "npc_orla",
     level: 5,
     requires: ["q_welcome"],
-    offer: "You've got that look: the one that stares at the stars. The gate's ready. Step through, and report to Station Master Orla on the other side.",
+    offer: "You've got that look: the one that stares at the stars. The Stargate stands in the castle's Hall of Portals, west of the throne. Step through, and report to Station Master Orla on the other side.",
     complete: "A visitor from Hearthmoor! Welcome to Ringforge Station, the friendliest rock in orbit.",
     steps: [
       { type: "visit", map: "station", x: 32, y: 6.5, r: 6, text: "Step through the Stargate" },
@@ -585,15 +585,15 @@ QUESTS.push(...SCIFI_QUESTS);
 const OCEAN_QUESTS: Quest[] = [
   {
     id: "q_seafarer",
-    name: "The Seafarer Cave",
+    name: "The Sea Portal",
     giver: "npc_pete",
     turnIn: "npc_marlow",
     level: 8,
     requires: ["q_welcome"],
-    offer: "Ye've got sea in yer eyes, I can tell. Go through the cave. At the end ye'll find Port Bilgewater. Tell Captain Marlow old Pete sent ye.",
+    offer: "Ye've got sea in yer eyes, I can tell. Step through the sea portal, east of the throne. It comes out in Port Bilgewater. Tell Captain Marlow old Pete sent ye.",
     complete: "Pete sent ye? Ha! Then ye must be trouble. Good. I like trouble.",
     steps: [
-      { type: "visit", map: "ocean", x: 0, y: 0, r: 34, text: "Find Port Bilgewater through the Seafarer Cave" },
+      { type: "visit", map: "ocean", x: 0, y: 0, r: 34, text: "Reach Port Bilgewater through the sea portal" },
       { type: "talk", npc: "npc_marlow", text: "Find Captain Marlow" }
     ],
     reward: { xp: 520, gold: 80 }

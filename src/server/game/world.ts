@@ -6,7 +6,7 @@ import type { MapDef } from "../../shared/world/maps";
 import { BIOME_BOSSES, BIOME_SPAWNS, MOB_TEMPLATES, mobStats, type MobTemplate } from "../../shared/game/mobs";
 import { NPCS, scheduleAt } from "../../shared/game/npcs";
 import { CLASSES } from "../../shared/game/classes";
-import { MOUNT_SPEED_MULT, mitigate } from "../../shared/game/stats";
+import { MOUNT_SPEED_MULT, SPRINT_SPEED_MULT, mitigate } from "../../shared/game/stats";
 import { applyCurrent, circleBlocked, isSwimming, stepMovement } from "../../shared/game/movement";
 import { findPath } from "../../shared/game/pathfind";
 import type { BuffId, Talent, ZoneKind } from "../../shared/game/talents";
@@ -819,6 +819,7 @@ export class World {
   playerSpeed(p: Player): number {
     let speed = p.derived.speed;
     if (p.mounted) speed *= MOUNT_SPEED_MULT;
+    else if (p.input.sprint) speed *= SPRINT_SPEED_MULT;
     const haste = p.buffs.get("haste");
     if (haste) speed *= 1 + haste.value;
     if (p.food?.stat === "spd") speed *= 1 + p.food.value;

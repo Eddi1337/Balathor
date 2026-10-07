@@ -14,7 +14,7 @@ const dir = mkdtempSync(join(tmpdir(), "balathor-v2-ocean-"));
 await build({
   stdin: {
     contents: `
-      export { SEAFARER_FRONT } from "./src/shared/world/overworld";
+      export { CASTLE_PORTALS } from "./src/shared/world/housing";
       export { PORT_SPAWN, GROTTO, ISLES_BY_ID, treasureSpot, oceanTileAt, isLand, MOORING } from "./src/shared/world/sea/ocean";
       export { OCEAN } from "./src/shared/world/maps";
       export { findPath } from "./src/shared/game/pathfind";
@@ -65,8 +65,8 @@ test("port layout: every port NPC, the pier and the grotto are reachable on foot
   assert.ok(W.isLand(W.oceanTileAt(smug.x, smug.y)), "the X is on land");
 });
 
-test("the Seafarer Cave leads to Port Bilgewater and back", async () => {
-  await c.chat(`/tp ${W.SEAFARER_FRONT.x} ${W.SEAFARER_FRONT.y}`, 1200);
+test("the castle's sea portal leads to Port Bilgewater and back", async () => {
+  await c.chat(`/map castle:throne ${W.CASTLE_PORTALS.ocean.x} ${W.CASTLE_PORTALS.ocean.y}`, 1200);
   c.messages = [];
   c.send({ t: "door", id: "seafarer_in" });
   await c.wait((m) => m.t === "welcome" && m.map === "ocean", 3000, "arrived in port");
@@ -74,7 +74,7 @@ test("the Seafarer Cave leads to Port Bilgewater and back", async () => {
   await c.chat(`/tp ${W.GROTTO.x} ${W.GROTTO.y + 0.5}`, 1200);
   c.messages = [];
   c.send({ t: "door", id: "seafarer_out" });
-  await c.wait((m) => m.t === "welcome" && m.map === "overworld", 3000, "back on the island");
+  await c.wait((m) => m.t === "welcome" && m.map === "castle:throne", 3000, "back in the castle");
 });
 
 test("summon, board, take the helm and sail away; walk the deck while under way; go ashore", async () => {

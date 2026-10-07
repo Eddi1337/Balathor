@@ -17,6 +17,8 @@ export const BASE_SPEED = 5.2;
 export const SWIM_SPEED_MULT = 0.45;
 /** Riding a pony. */
 export const MOUNT_SPEED_MULT = 1.6;
+/** Holding Shift (or the joystick pushed all the way) on foot. */
+export const SPRINT_SPEED_MULT = 1.55;
 
 export function xpToNext(level: number): number {
   return Math.round(60 + level * 45 + level * level * 6);

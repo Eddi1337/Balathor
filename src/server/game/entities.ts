@@ -92,7 +92,7 @@ export class Player implements Spatial, NetCached {
   dead = false;
   moving = false;
   swimming = false;
-  input = { mx: 0, my: 0, seq: 0 };
+  input = { mx: 0, my: 0, seq: 0, sprint: false };
   lastAttackAt = 0;
   lastJumpAt = 0;
   lastDamagedAt = 0;
@@ -170,7 +170,8 @@ export class Player implements Spatial, NetCached {
       lx: this.aboard ? round2(this.aboard.lx) : 0,
       ly: this.aboard ? round2(this.aboard.ly) : 0,
       hm: this.aboard?.helm ? 1 : 0,
-      tt: s.title ?? ""
+      tt: s.title ?? "",
+      sp: this.input.sprint && this.moving && !this.mounted && !this.ship && !this.aboard ? 1 : 0
     };
     this.netPass = pass;
     this.netValue = value;

@@ -38,7 +38,7 @@ import { Panels } from "./ui/panels";
 import { TALENTS_BY_ID, type BuffId } from "../shared/game/talents";
 import { WAYPOINTS, WAYPOINT_USE_RADIUS, type Waypoint } from "../shared/game/waypoints";
 import { EMOTES } from "../shared/game/emotes";
-import { MOUNT_SPEED_MULT } from "../shared/game/stats";
+import { MOUNT_SPEED_MULT, SPRINT_SPEED_MULT } from "../shared/game/stats";
 import { HULLS, shipStats, stepShip, BOOST_COOLDOWN_MS, BOOST_MS, type HullId } from "../shared/game/ships";
 import { DOCK_RANGE, POIS, poiNear } from "../shared/world/scifi/space";
 import { LAUNCH_PAD, STATION_H, STATION_W } from "../shared/world/scifi/station";
@@ -260,8 +260,8 @@ state.onAdd = (e) => {
 
 // ── local player prediction ─────────────────────────────────────────────────
 
-const me = { x: 0, y: 0, f: Math.PI / 2, moving: false, vx: 0, vy: 0, boostUntil: 0, boostReadyAt: 0 };
-let lastSent = { mx: 0, my: 0, at: 0 };
+const me = { x: 0, y: 0, f: Math.PI / 2, moving: false, sprinting: false, vx: 0, vy: 0, boostUntil: 0, boostReadyAt: 0 };
+let lastSent = { mx: 0, my: 0, at: 0, sp: false };
 let inputSeq = 0;
 let lastAttackAt = 0;
 /** Our predicted spot on a ship's deck while aboard. */
@@ -288,7 +288,7 @@ function selfData(): NetPlayer | null {
 function predict(dt: number, now: number): void {
   const s = state.self;
   const d = selfData();
-  const { ix, iy } = hud.chatFocused ? { ix: 0, iy: 0 } : input.sample();
+  const { ix, iy, sprint } = hud.chatFocused ? { ix: 0, iy: 0, sprint: false } : input.sample();
   let { mx, my } = renderer.toWorld(ix, iy);
   if (!s || !d || d.dead) {
     mx = 0;
@@ -325,11 +325,11 @@ function predict(dt: number, now: number): void {
     me.x = w.x;
     me.y = w.y;
     me.vx = me.vy = 0;
-    const changedA = Math.abs(mx - lastSent.mx) > 0.04 || Math.abs(my - lastSent.my) > 0.04;
+    const changedA = Math.abs(mx - lastSent.mx) > 0.04 || Math.abs(my - lastSent.my) > 0.04 || sprint !== lastSent.sp;
     if (changedA || (Math.hypot(mx, my) > 0.05 && now - lastSent.at > 200)) {
       inputSeq += 1;
-      send({ t: "in", seq: inputSeq, mx: round(mx), my: round(my), f: round(me.f) });
-      lastSent = { mx, my, at: now };
+      send({ t: "in", seq: inputSeq, mx: round(mx), my: round(my), f: round(me.f), sp: sprint ? 1 : 0 });
+      lastSent = { mx, my, at: now, sp: sprint };
     }
     return;
   }
@@ -345,7 +345,7 @@ function predict(dt: number, now: number): void {
   }
   if (me.moving && s && d && !d.sh) {
     const haste = d.bf.includes("haste") ? 1.4 : 1;
-    stepMovement(map, me, mx, my, s.derived.speed * (d.mt ? MOUNT_SPEED_MULT : 1) * haste, dt);
+    stepMovement(map, me, mx, my, s.derived.speed * (d.mt ? MOUNT_SPEED_MULT : sprint ? SPRINT_SPEED_MULT : 1) * haste, dt);
     if (now - lastAttackAt > 350) me.f = Math.atan2(my, mx);
   }
   // Rivers carry swimmers downstream (same shared rule as the server).
@@ -367,12 +367,13 @@ function predict(dt: number, now: number): void {
     me.y += ey * k;
   }
   // Send input when it changes, and as a keep-alive while moving.
-  const changed = Math.abs(mx - lastSent.mx) > 0.04 || Math.abs(my - lastSent.my) > 0.04;
+  const changed = Math.abs(mx - lastSent.mx) > 0.04 || Math.abs(my - lastSent.my) > 0.04 || sprint !== lastSent.sp;
   if (changed || (me.moving && now - lastSent.at > 200)) {
     inputSeq += 1;
-    send({ t: "in", seq: inputSeq, mx: round(mx), my: round(my), f: round(me.f) });
-    lastSent = { mx, my, at: now };
+    send({ t: "in", seq: inputSeq, mx: round(mx), my: round(my), f: round(me.f), sp: sprint ? 1 : 0 });
+    lastSent = { mx, my, at: now, sp: sprint };
   }
+  me.sprinting = Boolean(sprint && me.moving && d && !d.mt && !d.ab && !d.sh);
 }
 
 function round(v: number): number {
@@ -1565,7 +1566,11 @@ function updateEntities(dt: number, now: number, time: number): void {
       setStunStars(m, (d.st & 2) !== 0 && !dead);
       updateAuras(v, [(d.st & 1) ? "slow" : "", (d.st & 4) ? "blind" : ""].filter(Boolean), dt, x, y);
     }
-    animate(m, { moving, dead, swimming: d.k === "p" && d.sw === 1, speed: d.k === "m" ? 0.7 : 1, mounted: d.k === "p" && d.mt === 1, emote: d.k === "p" ? d.em : "" }, dt, time);
+    const sprinting = d.k === "p" && (isSelf ? me.sprinting : d.sp === 1);
+    animate(m, { moving, dead, swimming: d.k === "p" && d.sw === 1, speed: d.k === "m" ? 0.7 : sprinting ? 1.5 : 1, mounted: d.k === "p" && d.mt === 1, emote: d.k === "p" ? d.em : "" }, dt, time);
+    if (sprinting && moving && d.k === "p" && d.sw !== 1 && Math.random() < dt * 9) {
+      effects.particles.emit(x - Math.cos(f) * 0.3, baseY + 0.1, y - Math.sin(f) * 0.3, { n: 2, color: "#e8dcc8", speed: 0.6, up: 0.8, size: 0.09, life: 0.45 });
+    }
     if (m.kind === "sailship" || isSeaModel(m.kind as never)) {
       animateSea(m, { moving, dead, sail: d.k === "s" ? d.sail : undefined }, dt, time);
       if (d.k === "s") setSailOpacity(m, deck0?.ship === e.id ? 0.35 : 1);

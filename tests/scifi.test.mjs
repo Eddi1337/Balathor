@@ -14,7 +14,7 @@ const dir = mkdtempSync(join(tmpdir(), "balathor-v2-scifi-"));
 await build({
   stdin: {
     contents: `
-      export { STARGATE_FRONT } from "./src/shared/world/scifi/stargate";
+      export { CASTLE_PORTALS } from "./src/shared/world/housing";
       export { LAUNCH_PAD, STATION_GATE, STATION_ARRIVAL, ALCOVES } from "./src/shared/world/scifi/station";
       export { POIS_BY_ID } from "./src/shared/world/scifi/space";
       export { STATION } from "./src/shared/world/maps";
@@ -70,8 +70,8 @@ test("the station deck is connected: every NPC, the pad, lifts and gate are reac
   }
 });
 
-test("step through the Stargate to Ringforge Station and back", async () => {
-  await tp(W.STARGATE_FRONT.x, W.STARGATE_FRONT.y);
+test("the castle's Stargate leads to Ringforge Station and back", async () => {
+  await c.chat(`/map castle:throne ${W.CASTLE_PORTALS.station.x} ${W.CASTLE_PORTALS.station.y}`, 1200);
   c.messages = [];
   c.send({ t: "door", id: "stargate_in" });
   await c.wait((m) => m.t === "welcome" && m.map === "station", 3000, "arrived on station");
@@ -80,7 +80,7 @@ test("step through the Stargate to Ringforge Station and back", async () => {
   await tp(W.STATION_GATE.x, W.STATION_GATE.y + 1.4);
   c.messages = [];
   c.send({ t: "door", id: "stargate_out" });
-  await c.wait((m) => m.t === "welcome" && m.map === "overworld", 3000, "back home");
+  await c.wait((m) => m.t === "welcome" && m.map === "castle:throne", 3000, "back in the castle");
 });
 
 test("launch, fly, mine an asteroid with lasers, warp home and dock", async () => {
@@ -179,7 +179,7 @@ test("the Stargate quest leads to the station and Orla", async () => {
     await d.wait((m) => m.t === "questOffer" && m.id === "q_stargate", 2000, "stargate offer");
     d.send({ t: "questAccept", id: "q_stargate" });
     await d.selfWhere((s) => s.quests.active.some((q) => q.id === "q_stargate"), 2000, "accepted");
-    await d.chat(`/tp ${W.STARGATE_FRONT.x} ${W.STARGATE_FRONT.y}`, 1200);
+    await d.chat(`/map castle:throne ${W.CASTLE_PORTALS.station.x} ${W.CASTLE_PORTALS.station.y}`, 1200);
     d.send({ t: "door", id: "stargate_in" });
     await d.wait((m) => m.t === "welcome" && m.map === "station", 3000, "on station");
     await d.selfWhere((s) => s.quests.active.find((q) => q.id === "q_stargate")?.step === 1, 3000, "visit step done");

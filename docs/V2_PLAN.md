@@ -117,7 +117,7 @@ Legend: ✅ in v2 · 🔜 planned milestone
 |---|---|
 | Starting town | ✅ Hearthmoor became a grand White City: five walled tiers climbing a hill, about 10x the area; terraced streets of joined two-storey houses, archways over the roads, gatehouses, the market, the White Tree and a citadel castle with the King in his throne room; forests and farmland outside the walls |
 | Water | ✅ Rivers (Silverrun, Frostbrook) with bridges, flowing water whose current carries swimmers (shared server/client physics), fountain spray with droplet physics and ripples, swim splashes |
-| Movement | ✅ Jumping (Space); characters are soft cubes |
+| Movement | ✅ Jumping (Space), sprinting (Shift, about 1.55× on foot); characters are soft cubes |
 | Buyable houses with interiors | ✅ 24 plots on tiers 1-3 (1200 / 1800 / 3000g), each interior is its own map; tier-3 manors have two floors; sell back for half; lock, or open to everyone (party members can always enter) |
 | Furniture + decorate mode | ✅ 15 pieces from Marta's Furnishings; H to decorate, R to rotate, placement rules (no overlap, door kept clear, 40 per floor) |
 | House chests | ✅ 30-slot storage in any placed chest, shared across your home |
@@ -129,7 +129,7 @@ Legend: ✅ in v2 · 🔜 planned milestone
 
 | v1 feature | v2 |
 |---|---|
-| Stargate → orbital station | ✅ Starfall Circle outside the main gate (Gatekeeper Astra) → Ringforge Station, a walkable deck: stargate hall, concourse with holo-fountain, shipyard, shipwright, quartermaster, café, workshop (fabricator + galley), hangar bay, lifts to the labs. Its own map, so there are no "which world is this?" lookups |
+| Stargate → orbital station | ✅ The Stargate stands in the castle's Hall of Portals (Gatekeeper Astra) → Ringforge Station, a walkable deck: stargate hall, concourse with holo-fountain, shipyard, shipwright, quartermaster, café, workshop (fabricator + galley), hangar bay, lifts to the labs. Its own map, so there are no "which world is this?" lookups |
 | Flyable ships | ✅ Four hulls (Bumblebee Skiff, Comet Corvette, Puffin Hauler, Starling Frigate) with a tiny pilot in the cockpit; shared, predicted flight model (turn, thrust, drift, afterburner); multi-gun lasers, frigate drone turrets, mining-laser bonus; four upgrade tracks (engines, shields, lasers, plating) shared by all your ships |
 | Combat lanes, station defences | ✅ Shields soak hits before the hull; disabled ships get towed home; repair kits; Ringforge's guns protect a safe zone; pirate fighters, gunships, scrap drones, void wraiths and Captain Vex |
 | Warp, docking | ✅ Warp drive (J) to any discovered place, interrupted by enemy fire; dock with E in the station ring (free repairs) |
@@ -142,7 +142,7 @@ Legend: ✅ in v2 · 🔜 planned milestone
 
 | v1 feature | v2 |
 |---|---|
-| Seafarer Cave → Boundless Ocean | ✅ A cave mouth in the forest belt south-west of the city (Old Salt Pete) tunnels under the sea to Port Bilgewater; the ocean is its own map with 126 seeded islands (palm, jungle, rocky, ruins, pirate camps, treasure isles, Turtle Cove, Smuggler's Rest, Skull Isle) |
+| Seafarer Cave → Boundless Ocean | ✅ The sea portal in the castle's Hall of Portals (Old Salt Pete) leads to Port Bilgewater; the ocean is its own map with 126 seeded islands (palm, jungle, rocky, ruins, pirate camps, treasure isles, Turtle Cove, Smuggler's Rest, Skull Isle) |
 | Port Bilgewater | ✅ Tavern, shipwright, provisioner, harbourmaster, Captain Marlow's house, lighthouse, long pier and jetties |
 | Sailing ships with walkable decks | ✅ Sloop, brig and galleon. Crews walk the planks while she sails (deck-local coordinates, predicted on the client), take the wheel at the stern, raise or furl the sails; wind and points of sail; running aground; summon at the harbour; sinking washes you ashore |
 | Cannons, docking | ✅ Broadsides from the helm or single cannons at the rails; board from the pier or any shore, step ashore next to land; party members can crew your ship |

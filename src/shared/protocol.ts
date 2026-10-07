@@ -67,6 +67,8 @@ export interface NetPlayer {
   hm: 0 | 1;
   /** Chosen trophy title ("" for none). */
   tt: string;
+  /** 1 while sprinting. */
+  sp: 0 | 1;
 }
 
 /** A running minigame, as the player sees it. */
@@ -269,7 +271,7 @@ export type C2S =
   | { t: "auth"; mode: "login" | "register"; user: string; pass: string }
   | { t: "create"; name: string; cls: ClassId; look: Appearance }
   | { t: "play" }
-  | { t: "in"; seq: number; mx: number; my: number; f: number }
+  | { t: "in"; seq: number; mx: number; my: number; f: number; sp?: 0 | 1 }
   | { t: "attack"; a: number }
   | { t: "chat"; text: string }
   | { t: "equip"; slot: number }
