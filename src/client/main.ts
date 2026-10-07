@@ -553,7 +553,8 @@ function nearestInteractable(): { id: string; kind: InteractKind; label: string 
     if (d?.ab && shipE?.data.k === "s" && deck0) {
       if (d.hm) return { id: "helm", kind: "helm", label: "E · Leave the wheel" };
       const h = HELM(SAIL_HULLS[shipE.data.hull as SailHullId] ?? SAIL_HULLS.sloop);
-      if (Math.hypot(deck0.lx - h.lx, deck0.ly - h.ly) <= STATION_REACH + 0.6) return { id: "helm", kind: "helm", label: "E · Take the wheel" };
+      const helmTaken = [...state.entities.values()].some((e) => e.data.k === "p" && e.id !== state.selfId && e.data.ab === d.ab && e.data.hm === 1);
+      if (!helmTaken && Math.hypot(deck0.lx - h.lx, deck0.ly - h.ly) <= STATION_REACH + 0.6) return { id: "helm", kind: "helm", label: "E · Take the wheel" };
       for (let r = 1; r <= 3.5; r += 0.5) {
         for (let i = 0; i < 12; i += 1) {
           const a = (i / 12) * Math.PI * 2;
@@ -1178,6 +1179,7 @@ net.on((msg: S2C) => {
     }
     case "party":
       panels.setParty(msg.party, state.selfId);
+      if (msg.party) panels.dismissPartyInvite();
       return;
     case "partyInvite":
       panels.partyInvite(msg.name);

@@ -159,3 +159,35 @@ test("treasure: three map scraps and a shovelful at the X", async () => {
   });
   assert.match(t1.text, /Scraps/);
 });
+
+test("crewing: strangers can't board your ship, party members can and ride along", async () => {
+  const d = new Client(srv.port);
+  const dName = `Deckhand${run}`.slice(0, 15);
+  await d.join(`dk${run}${Date.now() % 1000}`, dName, "mage");
+  try {
+    await c.chat("/map ocean");
+    await d.chat("/map ocean");
+    await c.chat("/tpnpc npc_finn");
+    c.send({ t: "sail", op: "summon" });
+    await c.wait((m) => m.t === "toast" && /moored/.test(m.text), 3000, "summoned");
+    for (const cl of [c, d]) await cl.chat(`/tp 0.5 ${W.MOORING.y - 3}`, 1200);
+    await d.wait(() => [...d.entities.values()].some((e) => e.k === "s"), 3000, "d sees the ship");
+    d.messages = [];
+    d.send({ t: "sail", op: "board" });
+    const no = await d.wait((m) => m.t === "toast", 2000, "refused");
+    assert.match(no.text, /party/);
+    await c.chat(`/invite ${dName}`);
+    await d.wait((m) => m.t === "partyInvite", 3000, "invite");
+    d.send({ t: "party", op: "accept" });
+    await c.wait((m) => m.t === "party" && m.party?.members.length === 2, 3000, "party");
+    d.send({ t: "sail", op: "board" });
+    await d.wait(() => d.entities.get(d.id)?.ab, 3000, "d aboard");
+    c.send({ t: "sail", op: "board" });
+    await c.wait(() => c.entities.get(c.id)?.ab, 3000, "c aboard");
+    // Teleporting the ship carries the whole crew.
+    await c.chat("/shiptp 0.5 140", 1500);
+    await d.wait(() => d.pos && d.pos.y > 125, 3000, "deckhand carried along");
+  } finally {
+    d.close();
+  }
+});

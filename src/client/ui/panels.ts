@@ -360,6 +360,14 @@ export class Panels {
     }
   }
 
+  /** Close a pending party invite without answering it (e.g. you've joined meanwhile). */
+  dismissPartyInvite(): void {
+    if (this.dialogOpen && $("dialog-title").textContent === "Party invite") {
+      $("dialog").classList.add("hidden");
+      this.dialogYes = this.dialogNo = null;
+    }
+  }
+
   partyInvite(fromName: string): void {
     this.dialog("", "Party invite", `${fromName} invited you to their party. Adventure together and share XP and quest kills!`, "", () => this.send({ t: "party", op: "accept" }), () => this.send({ t: "party", op: "decline" }), "Join", "No thanks");
   }

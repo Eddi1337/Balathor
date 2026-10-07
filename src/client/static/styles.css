@@ -361,7 +361,7 @@ label { display: grid; gap: 6px; font-weight: 500; font-size: 14px; color: var(-
 /* ── Sailing ─────────────────────────────────────────────────── */
 #win-harbour { width: 470px; left: 50%; right: auto; transform: translateX(-50%); max-height: 78vh; overflow: auto; }
 #win-harbour .btn.big { width: 100%; margin-bottom: 4px; }
-.sail-panel { position: absolute; top: 262px; right: 14px; width: 168px; padding: 8px; font-size: 12px; display: grid; grid-template-columns: 40px 1fr; gap: 8px; align-items: center; }
+.sail-panel { position: absolute; bottom: 222px; left: 14px; width: 168px; padding: 8px; font-size: 12px; display: grid; grid-template-columns: 40px 1fr; gap: 8px; align-items: center; }
 .sail-panel .wind { width: 40px; height: 40px; border-radius: 50%; background: var(--paper-2); display: grid; place-items: center; border: 2px solid var(--line); }
 .sail-panel .arrow { display: inline-block; color: #3f8fd6; font-size: 20px; }
 .sail-panel small { display: block; color: var(--ink-soft); margin-top: 3px; line-height: 1.3; }
