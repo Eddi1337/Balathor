@@ -16,7 +16,7 @@ await build({
       export { PLOTS, CASTLE_FRONT } from "./src/shared/world/housing";
       export { riverAt } from "./src/shared/world/rivers";
       export { tileAt } from "./src/shared/world/overworld";
-      export { Tile } from "./src/shared/world/tiles";
+      export { Tile, isBlockingTile, isWaterTile } from "./src/shared/world/tiles";
     `,
     resolveDir: process.cwd(),
     loader: "ts"
@@ -175,16 +175,38 @@ test("the castle's Hall of Portals: both portals and their keepers are reachable
 });
 
 test("sprinting (Shift) covers more ground than walking", async () => {
-  const run = async (sp) => {
-    await a.chat("/tp 0.5 140", 1200);
-    const y0 = a.pos.y;
-    a.send({ t: "in", seq: 1, mx: 0, my: 1, f: Math.PI / 2, sp });
-    await sleep(1500);
-    a.send({ t: "in", seq: 2, mx: 0, my: 0, f: Math.PI / 2, sp: 0 });
-    await sleep(300);
-    return a.pos.y - y0;
-  };
-  const walk = await run(0);
-  const sprint = await run(1);
-  assert.ok(sprint > walk * 1.35, `sprint ${sprint.toFixed(1)} vs walk ${walk.toFixed(1)}`);
+  // A fresh character, so nothing earlier tests did (swimming, dying…) can interfere.
+  const r = new Client(srv.port);
+  await r.join(`sr${run}${Date.now() % 1000}`, `Runner${run}`.slice(0, 15), "ranger");
+  try {
+    // A straight, open 25-tile run eastward (no props, no water) in the fields south of the city.
+    const open = (x, y) => {
+      const t = W.tileAt(x, y);
+      return !W.isBlockingTile(t) && !W.isWaterTile(t);
+    };
+    let start = null;
+    for (let y = 120.5; y < 170 && !start; y += 1) {
+      for (let x = -60.5; x < 40 && !start; x += 1) {
+        let ok = true;
+        for (let k = -1; k <= 25 && ok; k += 0.5) ok = open(x + k, y) && open(x + k, y - 0.4) && open(x + k, y + 0.4);
+        if (ok) start = { x, y };
+      }
+    }
+    assert.ok(start, "found an open stretch");
+    const leg = async (sp) => {
+      await r.chat(`/tp ${start.x} ${start.y}`, 1200);
+      const x0 = r.pos.x;
+      r.send({ t: "in", seq: Date.now() % 1e6, mx: 1, my: 0, f: 0, sp });
+      await sleep(1500);
+      r.send({ t: "in", seq: (Date.now() % 1e6) + 1, mx: 0, my: 0, f: 0, sp: 0 });
+      await sleep(300);
+      return r.pos.x - x0;
+    };
+    const walk = await leg(0);
+    const sprint = await leg(1);
+    assert.ok(walk > 2, `walked ${walk.toFixed(1)}`);
+    assert.ok(sprint > walk * 1.35, `sprint ${sprint.toFixed(1)} vs walk ${walk.toFixed(1)}`);
+  } finally {
+    r.close();
+  }
 });
