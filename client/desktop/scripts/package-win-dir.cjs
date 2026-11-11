@@ -1,4 +1,4 @@
-const packager = require("@electron/packager");
+const { packager } = require("@electron/packager");
 const path = require("node:path");
 
 const desktopRoot = path.resolve(__dirname, "..");
