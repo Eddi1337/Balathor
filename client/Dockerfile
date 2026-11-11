@@ -1,5 +1,10 @@
 FROM node:22-alpine
 
+RUN apk upgrade --no-cache \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+        /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+        /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn* /root/.npm
+
 WORKDIR /app
 
 COPY assets ./assets
