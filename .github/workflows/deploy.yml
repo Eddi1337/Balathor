@@ -94,7 +94,13 @@ jobs:
           HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
           HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
         run: |
+          printf '%s\n' "$HARBOR_USERNAME" "$HARBOR_PASSWORD" | \
           ssh -o StrictHostKeyChecking=accept-new root@${DEPLOY_HOST} "\
-            docker login ${REGISTRY} -u '${HARBOR_USERNAME}' -p '${HARBOR_PASSWORD}' && \
+            set -e; \
+            IFS= read -r registry_user; \
+            IFS= read -r registry_password; \
+            printf '%s\\n' \"\$registry_password\" | \
+              docker login ${REGISTRY} --username \"\$registry_user\" --password-stdin && \
+            unset registry_password && \
             IMAGE_TAG='${IMAGE_TAG}' docker compose -f ${DEPLOY_PATH}/docker-compose.yml pull && \
             IMAGE_TAG='${IMAGE_TAG}' docker compose -f ${DEPLOY_PATH}/docker-compose.yml up -d"
