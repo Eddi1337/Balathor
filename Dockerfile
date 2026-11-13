@@ -1,5 +1,6 @@
 # Balathor v2: one image serves the web client, /health and the /ws game socket.
-FROM node:22-alpine AS build
+FROM docker.io/library/node:22.23.5-alpine@sha256:12f54cafa58d0e96554ae05871e29663ff7241836377dc9a7916449b8adb062c AS build
+RUN npm install --global --ignore-scripts --no-audit --no-fund npm@12.2.2
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -7,7 +8,8 @@ COPY tsconfig.json build.mjs ./
 COPY src ./src
 RUN NODE_ENV=production node build.mjs
 
-FROM node:22-alpine
+FROM docker.io/library/node:22.23.5-alpine@sha256:12f54cafa58d0e96554ae05871e29663ff7241836377dc9a7916449b8adb062c
+RUN npm install --global --ignore-scripts --no-audit --no-fund npm@12.2.2
 WORKDIR /app
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
